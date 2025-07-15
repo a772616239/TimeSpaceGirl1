@@ -1134,33 +1134,44 @@ namespace GameLogic
             int L = ((int)Math.Floor((double)(m_lan / 100))) % 100;
             //Debug.LogError(L);
             string _spriteName = spriteName;
-            if(L != 0)
+            Log("_spriteName:"+_spriteName);
+            
+            if (_spriteName=="_zh")
             {
-                if(_spriteName.EndsWith("_zh"))
+                return null;
+            }
+            
+            if (!string.IsNullOrEmpty(_spriteName))
+            {
+                if(L != 0)
                 {
-                    #region 替换下面注释的代码
-
-                    if(MultiLanguageHelper.MultiLanguageDictionary.ContainsKey(L))
+                    if(_spriteName.EndsWith("_zh"))
                     {
-                        _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + MultiLanguageHelper.MultiLanguageDictionary[L].SpriteNameSuffix;
+                        #region 替换下面注释的代码
+
+                        if(MultiLanguageHelper.MultiLanguageDictionary.ContainsKey(L))
+                        {
+                            _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + MultiLanguageHelper.MultiLanguageDictionary[L].SpriteNameSuffix;
+                        }
+
+                        #endregion
+
+                        //if(L == 1)
+                        //{
+                        //    _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + "_en";
+                        //}else if(L == 2)
+                        //{
+
+                        //}
                     }
+                }
 
-                    #endregion
-
-                    //if(L == 1)
-                    //{
-                    //    _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + "_en";
-                    //}else if(L == 2)
-                    //{
-
-                    //}
+                if (!_spriteName.StartsWith("cn2-"))
+                {
+                    _spriteName = "cn2-" + _spriteName;
                 }
             }
-
-            if (!_spriteName.StartsWith("cn2-"))
-            {
-                _spriteName = "cn2-" + _spriteName;
-            }
+           
             return App.ResMgr.LoadAsset<Sprite>(_spriteName);
         }
 

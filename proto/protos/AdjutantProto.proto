@@ -1,0 +1,79 @@
+package com.ljsd.jieling.protocols;
+
+//option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+
+    message AdjutantChat {
+        optional int32 id = 1;
+        optional int32 addExp = 2;
+    }
+
+	message Adjutant {
+        optional int32 id = 1;
+        optional int32 chatLevel = 2;
+        optional int32 exp = 3;
+        optional int32 handselNum = 4;
+        optional int32 teachLevel = 5;
+        optional int32 skillLevel = 6;
+        repeated ModuleProperty moduleProperty = 7;
+    }
+
+	message AdjutantDate {
+        optional int32 vigorTotal = 1;//精力总值
+        optional int32 addVigorTime = 2;//精力回复时间
+        repeated Adjutant adjutant = 3;//副官们
+    }
+    
+
+    message GetAdjutantUnlockRequest{
+        repeated int32 adjutantId = 1;//副官id
+	}
+	message GetAdjutantUnlockResponse{
+        optional int32 result = 1;
+	}
+    message GetAdjutantChatRequest{
+        optional int32 adjutantId = 1;
+        optional int32 type = 2;//1单次、2以升级为目标次数
+        optional int32 type2 = 3;//1消耗精力、2消耗物品
+	}
+	message GetAdjutantChatResponse{
+        repeated AdjutantChat adjutantChat = 1;
+	}
+    message GetAdjutantHandselRequest{
+        optional int32 adjutantId = 1;
+        optional int32 count = 2;//送礼次数
+    }
+    message GetAdjutantHandselResponse{
+        optional int32 handselNum = 1;//送礼次数
+    }
+    message GetAdjutantSkillRequest{
+        optional int32 adjutantId = 1;
+    }
+    message GetAdjutantSkillResponse{
+        optional int32 skillLevel = 1;//技能等级
+    }
+    message GetAdjutantTeachRequest{
+        optional int32 adjutantId = 1;
+    }
+    message GetAdjutantTeachResponse{
+        optional int32 teachLevel = 1;//训练等级
+    }
+    message GetAllAdjutantInfoRequest{
+    }
+    message GetAllAdjutantInfoResponse{
+        optional AdjutantDate adjutantDate = 1;//副官系统数据
+    }
+
+	message AdjutantLayerActivityRequest{
+		optional int32 layer = 1;//层级
+		optional int32 type = 2;// 道具类型 0 钻石 1 道具1 2 道具5
+	}
+	
+	message AdjutantLayerActivityResponse{
+		optional int32 layer = 1;//当前到达的层级
+		optional int32 buyNum = 2;// 已经购买的次数
+		optional Drop drop = 3;//奖励
+	}
+

@@ -1,0 +1,92 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+    //社稷大典贡献道具
+	message CommitShejiActivityItemRequest{
+		optional int32 itemId = 1;  //道具id
+		optional int32 itemNum = 2;  //道具数量
+	}
+	message CommitShejiActivityItemResponse{
+    		optional Drop drop = 1;
+    }
+
+    //获取社稷奖励
+    message GetShejiAwardRequest{
+    	optional int32 activityId = 1;
+    }
+    message GetShejiAwardResponse{
+    	optional Drop drop = 1;
+    }
+
+	//选择易经宝库终极奖励
+	message SeletSubRewardPoolRequest{
+		optional int32 selectId = 1;
+		optional int32 activityId = 2;
+	}
+	message SeletSubRewardPoolResponse{
+
+	}
+
+	//灵兽up抽卡
+    message SpecicalMonsterChooseRequest{
+    	optional int32 activityId = 1;
+    	optional int32 selectId = 2;
+    }
+
+    //扭转乾坤
+    message GoodLuckRequest{
+    	optional int32 activityId = 1;
+    }
+    message GoodLuckResponse{
+    	optional int32 index = 1;
+    	optional Drop drop = 2;
+    }
+
+	//BOX扭蛋
+	message BoxPoolListRequest{	
+	}
+	message BoxPoolInfoListResponse{
+		repeated BoxPoolInfo boxPoolInfos = 1;//活动抽奖信息
+	}
+	message BoxPoolInfo{
+		optional int32 id = 1;
+		optional int32 lotteryId = 2;//卡池ID
+		repeated int32 rewardList = 3;//被抽过的奖
+		optional int32 autoResetCount = 4;//自动重置次数
+		optional int32 manualResetCount = 5;//手动重置次数
+	}
+	//BOX扭蛋抽取、重置
+	message BoxPoolOperateRequest{
+		optional int32 id = 1;//BoxPoolConfig中的ID
+		optional bool reset = 2;//false抽取true重置
+	}
+	message BoxPoolOperateResponse{
+		optional Drop drop = 1;//重置的时候为null
+		optional BoxPoolInfo info = 2;
+	}
+
+	//英雄试炼 章节数据
+	message ActivityChapterListRequest{
+	}
+	message ActivityChapterListResponse{
+		repeated ActivityChapterInfo chapterInfoList = 1;//开启章节
+	}
+	
+	message ActivityChapterInfo{
+		optional int32 id = 1;//章节ID
+		optional int32 state = 2;//开启1通过2
+		repeated ActivityChapterLevelInfo leveInofList = 3;//解锁关卡
+	}
+	message ActivityChapterLevelInfo{
+		optional int32 id = 1;//关卡ID
+		optional int32 state = 2;//开启1通过2
+		optional int32 challengeCount = 3;//已挑战次数
+		repeated int32 starList = 4;//获星条件
+	}
+	//章节数据推送
+	message ActivityChapterIndication{
+		optional ActivityChapterInfo activityChapterInfo = 1;
+	}

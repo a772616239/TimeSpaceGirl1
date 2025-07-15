@@ -1,0 +1,165 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+
+	message GetArenaInfoResponse{
+		optional ArenaInfo arenaInfo = 1;
+	}
+
+
+	message GetArenaRankInfoRequest{
+		optional int32 page = 1; //页数
+
+	}
+
+	message ArenaChallengeRequest{
+		optional int32 teamId =1; // 本人进攻队伍id
+		optional int32 challengeUid = 2 ;// 对手uid
+		optional int32 skipFight = 3 ;// 1：标识跳过战斗 0: 不跳过战斗
+	}
+
+	message ArenaChallengeResponse{
+		optional int32 myScoreChange = 1 ; //我的分数变化值
+		optional int32 defScoreChange =2; // 对手分数变化值
+		repeated ArenaEnemy arenaEnemys = 3; //新的一批对手信息
+		optional FightData fightData = 4;  // 战斗数据 
+		optional int32 fightResult = 5 ;// 战斗结果
+		optional Drop drop = 6;          //战斗奖励（输赢都有奖励）
+	}
+
+	message GetArenaRankInfoResponse{
+		repeated ArenaEnemy rankInfos = 1; //成员排名信息
+		optional int32 myscore = 2; //我的积分
+		optional int32 myRank =3 ;// 我的排名
+	}
+
+	message ArenaRandomResponse{
+		repeated ArenaEnemy arenaEnemys = 1; //新的一批对手信息
+	}
+
+	message ArenaRecordInfoResponse{
+		repeated ArenaRecordInfo arenaRecordInfo =1;
+	}
+
+
+	message PlayWithSbRequest{
+		optional int32 challengeUid =1;
+		optional int32 myteamId = 2;
+	}
+
+	message PlayWithSbResponse{
+		optional  FightData fightData =1;  // 战斗数据 
+	}
+
+	message ChampionGetInfoResponse{
+		optional int32 joinState = 1; // 0:未参加 1：参加
+		optional int32 progress = 2;// 进度 选拨赛|决赛 第几轮 阶段（准备、竞猜、战斗、结束）
+		optional int32 endTime = 3; //进度结束时间
+		optional int32 myrank = 4; //排名
+		optional int32 maxRank = 5; //历史最高排名
+		
+		optional ChampionBattleInfo championBattleInfo=6;
+
+		optional int32 myscore= 7;
+		optional int32 process = 8;// 3局两胜 -1 初始值 0final负 1final胜 2 胜 3 负 4 胜负 5 负胜 
+		optional bool loser = 9;//是否被淘汰 
+	}
+
+	message ChampionProgressUpdateIndication{
+		optional int32 progress = 1;// 进度
+		optional int32 endTime = 2; //进度结束时间
+	}
+
+	//获取竞猜信息
+	message ChampionGetBetRequest{
+		optional int32 type =1; // 0  全量  1 ： 只给ChampionBetInfo
+	}
+	message ChampionGetBetResponse{
+		optional ChampionBattleInfo championBattleInfo=1; //竞猜队伍信息
+		optional ChampionBetInfo championBetInfo = 2;// 竞猜押注信息
+		optional int32 winUid = 3; //我压得是
+		optional int32 process = 4;//  3局两胜 -1 初始值 0final负 1final胜2 胜 3 负 4 胜负 5 负胜 
+		optional int32 myBetCoins = 5; // 我的下注
+	}
+
+	message ChampionBetReqeust{
+		optional int32 winUid = 1 ; //押注x胜利
+		optional int32 coins = 2 ;//筹码
+	}
+
+	message ChampionGetWorldRankRequest{
+		optional int32 page = 1; 
+		optional int32 type=2; // 0 默认世界排行榜 1 ：小组
+	}
+
+	message ChampionGetWorldRankResponse{
+		repeated ArenaEnemy rankInfos = 1; //成员排名信息
+		optional ArenaEnemy myInfo =3 ; //我的排名
+		optional ArenaEnemy title = 4;  //我的称号
+	}
+
+	message ChampionTwoEnemInfo{
+		optional ArenaEnemy redEnemy = 1; //我的信息 或者攻击者信息
+		optional ArenaEnemy blueEnemy = 2; //对方信息
+		optional int32 fightResult = 3 ;// 战斗结果 -1表示 正在进行时
+		optional int32 roundTimes = 4; //轮数
+		optional string id = 5;// 唯一标识id
+	}
+
+	message ChampionMyBetDetail{
+		optional ChampionTwoEnemInfo enemyPairInfo = 1; //我的信息 或者攻击者信息
+		optional int32 betResult = 2 ;//竞猜结果 0 即将开始 1 ： 正在进行 2 ： 竞猜成功 3 ：竞猜失败  23 修改为竞猜的id
+		optional int32 myBetCoins = 3; // 我的下注
+		optional int32 myWinCoins = 4; // 我获取
+	}
+
+	message ChanpionGetAllMyBattleHistoryResponse{
+		repeated ChampionTwoEnemInfo  enemyPairInfo =1; // -1 即将开始
+	}
+
+	message ChampionGetAllMyBetInfoResponse{
+		repeated ChampionMyBetDetail championMyBetDetails =1;
+	}
+
+	message ChampionViewFinalRequest{
+		optional int32 type = 1 ;// 1 32强 2：4强
+		optional int32 page = 2 ;// 分页
+	}
+
+	message ChampionViewFinalResponse{
+		repeated ChampionBattlePairInfo championBattlePairInfo=1;
+	}
+
+	message ChampionGuessSuccessIndication{
+		optional int32 roundTimes =1;
+		optional int32 itemId = 2;
+		optional int32 itemNum = 3;
+
+	}
+
+	message TakeArenaBattleRewardRequest{
+		optional int32 missionId = 1; 
+	}
+	
+	message TakeArenaBattleRewardResponse{
+		optional Drop drop = 1;
+	}
+	
+	message RedPackageLikeRequest{
+		optional int32 uid = 1;
+	}
+	
+	message GetAllSendLikeResponse{
+		repeated int32 uid = 1;
+	}
+
+	message WorldArenaUnLockRequest{
+
+	}
+	message WorldArenaUnLockResponse{
+	    optional int32 worldLevel = 1;      //世界等级
+	    optional bool unLock = 2;           //跨服天梯是否解说 true解锁，false未解锁
+	}

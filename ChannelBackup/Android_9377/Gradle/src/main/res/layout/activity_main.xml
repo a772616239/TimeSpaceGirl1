@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    >
+
+		<LinearLayout             
+		            android:layout_width="match_parent"
+		            android:layout_height="wrap_content"
+		            android:layout_marginTop="10dp"
+		            android:orientation="horizontal"
+		            android:id="@+id/ll_user">
+		    
+		    <Button
+		          android:id="@+id/btnLogin"
+		          android:layout_width="0dp"
+		          android:layout_weight="1"
+		          android:layout_height="wrap_content"
+		          android:text="模拟登录"/>
+		          
+		    <Button
+		          android:id="@+id/btncenter"
+		          android:layout_width="0dp"
+		          android:layout_weight="1"
+		          android:layout_height="wrap_content"
+		          android:text="用户中心"/>
+		          
+		</LinearLayout>
+
+        <LinearLayout
+            android:layout_below="@+id/ll_user"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal"
+            android:id="@+id/ll_pay"
+            >
+            <EditText
+                android:id="@+id/etMoney"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:paddingLeft="10dp"
+                android:layout_weight="1"/>
+        <Button
+            android:id="@+id/btnPay"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="支付"/>
+        </LinearLayout>
+        
+        <LinearLayout 
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:id="@+id/ll_msg"
+            android:layout_below="@id/ll_pay"
+            android:layout_marginTop="20dp">
+        
+        <Button
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="wrap_content"
+        android:id="@+id/member"
+        android:text="会员信息"/>
+        
+        <Button
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_marginLeft="10dp"
+        android:layout_height="wrap_content"
+        android:id="@+id/logout"
+        android:text="注销账号"/>
+            
+        </LinearLayout>
+
+
+      <TextView
+          android:id="@+id/tv_desc"
+          android:layout_width="match_parent"
+          android:gravity="center"
+          android:layout_height="wrap_content"
+          android:layout_below="@id/ll_msg"
+          android:layout_marginTop="20dp"
+          android:text="游戏页面"
+          />
+
+</RelativeLayout>

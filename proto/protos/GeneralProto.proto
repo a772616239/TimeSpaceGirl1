@@ -1,0 +1,34 @@
+package com.ljsd.jieling.protocols;
+
+//option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+    message GetGeneralActiveRequest{
+        optional int32 generalId = 1;//名将id
+        repeated string tankId = 2;//玩家坦克id
+	}
+	message GetGeneralActiveResponse{
+        optional int32 result = 1;
+		optional Drop drop = 2;
+	}
+    message GetGeneralLevelUpRequest{
+        optional int32 generalId = 1;//名将id
+    }
+    message GetGeneralLevelUpResponse{
+        optional int32 result = 1;
+    }
+    message GetGeneralRankUpRequest{
+        optional int32 generalId = 1;//名将id
+    }
+    message GetGeneralRankUpResponse{
+        optional int32 result = 1;
+    }
+    message GetAllGeneralInfoRequest{
+    }
+    message GetAllGeneralInfoResponse{
+        repeated General generalDate = 1;//名将系统数据
+    }
+
+
+	

@@ -1,0 +1,24 @@
+package com.ljsd.jieling.protocols.global;
+
+option optimize_for = SPEED;
+
+
+// request 编号需要小于 response 编号
+
+
+	message GetWorldServerRequest{
+		optional int32 serverID = 1;
+		optional int32 worldTypeID = 2;		//跨服类型Id,1=跨服竞技场，2=跨服公会战
+	}
+
+	message GetWorldServerResponse{
+		optional string ip = 1;
+		optional string port = 2;
+		optional int32 group =3;//分组 全服唯一worldId*10000+index；
+	}
+
+	
+	
+
+	
+	

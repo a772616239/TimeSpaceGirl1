@@ -1,0 +1,57 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+
+message ChatInfo{
+    optional int32 senderId = 1;//发送用户id
+    optional string senderName = 2; //发送用户名字
+    optional int32 senderlevel = 3;//发送者等级
+    optional int32 sendervip = 5;//发送者vip等级
+    optional uint64 times = 6;//接受到的时间戳
+    optional string msg = 7;//消息内容，消息体
+    optional int32 head = 8;   // 头像
+    optional int32 frame = 9; // 头像框
+    optional int32 soulVal = 10;    // 战斗力
+    optional uint64 messageId = 11; // 消息号
+    //跑马灯用
+    optional int32 messageType = 13; // 消息类型 1:吉运,2:勤勉
+    optional int32 itemId =14; // 查看道具id
+    optional int32 type = 15;  //0:系统 1:其他
+    optional int32 startTime = 16 ; // 开始时间
+    optional int32 endTime = 17;  //结束时间
+    optional int32 PriorityLevel =18 ;// 优先级
+    optional int32 Frequency = 19; //频率(s)
+	optional int32 speed = 20; 
+	optional int32 multiple = 21; //显示次数
+	repeated string chatparms = 22; //聊天参数
+	optional int32 chenghao = 23; //称号
+	optional int32 job = 24; //职务 0无工会 1:会长 2:管理员 3:一般成员
+    optional int32 serverId = 25; //服务器ID
+    optional string serverName = 26; //服务器名称
+    optional bool showVip = 27;//VIP显示
+}
+
+message GetChatMessageInfoRequest {
+    optional int32 chatType = 1; // 类型 0:系统 1:世界 2:公会 3 好友
+    optional uint64 messageId = 2; //消息号
+}
+
+message GetChatMessageInfoResponse {
+    repeated ChatInfo chatInfo = 1;
+}
+
+message SendChatInfoReqest {
+    optional int32 chatType = 1; // 类型1:世界 2:公会 3 好友
+    optional string message = 2;  //聊天内容
+    optional int32 friendId = 3; //  接受聊天的好友id 
+}
+message SendChatInfoResponse {
+    optional ChatInfo chatInfo = 1;
+}
+
+message SendChatInfoIndication {
+    optional ChatInfo chatInfo = 1;
+    optional int32 type = 2 ;// 类型 1 私聊 2 公会
+}
+

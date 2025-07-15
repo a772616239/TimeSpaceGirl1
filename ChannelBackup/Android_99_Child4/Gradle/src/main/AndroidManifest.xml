@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.skfz.boomegg"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:installLocation="auto">
+  <supports-screens
+      android:smallScreens="true"
+      android:normalScreens="true"
+      android:largeScreens="true"
+      android:xlargeScreens="true"
+      android:anyDensity="true" />
+  <application
+      android:name=".SDKApplication"
+      android:theme="@style/UnityThemeSelector"
+      android:icon="@mipmap/app_icon"
+      android:label="@string/app_name">
+    <activity
+        android:exported="true"
+        android:label="@string/app_name"
+        android:screenOrientation="portrait"
+        android:launchMode="singleTask"
+        android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale|layoutDirection|density"
+        android:hardwareAccelerated="false"
+        android:name=".MyActivity">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+      <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
+      <meta-data android:name="FN_MAIN_ACTIVITY" android:value="true" />
+    </activity>
+
+    <!-- 微信登录配置 -->
+    <activity
+        android:name=".wxapi.WXEntryActivity"
+        android:launchMode="singleTask"
+        android:taskAffinity="${applicationId}"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar"
+        android:configChanges="keyboardHidden|orientation|screenSize"
+        android:exported="true"
+        />
+    <activity
+        android:name=".wxapi.WXPayEntryActivity"
+        android:theme="@android:style/Theme.NoDisplay"
+        android:exported="true"
+        android:launchMode="singleTop"
+        />
+    <!--与Galaxy S8类似的屏幕处理-->
+    <meta-data android:name="android.max_aspect" android:value="2.1" />
+    <meta-data android:name="unity.build-id" android:value="1afbbf35-2ab9-4ccc-a2f7-14f24d05d118" />
+    <meta-data android:name="unity.splash-mode" android:value="2" />
+    <meta-data android:name="unity.splash-enable" android:value="True" />
+    <!-- 微信登录appid -->
+    <meta-data android:name="FN_APP_ID" android:value="wx06361fdb0dae556a" /> <!--  appid是微信的appid，在对接文档中获取-->
+    <meta-data android:name="FN_LOGIN_METHOD" android:value="WX|TEL" />
+    <!-- 渠道标识 TT -->
+    <meta-data android:name="FN_CHANNEL_ID" android:value="TT" />
+    <!-- 环境配置 -->
+    <meta-data android:name="FN_CGI_PREFIX" android:value="https://mprogram.boomegg.cn" />
+    <!--隐私协议网址：需要和运营同学沟通游戏所在主体商户，然后选择隐私协议网址 -->
+    <meta-data android:name="FN_PRIVACY_URL" android:value="https://mprogram.boomegg.cn/html/agreement/home.html?id=qckj" />
+    <meta-data android:name="FN_TT_APP_ID" android:value="396408" />
+    <meta-data android:name="FN_TT_CHANNEL_ID" android:value="toutiao" />
+  </application>
+  <uses-feature android:glEsVersion="0x00020000" />
+  <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+  <uses-feature android:name="android.hardware.location" android:required="false" />
+  <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
+  <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+  <uses-feature android:name="android.hardware.touchscreen.multitouch" android:required="false" />
+  <uses-feature android:name="android.hardware.touchscreen.multitouch.distinct" android:required="false" />
+
+  <!-- 权限部分 -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+</manifest>

@@ -1,0 +1,48 @@
+package com.ljsd.jieling.protocols.worldchat;
+
+option optimize_for = SPEED;
+
+
+// request 编号需要小于 response 编号
+
+import "CommonProto.proto";
+import "ChatProto.proto";
+
+
+message RegGameInfoRequest {
+   optional int32 serverID = 1; 
+   optional string serverInfo = 2; 
+}
+
+message DelGameInfoRequest {
+    optional int32 serverID = 1; 
+}
+ 
+
+message RegGameInfoResponse{
+	optional string ip = 1;
+	optional string port = 2;
+	optional int32 group =3;//分组 全服唯一worldId*10000+index；
+}
+
+message GetWorldChatMessageInfoRequest {
+    optional int32 chatType = 1; // 类型 0:系统 1:世界 2:公会 3 好友
+    optional uint64 messageId = 2; //消息号
+}
+
+message GetWorldChatMessageInfoResponse {
+    repeated ChatInfo chatInfo = 1;
+}
+
+message SendWorldChatInfoRequest {
+    optional ChatInfo chatInfo = 1; // 类型1:世界 2:公会 3 好友
+}
+
+message SendWorldChatInfoResponse {
+    optional ChatInfo chatInfo = 1;
+    optional int64 messageId = 2;
+}
+
+message ChatSendStatus {
+    optional int32 status = 1; 
+ }

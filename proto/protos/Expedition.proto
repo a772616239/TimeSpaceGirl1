@@ -1,0 +1,165 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+	
+	//获取节点信息
+	message GetExpeditionRequest{
+		optional int32 leve = 1;  //阶段id 
+	}
+	
+	message GetExpeditionResponse{
+		repeated ExpeditionNodeInfo nodeInfo = 1; //节点信息
+		repeated ExpeditionSimpleHeroInfo heroInfo = 2;//己方英雄信息
+		repeated int32 lay = 3;//领取过奖励的id
+		repeated ExpeditionEquip equipIds = 4;
+		repeated Hero heroList = 5;//招募的英雄
+		repeated Equip equip =6;//装备
+		repeated Equip soulEquip =7;//宝器
+		optional int32 startTime = 8;//猎妖开启时间
+		 
+	}
+
+	message TakeExpeditionBoxRewardRequest{
+		optional int32 laycfg = 1;  //层配置id  //更改为节点id
+	}
+
+	
+	message TakeExpeditionBoxRewardResponse{
+		optional Drop drop = 1;
+		repeated int32 leve = 2;  //阶段id  3层的时候有困难和普通两个 
+	} 
+	
+
+	message ReliveExpeditionHeroRequest{
+		optional string heroId = 1; //复活英雄id
+		optional int32 nodeId = 2; //节点信息 -1使用道具恢复
+	}
+	
+	message ReliveExpeditionHeroResponse{
+		optional ExpeditionSimpleHeroInfo heroInfo =1;//复活的英雄信息
+	}
+
+	message ReCoverExpeditionHeroRequest{
+		optional int32 nodeId = 1;//节点信息
+	}
+	message ReCoverExpeditionHeroResponse{
+		repeated ExpeditionSimpleHeroInfo heroInfo =1;//恢复的英雄信息
+	}
+	
+	
+	//开始战斗
+	message StartExpeditionBattleRequest{
+		optional int32 nodeId = 1; //节点id 
+		optional int32 teamId = 2;  //队伍id
+	}
+	
+	message StartExpeditionBattleResponse {
+		// 战斗属性
+		optional FightData fightData = 1;
+	}
+	
+	
+	message EndExpeditionBattleRequest{
+		optional int32 nodeId = 1; //节点id 
+		optional string frames = 2;// 战斗序列帧 14#1#0|14#1#0|14#1#0|...|14#1#0
+	}
+	
+	message EndExpeditionBattleResponse {
+		//战斗结果
+		optional int32 result = 1;
+		optional Drop drop = 2; 
+	}
+
+	
+	message EndConfirmExpeditionBattleRequest{
+		optional int32 nodeId = 1; //节点id 
+	}
+	
+	message EndConfirmExpeditionBattleResponse {
+
+	}
+	
+	
+	message TakeHolyEquipRequest{
+		optional int32 nodeId = 1; //节点id 
+		optional int32 type = 2;  //获取类型
+	}
+
+	//会先推送一下 临时背包信息
+	message TakeHolyEquipResponse{
+		optional string equipId = 1; 
+	} 
+	
+	//增量
+	message ExpeditionEquipIndication {
+		repeated ExpeditionEquip equipIds = 1;
+	}
+	
+	message ExpeditionNodeInfoIndication {
+		repeated ExpeditionNodeInfo nodeInfo = 1;
+		repeated ExpeditionSimpleHeroInfo heroInfo = 2;//己方英雄信息
+	}
+	
+	
+	message  ExpeditionTakeTreasureRequest{
+		optional int32 id = 1; // 领取奖励id -1表示点击全部领取
+	}
+	
+	message  ExpeditionTakeTreasureResponse{
+		optional Drop drop =1;
+	}
+	
+	message TreasureRewardState{
+		optional int32 id =1;//任务id
+		optional int32 state = 2;//状态 0 未领取 1 已领取 -1 完美领取（充钱领取过的）
+	}
+	
+	message TreasureStateIndicaion{
+		optional int32 score =1 ;
+		repeated TreasureRewardState treasureRewardState=2;
+		optional int32 resetTime = 3;
+	}
+	message ExpeditionTreasureInfoResponse{
+		optional int32 score =1 ;
+		repeated TreasureRewardState treasureRewardState=2;
+		optional int32 resetTime = 3;
+	}
+	
+	message StoreNodeRequest{
+		optional int32 nodeId =1;//节点id -1 放弃节点
+	}
+	
+	message StoreNodeResponse{
+	}
+	
+	
+	message HeroNodeGetInfoRequest{
+		optional int32 nodeId =1;//招募节点
+	}
+	
+	message HeroNodeGetInfoResponse{
+		repeated ViewHeroInfo viewHeroInfo =1;
+	}
+	
+	message HeroNodeRequest{
+		optional int32 nodeId =1;//招募节点
+		optional string heroId =2;//招募英雄id
+	}
+	
+	message HeroNodeResponse{
+		optional Drop drop =1;
+	}
+	
+
+	message ExpeditionResetIndication { //猎妖重置
+		repeated ExpeditionNodeInfo nodeInfo = 1; //节点信息
+		repeated ExpeditionSimpleHeroInfo heroInfo = 2;//己方英雄信息
+		repeated int32 rewardids = 3;//领取过奖励的id
+		repeated ExpeditionEquip equipIds = 4;//圣物
+		repeated string removesHeroIds = 5;//移除援助的英雄
+	}
+	
+	

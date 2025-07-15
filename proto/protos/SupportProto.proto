@@ -1,0 +1,55 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+
+    message GetSupportInfosRequest{
+	}
+	message GetSupportInfosResponse{
+		repeated SupportInfo supportInfo = 1;
+        optional SupportDate supportDate = 2;
+	}
+    message GetSupportLevelUpRequest{
+		optional int32 type = 1;//1单次2一键
+	}
+	message GetSupportLevelUpResponse{
+	    optional int32 supportId = 1;
+	    optional int32 exp = 2;
+	    optional int32 hp = 3;
+	    optional int32 att = 4;
+	    optional int32 level = 5;
+	}
+    message GetSupportSkillUpRequest{
+        optional int32 supportId = 1;
+	}
+	message GetSupportSkillUpResponse{
+	    optional int32 result = 1;
+	}
+    message GetSupportRefineUpRequest{
+	}
+	message GetSupportRefineUpResponse{
+	    optional int32 result = 1;
+	}
+    message GetSupportSoulUpRequest{
+        optional int32 count = 1;
+	}
+	message GetSupportSoulUpResponse{
+	    optional int32 result = 1;
+	}
+    message GetSupportActiveRequest{
+    }
+    message GetSupportActiveResponse{
+        optional int32 supportId = 1;
+        repeated UserMissionInfo userMissionInfo = 2;
+    }
+    message GetSupportListRequest{
+	}
+	message GetSupportListResponse{
+		repeated SupportInfo supportInfo = 1;
+	}
+
+	
+
+	

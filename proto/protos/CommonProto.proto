@@ -1,0 +1,1168 @@
+
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+// 嵌套的proto 必须在当前 proto 之前声明
+message EmptyMessage {
+  // nothing
+}
+	message ErrorResponse{
+		optional int32  errCode =1 ; // 错误码，默认为0，-1 读errMSg ，其他的读配置
+		optional string errMsg =2 ; // 错误信息
+		repeated string errParams =3; //错误参数
+	}
+
+	message Player{
+		optional int32 uid = 1;
+		optional string nickName = 2;
+		optional int32 level = 3;
+		optional int64 exp = 4;
+		optional int32 vipLevel = 5;
+		optional int32 familyId = 6;
+		optional int32 head = 7;
+		optional int32 curMapId = 8;
+
+		optional int32 energy = 9; //精力
+		optional int32 lastUpdateEnergyTime = 10 ;// 上次更新精力时间，-1 代表在队伍中，不需要进行定时恢复。
+
+		optional int32 serverTime = 11; //服务器时间
+
+		optional int32 maxForce = 12 ;//最大战力
+
+		optional double saveAmt = 13 ;//累计充值
+		optional int32 rechargeTime = 14;//首次充值时间
+		optional int32 isFirstRecharge = 15; // 是否首冲
+		optional int32 isMatchRoom = 16; //是否在请求匹配
+		optional int32 curRoomType = 17 ;//当前房间类型（0不在房间里 1血战）
+		optional int32 headFrame = 18;//当前头像框
+		optional string roomAddreess = 19 ; // 房间地址信息（空 代表未匹配 “1”代表匹配中，其他是房间服务器地址信息（ip+“：” + port）形式）
+		optional int32 designation = 20;//称号
+		optional int32 decrotion = 21;//皮肤
+		optional int32 ride = 22;//坐骑
+		optional int32 rideLevel = 23;//坐骑等级
+		optional int32 sex = 24;//玩家性别 0男1女
+	}
+
+	 message Privilege{
+	 	optional int32 id =1; //特权id
+	 	optional int32 usedTimes = 2;//特权使用次数（如果有没有使用次数限制，传0）
+		optional int32 effectTime = 3;//有效时间
+	 }
+
+
+	message Item{
+		optional int32 itemId = 1;
+		optional int64 itemNum = 2;
+		optional int32 endingTime = 3;
+		optional int32 nextFlushTime = 4; //下次刷新时间 0 不刷新
+	}
+
+
+	message SpecialEffects{
+		optional int32 propertyId = 1; 
+		optional int64 propertyValue = 2;
+	}
+
+	message Property {
+        optional int32 id = 1;//属性id
+        optional int32 value = 2;//属性值
+    }
+
+	message Equip{
+		optional string id = 1; 
+		optional int32 equipId = 2;
+		optional SpecialEffects mainAttribute = 3;
+		repeated SpecialEffects secondAttribute = 4;
+		optional int32 rebuildLevel = 5; //重铸等级（对应宝器精炼等级）
+		optional int32 createTime = 6;//入手时间
+		optional int32 skillId = 7;//装备附带技能
+		optional int32 isLocked = 8; //是否被锁定 1：被锁定 0:未锁定
+		optional int32 exp = 9; //字段可选 魂印传入经验（对应宝器强化等级）
+	}
+
+	message SoulPos{
+		optional int32 equipId =1 ; //装备id
+		optional int32 position= 2; //卡槽位置
+	}
+	
+	message CombatPlanSlot{
+		optional int32 position = 1;//位置
+		optional string planId = 2;//作战方案ID
+		optional int32 confPlanId = 3;//表ID
+	}
+	
+	message Suit{
+		optional int32 suitId = 1;//套装ID
+		optional int32 num = 2;//数量
+	}
+
+	message Medal{
+		optional string id = 1;
+		optional int32 medalId = 2;
+		optional int32 suitId = 3;//套装ID
+		repeated Property property = 4;//固定属性
+		repeated Property myRandomProperty=5;//随机属性
+		optional int32 position = 6;//装备的位置
+		optional int32 refineAttrNum = 7;//洗练次数
+	}
+
+	message AdjustUnLock{
+	    optional int32 position = 1;         //位置1，2，3，4
+	    optional int32 isUnLock = 2;         //-1未解锁，0已解锁，>0已升级
+	}
+
+	message PositionSkills{
+         optional int32 position = 1;        //栏目：1，2，3，4，5
+         optional int32 skillId = 2;         //激活的技能ID
+     }
+
+	message Hero{
+		optional string id = 1;
+		optional int32 heroId = 2;
+		optional int32 level = 3;
+		optional int32 breakId = 4;
+		optional int32 star = 5;
+		optional int32 skinId = 6;	
+
+		repeated int32 equipIdList = 8;
+		
+		optional int32 createTime = 9; //入手时间
+		optional int32 starBreakId = 10 ;//升星对应的breakId
+		
+		optional int32 especialEquipLevel = 11;//所穿戴法宝等级
+		repeated SoulPos soulPos = 12;//魂印
+		optional int32 lockState = 13;// 上锁状态 1 ：上锁 0：未上锁
+		repeated string jewels = 14;//宝器
+		optional int32 createtype  = 15;//创建类型 1猎妖援助
+		optional int32 changeId = 16;//置换模板id 默认0
+		optional int32 warWaySlot1 = 17;
+		optional int32 warWaySlot2 = 18;
+
+		optional double remainHp = 19;//剩余血量
+		
+		repeated CombatPlanSlot combatPlans = 20;//穿戴的作战方案
+		
+		repeated Medal medal = 21;
+
+		repeated Suit suit = 22;//套装效果
+
+		repeated AdjustUnLock AdjustUnLock = 23;       //解锁列表 -- 部件调校（铸魂）
+
+		repeated PositionSkills positionSkills = 24;       //特性（天赋） 激活的技能Id
+
+		optional int32 totemId = 25;            //使用的 图腾ID
+	}
+	
+
+	message FightUnitInfo {
+		optional string unitId = 1;//单位静态id
+		optional string unitSkillIds = 2;//点技#滑技#被动技能1#被动技能2#被动技能3....
+		optional string property = 3;//1#2390#2390#169#271#95#176#0#0#0.3#0.15#0.3#1.5#1#0.05#0#0#0#0#0#0.05#0#0#0#0#0
+		optional int32 position = 4; // 位置
+		optional int32 star = 5; // 星级
+        optional int32 camp =6; //敌我阵营
+        optional int32 round = 7; //回合数
+	}
+	
+	message MotherShipPlan{
+		optional string id=1;//战机ID
+		optional int32 cfgId=2;//战机表ID
+		optional int32 sort=3;//穿戴顺序
+		optional string leaderSkill=4;    //主角技能表
+	}
+	
+	message MotherShipInfo {
+		optional int32 id =1;//航母ID
+		optional string property = 2;//航母属性
+		repeated MotherShipPlan plan = 3;//战机
+		optional int32 unlockSkillSize = 4;  //解锁技能数量
+	}
+
+	message FightTeamInfo {
+		repeated FightUnitInfo fightUnitList = 1;
+		optional string teamSkillList = 2;//异妖（队伍技能）技能1#技能2#技能3
+		optional string teamPassiveList = 3 ; //异妖被动技能
+		optional string specialPassive = 4; // 特殊标记（猎妖之路 圣物被动情况）
+		optional int32 firstCamp = 5;//出手优先级 0默认我方先出
+		optional int32 useSupportId = 6;//使用的支援
+		optional int32 supportSkillLevel = 7;//支援技能等级
+		optional int32 useAdjutantId = 8;//使用的副官
+		optional int32 adjutantSkillLevel = 9;//副官技能等级
+		optional MotherShipInfo motherShipInfo = 10;//航母
+		optional FightUnitInfo substitute = 11;//替补
+	}
+
+
+	message EventBehaviorValues{
+		repeated int32 behaviorValues = 1;
+	}
+	// 事件行为结果
+	message EventBehaviorCommon{
+		// 行为类型
+		optional int32 behaviorType = 1; 
+		// 行为参数
+		repeated EventBehaviorValues eventBehaviorValues = 2;
+	}
+
+
+
+	// 地图每个格子的信息
+	message Cell{
+		// 格子id
+		optional int32 cellId = 1;
+		// mapPointConfig id
+		optional int32 pointId = 2;
+		optional int32 monsterForce = 3;
+	}
+
+
+	message Mission{
+		optional int32 itemId = 1;
+		optional string state = 2;
+		optional int32 missionStep = 3;
+		// 完成任务所用时间（秒）
+		optional int32 time = 4;  
+		optional int32 deadTimes = 5; //已死亡次数
+	}
+
+
+	message Mail{
+		optional string mailId = 1;
+		optional int32 state = 2; //0:未读 1:已读取 2: 未领取 3 已领取
+		optional string head = 3;
+		optional string content = 4;
+		optional string mailItem = 5;  //附件 
+		optional int32 sendTime = 6;
+		optional int32 effectiveTime = 7; // 秒 0:永久有效
+		optional string sendName = 8 ; //发送者名字
+		optional int32 mailType = 9; //邮件类型 1:系统邮件 2:idip 业务邮件
+		repeated string mailparam = 10; //内容参数
+		repeated string mailtitleparam = 11; //内容参数
+
+	}
+	
+
+	message CombatPlan{
+		optional string id = 1;
+		optional int32 combatPlanId = 2;
+		repeated Property property = 3;
+		repeated int32 skill = 4;
+		optional int32 quality = 5;
+		optional int32 isLocked = 6;
+		optional int32 promotionLevel = 7;
+	}
+
+	message Drop{
+		repeated Item itemlist = 1;
+		repeated Equip equipId = 2;
+		repeated Hero Hero = 3;
+		repeated Equip soulEquip =4;//魂印（法宝不再掉落，魂印改为4，注意修改）
+		repeated CombatPlan plan = 5;//作战方案
+		repeated Medal medal = 6;//勋章
+		repeated MotherShipPlan motherShipPlan=7;//战机
+		repeated int32 title=8;//称号ID
+	}
+
+	message GMCommand{
+		optional string command =1 ;	// 指令字符串  type#prarm1#param2
+	}
+	message TeamHeroInfo{
+		optional int32 position =1;
+		optional string heroId = 2;
+	}
+
+	message TeamPokemonInfo{
+		optional int32 position =1;
+		optional int32 pokemonId = 2;
+	}
+
+	message TeamPosInfo{
+		optional int32 teamId = 1; //第几编队
+		optional string teamName =2; //编码名称
+		repeated TeamHeroInfo teamHeroInfos = 3; //队伍英雄id
+		repeated TeamPokemonInfo teamPokemonInfos = 4; // 异妖id
+		optional int32 formationId = 5; //阵型
+		optional int32 supportId = 6; //支援id
+		optional int32 adjutantId = 7; //副官id
+		optional string substitute = 8;//替补heroId
+	}
+
+	message Pokemoncomonpent{
+		optional int32 id =1;
+		optional int32 level =2;
+	}
+
+	message PokemonInfo{
+		optional int32 id = 1; //异妖id
+		optional int32 stage =2; //异妖进阶阶数
+		repeated Pokemoncomonpent pokemoncomonpent =3; //组件信息
+	}
+
+	message RingFireInfo{
+		optional int32 id = 1; //天赋异妖id
+		optional int32 stage =2; //天赋异妖进阶阶数
+		repeated int32 comonpentId=3; //天赋当前阶级组件id 
+	}
+
+	message WorkShopBaseInfo{
+		optional int32 type =1; // 1: 工坊 2：百味居
+		optional int32 levle =2 ;
+		optional int32 exp =3;
+	}
+	message WorkShopUnLockInfo{
+		optional int32 type =1 ; // 类型 1： 基础锻造 2： 装备打造
+		repeated int32 id =4 ; // 蓝图已经解锁的id
+	}
+
+	message FightData {
+		// 战斗属性
+		optional FightTeamInfo heroFightInfos = 1;
+		// 怪物属性
+		repeated FightTeamInfo monsterList = 2;
+		//战斗随机种子
+		optional int32 fightSeed = 3;
+		optional int32 fightMaxTime =4; //战斗最长时间	
+		optional int32 fightType = 5 ; // 战斗类型
+		repeated FightUnitInfo temporaryUnit = 6;
+	}
+
+	message ExploreDetail{
+		optional int32 id =1; 
+		optional int32 progress =2 ; //进度
+	}
+
+	message FoodBuffer {
+		optional int32 bufferId = 1;
+		optional int32 leftStep = 2;
+	}
+
+	message NewPlayerGuidePoint{
+		optional int32 type = 1;
+		optional int32 id =2;
+	}
+
+	message LevelDifficulty{
+		optional int32 fightId = 1;
+		optional int32 state = 2; //2 已开启 3:已打过未通过，=4：已通过
+		optional int32 num = 3;
+		optional int32 type = 4; //1:简单 2:中等 3:困难
+	}
+
+	message LevelDifficultyInfos{
+		optional int32 areaId = 1;
+		repeated LevelDifficulty LevelDifficulty = 2;
+	}
+
+	// 副本信息
+	message MapInfo {
+		optional int32 mapId = 1;
+		// 最少时间
+		optional int32 leastTime = 2;
+		// 所得星数 (1:完成任务 2:时间小于指定时间 3:100% 探索度)
+		repeated int32 stars = 3;
+	}
+
+	 message ActivityInfo{
+		message MissionInfo{
+			required int32 missionId = 1;	//任务ID
+			required int32 progress = 2;	//任务进度
+			required int32 state = 3;		//任务状态，0：未领奖，1：已领奖 -1：领取花费奖励
+			
+		}
+        required int32 activityId = 1;   	// 活动id
+        repeated MissionInfo mission = 2;  	// 任务信息
+		optional int32 value = 6;            //活动记录值
+        optional int32 startTime = 5;   		// 任务开始时间
+        optional int32 endTime = 3;   		// 活动结束时间
+        optional int32 reallyOpen = 4; // 0:假开启 1：真开启
+    }
+
+    message GmResponse{
+		optional Drop drop =1; 
+		optional string info =2;
+	}
+
+	message ArenaPersonInfo{
+		optional int32 uid = 1;
+		optional int32 level =2;
+		optional string name =3;
+		optional int32 score = 4;
+		optional int32 head =5;
+		optional int32 rank =6; //排名
+		optional int32 totalForce =7;
+		optional int32 headFrame = 8;
+		optional int32 likeNums = 9;//竞技场被点赞数
+		optional int32 heroId=10;//最强战力的坦克
+		optional int32 formationId = 11;//阵型id
+		optional string servername = 12;//服务器名称
+		optional int32 serverid = 13;//服务器id
+		optional int32 investigateLevel = 14;   //号角等级
+		optional string guildName = 15;   //公会名称
+	}
+
+
+	message Team{
+		repeated int32 heroTid =1;
+	}
+
+	message Title{
+	    optional int32 id = 1;
+	    optional int64 insert_datatime = 2;
+	}
+
+	message ArenaEnemy{
+		optional ArenaPersonInfo personInfo =1;
+		optional Team team =2; //队伍展示信息
+		optional Title title = 3;   //称号
+		optional int32 worshipTime = 4;//膜拜次数
+		optional bool hadProud= 5;//我是否膜拜
+	}
+
+
+	message ArenaInfo{
+		optional int32 failNums =1;
+		optional int32 successNums =2;
+		optional int32 score = 3;
+		repeated ArenaEnemy arenaEnemys = 4; //对手信息
+		repeated int32 hadTakeBox = 5;
+	}
+
+	message StoreItem{
+		optional int32 id = 1; // StoreConfig id
+		optional int32 buyNum = 2; //购买次数
+	}
+
+
+	message StoreInfo{
+		optional int32 id = 1;
+		optional int64 lastRefreshTime =2; //上次刷新时间 
+		optional int64 startTime = 4;// 开始时间
+		optional int64 endTime = 5;// 开始时间
+		repeated StoreItem storeItem = 6; //商店物品
+	}
+
+	message ArenaRecordInfo{
+		optional string id=1;//唯一标识
+		optional ArenaPersonInfo attackInfo =2 ;//  进攻者信息
+		optional int32 attackTime =3 ; //进攻时间
+		optional int32 myScoreChange =4 ;// 我的分数变化值
+		optional int32 fightResult = 5; // 战斗结果
+		optional ArenaPersonInfo defenseInfo =6 ;//  防守者信息
+	}
+
+
+	message FunctionOfTime{
+		optional int32 functionId =1; //功能id
+		optional int32 startTime =2; //开始时间
+		optional int32 endTime = 3; //结束时间
+		optional int32 interval = 4; //间隔时间 0：代表不是周期
+	}
+
+	message AdventureRankItemInfo{
+		optional int32 level =1;
+		optional string name =2;
+		optional int32 hurt = 3; //伤害值
+		optional int32 head =4;
+		optional int32 rank =5; //排名
+		optional int32 headFrame = 6; // 头像框
+		optional int32 uid = 7;
+	}
+
+	message AdventureBossInfo{
+		optional int32 arenaId =1; // boss出现区域号
+		optional int32 findUid =2; //发现者uid
+		optional string findName =3 ; //发现者姓名
+		optional string bossId =4; //boss 唯一标识
+		optional int32 bossGroupId =5; 
+		optional int32 myHurt = 6; //我对boss造成伤害
+		optional int32 levelTime = 7;
+		optional int64 totalHp =8; //boss总血量
+		optional int64 bossRemainlHp =9; //boss剩余血量
+		optional int32 arenaLevel = 10; //区域等级
+	}
+
+
+	message UserMissionInfo{
+		optional int32 missionId =1;
+		optional int32 progress =2; //进度
+		optional int32 state = 3; //0:未完成 1：完成未领取 2：已达成（已领取）
+		optional int32 type =4 ;// 任务类型 1：vip任务 2：每日任务 3:功绩 4： 孙龙的宝藏任务
+		optional int32 takeTimes = 5;//  领取次数
+		repeated string heroId = 6;//所派遣的英雄（迷宫寻宝专用）
+	}
+
+	message VipBaseInfo{
+		optional int32 vipLevel =1; //vip等级
+		repeated  int32 hadTakeLevelBox = 2 ;//是否购买特权等级礼包 1：已购买 0：未购买
+		optional int32 hadTakeDailyBox = 3;//是否领取vip每日礼包
+	}
+
+	message Friend {
+		optional int32 id = 1;//好友的id
+		optional string name=2;//名字
+		optional int32 lv=3;//等级
+		optional uint64 offLineTime=4;//离线时间   0表示在线
+		optional int32 haveReward=5;// 是否有体力可以领取   0: 没有 1:有
+		optional int32 isGive = 6; // 是否赠送过体力  0: 否 ,1:是 
+		optional int32 isApplyed = 7;//是否已经申请过
+		optional int32 head = 12; // 新头像
+		optional int32 frame = 13; // 头像框
+		optional int32 soulVal = 14;	// 战斗力
+        optional int32 titleId = 15;	// 称号
+	}
+	message GiftGoodsInfo{
+		optional int32 goodsId =1;//商品id
+		optional int32 buyTimes= 2; //购买次数
+		optional int32 startTime = 3;//开始时间
+		optional int32 endTime = 4; //结束时间
+		optional int32 dynamicBuyTimes= 5; //可购买次数
+
+	}
+
+	message GoodsTypeDuration{
+		optional int32 goodsType = 1;// 已购买商品类型
+		optional int32 endTime = 2 ;//结束时间
+	}
+
+	message TechnologyInfo{
+		optional int32 techId =1; //科技点
+		optional int32 levle =2;//等级
+	}
+
+	message SuddenlyBossInfo{
+		optional int32 suddBossId = 6; // 精英怪怪物组id 没有为0
+		optional int32 endTime = 7; //消失时间
+		optional int32 findMapId=8; //出现地图id
+	}
+
+	message ItemInfo{
+        optional int32 templateId = 1;//模板ID
+        optional int64 overlap = 2;//堆叠数量
+        optional int32 nextRefreshTime =3; //下次刷新时间
+    }
+
+	message RankInfo{
+		optional int32 rank = 1;
+		optional int64 param1 = 2;
+		optional int32 param2 = 3;
+		optional int32 param3 = 4;
+	}
+	
+	message UserRank{
+		optional int32 uid = 1;
+		optional int32 level = 2;
+		optional int32 head = 3;
+		optional string userName = 4;
+		optional RankInfo rankInfo = 5;
+		optional int32 headFrame = 6;//头像框
+		optional string guildName = 7;//公会名称
+		optional int32 force = 8;//战力
+		optional int32 guildSign = 9 ;//公会图腾
+		optional int32 sex = 10;//性别
+		optional int32 likeNum = 11;//被点赞数
+		optional string serverName = 12;//所在区服
+		optional int32 serverId = 13;//serverId
+		optional int32 heroTemplateId = 14;//
+		optional int32 heroLevel = 15;//英雄等级
+		optional int32 heroStar = 16;//英雄星级
+	}
+	
+
+
+	
+	message ActorEffectBufferInfo{
+		optional int32 id = 1;//buffer id 
+		optional int32 type = 2; //bufffer类型
+		optional int32 startTime =3; // buffer 开始时间
+		optional int32 endTime =4;//buffer 失效时间
+		optional int32 target = 5 ;// buffer 作用对象id
+		optional int32 caster = 6;// 释放者
+		repeated int32 value = 7; // buffer 作用效果值
+	}
+
+	message BloodyHeroInfo {
+		optional string heroId = 1;
+		optional int64 heroHp = 2;
+		optional int64 heroMaxHp =3;
+		optional int32 heroTid = 4;
+	}
+
+	message SceneMsg{
+		optional int32 time = 1 ;//发生时间
+		optional string msg = 2 ;// 场景消息
+	}
+
+	//地图点散落的矿石信息
+	message PosMineral{
+		optional int32 pos = 1;// 坐标点
+		optional int32 nums = 2; //数量
+	}
+
+	message Creature{
+		repeated int32 path = 1; //行走路径
+		optional int32 speed =2;//  速度
+		optional int64 maxHp =3; //最大血量
+		optional int64 curHp =4;// 当前血量
+		optional int32 mineral = 5; // 矿石
+		optional int32 camp = 6; //阵营
+		repeated BloodyHeroInfo heroInfo = 7 ; // 英雄信息
+		optional int32 killNums=8; // 击杀数
+	}
+
+	message SceneActor{
+		optional int32 id=1; //id 唯一标识
+		optional int32 curPos = 2;//当前位置
+		optional int32 state = 3; //当前状态 1 ： 不可移动 0 ： 可移动
+		optional int32 type =4 ;// 演员类型  1 玩家  2 怪物 3 矿点 4 npc
+		optional Creature Creature = 6 ;//动作演员信息
+		optional string userName =  7; //玩家名称（只有玩家才有）
+	}
+
+
+
+	message SceneInfo{
+		optional int32 roomId = 1;// 唯一标识
+		optional int32 mapId = 2; //场景所属地图id
+		repeated SceneActor SceneActor =3;//场景中的演员信息
+		repeated ActorEffectBufferInfo actorEffectBufferInfo =4;//场景中所有buffer信息
+		repeated int32 barrierPoint = 5 ;// 阻挡点
+		repeated PosMineral posMineral = 6;// 散落的矿石信息
+		optional int32 remainTime = 7 ; //剩余时间
+	}
+
+	message SceneGetFullMsgResponse{
+		optional SceneInfo sceneInfo =1 ;// 场景信息
+	}
+	
+	message blessReward{
+		//云梦活动
+		optional int32 locationId = 1;
+		optional int32 state = 2;
+		optional int32 rewardId = 3;
+	}
+	
+	//5点自动重置试炼
+	message fiveResetTowerInfo{
+		optional int32 tower = 1;//试炼层数
+		optional int32 intoType = 2;//可进入标识
+	}
+
+	message FamilyContribute{
+		optional int32 win  = 1;
+		optional int32 draw = 2;
+		optional int32 fail = 3;
+	}
+	message FamilyBaseInfo{
+		optional int32 id =1; // 公会id
+		optional string name = 2 ; //  公会名称
+		optional string annouce =3 ; // 公会宣言
+		optional int32 levle = 4 ; //等级
+		optional int32 exp = 5;         //公会经验
+		optional int32 totalNum =6; //总共人数
+		optional int32 maxNum = 7 ;// 最大人数
+		optional int32 joinType = 8;	//加入类型 1:直接加入 2:申请加入 3:禁止加入 
+		optional int32 icon = 9;   // 公会图标
+		optional int32 levelTime=10; //解散公会开始时间
+		optional FamilyContribute fightResult = 11;//公会战战绩
+		optional int32 playerIntoLevel = 12;//加入等級限制 
+		optional int32 fete = 13; //祭祀进度
+	}
+	
+	//无尽副本英雄信息
+	message endlessHero{
+		optional string heroId = 1; //英雄Id
+		optional double hp = 2;//英雄血量百分比
+	}
+
+	//无尽副本地图点刷新时间信息
+	message EndlessRefreshInfo{
+		optional int32 cellId = 1;
+		optional int32 time = 2;
+	}
+	//战力排行
+	message UseForceInfo{
+		optional string name = 1;
+		optional int32 leve = 2; 
+		optional int32 force = 3; 
+		optional int32 rank =4;
+		optional int32 head =5;
+		optional int32 headFrame =6;
+		optional int32 uid = 7;
+	}
+
+	//无尽副本标志信息
+	message endlessSign{
+		optional int32 mapId = 1;
+		optional int32 cellId = 2;
+		optional string info = 3;
+		optional int32 type = 4;//1为设置标记、2为删除标记
+	}
+	
+	//达人排行
+	message ExpertInfo{
+		optional string name = 1;
+		optional int32 score = 2; 
+		optional int32 rank =3;
+		optional int32 level =4;
+		optional int32 head =5;
+		optional int32 headFrame =6;
+	}
+	
+	message SignInInfo{
+		optional int32 days = 1; //签到的天数
+		optional int32 state = 2;//今日是否领取 
+	}
+
+	message TeamSimpleInfo{
+		optional string heroid = 1;
+		optional int32 heroTid = 2;
+		optional int32 star = 3;
+		optional int32 level =4;
+		optional int32 position=5;
+		optional double remainHp = 6;//剩余血量百分比
+	}
+	
+	message TeamOneTeamInfo{
+        repeated TeamSimpleInfo team =1;
+		repeated int32 PokemonInfos = 2;
+		optional int32 totalForce=3;
+		repeated double remainHp = 4;//剩余血量百分比
+		optional int32 formationId = 5;//阵型id
+	}
+	//第一编队信息
+message TeamOneInfo{
+		optional int32 uid = 1;
+		optional int32 level =2;
+		optional string name =3;
+		optional int32 head =4;
+		optional int32 headFrame = 5;
+		optional string guildName =7;               //公会名称
+		optional TeamOneTeamInfo team = 6;
+		optional int32 isApplyed = 8;               //是否已经申请过
+		optional int32 teamFormation = 9;           //阵型
+		optional MotherShipInfo motherShipInfo = 10;//航母信息
+		optional int32 adjutantId = 11;             //副官id
+		optional int32 adjutantlevel = 12;          //副官技能等级
+		optional int32 investigateLevel = 13;       //号角等级
+		optional int32  supportId = 14;             //X1守护/坦克支援
+		optional int32 vip = 15;                    //VIP
+		optional string substitute = 16;            //替补heroId
+		optional bool showVip = 17;	                //VIP显示
+		optional int32 substituteTid = 18;   	    //替补模板ID
+		optional int32 substituteLevel = 19;	    //替补等级
+		optional int32 substituteStar = 20;	        //替补星级
+	}
+	
+	//妖兽排行
+	message MonsterRankInfo{
+		optional string name = 1;
+		optional int32 score = 2; 
+		optional int32 rank =3;
+		optional int32 level =4;
+		optional int32 head =5;
+		optional int32 headFrame =6;
+		optional int32 uid = 7;
+	}
+	//英雄血量信息
+	message HeroBloodInfo{
+		optional string heroId = 1;
+		optional int32 lostBlood = 2;//已损失血量百分比
+	}
+	//无尽副本信息
+	message EndlessInfo{
+		optional int32 mapId = 1;
+		optional int32 worldLevel = 2;
+		optional int32 bloodScore = 3;
+	}
+
+	message PlayerBindPhone{
+		optional string phoneNum = 1;
+		optional int32 state = 2;//本月绑定状态 0 未绑定 1已绑定未领奖 2已领奖
+	}
+	//无尽副本小地图点信息
+	message EndlessPoint{
+		optional int32 location = 1;
+		optional int32 monsterId = 2;
+	}
+	//我要变强英雄信息
+	message StrongerInfo{
+		optional int32 curScore = 1;
+		optional int32 maxScore = 2;
+	}
+	
+	message QuestionOptions{
+		optional string content = 1; //问题描述
+		optional int32 type = 2; //单选0 多选1 填空2
+		repeated string options =3;//选项描述 
+		optional int32 answerType = 4; //必选0 可选1
+	}
+	//血战基本信息
+	message BloodPersonInfo{
+		optional int32 id = 1;
+		optional string name = 2;
+		optional int32 headFrame = 3;
+		optional int32 head = 4;
+		optional int32 serverId =5;
+		optional int32 level = 6;
+		optional int32 rank = 7;
+		optional int32 score = 8;
+	}
+	
+	message LuckWheelRewardPosInfo{
+		optional int32 pos = 1;
+		optional int32 luckId = 2;//配置表id
+		optional int32 luckTimes = 3;//中奖数
+	}
+	message RefreshTask{
+		optional int32 type = 1;//任务类型 1、每日 2、每周 3、每周期（每月）
+		repeated UserMissionInfo tasks = 2;
+		optional int32 refreshTime = 3; 
+	}
+
+	message MainLevelRankInfo{
+		optional int32 uid = 1;
+		optional int32 level =2;
+		optional string name =3;
+		optional int32 fightId = 4;
+		optional int32 head =5;
+		optional int32 rank =6; //排名
+		optional int32 totalForce =7;
+		optional int32 headFrame = 8;
+	}
+
+
+	message ChampionBetInfo{
+		optional string id = 1;
+		optional int32 redCoins = 2 ;//红方赌注
+		optional int32 blueCoins = 3; //蓝方
+	}
+
+	message ChampionBattleInfo {
+		optional TeamOneInfo myInfo = 1; //我的信息
+		optional TeamOneInfo enemyInfo = 2; //对手信息
+		optional int32 result = 3;
+		optional FightData fightData =4;//战斗数据
+	}
+
+	message ChampionBattlePairInfo{
+		optional TeamOneInfo attackInfo = 1; //我的信息
+		optional TeamOneInfo defInfo = 2; //对手信息
+		optional int32 fightResult = 3 ;// 进攻者战斗结果
+		optional string id =4;// 唯一标识 用于请求战斗回放
+		optional int32 roundTImes =5;//第几场
+		optional int32 teamId=6 ;// 第几组
+		optional int32 position = 7; //位置 1 2 3 4 一次从左到右
+		optional int32  isGUess= 8; //是否是当前竞猜信息，0 否 1 是
+	}
+	message RedPackage{
+		optional string userName = 1;
+		optional int32 redId = 2;//红包Id
+		optional int32 isGet = 3; //本人是否已领取过
+		optional int32 getCount = 4;//已领取个数
+		optional int32 redType = 5;//红包类型Id,对应表中ID
+		optional int32 sendTime = 6;//发送时间
+	}
+	message RedOneDetail{
+		optional int32 uid = 1;
+		optional int32 head = 2;
+		optional int32 headFrame = 3;
+		optional string name =4;
+		optional int32 time = 5;
+		optional int32 count = 6;
+		optional int32 itemId = 7;
+		optional int32 position = 8;//公会职位
+	}
+	
+	message ExpeditionSimpleBossInfo{
+		optional int32 heroTid = 1;//英雄模板id
+		optional int32 star = 2;
+		optional int32 level =3;
+		optional double remainHp =4;//剩余血量
+	}
+	
+	message ExpeditionTeamInfo{
+        repeated ExpeditionSimpleBossInfo hero =1;
+		repeated int32 PokemonInfos = 2;
+		optional int32 totalForce=3;
+		optional int32 teamInfo=4;//节点属性 招募试炼节点为怪物组id
+	}
+
+	//猎妖之路节点信息
+	message ExpeditionNodeInfo{
+		optional int32 sortId = 1;//节点id
+		optional int32 lay = 2;//节点层
+		optional int32 type = 3;//节点类型 //1 //精英节点2;//首领节点3;//复活节点4;//回复节点5;//普通节点
+		optional ExpeditionTeamInfo bossTeaminfo = 4;//节点队伍信息
+		optional int32 state = 5;////节点状态 0未开启 1未通过 2未领取圣物 3已完成 4已通过
+		repeated int32 holyEquipID = 6;//圣物id
+	}
+	
+	
+	message ExpeditionSimpleHeroInfo{
+		optional string heroId = 1;//英雄id
+		optional double remainHp =2;//剩余血量
+	}
+	
+	message ExpeditionEquip{
+		optional string id = 1; 
+		optional int32 equiptId = 2;
+	}
+	
+	message MonthCardInfo{
+		optional int32 id = 1; 
+		optional int32 endingTime = 2;
+		optional int32 state = 3;//1已领取 0未领取
+		optional double totleAmt = 4;//当前累计金额
+	}
+	
+	message CarGrapRecordItem{
+		optional int32 time =1;
+		optional int32 uid =2;
+		optional string content = 3;
+		
+	}
+	
+	message GuildHelpInfo{
+		optional int32 type =1;//阵营
+		optional int32 num =2;	// 碎片数量
+		optional int32 hadtakenum =3; //已领取
+	}
+	
+	message GuildHelpLog{
+		optional int32 helperuid =1;
+		optional int32 targetuid =2;
+		optional string helpername =3;
+		optional string targetname =4;
+		optional int32 type =5;//阵营
+		optional int32 time =6;//时间秒
+	}
+	
+	
+	message ViewHeroInfo{
+		optional Hero hero =1;
+		repeated Equip equip =2; // 英雄所穿装备、魂印（法宝不在内，放在Hero中）
+		repeated SpecialEffects SpecialEffects = 3;//属性信息
+		optional int32 force = 4 ; //战力
+	}
+	
+	message EveryHeroHandBook{
+		optional int32 heroId = 1;
+		//optional int32 maxStar = 2;
+		optional int32 status = 2;//领取状态，1已领，0未领
+	}
+	message SituationInfo {
+		optional int32 id = 1;
+		optional int32 overTime = 2;
+		optional int32 passId = 3;//已通关的id
+	}
+
+	message FightRePlayPopupData{
+        optional string playName =1; // 玩家名字
+		optional FightData fightData =2; //战斗数据
+        optional int32 playTime =3; // 所用时间
+        optional int32 headId =4; //头像id
+        optional int32 curFormationIndex =5; //战力
+        optional int32 dataID =6; // 数据id
+        optional int32 headFrame =7; // 头像框
+        optional int32 formationId =8; // 阵型id
+        optional int32 investigateLevel = 9;   //号角等级
+	}
+
+    message SupportInfo {
+        optional int32 supportId = 1;
+        optional int32 openStatus = 2;
+        optional int32 skillLevel = 3;
+    }
+
+    message SupportDate {
+        optional int32 level = 1;
+        optional int32 exp = 2;
+        optional int32 hp = 3;
+        optional int32 att = 4;
+        optional int32 refineLevel = 5;
+        optional int32 soulNum = 6;
+		optional bool isactive =7; //是否激活
+    }
+
+	message ModuleProperty {
+        optional int32 id = 1;//模块id,1,2,3,4
+        repeated Property property = 2;//属性
+    }
+
+	message General {
+        optional int32 id = 1;
+        optional int32 level = 2;
+        optional int32 exp = 3;
+        optional int32 rankUpLevel = 4;
+        optional ModuleProperty moduleProperty = 5;
+    }
+
+    message VirtualBattleCount {
+        optional int32 type = 1;
+        optional int32 count = 2;//剩余次数
+        optional int32 hasBuyCount = 3;//已经购买过的次数
+    }
+
+    message VirtualStarList {
+        optional int32 fightId = 1;
+        repeated int32 star = 2;
+    }
+
+	message VirtualEliteBoss {
+        optional string username = 1;
+		optional int32 head = 2;
+		optional int32 fightId = 3;
+		optional int32 viplevel = 4; 
+		optional TeamOneInfo teamInfo = 5;
+    }
+
+    message TankInfo {
+        optional string tankId = 1;
+        optional double remainHp = 2;
+    }
+
+    message FriendSupport{
+        optional int32 uid = 1;
+        optional string name = 2;
+        optional Hero tank = 3;
+    }
+
+    //玩家福利红包
+	message WelfareRedPacket{
+		optional int32 id = 1;
+		optional int32 num = 2;
+	}
+
+	message JourneyInfo {
+		optional int32 mapId = 1;
+		optional int32 process =2;
+		optional int32 redPoint = 3;
+		optional int32 first = 4;//没拿过首通是0 拿过是1
+	}
+	message JourneyMonsterInfo{
+		optional int32 monsterId = 1;
+		optional int32 monsterIndex = 2;
+		optional int64 monsterHp = 3;//所有怪物血量加和
+		optional int32 remainTime = 4;
+		optional int32 attackNum = 5;//已经攻击的次数
+		optional int32 rewardShow = 6;
+	}
+	message JourneyGoodsInfo{
+		optional int32 goodsId = 1;
+		optional int32 goodsIndex = 2;
+		optional int32 remainTime = 3;
+	}
+	// 地图每个格子的信息
+	message JourneyCell{
+		// 格子id
+		optional int32 cellId = 1;
+		// mapPointConfig id
+		optional int32 pointId = 2;
+		optional int32 cellIndex = 3;
+		optional int32 rewardId = 4;
+	}
+
+	message BattleMissionInfo{
+		optional int32 missionId = 1;	//任务ID
+		optional int32 takTime = 2;	 //领取时间
+		optional int32 viptakTime = 3;	 //领取时间
+	}
+
+	message RandomRequest{
+		optional int32 sex = 1;//0 全随机，1男，2女
+	}
+	message BattlePassInfoResponse{
+		optional int32 pross = 1;
+		repeated BattleMissionInfo info=2;
+    }
+
+	message GetBattlePassRewardRequest{
+		optional int32 missionId = 1;
+		optional int32 getType=2;//领取类型 1 普通，2特权，3 一键
+    }
+
+	message GetBattlePassRewardResponse{
+		optional Drop drop =1;//普通类型掉落
+		optional Drop vipdrop =2;//特殊类型掉落
+    }
+	
+	message RankingInfo{
+		optional int32 id = 1;//任务ID
+		optional int32 uid = 2;
+		optional int32 level = 3;
+		optional string name = 4;
+		optional int32 head = 5;
+		optional int32 rank = 6; //排名
+		optional int32 headFrame = 7;
+		optional int64 time = 8;//上榜时间
+	}
+
+	message HeroLuxury{
+		optional int32 id = 1;//表WishTaskRewardConfig的Id
+		optional int32 freeStatus = 2;  //免费礼包状态； 0不能领取，1可领取，2已领取
+	}
+	
+ // 阵营简要信息
+	 message CampSimpleInfo
+	 {
+		 optional int32 camp = 1; //阵营
+		 optional int32 totalNum = 2; //阵营总人数
+		 optional int32 totalFight = 3; //阵营总战力
+		 optional int32 totalScore = 4; //阵营总积分
+	 }
+	 message FightEntry{
+		optional int32 teamId = 1;
+		optional int32 fight = 2;
+	}
+
+// 用户简要信息
+	message UserSimpleInfo
+	{
+		optional int32 serverId = 1;
+		optional int32 userId = 2;
+		optional int32 headIcon = 3;
+		optional int32 headFrame = 4;
+		optional string nickName = 5;
+		repeated FightEntry fightMap = 6; // teamId -> fight
+		optional int32 camp = 7; //混乱之治阵营
+		optional int32 level = 8;
+	}
+	// 混乱之治玩家信息
+	message CampWarPlayerInfo
+	{
+	   optional UserSimpleInfo userSimpleInfo = 1;
+	   optional int32 score = 2;
+	   optional int32 fightResult = 3;// 挑战结果
+	   optional int32 changeScore = 4;//变更的积分
+	   optional CampWarBattleRecord battleRecord = 5;//战报
+	}
+	// 混乱之治战报信息
+	message CampWarBattleRecord
+	{
+		optional string battleRecordId = 1; //战报id
+		optional int64 createTime = 2;	//生成时间
+		optional int32 attackerUser = 3; //进攻方
+		optional int32 defenderUser = 4; //防守方
+		optional int32 winnerUser = 5; //胜利方userid
+		optional int32 changeScore = 6; //变更的积分 胜利方增加对应积分  失败方扣除对应积分
+		optional FightData fightData = 7; //战斗数据
+		// 选择的星数
+		optional int32 star = 8;
+	}
+	// 混乱之治排行榜玩家信息
+	message CampWarRankingListPlayerInfo
+	{
+		optional UserSimpleInfo userSimpleInfo = 1;
+		optional int32 score = 2;
+		optional int32 rank = 3;
+	}
+
+	// 混乱之治排行榜信息
+	message CampWarRankingListInfo
+	{
+		repeated CampWarRankingListPlayerInfo top100 = 1; //top100
+		optional int32 selfScore = 2; //自己的分数
+		optional int32 selfRank = 3; //自己的排名
+		optional int32 selfFight = 4; //自己的战力
+	}

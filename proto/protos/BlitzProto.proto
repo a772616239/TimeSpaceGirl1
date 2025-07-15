@@ -1,0 +1,76 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+
+	message BlitzInfoRequest{
+	}
+	message BlitzInfoResponse{
+	    optional int32 difficultyLevel = 1;//难度
+        repeated int32 historyAllPassStatus = 2;//历史通关状态，固定3个，分别是 普通 困难 噩梦  1代表全通关过，0未
+	}
+
+    message BlitzTypeInfoRequest{
+    }
+    message BlitzTypeInfoResponse{
+        optional int32 fightId = 1;//多少关
+        repeated int32 boxAwardedProgress = 2;//宝箱领取进度
+        repeated Item todayRewardedTotal = 3;//今日共获得奖励
+        optional int32 todayReviveCount = 4;//复活次数
+    }
+    //关卡界面信息
+    message BlitzLevelInfoRequest{
+    }
+    message BlitzLevelInfoResponse{
+        optional TeamOneInfo teamOneInfo = 1;//敌方队伍数据
+    }
+
+
+	message BlitzShareTankToFriendRequest{
+        optional int32 heroId = 1;
+	}
+	message BlitzShareTankToFriendResponse{
+
+	}
+
+    message BlitzUseTankFromFriendRequest{
+        optional int32 friendId = 1;
+        optional string heroId = 2;
+    }
+    message BlitzUseTankFromFriendResponse{
+
+    }
+
+	message BlitzReviveTankRequest{
+        repeated string heroId = 1;
+	}
+	message BlitzReviveTankResponse{
+
+	}
+
+	message BlitzChooseDifficultyRequest{
+        optional int32 typeId = 1;
+	}
+	message BlitzChooseDifficultyResponse{
+        optional Drop drop = 1;
+	}
+    
+	message BlitzGetBoxAwardRequest{
+        optional int32 fightId = 1;
+	}
+	message BlitzGetBoxAwardResponse{
+         optional Drop drop = 1;
+	}
+
+	message GetBlitzAllTankInfoRequest {
+	}
+    message GetBlitzAllTankInfoResponse {
+        repeated TankInfo tankInfo = 1;
+    }
+
+
+	
+
+	

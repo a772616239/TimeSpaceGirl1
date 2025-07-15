@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.ilod.projecta" xmlns:tools="http://schemas.android.com/tools" android:installLocation="auto">
+  <supports-screens android:smallScreens="true" android:normalScreens="true" android:largeScreens="true" android:xlargeScreens="true" android:anyDensity="true" />
+
+  <!-- targetSdkVersion 30 일때 원스토어 관련 패치 [Start] -->
+  <queries>
+    <intent>
+      <action android:name="com.onestore.ipc.iap.IapService.ACTION" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="onestore" />
+    </intent>
+  </queries>
+  <!-- targetSdkVersion 30 일때 원스토어 관련 패치 [End] -->
+
+  <!--设置为在没有通话功能的设备（平板电脑等）上也可从商店下载-->
+  <uses-feature android:name="android.hardware.telephony" android:required="false" />
+  <!--设置为没有麦克风的设备上也可从商店下载支持语音聊天的游戏-->
+  <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+  <application android:usesCleartextTraffic="true" android:theme="@style/UnityThemeSelector" android:icon="@mipmap/app_icon" android:label="@string/app_name" android:name="androidx.multidex.MultiDexApplication" android:allowBackup="false" tools:replace="android:allowBackup">
+    <activity android:label="@string/app_name" android:exported="true" android:screenOrientation="portrait" android:launchMode="singleTask" android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale|layoutDirection|density" android:hardwareAccelerated="false" android:name=".MyActivity" android:resizeableActivity="false">>
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+      <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
+    </activity>
+    <meta-data android:name="unity.build-id" android:value="3be4fa84-c161-47e3-be83-73f51193d9d7" />
+    <meta-data android:name="unity.splash-mode" android:value="2" />
+    <meta-data android:name="unity.splash-enable" android:value="True" />
+
+    <service
+      android:exported="false"
+      android:name="io.gamepot.common.GamePotFCMIDService">
+    <intent-filter>
+      <action android:name="com.google.firebase.INSTANCE_ID_EVENT"/>
+    </intent-filter>
+    </service>
+    <service
+        android:exported="false"
+        android:name="io.gamepot.common.GamePotFCMService">
+      <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+      </intent-filter>
+    </service>
+
+    <!--与Galaxy S8类似的屏幕处理-->
+    <meta-data android:name="android.max_aspect" android:value="2.1" />
+  </application>
+  <uses-feature android:glEsVersion="0x00020000" />
+<!--  <uses-permission android:name="android.permission.INTERNET" />-->
+<!--  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />-->
+<!--  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />-->
+  <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+  <uses-feature android:name="android.hardware.location" android:required="false" />
+  <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
+  <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+  <uses-feature android:name="android.hardware.touchscreen.multitouch" android:required="false" />
+  <uses-feature android:name="android.hardware.touchscreen.multitouch.distinct" android:required="false" />
+</manifest>

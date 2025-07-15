@@ -1,0 +1,57 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+	
+	message RoomGameStartRequest{
+		//时间戳，用户客户端修正因网络延时引起的误差，是否使用由实现机制决定，暂时保留
+		optional int64 clientTimestamp = 1;  		
+	}
+	message RoomGameStartResponse{ 
+		optional int64 clientTimestamp = 1;		//请求中的时间戳，原值返回
+		optional int64 serverTimestamp = 2;		//服务器端时间戳		
+		
+		// 探索地图剩余时间（秒）
+		optional int32 leftTime = 3;
+	}
+	
+	message RoomGameEndIndication{
+		optional int32 roomId = 1; 
+		
+	}
+	message RoomSyncMyselfMoveRequest{ 
+		optional int64 clientTimestamp = 1;		//请求中的时间戳，原值返回
+		repeated int32 tartXYs = 2;		//向目标点移动时，最终的寻路格子坐标
+	}
+	message RoomSyncMyselfMoveResponse{ 
+		optional int64 clientTimestamp = 1;		//请求中的时间戳，原值返回
+		optional int64 serverTimestamp = 2;		//服务器端时间戳
+	}
+
+	message RoomSyncOtherMoveIndiction{
+		optional int32 uid = 1;
+		//先同步给其他客户端，是客户端模拟走路还是服务器端模拟，依据测试结果确定
+		repeated int32 tartXYs = 2;
+	}
+	
+	message RoomTriggerFightIndication{
+		//参与战斗的用户ID
+		optional int32 bluePlayer = 1;
+		optional int32 bluecurHp = 2; //当前血量
+		optional int32 redPlayer = 3 ;//
+		optional int32 redcurHp = 4; //
+		optional int32 fightResult = 5;//战斗结果 0：平局 1：红方胜利 2 ：蓝方胜利
+	}
+
+	message RoomMapUpdateEventRequest{
+		optional int32 eventType = 1 ;// 1 战斗 2 采矿
+		optional int32 triggerXY = 2 ; //触发事件点坐标位置
+	}
+
+	message RoomMapPointIndication{
+		optional int32 eventType = 1 ;// 1 战斗 2 采矿 10： 暂停
+		optional int32 triggerXY = 2 ; //触发事件点坐标位置  
+		optional int32 player = 3;//占据该坐标玩家uid
+	}
+	

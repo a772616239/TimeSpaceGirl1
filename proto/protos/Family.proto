@@ -1,0 +1,706 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+  message FamilyUserInfo{
+        required int32 roleUid = 1;     //玩家ID
+        required string userName = 2;   //玩家名称
+        required int32 userLevel = 3;   //玩家等级
+    	required int32 position = 4; 	//公会职位   1:会长 2:管理员 3:一般成员
+    	required int32 contribute = 5;  //贡献
+    	optional int32 seconds = 6;     //距离上一次登陆时间, 0在线 , > 0 距离上次登录时间 秒
+        optional int32 contributeToday = 7;//今日贡献
+        optional int32 soulForce = 8;   // 战斗力
+        optional int32 head = 9;        // 新头像
+        optional int32 frame = 10;      // 头像框
+        optional int32 maxBossHurt = 11; // 历史最高伤害
+        optional int32 lastHurt = 12 ;// 上次伤害
+		repeated int32 takeFeteReward =13 ; // 祭祀领取进度
+		optional int32 lastFeteGuildId =14 ; // 上次祭祀公会id 
+		optional int32 lastFeteType =15 ; // 上次祭祀类型 //每日清除 5点推送
+		optional int32 guildHelpTime =16 ; // 已经援助次数 //每日清除 5点推送
+		optional bool  isTakeGuildHelpReward = 17; //是否领取公会奖励
+		repeated GuildHelpInfo guildHelpInfo = 18;//求援信息 每日清除 5点推送
+		optional int32 lastHelpSendTime =19 ; // 求援信息发送时间
+		optional int32 guildActiveLevel = 20;//联盟活跃等级
+		optional int32 guildActiveRewardProgress = 21;//联盟活跃奖励领取进度
+        optional int32 guildActiveNumToday = 22;//联盟活跃今日获得
+        optional int32 guildActiveNumWeek = 23;//联盟活跃周获得
+    }
+	
+	
+	message CarDelayProgressIndication{
+		optional int32 progress = 1; //阶段 -1：未开 1 ： 挑战 2：抢夺
+		optional int32 endTime = 2; //结束时间
+		optional int32 bossIndexId = 3; //boss索引id
+		optional int32 battleStartTime = 4 ;// 挑战boss开启时间
+		optional int32 grabStartTime = 5 ;// 抢夺开启时间
+	}
+
+	message CarChallengeProgressIndication{
+		optional int32 progress = 1; //阶段 -1：未开 1 ： 挑战
+		optional int32 endTime = 2; //结束时间
+		optional int32 bossIndexId = 3; //boss索引id
+		optional int32 battleStartTime = 4 ;// 挑战boss开启时间
+		optional int64 totalHurt = 5;//全服累计伤害
+	}
+
+
+    message FamilyLogInfo{
+        optional string name = 1;   //玩家名称
+    	optional string info = 2;	//log内容
+    	optional int32 time = 3;	//记录时间
+    	repeated string guildparam = 4;	//记录时间
+    }
+
+    message FamilyWalkIndicaiton{
+		repeated int32 path =1 ; // 行走路线
+		optional int32 curPos = 2 ;  // 位置
+		optional int32 uid = 3 ;//玩家uid
+		optional string name =4; // 玩家名称
+		optional int32 gender =5;// 性别
+	}
+
+    message FamilyApply{
+        optional string name = 1;   // 玩家名称
+        optional int32 roleUid = 2; // 申请人ID
+        optional int32 time = 3;    // 申请时间
+        optional int32 frame = 4; //头像框
+        optional int32 outTime = 5; // 离线时间长（秒） 0表示在线
+        optional int32 level = 6;
+        optional int32 foreces = 7;  // 灵魂力
+		optional int32 head = 8;//玩家头像
+    }
+
+
+     message FamilyNoticeInfo {
+        required string guildNotice = 1;// 公会公告
+        required int32 updateTime = 2;  // 修改公告时间
+        repeated int32 steps = 3;       // 踩公告的玩家
+        repeated int32 adminres = 4;    // 赞公告的玩家
+        required int32 hasNew = 5;      // 1：有新字
+    }
+
+    message FamilyRecomandInfo{
+    	optional FamilyBaseInfo  familyBaseInfo =1;
+    	optional int32 isApply = 2 ;//是否申请过 0：未申请 1：已申请
+    }
+	
+	message FamilyDefendInfo{
+		optional int32 uid = 1;
+		optional int32 starCount = 2;
+		optional int32 buildId = 3; //1、公会主城2、公会商店3、公会图腾
+		optional int32 curForce=4;//战斗力
+	}
+	
+	message FamilyBuildBuffInfo{
+		optional int32 buildId = 1;
+		repeated int32 buffId = 2;
+	}
+	
+	message FamilyFightPlayerInfo{
+		optional FamilyUserInfo userInfo = 1;
+		optional int32 starCount = 2;
+		optional int32 buildId = 3; //1、公会主城2、公会商店3、公会图腾
+	}
+	
+	//对战信息
+	message FamilyFightInfo{
+		optional int32 gid = 1;
+		repeated FamilyBuildBuffInfo buildBuff = 2;
+		repeated FamilyFightPlayerInfo user = 3;
+	}
+
+    message GetFamilyInfoResponse{
+		optional FamilyBaseInfo  familyBaseInfo =1; // 公会信息
+		optional FamilyUserInfo familyUserInfo =2; // 个人信息
+		repeated FamilyWalkIndicaiton familyWalkIndicaiton =3;// 玩家走路信息
+		optional int32 guildBossId = 4; // 当前工会bossId 0表示功能暂时关闭
+		optional CarDelayProgressIndication carDelayProgressIndication = 5 ;// 车迟玩法时间信息
+		optional int32 carPlayTime = 6;//车迟上次玩的时间
+    }
+
+
+	message FamilyCreateReqeust{
+		optional string name = 1 ; //公会名称
+		optional string announce  =2 ; // 公会宣言
+		optional int32 channelId = 3;   //渠道Id,区分不同的语言版本，限制字符不同
+	}
+
+	message FamilyCreateResponse{
+		optional FamilyBaseInfo  familyBaseInfo =1; // 公会信息
+		optional FamilyUserInfo familyUserInfo =2; // 个人信息
+		optional FamilyWalkIndicaiton familyWalkIndicaiton =3;// 玩家走路信息
+	}
+
+
+	message FamilySearchReqeust{
+		optional string name = 1 ;// 要搜素的公会名称
+	}
+
+	message FamilySeachResponse{
+		repeated FamilyRecomandInfo familyRecomandInfo =1;
+	}
+
+	message FamilyApplyRequest{
+		repeated int32 familyId  = 1; //申请family 
+	}
+
+
+	//申请成功 推送成功加入公会信息
+	message FamilyJoinIndicaion{
+		optional FamilyBaseInfo  familyBaseInfo =1;
+		optional FamilyUserInfo familyUserInfo =2; // 个人信息
+	}
+
+	message FamilyJoinRequest{
+	  optional int32 familyId = 1 ;// 要进入公会的id
+	}
+
+	message FamilyJoinResponse{
+	  optional FamilyJoinIndicaion familyJoinIndicaion =1;
+	}
+
+
+	message FamilyRecommandResponse{
+		repeated FamilyRecomandInfo  familyRecomandInfo =1;
+	}
+
+
+
+	//获取公会成员信息
+	message GetFamilyMemberInfoResponse{
+		repeated FamilyUserInfo familyUserInfo =1 ;
+	}
+
+	//获取公会日志信息
+	message GetFamilyLogResponse{
+		repeated FamilyLogInfo familyLogInfo =1;
+	}
+
+	//获取公会申请信息
+	message GetFamilyApplyResponse{
+		repeated FamilyApply familyApply =1;
+	}
+
+    //操作申请列表
+	message FamilyOperationApplyRequest{
+		optional int32 type = 1; // 操作类型 1：全部同意 2 全部拒绝 3 同意一个 4 拒绝一个
+		optional int32 applyId = 2;
+	}
+
+	// 公会踢人
+	message FamilyKickOutRequest{
+		optional int32 targetUid = 1; // 被踢的人
+	}
+
+	message FamilyAppointmentReqeust{
+		optional int32 targetUid = 1; //被委任的人
+		optional int32 position = 2; 	//公会职位   1:会长 2:管理员 3:一般成员
+	}
+
+
+
+	//职位变更
+	message FamilyPositionUpdateIndication{
+		optional int32 position = 1; //公会职位  
+		optional int32 uid = 2; //公会人员id
+		
+	}
+
+
+	message FamilyChangeRequest{
+		optional int32 type = 1;//0为修改公会名，1为修改公会宣言
+		optional string content = 2; // 宣言内容
+		optional int32 channelId = 3;   //渠道Id,区分不同的语言版本，限制字符不同
+	}
+
+
+	message FamilyChangeResponse{
+		optional int32  result = 1 ;// 结果 0： 失败 1：成功
+		optional string err = 2 ; // 错误信息
+	}
+
+	message FamilyChangeJoinTypeRequest{
+		optional int32 type =1; // //加入类型 1:直接加入 2:申请加入 3:禁止加入 
+		optional int32 intoLevel = 2;
+	}
+
+	//公会基本信息变更推送
+	message FamilyChangeIndication{
+		optional FamilyBaseInfo  familyBaseInfo =1;
+	}
+
+
+	//转让会长
+	message FamilyChairmanChangeRequest{
+		optional int32 targetUid = 1 ;//要被转让的人
+	}
+
+   //解散公会和取消
+	message FamilyDissolutionRequest{
+		optional int32 type =1 ;//操作类型 1 ：解散公会 2 ： 取消解散公会
+	}
+	//查看当前布防信息
+	message FamilyDefendViewResponse{
+		repeated FamilyDefendInfo info = 1;
+		
+	}
+	//查看布防具体信息
+	message FamilyDefendDetailViewRequest{
+		optional int32 playerId = 1;
+		optional int32 gid = 2;
+	}
+	message FamilyDefendDetailViewResponse{
+		optional TeamOneTeamInfo teamInfo = 1;
+	}
+	//一键布防、调整布防
+	message FamilyQuickDefendRequest{
+		optional int32 buildId = 1;//0为随机
+		optional int32 uid= 2;//调整自己为自己的id，调整其他人为其他人id
+	}
+
+
+	message FamilyWalkRequest{
+		repeated int32 path =1;// 行走路线
+	}
+	//公会战对战信息
+	message FamilyFightInfoResponse{
+		repeated FamilyFightInfo info=1;
+	}
+	//敌方公会信息
+	message EnemyFamily{
+		optional int32 id = 1;
+		optional string name = 2;
+		optional int32 level = 3;
+		optional int32 pictureId = 4;
+		optional int32 totalStar = 5;
+		optional int32 myTotalStar =6;
+	}
+	//公会战阶段信息
+	message FamilyFightRoundResponse{
+		optional int32 type = 1;
+		optional int32 startTime = 2;
+		optional int32 roundStartTime = 3;
+		optional int32 roundEndTime =4;
+		optional int32 joinType = 5;//所在公会是否进入本次公会战
+		optional EnemyFamily enemy =6;//敌方公会信息
+		optional int32 attackCount = 7;//已攻击次数
+	}
+	message FamilyFightAttackRequest{
+		//进攻用户的Id
+		optional int32 attackUid =  1;
+		optional int32 gid = 2;
+	}
+	message FamilyFightAttackResponse{
+		//进攻用户的Id
+		optional int32 result = 1;
+		optional int32 starCount = 2;
+		optional FightData data =3;
+	}
+	
+	message PersonalFightResult{
+		optional int32 rank = 1;
+		optional int32 uid = 2;
+		optional string name = 3;
+		optional int32 head = 4;
+		optional int32 headFrame = 5;
+		optional int32 position = 6;
+		optional int32 attackCount = 7;
+		optional int32 starCount = 8;
+	}
+	message PersonalFightResultRequest{
+		optional int32 type = 1;//0为己方；1为敌方进攻日志
+	}
+	//公会战个人战绩
+	message PersonalFightResultResponse{
+		repeated PersonalFightResult result = 1;
+	}
+	//公会战总战绩
+	message GuildFightResultResponse{
+		optional int32 getExp = 1;
+		repeated int32 star = 2;//1、2、3我方获得 4、5、6我方失去
+		repeated int32 extraStar = 3;
+		optional int32 level = 4;
+		optional int32 curExp = 5;
+	}
+	//战斗后星数indication
+	message DefeatResponse{
+		optional int32 uid = 1;
+		optional int32 teamLostStar= 2;
+	}
+	//修改工会图腾
+	message ChangeIconRequest{
+		optional int32 iconId = 1;
+	}
+	//获取进攻英雄
+	message GetAttackHeroBloodResponse{
+		repeated HeroBloodInfo blood = 1;
+	}	
+
+	message RefuseJoinFamily{
+		optional string name  = 1;
+	}
+	//踢出玩家给indication
+	message KickOutIndication{
+		optional int32 uid = 1;
+	}
+	//获取所有红包信息
+	message GetAllRedPackageResponse{
+		repeated RedPackage info = 1;
+	}
+	//抢红包
+	message RobRedPackageRequest{
+		optional int32 id = 1;
+	}
+	
+	message RobRedPackageResponse{
+		optional int32 isSuccess = 1;
+		optional int32 itemId = 2;
+		optional int32 count = 3;
+	}
+	
+	//查看红包详情
+	message RedPackageDetailRequest{
+		optional int32 id = 1;
+	}
+	message RedPackageDetailResponse{
+		repeated RedOneDetail info = 1;
+		optional int32 remainTime = 2;
+		optional string sendName = 3;
+		optional int32 head = 4;
+		optional int32 headFrame = 5;
+	}
+	message RedPackageLikeRequest{
+		optional int32 uid = 1;
+	}
+	message GetAllSendLikeResponse{
+		repeated int32 uid = 1;
+	}
+	message GuildSkill{
+		optional int32 type = 1;
+		optional int32 level = 2;
+	}
+	
+	//获取所有公会技能
+	message GetAllGuildSkillResponse{
+		repeated GuildSkill skill = 1;
+	}
+	
+	
+	//公会技能升级
+	message GuildSkillLevelUpRequest{
+		optional int32 type = 1;
+	}
+	
+	//公会技能重置
+	message ResetGuildSkillRequest{
+		optional int32 type = 1;
+	}
+	
+	message ResetGuildSkillResponse{
+		optional Drop drop = 1;
+	}
+	
+	message CarChallengeItem{
+		optional int32 uid = 1;
+		optional string userName =2;
+		optional int32 force =3;
+		optional string guildName = 4;
+		optional int32 score = 5;
+		optional int32 hadChallenge =6; // 是否已挑战过，1：表示挑战过，2：未挑战过。
+		optional int32 rank = 7;
+		repeated TeamSimpleInfo teamInfo = 8;
+	}
+	
+	message GetCarChallenegListResponse{
+		repeated CarChallengeItem carChallengeItem = 1;
+		optional int32 myRank = 2; //我的排名
+		optional int32 myScore = 3 ;//我的积分
+	}
+
+	message FamilyFeteRequest{
+		optional int32 type = 1; //献祭类型
+	}
+	
+	message FamilyFeteResponse{
+		optional Drop drop = 1;
+		optional int32 curExp = 2;  //经验
+
+	}
+	
+	message FamilyGetFeteRewardRequest{
+		optional int32 id = 1; //进度id
+	}
+	message FamilyGetFeteRewardResponse{
+		optional Drop drop = 1;
+	}
+	
+	message FamilyFeteRewardProcessIndication{
+		optional int32 score = 1;  //公会祭祀进度
+	}
+	
+	message DeathPathInfo{
+		optional int32 pathId = 1;
+		optional string guildName = 2;
+		optional int32 gid = 3;
+		optional string serverName = 4;
+	}
+	message GetDeathPathInfoResponse{
+		optional int64 overTime = 1;            //活动结束时间，剩余时间
+		optional int32 challengeCount = 2;      //已挑战次数
+		optional int32 buyCount = 3;            //购买次数
+		repeated DeathPathInfo infos = 4;
+		optional int32 typeID = 5;              //类型Id,0=单服公会战，1=跨服公会战
+		repeated ServerInfo serverInfo = 6;      //同组服务器Id
+	}
+	message ServerInfo{
+		optional int32 serverId = 1;    //服务器Id
+		optional string serverName = 2;  //服务器名称
+	}
+	message CarGrapRecordResponse{
+		repeated CarGrapRecordItem carChallengeItem = 1;
+	}
+	
+	message DeathPathStatusChangeIndication{
+		optional int32 status = 1;//0未开启；1开启；2 领奖阶段
+	}
+	message DeathPathFirstChangeIndication{
+		optional DeathPathInfo changeInfo = 1;
+	}
+	//购买公会战挑战次数
+   	 message DeathPathBuyCountRequest{
+   	 }
+	message DeathPathBuyCountResponse{
+		optional int32 battleCount = 1;//挑战次数
+		optional int32 battleBuyCount = 2;//购买次数
+	}
+
+	//获取公会战状态信息 请求
+	message GetDeathPathStatusRequest{
+	}
+	message GetDeathPathStatusResponse{
+		optional int32 status = 1;//0未开启；1开启；2 领奖阶段
+		optional int32 allowChallange = 2;//1允许挑战 0开启时加入本次不许挑战
+	}
+
+	//挑战公会战 请求
+	message ChallengeDeathPathRequest{
+		optional int32 pathId = 1;
+	}
+	message ChallengeDeathPathResponse{
+		optional FightData fightData = 1;
+		optional int32 damage = 2;
+		optional Drop drop = 3;
+		optional int32 historyMax = 4;//历史最高伤害
+	}
+	
+	//获取所有宝箱信息 请求
+	message GetAllDeathPathRewardInfoRequest{
+   	 }	
+
+	message GetAllDeathPathRewardInfoResponse{
+		repeated RewardInfo info = 1;
+	}
+
+	message RewardInfo{
+    	optional int32 uid = 1;
+    	repeated Item items = 2;
+    	optional int32 position = 3;
+    	optional string username = 4;
+    }
+
+	//十绝阵领宝箱 请求
+	message DoRewardDeathPathRequest{
+		optional int32 position = 1;
+	}
+	message DoRewardDeathPathResponse{
+		optional Drop drop = 1;
+	}
+
+	//十绝阵领宝箱 推送公会其他玩家
+	message DoRewardIndication{
+		optional RewardInfo info = 1;
+	}
+
+	//公会战玩家总伤害排行 请求
+    message DeathPathTotalPersonRankRequest{
+    }
+    message DeathPathTotalPersonRankResponse{
+    	repeated DeathPathTotalPersonRankInfo rankInfo = 1;
+    }
+
+	message DeathPathTotalPersonRankInfo{
+		optional int32 rank = 1;            //排名
+		optional int32 userId = 2;          //用户ID
+		optional string username = 3;       //名字
+		optional int64 score = 4;           //伤害值
+		optional int32 head = 5;            //头像
+		optional int32 headFrame = 6;       //头像框
+		optional int32 serverId = 7;         //服务器Id
+		optional string serverName = 8;     //服务器名称
+	}
+	
+	//公会战当前阵玩家伤害排行 请求
+    message DeathPathPersonRankRequest{
+        optional int32 pathId = 1;  //当前阵Id
+        optional int32 type = 2;    //1=个人排行，2=公会排行，3=本会排行
+    }
+    message DeathPathPersonRankResponse{
+    	repeated DeathPathTotalPersonRankInfo rankInfo = 1;
+    }
+
+	//公会战自己公会排行第几名 请求
+    message DeathPathSelfGuildRankRequest{
+    }
+    message DeathPathSelfGuildRankResponse{
+    	optional int32 rank = 1;
+    }
+
+	//公会战 当前阵 第一名修改推送
+	message DeathPathCurFirstChangeIndication{
+    	optional DeathPathInfo changeInfo = 1;
+    }
+
+	//十个阵，当前公会占领排行 请求
+    message DeathPathCurGuildCountRankRequest{
+    }
+    message DeathPathCurGuildCountRankResponse{
+    	repeated DeathPathCurGuildCountRankInfo rankInfo = 1;
+    }
+	
+    message DeathPathCurGuildCountRankInfo{
+        optional int32 rank = 1;            //排名
+        optional int32 guildId = 2;          //公会ID
+        optional string guildName = 3;       //公会名
+        optional string chairmanName = 4;    //会长名
+        optional double score = 5;           //十个阵总伤害值
+        optional int32 count = 6;           //占领个数
+		optional int32 serverId = 7;         //服务器Id
+        optional string serverName = 8;     //服务器名称
+    }
+
+	//公会战 活动开始时间 请求
+    message DeathPathStartTimeRequest{
+    }
+    message DeathPathStartTimeResponse{
+        optional int64 startTime = 1;       //开始时间
+    }
+	
+	message GuildSendHelpRequest{//发送公会援助  type 阵营 sendMessage是否发送消息
+		repeated int32 type = 1; 
+		optional bool sendMessage = 2;
+	}
+	message GuildSendHelpResponse{
+		optional bool sendMessage = 1;
+	}
+	
+	message GuildTakeHelpRewardRequest{//领取公会援助奖励
+		optional int32 type = 2; 
+	}
+	message GuildTakeHelpRewardResponse{
+		optional Drop drop = 1;
+	}
+	
+	message GuildSendHelpMessageRequest{//发送公会援助
+	}
+	message GuildSendHelpMessageResponse{
+		optional bool sendMessage = 1;
+	}
+	
+	
+	message GuildTakeHelpBoxRequest{//领取公会求援宝盒
+	}
+	message GuildTakeHelpBoxResponse{
+		optional Drop drop = 1;
+	}
+	
+	message GuildHelpInfoIndication{ //5点推送 修改推送 
+		optional int32 uid = 1;//uid
+		optional string name = 2;//name
+		repeated GuildHelpInfo guildHelpInfo = 3;//求援信息
+	}
+	
+	message GuildHelpHelpOtherRequest{ //援助他人 自己援助次数修改 GuildHelpInfoIndication会推
+		optional int32 uid = 1;
+		optional int32 type = 2; 
+	}
+	message GuildHelpHelpOtherResponse{
+		optional Drop drop = 1;
+	}	
+	
+	message GuildHelpGetAllRequest{ //获取公会援助信息
+
+	}
+	message GuildHelpGetAllResponse{
+		repeated GuildHelpInfoIndication guildHelpInfoIndication = 1;//求援信息
+	}	
+	
+	message GuildGetHelpLogRequest{ //请求援助日志 只能获取当天的
+	
+	}
+	message GuildGetHelpLogResponse{ 
+		repeated GuildHelpLog guildHelpLog = 1;
+	}
+	
+	message GuildHelpLogIndication{//新的援助会推
+		optional GuildHelpLog guildHelpLog = 1;
+	}
+	message GetGuildChallengeInfoResponse{
+		optional int32 curBoss = 1;//当前bossId
+		optional int64 blood = 2;//剩余血量万分比
+		optional int32 canSweep = 3;//是否能扫荡，今天是否挑战过这个boss
+		optional int32 buffCount = 4;//当前buff到多少索引
+		optional int32 buffTime = 5;//buff结束时间
+		optional int32 sweepDamage = 6;//上次挑战或扫荡的伤害
+		repeated int32 refreshedBoss = 7;//已经使用过刷新的boss，打死后不再刷新次数
+		optional int32 isRefresh = 8;//本次请求是否有刷新，刷新1，不刷新0
+	}
+	message GuildChallengeRequest{
+		optional int32 bossId = 1;//bossId
+		optional int32 type = 2;//0为挑战 1为扫荡
+	}
+	message GuildChallengeResponse{
+		optional int32 kill = 1;//本次是否击杀boss
+		optional Drop drop = 2;
+		optional FightData fightData = 3;//战斗
+		optional int32 damage = 4;//伤害值
+	}
+	message GuildChallengeIndication{
+		optional int32 curBoss = 1;//当前bossId
+		optional int64 blood = 2;//剩余血量万分比
+		//optional int32 canSweep = 3;//是否能扫荡，今天是否挑战过这个boss
+		optional int32 isKill = 3;//是否击杀
+	}
+	message GuildChallengeBuyBuffIndication{
+		optional int32 buffCount = 1;
+		optional int32 buffTime = 2;
+	}
+	message GuildChallengeMessageResponse{
+		optional int32 nextTime = 1;//下次可以发送的时间
+	}
+
+	message CarChallengeMyInfo{
+		optional int32 battleCount = 1;//挑战次数
+		optional int32 battleBuyCount = 2;//购买次数
+		optional int32 battleLastHurt = 3;//最后造成伤害
+	}
+
+	//退出公会
+	message FamilyLeaveRequest{
+	}
+	message FamilyLeaveResponse{
+		optional int64 leaveTime = 1;
+	}
+
+	//跨服公会战是否解锁 请求
+	message WorldDeathPathUnLockRequest{
+
+	}
+	message WorldDeathPathUnLockResponse{
+		optional int32 worldLevel = 1;      //世界等级
+		optional bool unLock = 2;           //跨服公会战是否解锁 true解锁，false未解锁
+	}
+

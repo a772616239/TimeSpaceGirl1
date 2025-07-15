@@ -1,0 +1,117 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+	message ConsumeMaterial{
+		repeated string heroId=1; //消耗英雄ids
+	}
+	
+	message MotherShipPlanGetAllRequest{
+	}
+	
+	message MotherShipPlanGetAllReponse{
+		repeated MotherShipPlan plan = 1;
+	}
+
+	message MotherShipPlanSellRequest{
+		optional int32 motherShipCfgId =1 ; //战机配置ID
+		optional int32 num = 2;
+	}
+	
+	message MotherShipPlanSellResponse{
+		optional Drop drop =1 ;
+	}
+	
+	message MotherShipPlanUpStarRequest{
+		optional string motherShipPlanId=1;//战机ID
+	}
+	
+	message MotherShipPlanGetOneReponse{
+		optional MotherShipPlan plan =1 ;
+	}
+	
+	message MotherShip{
+		optional int32 motherShipLevel=1;//航母等级
+		optional int32 motherShipResearchLevel=2;//重工场等级
+		repeated MotherShipPlan myPlan=3;//航母装备的战机
+		
+		//普通设计
+		optional int32 normalResearchDegree=4;
+		optional int64 normalResearchTime=5;//开始时间
+		optional int32 normalAddResearchDegree=6;//加速总数
+		optional int32 curNormalBluePrintId=7;//当前蓝图ID
+		
+		//特权设计
+		optional int32 researchDegree=8;
+		optional int64 researchTime=9;//特权设计-开始时间
+		optional int32 addResearchDegree=10;//特权设计-加速总数
+		optional int32 curBluePrintId=11;//特权设计-当前蓝图ID
+	}
+	
+	message MotherShipInfoRequest{
+		
+	}
+	
+	message MotherShipUplevelRequest{
+		
+	}
+	
+	message MotherShipInfoResponse{
+		optional MotherShip motherShipInfo=1;
+		optional Drop drop               = 2; //掉落物品
+	}
+	
+	message MotherShipWearRequest{//穿戴
+		optional string motherShipPlanId=1;//战机ID
+		optional int32 position=2;//位置
+	}
+	
+	message MotherShipUnloadRequest{//卸载
+		optional string motherShipPlanId=1;//战机ID
+		optional int32 position=2;//位置
+	}
+	
+	message MotherShipPlanePosInfo {
+		optional string motherShipPlanId=1;//战机ID
+		optional int32 position=2;//位置
+	}
+	
+	message MotherShipReplaceRequest{ //战机替换
+		repeated MotherShipPlanePosInfo posInfo=1;//位置信息
+	}
+	
+	message MotherShipResearchUplevelRequest{//重工场升级
+		optional ConsumeMaterial consumeMaterial=1;
+	}
+	
+	message MotherShipResearchStartbuildRequest{//重工场升级
+		optional int32 bluePrintId=1;
+		optional int32 privilege=2;//0：普通设计，1：特权设计
+	}
+	
+	message MotherShipResearchSpeedupRequest{//重工场加速
+		optional int32 researchPlusId=1;
+		optional int32 privilege=2;//0：普通设计，1：特权设计
+		optional int32 autoBuy = 3;//勾选 传 1
+	}
+	
+	message MotherShipResearchEndbuildRequest{//重工场结束研发
+		optional int32 privilege=1;//0：普通设计，1：特权设计
+	}
+	
+	message MotherShipResearchEndbuildResponse{//重工场结束研发
+		optional Drop drop=1;
+	}
+	//基因图鉴请求
+	message MotherShipBookSetRequest {         
+	
+	}
+
+    //基因图鉴请求响应
+	message MotherShipBookSetResponse {         
+		repeated int32 motherShipPlanCfgIds = 1;     //历史收集到的基因配置Id列表
+	}
+	
+	

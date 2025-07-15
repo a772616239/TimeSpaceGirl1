@@ -1,0 +1,30 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+	message GetTankListFromFriendByModuleIdRequest{
+	    optional int32 moduleId = 1;
+	}
+    message GetTankListFromFriendByModuleIdResponse{
+        repeated FriendSupport friendSupport = 1;
+	}
+    message DisUseTankFromFriendByModuleIdRequest{
+        optional int32 moduleId = 1;
+        optional string tankId = 2;
+    }
+    message DisUseTankFromFriendByModuleIdResponse{
+    }
+
+
+
+
+
+
+
+
+
+	
+
+	

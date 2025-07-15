@@ -1,0 +1,102 @@
+package com.ljsd.jieling.protocols;
+
+//option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+    message WarWayLearningRequest{
+        optional string tankId = 1;
+        optional int32 warWaySkillId = 2;
+        optional int32 warWaySlot = 3;
+	}
+	message WarWayLearningResponse{
+        optional int32 result = 1;
+	}
+
+    message WarWayForgetRequest{
+        optional string tankId = 1;
+        optional int32 warWaySkillId = 2;
+        optional int32 warWaySlot = 3;
+	}
+	message WarWayForgetResponse{
+        optional int32 result = 1;
+	}
+	
+    message CombatPlanMergeRequest{
+        repeated string combatPlanId = 1;
+        optional int32 quality = 2;
+	}
+	
+	message CombatPlanMergeResponse{
+        optional int32 result = 1;
+		optional CombatPlan plan =2 ;
+		optional CombatPlan expPlan =3 ;
+	}
+	
+	message CombatPlanWearRequest{
+		optional string heroId =1 ; //所穿英雄id
+		optional string planId =2 ; //装备id
+		optional int32 position = 3;//位置
+	}
+	
+	message CombatPlanReplaceResponse{
+		optional string heroId =1 ;
+	}
+	
+	message CombatPlanReplaceRequest{
+		optional string heroId =1 ; //所穿英雄id
+		optional int32 position = 2;
+		optional string oldPlanId =3 ; //装备id
+		optional string newPlanId =4 ; //装备id
+	}
+	
+	message CombatPlanUnloadRequest{
+		optional string heroId =1 ; //所穿英雄id
+		optional int32 position = 2;//位置
+		optional string planId =3 ; //装备id
+	}
+	
+	message CombatPlanRebuildRequest{
+		optional string planId =1 ;
+	}
+	
+	message CombatPlanConfirmRequest{
+		optional string planId =1 ;
+	}
+	
+	message CombatPlanSellRequest{
+		optional string planId =1 ; //装备id
+	}
+	
+	message CombatPlanUpgradeRequest{
+		optional string planId =1 ; //装备id
+	}
+	
+	message CombatPlanSellResponse{
+		optional Drop drop =1 ;
+	}
+	
+	message CombatPlanGetAllRequest{
+	}
+	
+	message CombatPlanGetAllReponse{
+		repeated CombatPlan plan = 1;
+	}
+	
+	message CombatPlanGetOneReponse{
+		optional CombatPlan plan =1 ;
+	}
+	
+	message CombatPlanRebuildResponse{
+		optional CombatPlan plan =1 ;
+	}
+	
+	message CombatPlanReBuildNumRequest{
+	
+	}
+	
+	message CombatPlanLuckyReBuildNumResponse{
+		repeated Property luckyNum = 1;//重置次数
+		optional int32 exp = 2;//
+	}
+	

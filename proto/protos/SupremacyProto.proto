@@ -1,0 +1,67 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+
+	message Prop{
+		optional int32 key =1;
+		optional int32 value =2;
+	}
+	message PersonInfo{
+		optional int32 uid = 1;
+		optional string name =2;
+		optional int32 head =3;
+		optional int32 headFrame = 4;
+		optional int32 time=5;
+		optional int32 level=6;
+		optional int32 teamId=7;
+		optional int32 allHeroForce=8;
+		repeated Hero heros=9;
+		optional int32 resultCode=10;
+		optional int32 formationId=11;
+		optional int32 investigateLevel = 12;   //号角等级
+	}
+	message SupremacyBoss{
+		optional int32 id =1;
+		optional int32 rank =2;
+		optional int32 pos =3;
+		optional int32 uid =4;
+		optional string title =5;
+		optional int32 level =6;
+		optional int32 monster =7;
+		repeated Prop props = 8;
+		optional int32 needArenaRank =9;
+		optional int32 bossShow =10;
+		optional PersonInfo personInfo = 11;
+	}
+
+	message SupremacyInitRequest{
+		optional int32 uid = 1;
+	}
+	message SupremacyInitResponse{
+		repeated SupremacyBoss boss = 1;
+	}
+
+	message GetSupremacyBattleRecordRequest{
+		optional int32 rank = 1;
+		optional int32 pos = 2;
+	}
+	
+	message GetSupremacyBattleRecordResponse{
+		repeated PersonInfo personInfo=1;
+	}
+	
+	
+	
+	
+
+
+
+
+
+
+	
+
+	

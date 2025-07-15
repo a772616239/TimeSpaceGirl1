@@ -1,0 +1,46 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+
+
+
+//命令请求
+message SceneCommandRequest{
+	optional int32 type =1; //指令类型 1：表示行走
+	repeated int32 parm =2; //指令参数 若type为1 则参数为行走路径
+}
+
+//命令请求
+message SceneCommandResponse{
+	optional int32 type =1; //指令类型 1：表示行走
+	optional int32 result =2; //行为结果 1 ： 成功 0：失败
+}
+
+
+
+//广播场景里演员变换信息
+message BroadMsgIndication{
+	repeated SceneActor SceneActor =1 ; // 演员信息变更
+	repeated ActorEffectBufferInfo ActorEffectBufferInfo =2;
+	repeated int32 removeBufferId =3; // 被删除的buffer
+	repeated int32 removeActorId = 4 ;//演员被移除
+	repeated int32 removePosMineralId=5; // 被删除的地图路径矿物信息
+	repeated PosMineral PosMineral = 6; //路径矿物信息变更
+	repeated SceneMsg sceneMsg = 7; // 场景消息
+}
+
+message SceneSimpleRankInfo{
+	optional int32 uid = 1 ;
+	optional int32 score = 2 ;//最终的分数
+	optional int32 updateScore = 3 ;//变化的分数
+	optional string head = 4; //头像
+	optional int32 headFrame=5;//头像框
+	optional int32 level= 6;//等级
+}
+
+message SceneEndIndication{
+   repeated SceneSimpleRankInfo sceneSimpleRankInfo = 1;
+}

@@ -1,0 +1,522 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+	message HeroInfo {
+		optional string heroId = 1;
+		optional int64 heroHp = 2;
+		optional int64 heroMaxHp =3;
+	}
+	message TrialHeroInfo{
+		optional string heroId = 1;//动态Id
+		optional int32 tmpId = 2;//英雄模板id
+		optional int32 star = 3;
+		optional int64 heroHp = 4;//剩余血量
+		optional int32 level = 5;//英雄等级
+	}
+	message DifficultMapOption {
+		//副本Id
+		optional int32 Id = 1;
+		//难度类型
+		optional int32 mapdifficulty = 2;
+	}
+
+	message TowerBuff {
+		// 层数
+		optional int32 towerLevel = 1;
+		// 事件点Id
+		optional int32 eventId = 2;
+	}
+	// 进入地图
+	message MapEnterRequest{
+		// 需要进入的地图id
+		optional int32 mapId = 1;
+		// 所用英雄编队
+		optional int32 teamId = 2;
+		
+		optional int32 mapType= 3; //地图类型
+	}
+	message MapEnterResponse{
+		// 地图信息
+		repeated Cell mapList = 1;	
+		// 当前所在坐标
+		optional int32 curXY = 2;
+		// 所用英雄
+		repeated HeroInfo heroInfos = 3;
+		// 探索地图剩余时间（秒）
+		optional int32 leftTime = 4; 
+		// 临时背包
+		optional Drop temporaryItems = 5;
+		// buff
+		repeated FoodBuffer foodBuffers = 6;
+		// 走过的格子
+		repeated int32 wakeCells = 7;
+		// 任务
+		optional Mission missions = 8;
+		// 复活剩余时间
+		optional int32 reviveTime = 9;
+		// 死亡次数
+		optional int32 dieCount = 10;
+		//进度详情
+	 	repeated ExploreDetail exploreDetail = 11; 
+		// 补给点信息
+		repeated TowerBuff buf = 12;
+		// 无尽副本标志信息
+		repeated endlessSign signs = 13;
+		// 无尽副本地图点刷新信息
+		repeated EndlessRefreshInfo refreshInfo = 14;
+		//无尽副本是否跳过战斗
+		optional int32 skipFight = 15;
+		
+		repeated TrialHeroInfo infos = 16;//阵容信息
+		
+		optional string curHero = 17;//试炼副本当前上阵英雄
+		
+		optional int32 addHpCount = 18;//回春散已使用次数
+		
+        optional int32 mapId = 19;//地图id
+		
+		optional int32 curTower = 20;//当前层数
+		
+		optional int32 bombUsed = 21;//炸弹已使用次数
+
+	}
+
+	// 更新事件
+	message EventUpdateRequest{
+		// eventPointConfig id
+		optional int32 eventId = 1;
+		// optionConfig Id
+		optional int32 optionId = 2;
+	}
+	message EventUpdateResponse{
+		// eventPointConfig id
+		optional int32 eventId = 1;
+
+		optional EventBehaviorCommon EventBehaviorCommon = 2;
+		// 奖励
+		optional Drop drop = 3;
+		// 更新主线任务
+		optional Mission mission = 4;
+		// 探索地图剩余时间（秒）
+		optional int32 leftTime = 5; 
+		// 任务获得的道具
+		optional Drop missionDrop = 6;
+		// 随机生成动态地图信息
+		repeated Cell addMapInfo = 7;	
+	}
+
+	// 更新地图状态
+	message MapUpdateRequest{
+		// 走过的格子
+		repeated int32 cells = 1;
+		// 当前所在坐标
+		optional int32 curXY = 2;
+		// 触发坐标
+		optional int32 triggerXY = 3;
+	}
+	message MapUpdateResponse{
+		optional int32 eventId = 1;
+		// 探索地图剩余时间（秒）
+		optional int32 leftTime = 2; 
+	}
+
+    // 更新地图状态
+    message MapUpdate2Request{
+        // 走过的格子
+        repeated int32 cells = 1;
+        // 当前所在坐标
+        optional int32 curXY = 2;
+        // 触发坐标
+        optional int32 triggerXY = 3;
+    }
+    message MapUpdate2Response{
+        optional int32 eventId = 1;
+        // 探索地图剩余时间（秒）
+        optional int32 leftTime = 2;
+    }
+
+	// 出地图
+	message MapOutRequest{
+		// 走过的格子
+		repeated int32 cells = 1;
+		// 当前所在坐标
+		optional int32 curXY = 2;
+
+		optional int32 mapId = 3;
+		// 1:进入下一层 0：直接退出地图
+		optional int32 outType = 4;
+		
+		optional int32 targetMapId = 5;
+	}
+	
+	message MapOutResponse{
+		// 使用时间
+		optional int32 useTime = 1;
+	}
+
+
+	// 开始探索回复
+	message MapStartExploreResponse{
+		// 探索地图剩余时间（秒）
+		optional int32 leftTime = 1; 
+	}
+	
+	
+	message UseTowerBuffRequest{
+		// 层数
+		optional int32 towerLevel = 1;
+		// 选项信息 
+		optional int32 optionId = 2;
+	}
+	message UseTowerBuffResponse {
+		optional EventBehaviorCommon EventBehaviorCommon =1;
+	}
+	
+	
+	// 爬塔副本信息（试炼副本）
+	message TowerCopyInfo{
+		// 当前所在层数
+		optional int32 tower = 1;
+		// 已战斗次数
+		optional int32 fightCount = 2;
+		// 历史最高层
+		optional int32 highestTower = 3;
+		// 当前地图，试炼精气（如果召唤过boss 该值为 -1）
+		optional int32 essenceValue = 4;
+		// 是否显示重置：1、显示；0、不显示
+		optional int32 mapIntoReset = 5;
+		// 上层使用时间
+		optional int32 towerUseTime = 6;
+
+		repeated int32 trialRewardInfo = 7;//试炼领奖信息
+		
+		optional int32 killCount = 8;//已杀小怪数量
+		
+		optional int32 bombUsed = 9;//炸弹已使用次数
+
+	}
+	
+	
+
+
+	//关卡信息
+	message getAllLevelDifficultyInfosResponse{  
+		repeated LevelDifficultyInfos levelDifficultyInfos = 1;
+		// 副本信息
+		repeated MapInfo mapInfos = 2;
+		// 副本星级奖励领取进度
+		optional int32 starNum = 3;
+		// 爬塔副本信息
+		optional TowerCopyInfo towerCopyInfo = 4;
+		//已经玩过普通副本地图id
+		repeated int32 playedGenMapId = 5;
+		//精英关卡选择情况
+		repeated DifficultMapOption difficultMapOptions = 6;
+	}
+
+	// 查看排行榜
+	message MapGetRankInfoRequest{
+		optional int32 mapId = 1;
+	}
+
+	message MapRankInfo{
+		optional int32 uid = 1;
+		optional int32 forces = 2;
+		repeated int32 heroIds = 3;
+		optional int32 head = 4;
+		optional int32 level = 5;
+		optional int32 rank = 6;
+		optional int32 time = 7;
+		optional string name = 8;
+		repeated int32 pokemonIds = 9;
+	}
+
+	message MapGetRankInfoResponse{
+		repeated MapRankInfo mapRankInfo = 1;
+	}
+
+
+	// 购买副本战斗次数
+	message MapBuyFightCountRequest{
+		optional int32 buyCount = 1;
+	}
+
+	// 扫荡副本
+	message MapSweepRequest{
+		optional int32 mapId = 1;
+		optional int32 sweepCount = 2;
+	}
+
+    message MapSweepResponse{
+		// 奖励
+		repeated Drop drop = 1;
+		//是否出现云游商店
+		optional int32 cloudStore = 2;
+		//精英怪信息
+		optional SuddenlyBossInfo suddenlyBossInfo = 3;
+	}
+
+	message FbStarRewardResponse{ 
+		// 副本星级奖励
+		optional Drop FbStarReward = 1;
+	}
+
+	// 重置爬塔副本（试炼副本）
+	message MapTowerResetResponse {
+		// 当前所在层数
+		optional int32 tower = 1;
+	}
+	
+	// 爬塔副本召唤首领（试炼副本）
+	message MapTowerCallChiefResponse{
+		// boss类型
+		optional int32 type = 1;
+		// boss信息，位置id，事件id
+		optional Cell monsterInfo = 2;
+	}
+
+	
+	// 试炼使用炸弹
+	message MapTowerUseBombResponse{
+		//精气值
+		optional int32 essenceValue = 1;
+		// 奖励
+		optional Drop drop = 2;
+		
+		optional Cell cell = 3;//boss信息，位置id，事件id
+		
+		optional int32 trialKillCount = 4;  //爆破后据点攻破次数
+	}
+	//精英副本
+	message DifficultMapRequest{
+		//需要存储的mapid
+		optional DifficultMapOption mapInfo = 1;
+	}
+	
+	//试炼副本层级奖励
+	message TowerRewardRequest{
+		//层数
+		optional int32 tower = 1;
+	}
+	message TowerRewardResponse{
+		//层级奖励
+		optional Drop drop = 1;
+	}
+	
+	message GetEndlessHeroResponse{
+	//英雄信息
+		repeated endlessHero heroInfo =1;
+		repeated int32 openMapId = 2;//已开启的地图Id
+	}
+	
+	//无尽副本标志
+	message SignEndlessCellRequest{
+		optional endlessSign sign = 1;
+	}
+	message SignEndlessCellResponse{
+		optional string error = 1;
+	}
+	//无尽副本剩余行动力
+	message ExecutionRefreshResponse{
+		optional int32 exeValue = 1;
+	}
+	message EndlessOutConsumeResponse{
+		optional int32 fightCount = 1;//战斗次数
+		optional int32 consumeExecution = 2;//消耗行动力
+	}
+	//无尽副本发送刷新时间indication
+	message EndlessTimeIndication{
+		repeated EndlessRefreshInfo infos = 1;
+	}
+	//无尽副本小地图信息
+	message EndlessMinMapResponse{
+		optional int32 myXY = 1;
+		repeated EndlessPoint points = 2;
+	}
+	//无尽副本杀死小怪刷新
+	message RefreshMonsterResponse{
+		repeated Cell cell = 1; 
+	}
+	//无尽副本设置是否跳过战斗
+	message EndlessSetSkipRequest{
+		optional int32 type = 1;
+	}
+	//无尽设置编队indication
+	message EndlessSetTeamIndication{
+		repeated HeroInfo info = 1;
+	}
+	message EndlessMapChange{
+		optional int32 mapId = 1;
+		optional int32 worldLevel = 2;
+	}
+	
+	message TrialHeroInfoSaveRequest{
+		repeated string heroIds = 1;//保存上阵英雄
+	}
+	message GetTrialBoxRewardRequest{
+		optional int32 type = 1;//0为单个领取，1为全部领取
+	}
+	message GetTrialBoxRewardResponse{
+		optional Drop boxDrop = 1;//宝箱奖励
+		repeated int32 buffIds = 2;//进图buffId
+	}
+	message UseAddHpItemRequest{
+		optional string heroId = 1;
+	}
+	message UseAddHpItemResponse{
+		optional int64 curHp = 1;//当前血量
+	}
+	
+	message MapGameResponse{
+		optional int32 type = 1;//游戏类型
+		repeated int32 param = 2;//参数id	
+	}
+	message MapGameUpdateRequest{
+		optional int32 index = 1;//根据不同游戏传不同的选项
+	}
+	message MapGameUpdateResponse{
+		optional int32 gameStatus = 1;//游戏状态 是否结束
+		optional Drop drop = 2;//获得奖励
+		optional int32 resultId = 3;//结果id，对应表id，若为-1单独处理
+	}
+	message GetAllSituationInfoResponse{
+		repeated SituationInfo infos = 1;//id 结束时间
+	}
+	message SituationChallengeRequest{
+		optional int32 id = 1;//挑战id
+		optional int32 type = 2;//1挑战 2扫荡		
+	}
+	message SituationChallengeResponse{
+		optional Drop drop = 1;
+		optional FightData fightData = 2;//战斗数据
+		optional int32 fightResult = 3;//战斗结果
+	}
+	message VirtualBattleBuyCountRequest{
+		optional int32 type = 1;//1普通，2高级
+	}
+	message VirtualBattleBuyCountResponse{
+        optional int32 result = 1;
+	}
+    message VirtualBattleSweepRequest{
+        optional int32 type = 1;//1普通，2高级
+        optional int32 fightId = 2; //层数id
+    }
+    message VirtualBattleSweepResponse{
+        optional Drop drop = 1;
+    }
+	
+	message EndlessTreasureRewardState{
+		optional int32 id =1;//任务id
+		optional int32 state = 2;//状态 0 未领取 1 已领取 -1 完美领取（充钱领取过的）
+	}
+	message EndlessTreasureInfoResponse{
+		optional int32 score =1 ;
+		repeated EndlessTreasureRewardState treasureRewardState=2;
+		optional int32 resetTime = 3;
+		optional int32 isBuy = 4;//是否购买了激活礼包
+	}
+	message  EndlessTakeTreasureRequest{
+		optional int32 id = 1; // 领取奖励id -1表示点击全部领取
+	}
+	message  EndlessTakeTreasureResponse{
+		optional Drop drop =1;
+	}
+	message EndlessMapInfo{
+		optional int32 cfgId = 1;//表id
+		optional int32 state = 2;//状态 0 未解锁 1 已解锁 2 正在攻略 3 已占据
+		optional int32 mapid = 3;
+		optional int32 monsterNum = 4; // 怪物数量
+		optional int32 passNum = 5; // 战胜数量
+	}
+	message EndlessMapInfoResponse{
+		repeated EndlessMapInfo info = 1;
+	}
+	
+	message JourneyGetInfoResponse{
+		repeated JourneyInfo infos = 1;//逍遥游数据
+	}
+	message JourneyGetOneInfoRequest{
+    		optional int32 mapId = 1;
+    	}
+    message JourneyGetOneInfoResponse{
+    	repeated JourneyCell cell = 1;//所有格子信息
+    	optional int32 location = 2;//当前位置
+   		optional int32 diceNum = 3;//骰子个数
+   		repeated int32 randomItem = 4;//转盘信息
+   		optional int32 randomTime = 5 ;//转盘时间
+   		optional int32 randomNum = 6;//剩余转动次数
+		repeated JourneyMonsterInfo monsterInfo = 7;//怪物信息
+		repeated JourneyGoodsInfo goodsInfo = 8;//商品信息
+    }
+    message JourneyDoRequest{
+   		optional int32 mapId = 1;
+   	}
+   	message JourneyDoResponse{
+   		repeated int32 pointes = 1;
+   		optional int32 pathType = 2;//0、普通节点 1、奖励节点 2、双倍节点 3、额外骰子节点 4、招募英雄节点 5、怪物节点 6、转盘 7、最终奖励
+   		optional int32 multiValue = 3;//倍数
+   		optional Drop drop = 4;//奖励事件奖励
+   		optional JourneyMonsterInfo monster = 5;//怪物组
+   		repeated int32 random = 6;//转盘事件奖励组
+   		optional JourneyGoodsInfo goodsInfo = 7;//商品信息
+   		optional int32 overTime = 8;//所有事件时间
+   	}
+
+   	message JourneyFightRequest{
+   		optional int32 monsterIndex = 1;
+   		optional int32 mapId = 2;
+   	}
+   	message JourneyFightResponse{
+   		optional FightData fightData = 1;//战斗数据
+   		optional JourneyMonsterInfo monster = 2;//战斗之后的怪物信息
+   		optional Drop drop = 3;//奖励
+   	}
+   	message JourneyRandomRequest{
+   		optional int32 mapId = 1;
+   	}
+   	message JourneyRandomResponse{
+   		optional int32 location = 1;
+   		optional Drop drop = 2;
+   		repeated int32 nextRandom = 3;//下次转盘奖励组
+   		optional int32 count = 4;//剩余次数
+   	}
+   	message JourneyBuyRequest{
+   		optional int32 mapId = 1;
+   		optional int32 goodsIndex = 2;
+   	}
+   	message JourneyBuyResponse{
+   		optional Drop drop = 1;
+   	}
+
+    //逍遥游 下次恢复时间  请求
+    message JourneyNextFlushTimeRequest{
+        optional int32 typeId = 1;      //类型id: 1逍遥游恢复时间
+    }
+
+     //逍遥游 下次恢复时间  返回
+     message JourneyNextFlushTimeResponse{
+        optional int64 nextFlushTime = 1;   //下次恢复时间
+        optional Drop drop = 2;         //奖励
+        optional int32 Count = 3;         //物品背包里总数量
+     }
+
+	message MapBackOutRequest{
+		optional int32 mapId = 1;
+		optional int32 mapType = 2;
+	}
+	
+	message MapBackOutResponse{
+		repeated EndlessMapInfo info = 1;
+	}
+
+	//英雄试炼扫荡
+	message HeroTrialSweepRequest{
+		optional int32 fightId = 1;//关卡ID
+	}
+	
+	message HeroTrialSweepResponse{
+		optional Drop drop = 1;//奖励
+	}

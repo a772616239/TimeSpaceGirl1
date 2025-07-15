@@ -1,0 +1,122 @@
+package com.ljsd.jieling.protocols;
+
+//option optimize_for = SPEED;
+
+import "CommonProto.proto";
+	
+	message MedalSellRequest{
+		optional string medalId =1 ; //勋章ID
+	}
+	
+	message MedalSellResponse{
+		optional Drop drop =1 ;
+	}
+	
+	message MedalGetAllRequest{
+	}
+	
+	message MedalGetAllReponse{
+		repeated Medal medal = 1;
+	}
+	
+	message MedalGetOneReponse{
+		optional Medal medal =1 ;
+	}
+	
+	message MedalHeroInfoReponse{
+		optional Hero hero =1 ;
+	}
+	
+	
+	message MedalWearRequest{
+		optional string heroId =1 ; //所穿英雄id
+		optional string medalId =2 ; //勋章ID
+		optional int32 siteType = 3;//位置 1， 2， 3， 4
+	}
+	
+	message MedalChangeRequest{ //交换
+		optional string medalId =1 ;//勋章ID
+		optional int32 confMedalId = 2;//config 表ID
+		optional string heroId = 3;
+		optional int32 position =4;//勋章位置，1.坦克身上的勋章交换需要传 2.背包里的传 0
+	}
+	
+	message MedalUnloadRequest{
+		optional string heroId =1 ; //所穿英雄id
+		optional int32 siteType = 2;//位置
+		optional string medalId =3 ; //装备id
+	}
+	
+	message MedalUnloadResponse{
+		optional int32 result = 1;
+	}
+	
+	message MedalMergeRequest{
+		repeated string medalId = 1;//要合成的勋章
+		repeated Property property = 2;//保留的随机属性
+	}
+	
+	message MedalRefineRequest{
+		optional string medalId = 1;//洗练勋章
+		repeated int32 property = 2;//锁定属性
+	}
+	
+	message MedalRefineResponse{
+		repeated Property property = 1;
+		optional int32 refineAttrNum = 2;//洗练数
+	}
+	
+	message MedalRefineConfirmRequest{
+		optional string medalId = 1;//洗练勋章
+	}
+	
+	message MedalRefineTempPropertyRequest{
+		optional string medalId = 1;//勋章ID
+	}
+	
+	message MedalRefineTempPropertyResponse{
+		repeated Property property = 1;
+		optional int32 refineAttrNum = 2;//洗练数
+	}
+	
+	message MedalSavePos {
+		optional int32 pos = 1;
+		optional string name = 2;
+		repeated string medalId = 3;
+		optional int32 activePos = 4; //0 未激活，1激活
+	}
+	
+	message BuySavePosRequest{
+		optional int32 pos =1 ; //位置，1，2，3 三个位置
+	}
+	
+	message UseSavePosRequest{
+		optional string heroId = 1;
+		optional int32 pos =2 ; //位置，1，2，3 三个位置
+	}
+	
+	message WearSavePosRequest{
+		optional int32 pos =1 ; //位置，1，2，3 三个位置
+		repeated string medalIds = 2;
+	}
+	
+	message GetSavePosRequest{
+		
+	}
+	
+	message GetSavePosReponse{
+		repeated MedalSavePos medalSavePos = 1;
+	}
+	
+	message SetNameRequest{
+		optional int32 pos = 1;
+		optional string name = 2;
+	}
+	
+	message MedalUnload2Request{
+		optional string heroId = 1;
+	}
+	
+	
+	
+	

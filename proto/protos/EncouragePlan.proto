@@ -1,0 +1,81 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+import "CommonProto.proto";
+
+//请求战令列表
+message GetAllEncouragePlanInfoRequest{
+}
+
+//战令列表响应
+message GetAllEncouragePlanResponse {
+	repeated EncouragePlanClassify encouragePlanClassifies = 1;     //战令所属功能分类 如果没有解锁的 返回空
+}
+
+//领取战令奖励
+message ObtainEncouragePlanRewardRequest {
+    optional int32  taskCfgId    = 1;              //任务的配置id
+    optional int32  obtainPos    = 2;              //1 领取免费 2 领取特权  3 领取当前任务的全部奖励
+}
+
+//领取战令奖励响应
+message ObtainEncouragePlanRewardResponse {
+    optional Drop drop =1;                          //掉落物品
+}
+
+//战令计划
+message EncouragePlanClassify {
+    optional int32 globalSystemId = 1;                              // 战令所属功能分类 可能功能开放 但是站令没有开发的极端情况 可能战令开放配置和功能开发配置冲突
+    repeated EncouragePlanInfo encouragePlanInfos = 2;              // 分类下的战令列表 因为涉及到分段 同一个战令功能分类下可能有多个planId
+}
+
+message EncouragePlanInfo {
+    optional int32 encouragePlanId = 1;                              //战令配置id 只有已经解锁的战令才返回
+    repeated EncouragePlanTaskInfo encouragePlanTaskInfos = 2;       //战令下的任务列表以及任务完成进度
+    optional bool unlockPrivilege = 3;                               //是否解锁战令特权   true 解锁 false 未解锁   
+    optional int32 progress = 4;                                     //进度
+    optional int64 cycleEndingTime = 5;                              //周期结束时间
+}
+
+//战令任务
+message EncouragePlanTaskInfo {
+    optional int32 taskConfigId = 1;         //战令任务ID
+    optional bool freeObtained  = 2;         //免费奖励是否领取 true 领取 false 未领取
+    optional bool privilegeObtained = 3;     //特权奖励是否领取
+    optional bool isCompeted = 4;           //是否已经完成  true 完成 false 未完成
+}
+
+//推送战令已经完成消息
+message PushEncouragePlanTaskCompeted {
+    optional int32 globalSystemId                        = 1;   //功能ID
+    optional int32 planId                                = 2;   //计划ID
+    optional EncouragePlanTaskInfo taskInfo              = 3;   //任务信息
+}
+
+//推送战令解锁
+message PushEncouragePlanUnlock {
+    optional int32 globalSystemId                         = 1;   //功能ID
+    optional int32 planId                                 = 2;   //计划ID
+    repeated EncouragePlanTaskInfo encouragePlanTaskInfos = 3;   //任务
+    optional bool unlockPrivilege                         = 4;   //是否解锁战令特权   true 解锁 false 未解锁   
+    optional int32 progress                               = 5;   //进度
+    optional int64 cycleEndingTime                        = 6;   //周期结束时间
+}
+
+//推送战令进度更新
+message PushEncouragePlanTaskProgressChanged {
+    optional int32 globalSystemId                         = 1;   //功能ID
+    optional int32 progress                               = 3;   //进度
+}
+
+//推送战令重置（异端之战）
+message PushEncouragePlanReset {
+    optional int32 globalSystemId                         = 1;   //功能ID
+    optional int32 planId                                 = 2;   //计划ID
+    optional bool unlockPrivilege                         = 3;   //是否解锁战令特权   true 解锁 false 未解锁   
+    optional int32 progress                               = 4;   //进度
+    repeated EncouragePlanTaskInfo encouragePlanTaskInfos = 5;   //重置后的任务任务列表
+    optional Drop drop                                    = 6;   //重置之前完成的任务奖励自动领取
+    optional int64 cycleEndingTime                        = 7;   //周期结束时间
+}
+ 

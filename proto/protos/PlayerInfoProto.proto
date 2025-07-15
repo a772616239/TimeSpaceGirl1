@@ -1,0 +1,1104 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+// request 编号需要小于 response 编号
+
+	message ErrorMsgResponse{
+		optional string msg = 1;
+	}
+
+	message LoginRequest{
+  		optional string device_id_s =1 ; //设备唯一标识，必须添加该字段
+  		optional string idfa_sOr_imei_s =2 ; //苹果 安卓设备唯一标识吗
+  		optional string brand_type_s =3;  //设备机型类型
+  		optional string brand_s =4;  //设备机型名称
+  		optional string os_version_s =5;  //设备使用系统版本号
+  		optional string dpi_s =6;  //设备分辨率
+  		optional string operator_s =7;  //设备对应运营商类型
+  		optional string network_s =8;  //设备对应网络类型
+  		optional string ip_s =9;  //IP
+		optional string openId =10; //openID
+		optional string channel_s=11; //渠道 ID
+		optional string platform_s=12;// 平台类型 
+		optional string distinct_id = 13;//访客id
+	}
+
+	message LoginResponse{
+		optional int32 resultCode = 1;
+		optional string newToken = 2;	
+	}
+
+
+	message GetPlayerInfoRequest{
+  		optional int32 num = 1;
+		optional string str = 2;
+	}
+
+	message GetPlayerInfoResponse{
+		optional Player player = 1;
+		repeated NewPlayerGuidePoint newPlayerGuidePoint =2;
+		repeated Privilege privilege =3;
+		repeated GiftGoodsInfo giftGoodsInfo =4;
+		repeated int32 buyGoodsId = 5;
+		optional SuddenlyBossInfo SuddenlyBossInfo = 6;//精英怪信息
+		repeated int32 vipLeveTake = 7;
+		optional int32 userCreateTime = 8; // 玩家创角时间
+		repeated int32 redType = 9;// 红点信息
+		optional int32 randCount = 10;//已招募次数
+		repeated EveryHeroHandBook heroHandBook = 11;//英雄图鉴
+		repeated int32 equipHandBook = 12;//装备图鉴
+		repeated int32 towerReceivedReward = 13;//试炼已领取奖励层数
+		repeated GoodsTypeDuration goodsTypeDuration = 14; // 已购买商品结束时间
+		optional int32 treasureLevel = 15; // 孙龙的宝藏等级
+		optional int32 hadBuyTreasure = 16; // 是否购买孙龙的宝藏
+		optional SignInInfo SignInInfo =17;//签到
+		optional int32 firstTenth = 18;//首次十连是否用过
+		optional int32 monsterAttackTime = 19;//妖潮
+		optional int32 isDayFirst = 20;//0表示新的一天
+		optional EndlessInfo endInfo = 21;//无尽副本信息
+		optional PlayerBindPhone playerBindPhone = 22;//玩家手机绑定信息
+		optional int32 QuestionState = 23;//答题状态 -1没有问卷 0未答题 1已答题
+		optional int32 SoulEquipPool = 24;//占星卡池
+		repeated int32 playedMapTypes = 25;//已经玩过的副本类型
+		optional double amount = 26;//总储值
+		optional int32 vipDaily = 27;//特权每日礼包是否领取 0 未领 >0vip 等级
+		optional int32 missingRefreshCount = 28;//迷宫寻宝妖精刷新次数
+		repeated MonthCardInfo monthinfos = 29;//月卡
+		repeated int32 dailyChallengeInfo = 30;//每日挑战信息
+		optional int32 expeditionLeve =31 ; //猎妖之路阶段 -1 待选择
+		optional int32 hadLuckTime = 32;//幸运探宝次数
+		optional int32 hadAdvanceLuckTime = 33;//高级幸运探宝次数
+		optional int32 heroRandRequestTime = 34;//点将台次数
+        optional SupportDate supportDate = 35;//支援系统信息
+        repeated General generalDate  = 36;//名将系统数据
+        optional int32 isOpenInvestigate = 37;  //侦查(是否开启)， 0 = 未开启， 1 = 已开启
+        optional int32 investigateLevel = 38;  //侦查(是否解锁)(大于0 = 等级)， 0 = 未解锁， 非0 = 等级(已解锁)
+		optional int32 dailyGemRandomTimes = 39;  //限时招募，每日钻石招募过的次数
+		optional bool showVip = 40;//是否显示VIP
+		optional int64 leaveGuildTime = 41;//退出公会时间
+		optional int32 trainTaskCurLevel = 42; //训练任务当前阶段
+    }
+
+
+	message GetItemInfoRequest{
+		optional int32 index = 1; //第一次请求索引为0, 第二次:第一次索引+每页的数量
+	}
+
+	message GetItemInfoResponse{
+		repeated Item itemlist = 1;
+		optional bool isSendFinish =2; //是否发送完成
+	}
+
+	message GetAllMailInfoResponse{
+		repeated Mail mialList = 1;
+	}
+
+	message UseAndPriceItemRequest{
+		optional int32 type = 1; //0:使用 1:分解物品 2：分解装备3:分解妖灵师 4:分解宝器 5:分解魂印（分解法宝在分解妖灵师同时分解）
+		optional int32 itemId = 2;
+		repeated Item items = 3;
+		repeated string equipIds = 4;
+		repeated string heroIds = 5;
+	}
+	message UseAndPriceItemResponse{
+		optional Drop drop = 1;
+	}
+
+	message MailReadRequest{
+		optional string mailId = 1;
+	}
+	message TakeMailRequest{
+		repeated string mailIds = 1;
+	}
+	message TakeMailResponse{
+		optional Drop drop = 1;
+	}
+
+
+	message WorkShopFoundationRequest{
+		optional int32 materialId = 1; // 要打造的材料模板id
+		optional int32 nums =2; //数量
+	}
+
+	message WorkShopEquipCreateRequest{
+		optional int32 equipTid = 1; // 要打造的装备模板id
+		repeated int32 runneIds = 2;  // 符文ids  不需要传送特殊符文。
+		optional int32 nums = 3 ;// 锻造装备数量
+	}
+
+	message WorkShopEquipCreateResponse{
+		optional int32 type =1 ; // 1:工坊 2：百味居
+		optional Drop drop =2;
+	}
+
+	message WorkShopRebuildRequest{
+		optional string equipId = 1; // 要重造装备动态id
+		repeated string consumeEquipIds =2; //祭品动态id
+	}
+
+	message WorkShopRebuildRespoonse{
+		optional Equip equip = 1;
+	}
+
+	message WorkTechnologyLevelRequest{
+		optional int32 id = 1;//
+		optional int32 targetLevel = 2;//等级
+	}
+
+	message WorkTechnologyLevelResponse{
+		optional int32 id = 1;//
+		optional int32 targetLevel = 2;//等级
+	}
+
+	message WorkTechnologyResetRequest{
+		optional int32 professionId = 1;// 重置科技树职业id
+	}
+
+	message WorkTechnologyResetResponse{
+		optional Drop drop = 1;// 返还道具
+	}
+
+	message ActiviteWorkShopReqeust{
+		optional int32 type =1;  //功能类型：1： 基础锻造 2：制作装备 或 制作美食
+		optional int32 activiteId =2; //要激活的功能id
+	}
+
+	message GetWorkShopInfoResponse{
+		repeated WorkShopUnLockInfo workShopUnLockInfo =1; //作坊解锁信息
+		repeated WorkShopBaseInfo workShopBaseInfo =2; //作坊基本信息 
+		optional Equip unDetermined =3; //待确认重铸装备
+		repeated TechnologyInfo technologyInfo = 4 ; //科技树点
+	}
+
+	message CookFoodRequest{
+		repeated int32 materialId =1 ;// 所选食材id
+		optional int32 nums =2;  //次数
+	}
+
+	message CookFoodResponse{
+		optional WorkShopBaseInfo workShopBaseInfo =1;
+		optional Drop drop =2;
+	}
+
+	message RedPointInfo{
+		optional int32 type =1 ;//红点类型 1： 邮件红点 2 ：  分享外敌boss红点 3：竞技场防守记录红点
+	}
+	
+	message SaveNewPlayerPointRequest{
+		optional NewPlayerGuidePoint newPlayerGuidePoint =1;
+	}
+
+	message TakeActivityRewardRequest{
+		optional int32 missionId = 1;  //活动任务id
+		optional int32 activityId = 2 ;//活动id
+	}
+
+	message TakeActivityRewardResponse{
+		optional Drop drop = 1;
+	}
+
+	message TakeActivityRewardAllRequest{
+    	optional int32 activityId = 1 ;//活动id: 1在线奖励
+    }
+
+    message TakeActivityRewardAllResponse{
+    	optional Drop drop = 1;
+    	repeated int32 missionIds = 2;
+    }
+
+	message GetAllActivityResponse{
+		repeated ActivityInfo activityInfo =1;
+		
+	}
+
+	message RandomNameResponse{
+		optional int32 randomsurname =1; //姓
+		optional int32 randomname =2; //名
+	}
+
+	message ReNameRequest{
+		optional int32 type = 1 ; // 1:玩家起名 2: 阵容起名
+		optional string name = 2;
+		optional int32 teamPosId = 3; // 队伍id
+		optional int32 sex = 4; //0 男性 1 女
+		optional int32 channelId = 5;   //渠道Id,区分不同的语言版本，限制字符不同
+	}
+
+	message WorkShopRebuildConfirmRequest{
+		optional int32 state = 1; // 1:确认使用 0：取消
+	}
+
+ 
+	message GetSecretBoxInfoResponse{
+		optional int32 season =1;//当前周期id
+		optional int32 count =2; //总抽取次数
+	}
+
+	message SecretBoxRandomRequest{
+		optional int32 typeId = 1;
+	}
+
+	message SecretBoxRandomResponse{
+		optional Drop drop = 1; //抽取到的物品
+		optional Drop extrarReward =2; //额外奖励
+	}
+
+	message GetStoreInfosResponse{
+		repeated StoreInfo storeInfo = 1; //商店信息
+	}
+
+	message BuyStoreItemRequest{
+		optional int32 storeId =1;//商店id
+		optional int32 itemId =2; //物品id
+		optional int32 itemNum =3; //物品数量
+	}
+
+	message BuyStoreItemResponse{
+		optional Drop drop = 1; //抽取到的物品
+	}
+
+	message StoreGoodsRefreshRequest{
+		optional int32 type =1;   //0:手动刷新 1: 自动刷新 
+		optional int32 storeId = 2;  //商店id
+	}
+
+	message StoreGoodsRefreshResponse{
+		optional StoreInfo storeInfo = 1; //商店信息
+	}
+
+
+	message GetFunctionOfTimeResponse{
+		repeated FunctionOfTime functionOfTime =1 ;
+	}
+
+	message VipLevelUpResponse{
+		optional VipBaseInfo vipBaseInfo =1;
+		repeated UserMissionInfo userMissionInfo =2;//任务请求
+	}
+
+	message MissionUpdateListIndication{
+		repeated UserMissionInfo userMissionInfo =2; //任务更新详情
+	}
+
+	message TakeMissionRewardRequest{
+		optional int32 type =1 ; //  任务类型 1：vip任务 2；每日任务
+		optional int32 missionId =2;// missionId
+	}
+
+	message TakeMissionRewardResponse{
+		optional Drop drop  =1 ;
+		optional int32 treasureScore = 2 ;//孙龙的宝藏分数
+	}
+
+    //一键领取：任务奖励（日常任务，成就刷新）
+	message TakeMissionRewardAllRequest{
+    		optional int32 type =1 ; //  任务类型：2日常任务，9成就刷新
+    }
+    message TakeMissionRewardAllResponse{
+    		optional Drop drop  =1 ;
+    		repeated int32 missionIds = 2;
+    }
+
+    //一键领取：任务奖励（手札任务）
+    message TakeLetterMissionRewardAllRequest{
+     }
+    message TakeLetterMissionRewardAllResponse{
+        	optional Drop drop  =1 ;
+        	repeated int32 missionIds = 2;
+     }
+
+	message UserForceChangeRequest{
+		optional int32 teamId = 1; // 最高战力队伍id
+	}
+
+	message VipTakeBoxRequest{
+		optional int32 type =1 ;// 1 : 等级礼包 2 ：每日礼包
+		optional int32 level=2;//领取等级
+	}
+
+	message VipTakeBoxResponse{
+		optional Drop drop =1;
+	}
+
+	message RechargeInfoRequest{
+		optional int32 money = 1; //充值金额
+	}
+
+	message RechargeInfoResponse{
+		optional Drop drop = 1 ;// 首冲奖励
+	}
+
+	message GetFriendInfoRequest{
+		optional int32 type = 1; //1:好友列表, 2:推荐列表 3:申请列表 4 黑名单信息
+	}
+
+	message GetFriendInfoResponse{
+		repeated Friend Friends =1; //好友信息
+	}
+
+	//测试购买礼包
+	message TestBuyGiftGoodsRequest{
+		optional int32 goodsId = 1;
+		optional string channel = 2;  //客户端渠道
+	}
+
+    message BuyGiftGoodsOnlyZeroPriceRequest{
+        optional int32 goodsId = 1;
+    }
+
+	//购买礼包获得道具推送
+	message BuyGoodsDropIndication{
+		optional Drop drop =1;
+	}
+
+	message AllGiftGoodsIndication{
+		repeated GiftGoodsInfo GiftGoodsInfo =1;
+	}
+
+	message InviteFriendRequest{
+		repeated int32 inviteUids = 1; // 申请的好友id
+	}
+
+
+	message FriendInviteOperationRequest{
+		optional int32 type = 1; //1:同意 2:拒绝 3:全部同意 4: 全部拒绝
+		optional int32 friendId = 2; // 好友id
+	}
+
+	message sendFriendInfoIndication{ 
+		optional int32 type = 1; //1:申请好友 2: 添加好友
+		optional Friend Friends =2; //好友信息
+	}
+
+	message FriendGivePresentRequest{
+		optional int32  type = 1; //1:赠送一个人 2 赠送全部好友
+		optional int32  friendId=2;
+	}
+
+	message DelFriendRequest{
+		optional int32  friendId= 1;
+	}
+	message FriendTakeHeartRequest{
+		optional int32 type = 1; // 1:领取一个人的 2:全部领取
+		optional int32 friendId = 2; 
+	}
+
+	message FriendTakeHeartResponse{
+		optional Drop drop =1;
+		repeated int32 friendId = 2; // 已领取好友id
+	}
+
+	message FriendSearchRequest{
+		optional string name = 1; // 名字
+	}
+
+	message FriendSearchResponse{
+		optional int32 type = 1; // 1申请:, 2:好友. 3:已申请
+		optional Friend Friends =2; //好友信息
+	}
+
+	message SendFriendStateIndication{ 
+		optional int32 type = 1; //1:删除好友 2: 赠送体力
+		optional int32 friendId =2; //好友Id
+	}
+
+	message RefreshFriendStateResponse{
+		repeated int32 friendIds = 1;
+	}
+
+	message FriendBlackOptRequest{
+		optional int32 type  =1 ; // 操作类型 ： 1 加入黑名单 2 解除黑名单 3一键移除
+		optional int32 blackUid  =2;// 用户uid
+	}
+
+	message FivePlayerUpdateIndication{
+		optional int32 hadTakeDailyBox = 1 ;//是否领取每日礼包 1：已领取vip等级 -1：未领取
+		repeated Privilege privilege =2 ; //特权使用信息
+		repeated ActivityInfo activityInfo =3;//  活动刷新
+		repeated UserMissionInfo userMissionInfo =4;//任务详情(列如 每日任务重置)
+		optional fiveResetTowerInfo fiveResetTowerInfo = 5;// 重置试炼信息
+		optional SignInInfo SignInInfo = 6;//签到
+		optional PlayerBindPhone playerBindPhone = 7;//玩家手机绑定信息
+		repeated LuckWheelRewardPosInfo posInfos = 8;//转盘信息
+		repeated LuckWheelRewardPosInfo posInfosAdvance = 9;//高级转盘信息
+		repeated int32 MonthDailyTake=10;//已领取的月卡id
+		optional int32 lastFeteType =11 ; // 上次祭祀类型 //每日清除 5点推送
+		repeated int32 takeFeteReward =12 ; // 祭祀领取进度
+		optional int32 expeditionLeve =13 ; //猎妖之路阶段 -1 待选择
+		optional int32 hadLuckTime = 14;//幸运探宝次数
+		optional int32 hadAdvanceLuckTime = 15;//高级幸运探宝次数
+	}
+	
+	message ZeroPlayerUpdateIndication{
+		
+	}
+		
+
+	message GetMissionResponse{
+		repeated UserMissionInfo userMissionInfo =1;//所有任务详情
+	}
+
+	message RefreshItemNumRequest{
+		repeated int32 itemId = 1;//
+	}
+
+	message RefreshItemNumResponse{
+		repeated ItemInfo itemInfo = 1;
+	}
+
+	message UpdateBagIndication{
+		optional int32 type =1; //更新背包类型 0： 普通背包 1： 临时背包
+		repeated Item item =2;
+	}
+
+	message ModifyDecorationRequest{
+		//修改外观
+		optional int32 decorationId = 1;
+		optional int32 type = 2;//0头像框，1头像，2称号，3坐骑，4皮肤
+	}
+
+	message UpdateUserDesignation{      //更新用户使用称号
+	    optional int32 designation = 1;
+	}
+
+	//初始化云梦祈福
+	
+	//请求云梦数据
+	message blessResponse{
+		repeated blessReward fixReward = 1;
+		repeated blessReward legendReward = 2;
+		repeated blessReward supremeReward = 3;
+		repeated blessReward countReward = 4;
+		repeated blessReward rewardView = 5;
+		optional int32 lastRefreshTime = 6;
+		optional int32 count = 7;
+	}
+	//保存奖励
+	message blessSaveRequest{
+		repeated int32 rewardIds = 1;
+	}
+	//云梦抽取
+	message blessChooseRequest{
+		optional int32 locationId = 1;
+	}
+	message blessChooseResponse{
+		optional Drop reward = 1;
+		//所选格子奖励Id
+		optional int32 chooseRewardId = 2;
+	}
+	//刷新奖励
+	message blessRefresh{
+		optional blessResponse reward =1;
+	}
+
+	message storeUpdateIndication{
+		repeated StoreInfo storeInfo =1;
+	}
+	//装备锁定
+	message LockEquip{
+		repeated string id = 1;
+		optional int32 type = 2;//1：锁定操作 2：解锁操作
+	}
+
+	message ActivityUpateIndication{
+		repeated ActivityInfo activityInfo =1;
+		repeated int32 closeActivityId = 2;
+	}
+	
+	message GetForceRankInfoRequest{
+		optional int32 page = 1; //页数
+		optional int32 activiteId = 2; //活动ID
+	}
+	
+	message GetForceRankInfoResponse{
+	    repeated UseForceInfo useForceInfo = 1;
+		optional int32 myForce = 2; //我的战力
+		optional int32 myRank =3 ;// 我的排名
+	}
+	
+	//活动进度推送
+	message ActivityUpateProgressIndication{
+	   required ActivityInfo activityInfo =1;
+	}
+	
+	
+	message GetExpertInfoRequest{
+		optional int32 activiteId = 1; //活动ID
+	}
+	
+	message GetExpertInfoResponse{
+	    repeated ExpertInfo expert = 1;
+		optional int32 myScore = 2; //我的分数
+		optional int32 myRank =3 ;// 我的排名
+	}
+	
+	message SignInRequest{
+		optional int32 dayIndex = 1; 
+	}
+	
+	message SignInResponse{
+		optional Drop drop  =1 ;
+	}
+	
+	//获取编队信息
+	message GetPlayerOneTeamInfoRequest{
+		optional int32 playerId = 1;
+		optional int32 teamId = 2;
+		optional int32 serverId = 3;
+		optional int32 typeId = 4;  //0默认，1跨服竞技场，2跨服公会战
+	}
+	message GetPlayerOneTeamInfoResponse{
+		optional TeamOneInfo teamInfo = 1;
+	}
+
+	message TakeSenvenScoreRewardResponse{
+		optional Drop drop =1;
+	}
+	
+
+	message UpdateStateRequest{
+		optional int32 type = 1; // 类型信息 1 : 七日狂欢领取活动
+	}
+
+	message UpdateUserExpIndicaiton{
+		optional int32 level = 1 ;// 玩家等级
+		optional int64 exp  =2 ; // 玩家经验
+	}
+
+
+	message UpdateSecretBoxSeasonIndication{
+		optional int32 newSeasonId = 1 ;// 新的赛季id id=0 代表功能已关闭
+	}
+	
+	message GetMonsterRankInfoRequest{
+	}
+	
+	message GetMonsterRankInfoResponse{
+	    repeated MonsterRankInfo monster = 1;
+		optional int32 myScore = 2; //我的分数 -1
+		optional int32 myRank =3;// 我的排名 -1不在榜单内
+	}
+	
+	message PlayerBackCInfoIndication{
+		optional string nickName = 1;
+	}
+	
+	message UpdatePhoneinfoRequest{
+		optional string phoneNum = 1;
+	}
+	message UpdatePhoneinfoResponse{
+		optional int32 state = 1;//本月绑定状态 0 未绑定 1已绑定未领奖 2已领奖
+	}
+	
+	message GetPhoneRewardRequest{
+	}
+	
+	message GetPhoneRewardResponse{
+		optional Drop drop  =1 ;
+	}
+	
+	message QuestionIndication{
+		optional int32 state = 1; //state -1关闭 1开启
+	}
+	
+	message GetQuestionRequest{
+		
+	}
+	
+	message GetQuestionResponse{
+		optional string id= 1; //问卷id
+		optional string questDes= 2; //问卷描述
+		optional string start= 3; //开始时间
+		optional string endtime= 4; //问卷结束时间
+		repeated QuestionOptions questOptions =5; //问卷问题
+	}
+	
+	message upDataQuestionRequest{
+		repeated string options = 1; //问题答案 ABCD形式 多选拼接多个 
+	}
+	
+	message upDataQuestionResponse{
+		optional int32 result = 1;//-1失败 0成功
+	}
+
+	message BloodRank{
+}
+	message ExchangeCdkRequest{
+		optional string key = 1;
+	}
+
+	message NotifyPaySuccessfulIndicaiton{
+		optional int32 goodsId =1 ;// 购买商品id
+	}
+
+	message DirectBuyIndication{
+		optional int32 goodsId = 1; // 索购买的商品id
+		optional Drop drop = 2; // 
+	}
+		
+		
+	message RefreshLuckWheelRequest{
+		optional int32 activityId = 1;
+		optional bool isFree = 2;
+	}
+
+	message RefreshLuckWheelResponse{
+		repeated LuckWheelRewardPosInfo posInfos = 1;
+		
+	}
+	
+	message GetLuckWheelRandRewardRequest{
+		optional int32 activityId = 1;
+		optional bool repeated = 2;
+	}
+	message GetLuckWheelRandRewardResponse{
+		optional int32 activityId = 1;
+		repeated LuckWheelRewardPosInfo posInfos = 2;
+		optional Drop drop = 3; 
+	}
+
+
+	message LuckWheelIndication{
+		repeated LuckWheelRewardPosInfo posInfos = 1;//转盘信息
+		repeated LuckWheelRewardPosInfo posInfosAdvance = 2;//高级转盘信息
+	}
+
+	message GetMainLevelInfoResponse{
+		optional int32 fightId = 1 ; //当前关卡id
+		optional int32 state = 2 ;// 1 已开启但未通过 2 ：已通过 -1：代表等级卡
+		optional int32 duration = 3;//挂机时长
+		repeated AdventureBossInfo adventureBossInfo =4;
+		optional string reward = 5;
+	}
+	//快速购买孙龙宝藏等级
+	message QuickBuyTreasureLevelRequest{
+		optional int32 level = 1;//最终升到的等级
+	}
+	message TreasureRefreshIndication{
+		repeated RefreshTask tasks = 1;//刷新任务信息
+	}
+	message TreasureLevelUpIndication{
+		optional int32 level = 1;//推送戒灵秘宝等级
+		optional int32 hadBuy = 2;//是否激活
+	}
+	//删除邮件
+	message MailDelRequest{
+		repeated string mailId = 1;
+	}
+
+
+	message ViewHeroInfoRequest{
+		optional int32 targetUid = 1;
+		optional string heroId = 2 ;// 动态id
+	}
+
+	message ViewHeroInfoResponse{
+		optional Hero hero =1;
+		repeated Equip equip =2; // 英雄所穿装备、魂印（法宝不在内，放在Hero中）
+		repeated SpecialEffects SpecialEffects = 3;//属性信息
+		optional int32 force = 4 ; //战力
+		optional int32 guildSkill = 5;//公会技能
+		repeated CombatPlan combatPlans = 6;//穿戴的作战方案
+	}
+	message RankRequest{
+		optional int32 type = 1;//排行榜类型
+		optional int32 activiteId = 2;//活动id
+	}
+	message RankResponse{
+		repeated UserRank ranks = 1;
+		optional RankInfo myRankInfo = 2;
+		optional int32 myHeroTemplateId = 3;
+		optional int32 myheroLevel = 4;//英雄等级
+		optional int32 myheroStar = 5;//英雄星级
+	}
+	message RankFirstRequest{
+		repeated int32 types = 1;//传入排行榜类型id
+		repeated int32 activiteId = 2;//活动id
+
+	}
+	message RankFirstResponse{
+		repeated UserRank ranks = 1;//第一名用户信息
+		repeated int32 proud = 2;//是否已膜拜 否0 ，是1
+	}
+	message RankProudRequest{
+		optional int32 rankType = 1;//膜拜的排行榜Id
+	}
+	message RankProudResponse{
+		optional Drop drop = 1;//膜拜奖励
+	}
+	message NextActivityRequest{
+		optional int32 activityId = 1;
+	}
+	message NextActivityResponse{
+		optional int32 id = 1;//下期活动id
+		optional int32 time = 2;//下期活动开启时间
+	}
+	
+	message RefreshRechargeIndication{
+		optional double amount = 1;//总储值
+		optional double monthSaveAmt = 2 ; //月卡累计总额
+		optional double smonthSaveAmt = 3 ; //豪华月卡累计总额
+	}
+	
+	message VipTakeDilyRequest{
+	}
+
+	message VipTakeDilyResponse{
+		optional Drop drop =1;
+	}
+
+	//迷宫寻宝刷新任务
+	message MissingRoomRefreshResponse{
+		repeated UserMissionInfo infos = 1;
+	}
+	//迷宫寻宝派遣
+	message MissingRoomSendHeroRequest{
+		repeated string heroIds = 1;
+		optional int32 missionId = 2;
+	}
+	//迷宫寻宝任务加速
+	message MissingRoomAccelerateRequest{
+		optional int32 missionId = 1;
+	}
+	
+	message SexChangeRequest{
+	   optional int32 sex = 1; //0 男性 1 女
+	}
+	
+	message SexChangeResponse{
+	}
+	message PrivilegeIndication{
+		repeated Privilege infos = 1;
+	}
+	message TreasureRefreshTimeResponse{
+		optional int32 dayTime = 1;
+		optional int32 weekTime = 2;
+	}
+	message MonthCardIndication{
+		repeated MonthCardInfo monthinfos = 1;
+	}
+	
+	message TakeMothDilyRequest{
+		optional int32 type=1;
+	}
+	message TakeMothDilyResponse{
+		optional Drop drop =1;
+	}
+	message DailyChallengeRequest{
+		optional int32 id = 1;
+		optional int32 type = 2;//1为挑战 2为扫荡
+	}
+	message DailyChallengeResponse{
+		optional Drop drop = 1;
+		optional FightData fightData = 2;
+	}
+	
+	message GetSomeActivityInfoRequest{
+		repeated int32 id=1;
+	}
+	
+	message GetSomeActitityInfoRespone{
+	   repeated ActivityInfo activityInfo =1;
+	}
+	message JewelBuildRequest{
+		optional string id = 1;//宝器id
+		optional int32 type = 2;//1为强化 2为精炼
+		repeated string item = 3;//精炼材料
+	}
+	
+	message JadeDynastyRefreshIndication{
+		repeated RefreshTask tasks = 1;//刷新任务信息
+	}
+	
+	message JadeDynastyRefreshTimeResponse{
+		optional int32 dayTime = 1;
+		optional int32 weekTime = 2;
+	}
+
+	message ShengDanRefreshIndication{
+		repeated RefreshTask tasks = 1;//刷新任务信息
+	}
+
+	message ShengDanRefreshTimeResponse{
+		optional int32 dayTime = 1;
+		optional int32 weekTime = 2;
+	}
+
+	message ZhanQianZhunBeiRefreshIndication{
+		repeated RefreshTask tasks = 1;//刷新任务信息
+	}
+
+	message ZhanQianZhunBeiRefreshTimeResponse{
+		optional int32 dayTime = 1;
+		optional int32 weekTime = 2;
+	}
+
+	message WeekEndRefreshIndication{
+    		repeated RefreshTask tasks = 1;//刷新任务信息
+    	}
+    	message WeekEndRefreshTimeResponse{
+        		optional int32 dayTime = 1;
+        		optional int32 weekTime = 2;
+        	}
+
+    message GetHandBookRewardRequest{
+        optional int32 handBookId=1;
+    }
+
+    message GetHandBookRewardResponse{
+       optional Drop drop = 1;
+    }
+
+	message GetHandBookRewardOnekeyRequest{
+        optional int32 type=1; //1 全部 2，指定國家
+		optional int32 citye=2;//國家Id
+    }
+
+    message GetHandBookRewardOnekeyResponse{
+       optional Drop drop = 1;
+	   repeated int32 handBookId=2; //所有領取的Id
+    }
+	
+	
+	message VirtualBattleGetInfoResponse{
+		optional int32 fightId = 1 ; //当前关卡id
+		optional VirtualBattleCount virtualBattleCount = 2 ;
+	}
+
+	message VirtualEliteBattleGetInfoResponse{
+		optional bool  open=1;
+		optional int32 fightId = 2 ; //当前关卡id
+		optional VirtualBattleCount virtualBattleCount = 3 ;
+		repeated VirtualStarList virtualStarList=4;
+		repeated VirtualEliteBoss virtualEliteBoss=5;
+	}
+	
+	message WorldLevelIndication{
+		optional int32 worldLeve = 1;//世界等级推送
+	}
+
+	message WorldProspectRequest{       //勘察
+        optional int32 type = 1;        //1=遗址地图消耗,2=钻石消耗
+        optional int32 countType = 2;   //勘察数量 0=免费， 34=单次，35=10连
+	}
+
+	message WorldProspectResponse{
+        optional Drop drop = 1;     //奖励
+	}
+
+    message WorldProspectInfoRequest{       //勘察 页面信息查询
+
+    }
+    message WorldProspectInfoResponse{
+        optional int32 totalCount = 1;      //累计次数
+        repeated int32 getCount = 2;        //已经领取次数
+        optional bool haveFree = 3;         //是否可以免费，true可以免费
+        optional int32 haveCount = 4;       //再抽X次必出极品以上勋章
+    }
+
+    message WorldProspectTotalRewardRequest{       //勘察 累计奖励 领取
+        optional int32 count = 1;           //领取个数
+    }
+    message WorldProspectTotalRewardResponse{
+        optional Drop drop = 1;         //奖励
+    }
+
+    message WorldProspectRecordRequest{     //勘探记录
+
+    }
+
+    message GoodsReward{        //勘探 个人记录
+          optional int32 goodsId = 1;     //商品id
+          optional int32 count = 2;       //商品数量
+      }
+
+    message AllGoodsReward{      //勘探 全服个人记录
+    	optional int32 goodsId = 1;     //商品id
+        optional int32 count = 2;       //商品数量
+        optional string name = 3;       //玩家名字
+    }
+
+    message WorldProspectRecordResponse{
+        repeated GoodsReward goodsReward = 1;           //勘探 个人记录
+        repeated AllGoodsReward allGoodsReward = 2;        //勘探 全服个人记录
+    }
+
+	message UpdateProspectInfoAll{      //勘探 更新全服个人记录
+	    repeated AllGoodsReward goodsReward = 1;        //勘探 全服个人记录
+	}
+
+	message InvestigateUpLevelRequest{      //侦查升级
+
+	}
+	message InvestigateUpLevelResponse{
+        optional int32 level = 1;           //升级后的等级
+        optional int32 storeTypeId = 2;     //解锁商品类型id
+    }
+
+	// 一键扫荡副本
+    message CopyOneKeySweepRequest{
+        optional int32 type = 1;    //副本类型 1金币 2经验 3角色碎片 4支援 5龙魂 6工程兵
+		optional bool useBuy  = 2; //用购买次数
+     }
+     message CopyOneKeySweepResponse{
+    	optional Drop drop = 1;         //奖励
+    }
+
+	//推送礼包推送
+	message PushWelfareResponse{
+		repeated int32 id = 1;
+	}
+	//福利红包推送
+	message WelfareRedPacketPush{
+		repeated WelfareRedPacket redpacket = 1;
+	}
+	//福利红包发送
+	message WelfareRedPacketSendRequest{
+		optional int32 id = 1;
+	}
+	message WelfareRedPacketSendResponse{
+		repeated WelfareRedPacket redpacket = 1;
+	}
+
+	message UserTitleAddIndication{
+		optional int32 decorationId = 1;
+		optional int32 time = 2;
+	}
+	
+	message MirrorHeroInfo{
+		optional Hero hero =1;
+		repeated Equip equip =2; // 英雄所穿装备、魂印（法宝不在内，放在Hero中）
+		repeated SpecialEffects SpecialEffects = 3;//属性信息
+		optional int32 force = 4 ; //战力
+		optional int32 guildSkill = 5;//公会技能
+		repeated CombatPlan combatPlans = 6;//穿戴的作战方案
+	}
+	
+	message ViewMirrorHeroInfoRequest{
+		optional int32 teamId = 1;
+	}
+	
+	message ViewMirrorHeroInfoResponse{
+		repeated MirrorHeroInfo info = 1;
+	}
+
+	//集字活动 -- 炮击
+	message WordExchangeBombardActivityRequest{
+	    optional int32 id = 1;
+	}
+	message WordExchangeBombardActivityResponse{
+        optional Drop drop = 1;         //奖励
+    }
+
+    //称号 变动推送
+    message TitleUpdatePush{
+    		 optional int32 tid = 1;         //称号id
+             optional int32 type = 2;        //type=1获得称号，2失去称号
+    	}
+	
+	//千抽到的卡
+	message ThousandDrawCard{
+		optional int32 number = 1;//卡组编号1、2、3
+		repeated int32 cards = 2;//抽到的卡，cards[0]为关键卡
+		optional Drop drop = 3;//领卡时有数据，其他情况为空
+	}
+	//千抽 抽卡、领卡
+	message ThousandDrawRequest{
+		optional bool isDraw = 1;//true抽卡flase领卡
+		optional int32 number = 2;//卡组编号1、2、3
+	}
+	message ThousandDrawInfoResponse{
+		optional int32 round = 1;//轮次
+		repeated ThousandDrawCard thousandDrawCards = 2;//
+	}
+	
+	message RankingInfoListRequest{
+	}
+	message RankingInfoListResponse{
+		repeated int32 rewardRecords = 1;//领过奖的任务ID
+		repeated RankingInfo rankInfo = 2;//任务排行
+	}
+	message RankingTakeRewardRequest{
+		optional int32 id = 1;//任务ID
+	}
+	message RankingTakeRewardResponse{
+		repeated int32 rewardRecords = 1;//领过奖的任务ID
+		optional Drop drop = 2;//奖励
+	}
+	
+	message SetVipShowRequest{
+		optional bool showVip = 1;//VIP显示
+	}
+	message SetVipShowResponse{
+		optional bool showVip = 1;
+	}
+
+	//卡牌主题：英雄驾到 招募
+    message CardSubjectHeroGetActivityRequest{
+    	optional int32 id = 1;
+    }
+      message CardSubjectHeroGetActivityResponse{
+        optional Drop drop = 1;         //奖励
+        optional int32 times = 2;       //剩余X次数，必定获得心愿奖励
+		optional int32 wishRewardTimes = 3;   //心愿奖励次数
+    }
+	
+    //卡牌主题：英雄驾到 换心愿池
+    message CardSubjeckWishPoolChangeRequest{
+       optional int32 activityId = 1;       //活动Id
+       optional int32 id = 2;               //5个心愿池ID 对应传入：1，2，3，4，5
+    }
+   message CardSubjeckWishPoolChangeResponse{
+
+   }
+
+   //主题活动--神秘指令 刷新推送
+   	message MysticalInstructRefreshIndication{
+   		repeated RefreshTask tasks = 1;//刷新任务信息
+   	}
+
+   	message MysticalInstructRefreshTimeResponse{
+   		optional int32 dayTime = 1;
+   		optional int32 weekTime = 2;
+   	}
+
+   //主题活动--英雄收集 刷新推送
+   	message HeroCollectRefreshIndication{
+   		repeated RefreshTask tasks = 1;//刷新任务信息
+   	}
+
+   	message HeroCollectRefreshTimeResponse{
+   		optional int32 dayTime = 1;
+   		optional int32 weekTime = 2;
+   	}
+
+	//卡牌主题：英雄豪礼 请求
+    message CardSubjectHeroLuxuryGetRequest{
+    	optional int32 activityId = 1;
+    }
+    message CardSubjectHeroLuxuryGetResponse{
+        optional int32 times = 1;       //心愿奖励次数
+        repeated HeroLuxury heroLuxury = 2;     //英雄豪礼 信息
+    }	
+
+	//卡牌主题：英雄豪礼-免费领取
+    message CardSubjectHeroLuxuryGetFreeRequest{
+    	optional int32 activityId = 1;	//活动Id
+		optional int32 id = 2;         //表WishTaskRewardConfig的Id
+    }
+      message CardSubjectHeroGetFreeResponse{
+        optional Drop drop = 1;         //奖励
+    }
+	//卡牌主题：初始化信息 请求
+    message CardSubjectInitRequest{
+        optional int32 activityId = 1;	//活动Id
+    }
+    message CardSubjectInitResponse{
+        optional int32 wishTimes = 1;        //心愿奖励次数
+        optional int32 times = 2;            //剩余X次数，必定获得心愿奖励
+        optional int32 wishId = 3;           //心愿奖励Id
+    }
+	

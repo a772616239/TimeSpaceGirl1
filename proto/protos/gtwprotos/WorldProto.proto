@@ -1,0 +1,224 @@
+package com.ljsd.jieling.protocols.world;
+
+option optimize_for = SPEED;
+
+
+// request 编号需要小于 response 编号
+
+import "CommonProto.proto";
+
+	message GetWorldArenaInfoRequest{
+		optional bool isPro = 1;//是否膜拜阶段
+		optional bool isfreash = 2;//刷新
+	}
+	
+	message GetWorldArenaInfoResponse{
+		optional com.ljsd.jieling.protocols.ArenaInfo arenaInfo = 1;
+		optional int32 stage = 2;//1 未开始 2 战斗阶段 3 膜拜阶段
+		optional int32 endTime = 3;//阶段结束时间戳
+		optional int32 enterable = 4;//是否可以参加
+		optional int32 isGroup = 5;//是否已被分组 是1  否0
+		optional int32 isStart = 6;//是否在3周内，在为0 不在为1
+		optional int32 ackTimes = 7;//攻击次数
+		optional int32 maxRank = 8;//历史最高排名
+	}
+
+	message GetWorldArenaRankInfoRequest{
+		optional bool isPro = 1;//是否膜拜阶段
+	}
+	message GetWorldArenaRankInfoResponse{
+		optional com.ljsd.jieling.protocols.ArenaInfo  arenaInfo = 1;
+		optional int32 proUidTimes=2; //膜拜的次数
+		optional int32 stage = 3;//1 未开始 2 战斗阶段 3 膜拜阶段
+	}
+
+
+	message GetWorldArenaInfoIndication{
+		optional com.ljsd.jieling.protocols.ArenaInfo arenaInfo = 1;
+		optional int32 stage = 2;//1 未开始 2 战斗阶段 3 膜拜阶段
+		optional int32 endTime = 3;//阶段结束时间戳
+	}
+	// 需要的数据 世界等级（推送） 
+
+	//跨服天梯挑战
+	message GetWorldArenaChallengeRequest{
+		optional int32 teamId =1; // 本人进攻队伍id
+		optional int32 challengeServerid = 2 ;// 废弃le 对手Serverid
+		optional int32 challengeUid = 3 ;// 对手uid
+		optional int32 challengeRank = 4 ;// 对手排名 过期校验
+		optional int32 skipFight = 5 ;// 1：标识跳过战斗 0: 不跳过战斗（扫荡功能）
+		optional com.ljsd.jieling.protocols.ArenaEnemy arenaEnemys = 6; //gs携带的view信息
+		optional com.ljsd.jieling.protocols.FightTeamInfo fightTeamInfo = 7;//gs携带的挑战数据
+		optional int32 totalForce =8;//gs携带的玩家实时战力
+		optional int32 myCurrentRank = 9;//当前自己的排名，用来判断是否需要重新进
+	}
+	
+
+
+	message GetWorldArenaChallengeResponse{
+		optional com.ljsd.jieling.protocols.ArenaInfo arenaInfo = 1;//新的一批对手信息
+		optional com.ljsd.jieling.protocols.FightData fightData =2;  // 战斗数据 
+		optional int32 fightResult = 3 ;// 战斗结果 
+		optional com.ljsd.jieling.protocols.Drop drop  = 4 ;
+		optional int32 err = 5 ; //默认0 -1 时 表示挑战目标排名发生变化 需刷新
+		optional int32 defchange=6;//对手的排名变化
+	}
+	
+	//膜拜
+	message GetWorldArenaProudRequest{
+		optional int32 challengeUid = 1 ;// 对手uid
+		optional int32 challengeRank = 2 ;// 对手排名 过期校验
+	}
+	message GetWorldArenaProudResponse{
+		optional com.ljsd.jieling.protocols.Drop drop = 1;//膜拜奖励  （头像框奖励）
+		optional int32 worshipTime = 2;//膜拜次数
+		optional int32 err = 3 ; //默认0 -1 时 表示挑战目标排名发生变化 需刷新
+	}
+	//跨服天梯挑战与被挑战 战斗记录
+	
+	message WroldBattleRecord {
+		optional string recordId = 1;
+		optional com.ljsd.jieling.protocols.ArenaEnemy redEnemy = 2; //我的信息 或者攻击者信息
+		optional com.ljsd.jieling.protocols.ArenaEnemy blueEnemy = 3; //对方信息
+		optional int32 result = 4;
+		optional com.ljsd.jieling.protocols.FightData fightData =5;//战斗数据
+		optional int32 oldrank = 6;//进攻方战斗胜利之前排名
+		optional int32 rank = 7;//进攻方战斗胜利后排名
+		optional int32 attackTime =8 ; //进攻时间
+		optional int32 actoldrank = 9;//防守方战斗前排名
+		optional int32 actrank = 10;//防守方战斗后排名
+		optional int32 type = 11;//1进攻，2防守
+		optional int64 totalForce = 12;//1进攻，2防守
+	}
+
+	message GetWorldArenaRecordInfoRequest{
+		optional int32 type = 1; //1我的排行 2大神排行
+	}
+	
+	
+	message GetWorldArenaRecordInfoResponse{
+		repeated WroldBattleRecord wroldBattleRecord =1;	
+	}
+	
+	
+	//gs --》word 
+	message GetGSUserArenaInfoRequest{
+		optional int32 uid =1;
+		
+	}
+	message GetGSUserArenaInfoResponse{
+		optional com.ljsd.jieling.protocols.ArenaEnemy arenaEnemys = 1; //指定服玩家view信息
+		optional com.ljsd.jieling.protocols.FightTeamInfo fightTeamInfo = 2; //指定服玩家fight信息
+		optional int32 totalForce =3;//指定服玩家实时战力
+		
+	}
+	message GetRankRequest{
+		optional int32 type = 1;//种类id
+		optional int32 acitvityId = 2;//活动id
+		optional int32 crossId =3;//大区id
+		optional int32 uid = 4;//用户id
+	}
+	message GetRankResponse{
+		repeated com.ljsd.jieling.protocols.UserRank ranks = 1;
+		optional com.ljsd.jieling.protocols.RankInfo myRankInfo = 2;
+	}
+	message CrossUser{
+		optional int32 uid = 1;
+		optional string username = 2;
+	}
+	message AddDeathPathRankRequest{
+		optional int32 uid = 1;
+		optional CrossUser crossUserInfo = 2;
+		optional int32 guildId = 3;
+		optional int32 damage = 4;
+		optional int32 pathId = 5;
+		optional int32 groupId = 6;
+	}
+	message AddDeathPathRankResponse{
+	
+	}
+	message EvertDeathPath{
+		optional int32 gid = 1;
+		optional string guildName = 2;
+		optional int32 pathId = 3;
+		optional string serverName =4;
+	}
+	message GetDeathPathFirstRequest{
+		optional int32 groupId = 1;
+	}
+	message GetDeathPathFirstResponse{
+		repeated EvertDeathPath deathPathInfo = 1;
+	}
+	message GetDeathPathRewardRequest{
+		optional int32 groupId =1;
+		optional int32 guildId = 2;
+	}
+	message GetDeathPathRewardResponse{
+		optional int32 rankTotal = 1;
+	}
+	
+	message GuildRank{
+		optional int32 guildId = 1;
+		optional int32 rank = 2;
+	}
+	//服务器整个结算
+	message DeathPathWorldRewardRequest{
+		optional int32 groupId =1;
+	}
+	message DeathPathWorldRewardResponse{
+		repeated GuildRank ranks = 1;//所有需要发奖的公会id
+	}
+	
+	message ViewHeroInfoRequest{
+		optional int32 targetUid = 1;
+		optional string heroId = 2 ;// 动态id
+	}
+
+	message ViewHeroInfoResponse{
+		optional com.ljsd.jieling.protocols.Hero hero =1;
+		repeated com.ljsd.jieling.protocols.Equip equip =2; // 英雄所穿装备、魂印（法宝不在内，放在Hero中）
+		repeated com.ljsd.jieling.protocols.SpecialEffects SpecialEffects = 3;//属性信息
+		optional int32 force = 4 ; //战力
+		optional int32 guildSkill = 5;//公会技能
+	}
+	
+		//获取编队信息
+	message GetPlayerOneTeamInfoRequest{
+		optional int32 playerId = 1;
+		optional int32 teamId = 2;
+		optional int32 serverId = 3;
+		optional int32 typeId = 4;  //0默认，1跨服竞技场，2跨服公会战
+	}
+	message GetPlayerOneTeamInfoResponse{
+		optional com.ljsd.jieling.protocols.TeamOneInfo teamInfo = 1;
+	}
+	message GetArenaRankRewardRequest{
+		optional int32 groupId = 1;
+	}
+
+	message ArenaRank{
+		optional int32 uid = 1;
+		optional int32 rank = 2;
+	}
+	message TopRank{
+		optional string username = 1;
+		optional string serverName = 2;
+		optional int32 rank = 3;
+	}
+	message GetArenaRankRewardResponse{
+		repeated ArenaRank rankInfo =1;
+		repeated TopRank topRankInfo = 2;
+	}
+	
+	message ArenaClearInfoRequest{
+		optional int32 group = 1;
+	}
+	message ArenaClearInfoResponse{
+	
+	}
+	message ReplayWorldArenaRequest{
+		optional string fightId = 1;
+	}
+	message ReplayWorldArenaResponse{
+        optional com.ljsd.jieling.protocols.FightData fightData =1;//战斗数据
+	}

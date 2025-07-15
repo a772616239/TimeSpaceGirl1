@@ -1,0 +1,10 @@
+-keep class bitter.jnibridge.* { *; }
+-keep class com.unity3d.player.* { *; }
+-keep class org.fmod.* { *; }
+
+
+# AppsFlyer
+-dontwarn com.android.installreferrer
+-keep class com.appsflyer.** { *; }
+
+-ignorewarnings

@@ -1,0 +1,51 @@
+package com.ljsd.jieling.protocols;
+
+import "CommonProto.proto";
+
+	message AlameinBattleStage{
+		optional int32 cfgId = 1; //关卡表id
+		repeated int32 finishedStarIds = 2;//完成的星级任务id
+	}
+	
+	message AlameinBattleBox{
+		optional int32 chapter = 1;
+		optional int32 id = 2;
+	}
+
+	message AlameinBattleStageDataRequest{
+		
+	}
+
+	message AlameinBattleStageDataResponse{
+		repeated AlameinBattleStage stages = 1;
+		optional int32 challengeTimes = 2;
+		optional int32 residueBuyTimes = 3;
+		repeated AlameinBattleBox openedBoxs = 4;
+		optional int32 curFightCfgId = 5;
+	}
+
+	message AlameinBattleBoxGetRequest{
+		optional int32 chapter = 1;
+		optional int32 id = 2;
+	}
+
+	message AlameinBattleBoxGetResponse{
+		optional Drop drop = 1;
+	}
+	
+	message AlameinBattleChallengeTimesRequest{
+		
+	}
+
+	message AlameinBattleChallengeTimesResponse{
+		optional int32 result = 1;
+	}
+	
+	message AlameinBattleSweepRequest{
+		optional int32 cfgId = 1; //关卡表id
+	}
+
+	message AlameinBattleSweepResponse{
+		optional Drop drop = 1;
+	}
+	

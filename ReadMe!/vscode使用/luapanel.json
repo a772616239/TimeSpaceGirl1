@@ -1,0 +1,43 @@
+{
+	"luapanel-template": {
+		        "prefix": "luapanel",
+		        "body": [
+		            "require(\"Base/BasePanel\")",
+		            "$1 = Inherit(BasePanel)\n",
+		            "--初始化组件（用于子类重写）",
+		            "function $1:InitComponent()",
+		            "    log(\"$1:InitComponent\")",
+		            "end\n",
+		            "--绑定事件（用于子类重写）",
+		            "function $1:BindEvent()",
+		            "    log(\"$1:BindEvent\")",
+		            "end\n",
+		            "--添加事件监听（用于子类重写）",
+		            "function $1:AddListener()",
+		            "    log(\"$1:AddListener\")",
+		            "end\n",
+		            "--移除事件监听（用于子类重写）",
+		            "function $1:RemoveListener()",
+		            "    log(\"$1:RemoveListener\")",
+		            "end\n",
+		            "--界面打开时调用（用于子类重写）",
+		            "function $1:OnOpen()",
+		            "    log(\"$1:OnOpen\")",
+		            "end\n",
+		            "--界面打开或者重新打开后，界面刷新时调用（用于子类重写）",
+		            "function $1:OnShow()",
+		            "    log(\"$1:OnShow\")",
+		            "end\n",
+		            "--界面关闭时调用（用于子类重写）",
+		            "function $1:OnClose()",
+		            "    log(\"$1:OnClose\")",
+		            "end\n",
+		            "--界面销毁时调用（用于子类重写）",
+		            "function $1:OnDestroy()",
+		            "    log(\"$1:OnDestroy\")",
+		            "end\n",
+		            "return $1"
+		        ],
+		        "description": "luapanel"
+		    }
+}

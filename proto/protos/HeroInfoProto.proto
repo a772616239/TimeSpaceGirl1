@@ -1,0 +1,552 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+
+	message GetHeroListInfoRequest{
+  		optional int32 index = 1; //第一次请求索引为0, 第二次:第一次索引+每页的数量
+	}
+
+	message GetHeroListInfoResponse{
+		repeated Hero heroList = 1;
+		optional bool isSendFinish =2; //是否发送完成
+	}
+
+	message DrawHeroRequest{
+  		optional int32 type = 1;
+		optional string str = 2;
+	}
+
+	message DrawHeroResponse{
+		repeated Hero heroList = 1;
+	}
+
+	message HeroRandRequest{
+		optional int32 type =1; //抽卡类型  34=单次，35=10连抽
+	}
+
+	message HeroRandResponse{
+		optional Drop drop =1 ;
+		optional Drop extraBox = 2 ;//宝箱奖励
+		optional int32 dailyGemRandomTimes = 3 ;//限时招募，每日钻石招募过的次数
+	}
+
+	message TeamposSaveRequest{
+		optional TeamPosInfo TeamPosInfo = 1;
+	}
+
+	message GetAllTeamPosResponse{
+		repeated TeamPosInfo TeamPosInfo = 1;
+	}
+
+	//一键合成碎片
+	message HeroComposeAllRequest{
+
+    }
+    message HeroComposeAllResponse{
+    	optional Drop drop = 1;
+    }
+
+
+	message UpHeroLevelRequest{
+		optional string heroId = 1; //升级或突破的英雄id 
+		optional int32 targetLevel = 2 ;// 目标等级 
+	}
+
+	message UpHeroLevelResponse{
+		optional string heroId = 1; //升级或突破的英雄id
+		optional int32 targetLevel = 2 ;// 目标等级
+		optional int32 breakId = 3; 
+		optional int32 starBreakId = 4 ;
+	}
+
+
+	message ConsumeMaterial{
+		optional int32 position=1; //卡槽位置
+		repeated string heroIds=2; //消耗英雄ids
+	}
+
+	message UpHeroStarRequest{
+		optional string heroId = 1; //升星的英雄id
+		repeated ConsumeMaterial consumeMaterials = 2; //消耗英雄组信息
+		optional int32 type = 3;//1为英雄进阶 2为法宝进阶
+	}
+
+	
+	message UpQuickSoulEquipRequest{
+		optional string equipId = 1; //升级魂印id
+		repeated string soulEquipIds= 2; //消耗信息
+	}
+	
+	message UpSoulEquipResponse{
+		optional string equipId = 1; //升级魂印id
+		optional int32 leve =2;//经验
+		optional int32 exp =3;//等级
+		repeated string soulEquipIds= 4; //消耗信息
+	}
+	
+	message EquipWearRequest{
+		optional string heroId =1 ; //所穿英雄id
+		repeated string equipId =2 ; //装备id
+		optional int32 type = 3;//1、装备 ；2、宝器
+	}
+
+    message TitleListQueryRequest{      //称号列表 查询
+
+    }
+
+    message TitleList{
+            optional int32 tid = 1;                 //称号id
+             optional int64 insertDateTime = 2;     //称号获得时间
+             optional bool curUseTitileId = 3;      //当前激活的称号id
+    }
+
+    message TitleListQueryResponse{
+        repeated TitleList titleList = 1;
+    }
+
+    
+
+	message SoulEquipPos{
+		optional int32 equipId =1 ; //装备id
+		optional int32 position= 2; //卡槽位置
+	}
+	
+	message MergeSoulRequest{
+		optional int32 targetId = 1; //目标合成物
+		repeated int32 soulId =2;  //消耗的魂印
+	}
+	
+	message MergeSoulResponse{
+		optional Drop drop = 1; //合成物
+	}
+	
+	message OptHeroSoul{
+		optional string heroId =1 ; //所穿英雄id
+		repeated SoulEquipPos soulEquipIds =2 ; //装备id
+	}
+	
+	message SoulEquipWearRequest{
+		optional OptHeroSoul wearInfo =1;
+		optional OptHeroSoul unloadInfo =2;
+	}
+	message SoulEquipUnLoadWearRequest{
+		optional string heroId =1 ; //所穿英雄id
+		repeated SoulEquipPos soulEquipIds =2 ; //装备id
+	}
+
+
+	message EquipUnLoadOptRequest{
+		optional string heroId = 1;
+		repeated string equipIds =2;
+		optional int32 type = 3;//1、装备 ；2、宝器
+
+	}
+	message HeroComposeRequest{
+		optional Item item = 1; //合成英雄需要用的碎片,和合成英雄的个数
+	}
+	message HeroComposeResponse{
+		optional Drop drop = 1;
+	}
+	message GetAllEquipRequest{
+		optional int32 index = 1; //第一次请求索引为0, 第二次:第一次索引+每页的数量
+		optional int32 type = 2;//1、装备 、3魂印（不要在此请求法宝）4、宝器
+		
+	}
+	message GetAllEquipResponse{
+		repeated Equip equip =1;
+		optional bool isSendFinish =2; //是否发送完成
+	}
+
+	message GetAllPokemonResponse{
+		repeated PokemonInfo pokemonInfo =1;
+	}
+
+	message PokenmonUpLevelRequest{//异妖相关 组件放置升级
+		optional int32 pokemonId =1;//异妖id
+		optional int32 comonpentId =2; // 组件id
+	}
+
+	message PokemonAdvancedRequest{  //异妖进阶
+		optional int32 pokemonId = 1; //要进阶异妖的id
+	}
+
+	message RingFireLoadRequest{//天赋升级
+		optional int32 pokemonId =1;//天赋异妖id
+		optional int32 comonpentId =2; // 天赋组件id
+	}
+
+	message RingFirAdvanceRequest{  //天赋异妖进阶
+		optional int32 pokemonId = 1; //天赋要进阶异妖的id
+	}
+
+	message GetAllRingFireResponse{
+		repeated RingFireInfo ringFireInfo =1;
+	}
+
+	message SoulRandRequest{
+		optional int32 time =1; //次数
+	}
+	message SoulRandResponse{
+		optional Drop drop = 1;//掉落
+		optional int32 pos = 2;
+		optional int32 time =3; //次数
+	}
+	
+	message SoulForceRandRequest{
+	}
+	message SoulForceRandResponse{
+		optional Drop drop = 1;//掉落
+		optional int32 pos = 2;
+	}
+
+	message HeroReturnRequest{
+		optional string heroId = 1;
+	}
+
+	message HeroReturnResponse{
+		optional Drop drop =1;
+	}
+
+	message HeroLockChangeRequest{
+		optional string heroId =1;
+		optional int32 lockState = 2 ; // 1 上锁 0 ：解锁
+	}
+	
+	message ComplexEquipRequest{
+		optional int32 type = 1;//装备类型
+		optional int32 star = 2;//装备星级 0一键合成
+		optional int32 num = 3;//合成数量
+	}
+	
+	message ComplexEquipResponse{
+		optional Drop drop = 1;//合成的装备
+	}
+	
+	
+	message ComplexJewelEquipRequest{
+		optional int32 type = 1;//宝器类型 灵宝、魂宝
+		optional int32 rance = 2;//宝器属性  
+		optional int32 targetleve = 3;//目标品质 0一键合成
+		optional int32 num = 4;//合成数量 
+	}
+	
+	message ComplexJewelEquipResponse{
+		repeated string equipIds =1;//消耗的装备
+		optional Drop drop = 2;//合成的装备
+	}
+
+	message EspecialEquipBackRequest{
+		repeated string heroIdLsit = 1;//法宝归元
+	}
+	message EspecialEquipBackResponse{
+		optional Drop drop = 1;
+	}
+
+
+	message SaveHeroChangeRequest{
+		optional string heroId = 1; //操作英雄id
+	}
+	
+	message SaveHeroChangeResponse{
+	   optional int32 heroTempId = 2; //置换的id
+	}
+	
+	message CancelHeroChangeRequest{
+		optional string heroId = 1; //操作英雄id
+	}
+	
+	message CancelHeroChangeResponse{
+	}
+	
+
+	message DoHeroChangeRequest{ 
+		optional string heroId = 1; //操作英雄id
+	}
+	
+	message DoHeroChangeResponse{
+		optional Drop drop = 1;//掉落
+	}
+	
+	message HeroStarBackRequest{
+		optional int32 type = 1; //普通、高级
+		optional string tankId = 2;
+	}
+
+	message HeroStarBackResponse{
+	    optional Drop drop = 1;//掉落
+	}
+
+	message HeroExchangeRequest{
+		optional string beforeTankId = 1;
+		repeated string afterTankIds = 2;
+	}
+
+	message HeroExchangeResponse{
+	    optional Drop drop = 1;//掉落
+	}
+    message  BackpackLimitCountRequest{
+	    
+	}
+	message  BackpackLimitCountResponse{
+	  optional int32 backpackLimitCount=1;//卡库数量
+	  optional int32 hasBuyCount=2;//购买次数
+	}
+    message  BuyBackpackCountRequest{
+	    
+	}
+	message  BuyBackpackCountResponse{
+	    optional int32 buyResult=1;//购买结果 0 失败 1 成功
+	}
+
+    //是否显示入口“部件”图标 -- 部件调校（铸魂）
+	message AdjustShowRequest{
+        optional string heroServiceId = 1;     //英雄服务器ID
+	}
+	message AdjustShowResponse{
+	    optional bool isShow = 1;       //是否开启显示，false不开启，true开启
+	}
+
+	//解锁 -- 部件调校（铸魂）
+	message AdjustUnLockRequest{
+	    optional string heroServiceId = 1;     //英雄服务器ID
+	    optional int32 position = 2;           //位置1，2，3，4
+	    repeated string serviceIdsCost = 3;    //解锁消耗的英雄服务器ID
+	}
+
+	//message AdjustUnLock{
+	//    optional int32 position = 1;         //位置1，2，3，4
+	//    optional int32 isUnLock = 2;         //-1未解锁，0已解锁，>0已升级
+	//}
+
+	message AdjustUnLockListResponse{
+    	repeated AdjustUnLock adjustUnLock = 1;       //解锁列表
+		optional Drop drop = 2;
+    }
+
+    //查询解锁列表 -- 部件调校（铸魂）
+    message AdjustUnLockListRequest{
+        optional string heroServiceId = 1;     //英雄服务器ID
+    }
+
+    //部件升级 -- 部件调校（铸魂）
+    message AdjustLevelUpRequest{
+        optional string heroServiceId = 1;     //英雄服务器ID
+    	optional int32 position = 2;           //位置1，2，3，4
+    }
+
+    //重置 -- 部件调校（铸魂）
+    message AdjustResetRequest{
+    	 optional string heroServiceId = 1;     //英雄服务器ID
+    	 optional int32 position = 2;           //位置1，2，3，4
+    }
+    message AdjustResetResponse{
+        repeated AdjustUnLock adjustUnLock = 1;     //解锁列表
+        optional Drop drop = 2;                     //返还材料
+    }
+
+    //激活 -- 特性（天赋）
+    message InnateSkillActivateRequest{
+        optional string heroServiceId = 1;      //英雄服务器ID
+        optional int32 position = 2;            //栏目：1，2，3，4，5
+        optional int32 skillId = 3;             //激活的技能ID
+    }
+    message InnateSkillActivateResponse{
+        repeated PositionSkills positionSkills = 1;
+    }
+
+    //侦查（图腾） 获取所有列表
+    message TotemListRequest{
+    }
+    message Totem{
+        optional int32 totemId = 1;            //图腾ID
+        optional string heroServiceId = 2;     //英雄服务器ID
+    }
+    message TotemListResponse{
+        repeated Totem totem = 1;           //侦查（图腾）列表
+    }
+
+    //侦查（图腾） ：装备（穿戴）
+    message TotemWearRequest{
+        optional int32 totemId = 1;            //图腾ID
+        optional string heroServiceId = 2;     //英雄服务器ID
+    }
+
+    //侦查（图腾） ：卸下
+    message TotemUnloadRequest{
+        optional string heroServiceId = 2;     //英雄服务器ID
+    }
+
+    //侦查（图腾） ：升级
+    message TotemLevelRequest{
+        optional int32 totemId = 1;            //图腾ID
+    }
+
+    //侦查（图腾） ：重置
+    message TotemResetRequest{
+        optional int32 totemId = 1;            //图腾ID
+    }
+    message TotemResetResponse{
+        optional Drop drop = 1;                //掉落
+    }
+
+    //侦查（图腾） ：查询英雄是否穿戴图腾
+    message TotemHeroIfWearRequest{
+        optional string heroServiceId = 2;     //英雄服务器ID
+    }
+    message TotemHeroIfWearResponse{
+        optional int32 totemId = 1;          //英雄穿戴的图腾Id,0表示没有穿戴
+    }
+
+    //鸿蒙阵：开启共鸣格子
+    message OpenResonanceRequest {
+    	optional int32 gridId = 1; // 格子id
+    }
+
+
+    //鸿蒙阵：共鸣
+    message ResonanceRequest{
+    	optional string heroId = 1; // 需要共鸣的神将id
+    	optional int32 gridId = 2; // 格子id
+    	optional int32 type = 3; // 1:共鸣 2：卸下共鸣神将 3:卸下鸿蒙使者 4:上阵鸿蒙使者
+    }
+    	message ResonanceResponse{
+    		optional int32 leftTime = 1; // 如果是卸下，返回倒计时 单位 秒
+    	}
+
+    //鸿蒙阵：花费妖晶清除共鸣冷却时间
+    message CleanResonanceTimeRequest{
+    	optional int32 gridId = 2; // 格子id
+    	optional int32 type = 1;   // 1：清除共鸣区cd 2：清除鸿蒙使者cd
+    }
+
+
+    //鸿蒙阵：鸿蒙守卫、鸿蒙使者、共鸣信息
+    message HongmengHeroInfo{
+    	optional int32 gridId = 1; // 共鸣格子
+    	optional string heroId = 2; // 共鸣神将id
+    	optional int64	time = 3; // 共鸣神将卸下后的冷却时间 单位 秒
+    }
+
+    //鸿蒙阵：共鸣加成
+    message HongmengAddition{
+    	optional int32 additionType = 1; // 加成类型 1：等级 2：装备 3：魂宝 4：灵宝 5：法宝
+    	optional int32 value = 2; // 加成值
+    	optional int32 heroTid = 3; // 来自哪个英雄，0表示鸿蒙碑，-1未开启，其他英雄id
+    }
+
+    //鸿蒙阵：获取鸿蒙阵信息
+    message GetHongmengInfoResponse{
+    }
+
+    //鸿蒙阵：鸿蒙阵信息推送
+    message HongmengInfoIndication{
+        repeated HongmengHeroInfo hongmengGuards = 1; // 鸿蒙守卫、鸿蒙使者
+    	repeated HongmengAddition hongmengAdditions = 2; // 共鸣加成
+    	repeated HongmengHeroInfo hongmengResonacnes = 3; // 共鸣使者
+    	optional int32 hongmengTabletMax = 4; // 鸿蒙碑等级上限,0：未开启，其他为鸿蒙碑等级
+    }
+
+    //鸿蒙阵：鸿蒙碑新手引导推送
+    message HongmengSteleNewHandIndication{
+        optional int32 state = 1;// 开启鸿蒙碑
+    }
+	
+	message GetTeamPosMirrorInfoRequest{
+		optional int32 teamId = 1;
+	}
+
+ 	//英雄评论
+    message HeroCommentInfo{
+    	optional string id = 1; // 评论id
+    	optional string serverId = 2; // 服务器id
+    	optional string	uid = 3; // 用户id
+    	optional string	uName = 4; // 用户名字
+    	optional string	content = 5; // 内容
+    	optional int32	likes = 6; // 点赞数
+    	optional int32	time = 7; // 时间
+    	optional bool isLikedIt = 8; // 是否已经点赞
+    }
+
+	// 获取英雄评论
+    message HeroCommentListRequest{
+        optional int32 heroId = 1; // 英雄id
+        optional int32 page = 2; //页数
+        optional int32 sortOrder = 3; // 排序方式 1：时间排序 2：获赞排序
+    }
+
+    message HeroCommentListResponse{
+        repeated HeroCommentInfo heroCommentList = 1;	// 评论区列表
+        optional int32 loveDegree = 2; 	// 热爱度
+        optional int32 commentNum = 3; 	// 评论数
+        optional bool isLikedHero= 4; 	// 是否已经给当前坦克点赞
+        optional bool lastPage = 5; 		// 是否最后一页
+    }
+
+    // 获取我的评论
+    message HeroMyCommentRequest{
+        optional int32 heroId = 1; // 英雄id
+    }
+
+    message HeroMyCommentResponse{
+    	optional HeroCommentInfo myComment = 1;	// 我的评论信息
+    }
+
+    // 发表英雄评论
+    message HeroesCommentRequest{
+        optional int32 heroId = 1; // 英雄id
+        optional string content = 2; // 评论内容
+    }
+
+    message HeroesCommentResponse{
+    	optional bool state = 1; //状态
+    }
+
+    // 删除英雄评论
+    message HeroDelCommentRequest{
+        optional int32 heroId = 1; // 英雄id
+        optional string commId = 2; // 评论id
+    }
+
+    message HeroDelCommentResponse{
+    	optional bool state = 1; //状态
+    }
+
+    // 英雄评论点赞
+    message HeroLikeCommentRequest{
+        optional string commId = 1; // 评论id
+    }
+
+    message HeroLikeCommentResponse{
+    	optional bool state = 1; //状态
+    }
+
+    // 英雄点赞（热爱度）
+    message HeroLikeRequest{
+        optional int32 heroId = 1; // 英雄id
+    }
+
+    message HeroLikeResponse{
+    	optional bool state = 1; //状态
+    }
+
+	//card收集的领奖情况
+	message HeroCollectRewardInfoRequest{
+	}
+	message HeroCollectRewardInfo{
+		optional int32 id = 1;   //BeStronger中的ID
+		repeated int32 indexArray = 2;//进度 BeStronger中字段CollectReward数组的index
+	}
+	message HeroCollectRewardInfoResponse{
+		repeated HeroCollectRewardInfo infos = 1;
+	}
+	//card收集 领奖
+	message HeroCollectRewardRequest{
+		optional int32 id = 1; 	  //BeStronger中的ID
+		optional int32 index = 2; //BeStronger中字段CollectReward数组的index
+	}
+	message HeroCollectRewardResponse{
+		optional Drop drop = 1;//奖励
+	}

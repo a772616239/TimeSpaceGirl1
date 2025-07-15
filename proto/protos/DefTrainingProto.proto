@@ -1,0 +1,57 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+
+	message DefTrainingGetInfoRequest{
+	}
+	message DefTrainingGetInfoResponse{
+	    optional int32 fightId = 1;
+	    optional int32 fightIdMax = 2;//历史最大通关数
+	    optional int32 todayPassCount = 3;//今日通关次数
+	    optional int32 firstAwardedProgress = 4;//首通奖励进度
+	    optional string useFriendTankId = 5;
+	    optional Hero shareTank = 6;
+	    optional int32 teamLock = 7;//是否可改变阵形
+		optional int32 curBuffId = 8;//当前选择的buffid
+		repeated int32 randomBuff = 9;//随机三个buff
+		optional int32 todayStartFightId = 10;//今天开始的ID
+	}
+
+	message DefTrainingShareTankToFriendRequest{
+	    optional string heroId = 1;
+	}
+	message DefTrainingShareTankToFriendResponse{
+	    optional int32 result = 1;
+	}
+
+    message DefTrainingUseTankFromFriendRequest{
+        optional int32 friendId = 1;
+        optional string heroId = 2;
+    }
+    message DefTrainingUseTankFromFriendResponse{
+        optional int32 result = 1;
+    }
+
+    message DefTrainingGetFirstAwardRequest{
+        optional int32 fightId = 1;
+    }
+    message DefTrainingGetFirstAwardResponse{
+        optional Drop drop = 1;
+    }
+    message DefTrainingHandRestRequest{
+    }
+    message DefTrainingHandRestResponse{
+    }
+
+
+
+
+
+
+
+
+	
+
+	

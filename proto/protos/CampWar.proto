@@ -1,0 +1,126 @@
+package com.ljsd.jieling.protocols;
+import "CommonProto.proto";
+
+// 阵营简要信息获取请求
+message CampSimpleInfoGetReq
+{
+	
+}
+
+// 阵营简要信息获取回复
+message CampSimpleInfoGetAck
+{
+	optional int32 camp = 1; //混乱之治阵营
+	repeated CampSimpleInfo CampSimpleInfos = 2;
+	optional int64 lastMatchTime = 3; //上一次匹配时间  秒
+}
+
+// 阵营设置请求
+message CampSetReq
+{
+	// 阵营 1:秩序 2:混沌 3:腐化
+	optional int32 Camp = 1; 
+}
+
+// 阵营设置回复
+message CampSetAck
+{
+	
+}
+
+// 混乱之战匹配请求
+message CampWarMatchReq
+{
+	optional int32 matchType = 1; //1:免费匹配(有cd)  2:付费匹配
+}
+// 混乱之战匹配回复
+message CampWarMatchAck
+{
+	optional int64 lastMatchTime = 1; //上一次匹配时间
+	repeated CampWarPlayerInfo playerInfos = 2; //对手信息
+	repeated TeamOneInfo teamOneInfos = 3; //队伍信息
+}
+
+// 混乱之战挑战请求
+message CampWarChallengeReq
+{
+	// 对手
+	optional int32 targetUserId = 1;
+	// 选择的星数
+	optional int32 star = 2;
+}
+
+// 混乱之战挑战回复
+message CampWarChallengeAck
+{
+	optional bool isWin = 2;// 是否胜利
+	optional int32 changeScore = 3;//变更的积分
+	optional CampWarBattleRecord battleRecord = 4;
+}
+
+
+// 混乱之治信息获取请求
+message CampWarInfoGetReq
+{
+	
+}
+
+// 混乱之治信息获取回复
+message CampWarInfoGetAck
+{
+	repeated CampSimpleInfo campSimpleInfos = 1; // 阵营简要信息
+	repeated CampWarPlayerInfo campWarPlayerInfos = 2; // 挑战列表
+	optional int32 challengeNums = 3; //挑战次数
+	optional int32 challengeBuyNums = 4; //购买挑战次数
+	optional int32 selfScore = 5; //我的积分
+	optional int32 selfCamp = 6; //我的阵营
+	optional int64 lastMatchTime = 7; //上一次匹配时间
+	repeated TeamOneInfo teamOneInfos = 8; //队伍信息
+}
+
+// 混乱之治挑战次数购买请求
+message CampWarChallengeNumsBuyReq
+{
+	
+}
+
+// 混乱之治挑战次数购买回复
+message CampWarChallengeNumsBuyAck
+{
+	optional int32 challengeNums = 1; //挑战次数
+	optional int32 challengeBuyNums = 2; //购买挑战次数
+}
+
+// 混乱之治战报获取请求
+message CampWarBattleRecordGetReq
+{
+	optional int32 battleRecordType = 1; //1:个人防守战报 2:大神风采战报
+}
+
+// 混乱之治积分
+message CampWarScoreEntry
+{
+	optional int32 userId = 1;
+	optional int32 score = 2;
+}
+
+// 混乱之治战报获取回复
+message CampWarBattleRecordGetAck
+{
+	repeated CampWarBattleRecord battleRecords = 1;
+	repeated UserSimpleInfo userSimpleInfos = 2;
+	repeated CampWarScoreEntry scoreEntries = 3; //用户混乱之治积分
+	repeated TeamOneInfo hlTeamOneInfos = 4; //队伍信息
+}
+
+// 混乱之治排行榜信息获取请求
+message CampWarRankingListInfoGetReq
+{
+	optional int32 rankType = 1; //排行榜类型
+}
+
+// 混乱之治排行榜信息获取回复
+message CampWarRankingListInfoGetAck
+{
+	optional CampWarRankingListInfo rankingListInfo = 1; 
+}

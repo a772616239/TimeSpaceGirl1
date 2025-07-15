@@ -1,0 +1,107 @@
+package com.ljsd.jieling.protocols;
+
+option optimize_for = SPEED;
+
+import "CommonProto.proto";
+	message AgentInfo {
+		optional int32 playerUid = 1;
+		optional int32 curHp = 2;
+		optional int32 maxHp =3;
+		optional int32 camp =4; //阵营 区分敌我
+		optional int32 curXY =5; //所在位置
+		repeated FoodBuffer foodBuffers = 6; // buff
+		optional int32 reviveTime = 7; // 死亡复活剩余时间
+		repeated int32 dieList = 8; // 死亡计数(按顺序记录杀死自己的玩家uid)
+		repeated int32 killList = 9; // 杀人计数(按顺序记录自己杀死的玩家uid)
+		repeated int32 path = 10; // 路径图
+	}
+	
+	//因为多个人在一个房间中战斗，需要实现实时的处理方案
+	
+	//匹配进入的房间
+	message RoomMatchRequest{
+		optional int32 type = 1;		//type 匹配游戏类型 1血战
+	}
+	//匹配应答
+	message RoomMatchResponse{
+		optional bool result = 1;		//0 成功
+		optional int32 type = 2;		//type 匹配游戏类型 1血战
+	}
+	
+	//取消匹配，必须等待服务器应答成功后，客户端才能退出匹配界面，
+	//否则可能服务器端可能匹配成功，客户端退出了匹配模式
+	message RoomCancelMatchRequest{
+		optional int32 type = 1;		//type 匹配游戏类型 1血战
+	}
+	
+	message RoomCancelMatchResponse{
+		optional bool result = 1;		//true 取消成功，false 不能取消
+		optional int32 type = 2;		//type 匹配游戏类型 1血战
+	}
+	
+	message RoomMatchSuccessIndication{
+		optional int32 type =1; 
+		optional SceneInfo sceneInfo =2; // 场景信息
+	}
+	
+	//必须有准备过程防止因为机器性能原因导致，性能好的先进入游戏
+	message RoomStartGameReadyRequest{
+		optional int32 type = 1;		//type 匹配游戏类型 1血战		
+	}
+	//开始游戏应答
+	message RoomStartGameReadyResponse{
+		optional int32 type = 1;		//type 匹配游戏类型 1血战
+	}
+		
+	message RoomStartGameIndication{ 
+		optional int32 roomId = 1;
+		optional int32 type = 2;		//type 匹配游戏类型 1血战
+	}
+
+	//获取全量信息
+	message RoomGetFullInfoResponse{ 
+		optional RoomMatchSuccessIndication roomMatchSuccessIndication =1;
+	}
+	//血战排行榜
+	message BloodRankResponse{
+		repeated BloodPersonInfo infos = 1;
+		optional int32 myRank = 2;
+	}
+
+	message RoomAddressIndication{
+		optional string address = 1 ;// 房间地址信息
+		optional int32 type = 2;		//type 匹配游戏类型 1血战
+	}
+
+	message RoomLoginResponse{
+		optional RoomMatchSuccessIndication roomMatchSuccessIndication =1;
+	}
+
+   message BloodyScoreItemInfo{
+   	    optional int32 id =1;
+    	optional int32 status = 2; // 领取状态标识 0： 未领取 1：已领取但未领取花钱的奖励 2：已领取并且已领取花钱的奖励
+   }
+
+	message GetBloodyScoreInfoResponse{
+		optional int32 score = 1 ; // 积分
+		optional int32 hadBuy = 2; // 是否已购
+		repeated BloodyScoreItemInfo bloodyScoreItemInfo =3;
+	}
+
+
+
+
+	message BloodyTakeScoreRewardRequet{
+		optional int32 id = 1; // 奖励id -1代表点击一键领取
+	}
+
+	message BloodyTakeScoreRewardResponse{
+		optional Drop drop = 1;
+		repeated BloodyScoreItemInfo changeItemInfo =2; // 状态变化的信息
+	}
+
+	message BloodyScoreChangeIndication{
+		optional int32 myscore = 1 ;// 血战积分
+	}
+
+	

@@ -1,0 +1,60 @@
+local DifferDemonsConfig = {
+__count = 10,
+__indexs = {1.01},
+__values = {-30,30,6,1,9,1.2,2,-30.2,-20.2,81,1.9,5791,1.53},
+__exVals = {19,nil,.55,.6,'刀劳鬼','蒸笼仔','横公','拘魂姬','火鼠','拦面叟','孙龙','陌刀','风狸','天麟',.7,.48,.9,.76,.8,.5},
+__fields = {
+	'Id',
+	'Name',
+	'Quality',
+	'Icon',
+	'LiveIcon',
+	'Scale',
+	'Position',
+	'Effect',
+	'AvatarResourceID',
+	'LockAvatarResourceID',
+	'ComonpentList',
+	'Aptitude'
+},
+__defaults = {
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil
+},
+__refs = {
+	{62,1.9},
+	{3,.3,1,.5},
+	{2,.9},
+	{18,-5,2,-1,5,3,-6,4,-3,4},
+	{60,1,-1,12,1,-12,13,1.3},
+	{{{1},{2,.3,9,-9,0,6,2,-8}},{{2},{9,-7,0,-1,10,-1,0,2,-1,1}}},
+	{59,.9},
+	{2,.9},
+	{2,.9},
+	{{{1},{23,-3.4,-4.5}},{{2},{24,-3.4,-4.5}},{{3},{25,-3.4,-4.5}},{{4},{38,-4.5},{1.4}}},
+	{5,.3,1,.4,1}
+},
+__refPoss = {
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil
+},
+}
+return DifferDemonsConfig

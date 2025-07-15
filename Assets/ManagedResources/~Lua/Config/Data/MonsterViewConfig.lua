@@ -1,0 +1,60 @@
+local MonsterViewConfig = {
+__count = 63,
+__indexs = {1.36},
+__values = {-480,-10.2,84,246,40,5,25,10,5,2.1,-10.3,1.4,6,-10.2,-5.2,-10.2,20,-5.4,20,-10.4,40,800,7015,-3.2,14,18,10948,1.01,-2.2,1.41,2,1.92,2941,1.65},
+__exVals = {106,nil,'m_bahy_0017_skeff_slide_attacked','m_jdjs_0009_skeff_tap_attacked','m_jy_0004_skeff_tap_attacked',.5,'m_lrh_0027_skeff_tap_attacked',.3,.4,'m_jdjs_0009_skeff_slide_attacked','m_kn_0018_skeff_tap_attacked',.25,.55,.8,.2,.17,.45,'m_fwkl_0010_skeff_tap_attacked','m_dhx_0022_skeff_tap_attacked','m_ddk_0023_skeff_tap_attacked','m_sg_0024_skeff_tap_attacked','m_fwwb_0016_skeff_tap_attacked','魔术骷髅','无名角羊','烛刃骷髅','无名角羊王','山寨典狱官','符文骷髅','彼岸花妖','巨大僵尸','顽皮地鼠','食肉兔','巨猿','风见角羊','港口卫兵','港口翼人护卫','白叶翼魔','白叶亡灵法师','白叶爪刃魔','荆棘巨大僵尸','荆棘角羊王','荆棘翼魔','荆棘狐熊','荆棘笑面棺材','荆棘独轮刺客','荆棘烛刑鬼','御水角羊王','御水翼魔','御水狐熊','御水独轮刺客','御水烛刑鬼','御水卫兵','毁灭巨大僵尸','毁灭翼魔','毁灭符文骷髅','毁灭魔术骷髅','利刃虎','樱首','寒水巨大僵尸','蒜头妹','寒水棺材','寒水烛刑鬼','黑狱精灵','黑狱炮兵','小叶延始祖','小蛋蛋','深渊巨魔','蒙面力士（大山）','卫兵头领','男逃难者','地痞','业火堂堂主','诡面妖烈','蜂巢','赤华蛇魔','猫鼬','变异角羊','幽冥墨镜','雪首','黄金翼龙','金甲地龙','冥虎','冥鬼','独角仙','狐妖',.7,.6,.88,'m_ghboss_50001_skeff_slide_attacked','m_hydyg_0001_skeff_tap_attacked','m_bahy_0017_skeff_tap_attacked','m_ds_0011_skeff_tap_attacked','m_rtz_0012_skeff_tap_attacked','m_djy_0013_skeff_tap_attacked','m_mz_0020_skeff_tap_attacked','m_sm_0021_skeff_tap_attacked','m_hypd_0003_skeff_tap_attacked','m_xyysz_0014_skeff_tap_attacked','m_xdd_0015_skeff_tap_attacked','m_syjm_0026_skeff_tap_atacked','m_ghboss_50001_skeff_tap_atacked','m_hwws_0008_skeff_tap_attacked','m_djy_0013_skeff_slide_attacked','m_wy_0019_skeff_tap_attacked','m_ys_0028_skeff_tap_attacked','m_hyjl_0002_skeff_tap_attacked','m_syjm_0026_skeff_slide_attacked'},
+__fields = {
+	'Id',
+	'ReadingName',
+	'Type',
+	'Live',
+	'enemy_liveScale',
+	'offset',
+	'CastingSkills',
+	'screen',
+	'hit',
+	'aoe1',
+	'aoe2',
+	'MonsterIcon'
+},
+__defaults = {
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil
+},
+__refs = {
+	{179,1.26},
+	{17,1,-1,1,-2,4.2,1.2,.3,-2,0,3,.2,-2,1.2,-1,-1,-1,1.3,-1,16.3,1,2,-2,0,3.1,6.4,-3,2,0,1,-3,.4,1,2,0,-1,2.1,0,1,4.1,0},
+	{44,1.62,-4,5,1.61,-48,1.4,45,1.21},
+	{162,.3,80,-77,-1,0,1,3.2,-2,3,-3,-3.2,-4,6.4,7,-7,.2,5.2,3.2,-1,1,-3,0,2,79,-79,1,4,-7,8,0,-6,0,-2,9,-7,-2,20.3,8,-4,-3,7,72,-71,-8,-3,11,-2,-9},
+	{{{1},{15,.94,12,-12,.3,-7,7,.3,6.2,16}},{{2},{22,1,-14,22,-18,11,-12,3,-6,1,20,-7,6,3,-21,4,6,-6,16,-20,14,1,-12,6,11,6.2,-11,6,9,-14,-4,1,10,6,5,-18,6,5,-6,9,-17,34.3,-25,25,.3,-12,0,-11,11,0,-12,34,-3,2,-1,-8,-26,4}}},
+	{38,.26},
+	{158,.16,87},
+	{161,.3,85,-72,73,-81,82,1.2,-89,.2,6,-6,90,-85,-5,6,8,-14,15,-15,0,6,8,1.2,-16,5,1,7,-13,.2,5,86,-91,16,-16,92,1.3,-95,.61,96},
+	{159,.11,19,80,-99,.41,19,-19,.23},
+	{160,.9,99,-99,.3,100,-100,.71,3,98,-101,.3,102,-102,.2,103,-103,.4,3,.21},
+	{101,1.44,-44,.4,45,1.11,0}
+},
+__refPoss = {
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil
+},
+}
+return MonsterViewConfig

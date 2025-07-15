@@ -1,0 +1,60 @@
+local AdjutantConfig = {
+__count = 4,
+__indexs = {1.4},
+__values = {-713,713,1.2,30,48,40,119881,1.2},
+__exVals = {32,'4010001','4010002','4010003','4010004','4010005','4010006','4010007','4010012','4010009','4010010','4010011','4010013','lihui_nvwa','lihui_aoding','lihui_zhousi','lihui_magu','X1_card_nvwa','X1_card_aoding','X1_card_zhousi','X1_card_magu','X1_yindao_nvwa','X1_yindao_aoding','X1_yindao_zhousi','X1_yindao_magu',1.4,5.5,7.5,5.3,'X1_battle_nvwa','X1_battle_aoding','X1_battle_zhousi','X1_battle_magu'},
+__fields = {
+	'AdjutantId',
+	'Name',
+	'Des',
+	'Talk',
+	'Image',
+	'Picture',
+	'Head',
+	'UnlockType',
+	'Cost',
+	'Scale',
+	'Pos',
+	'BattleIcon'
+},
+__defaults = {
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil
+},
+__refs = {
+	{11,1.3},
+	{15,1.3},
+	{19,1.3},
+	{23,1.3},
+	{27,1.3},
+	{31,1.3},
+	{3,1,.2},
+	{{{1},{6,2,1.2}},{{2},{3,.2},{1}}},
+	{35,1.3},
+	{{{1},{2,5,0,-2}},{{2},{1.2,.2}}},
+	{39,1.3}
+},
+__refPoss = {
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil
+},
+}
+return AdjutantConfig

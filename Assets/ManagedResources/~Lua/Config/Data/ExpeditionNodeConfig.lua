@@ -1,0 +1,60 @@
+local ExpeditionNodeConfig = {
+__count = 11,
+__indexs = {1.11},
+__values = {-35,35,1.11,14,15,5,20,5,10,120,202,398,387},
+__exVals = {26,nil,'idle',.13,1.5,'精英节点','首领节点','复活节点','回复节点','普通节点','圣物节点','招募节点','商店节点','试炼节点','贪婪节点','奖励节点','live2d_tianjiang','live2d_tiangongboss','d_danaotiangong_bagualu','d_danaotiangong_pantao','live2d_tianbing','d_danaotiangong_shengwu','d_danaotiangong_linglongta','d_danaotiangong_baoku','d_danaotiangong_wuzhishan','d_danaotiangong_yaochi','UI_effect_ExpeditionReward'},
+__fields = {
+	'Id',
+	'name',
+	'type',
+	'Icon',
+	'AniOrImage',
+	'Scale',
+	'Position',
+	'Animation',
+	'Reward',
+	'PoolId',
+	'HolyProbability',
+	'TaskScore'
+},
+__defaults = {
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil
+},
+__refs = {
+	{28,1.01},
+	{3,1.01},
+	{39,1.01},
+	{3,0,1,0,-1,1,.4,1},
+	{26,0,-23,0,23,-23,.4,24},
+	{{{1},{2,.9,21}},{{2},{19,0,-3,0,3,-18,17,-1,.2,4}}},
+	{25,.01},
+	{4,23,-25,0,1,-1,.5},
+	{2,.5,1,-1,2,1,-3},
+	{{{1,1},{3,.2},{1.2,3}},{{1,2},{2,0,20},{1.2,3}},{{2,1},{4,.2},{1.2,3}},{{2,2},{22,-20,18},{1.2,3}},{{3,1},{5,.2},{1.2,3}},{{3,2},{20,-18,0},{1.2,3}}},
+	{{{1,1},{3},{11}},{{1,2},{14},{11}},{{2,1},{4},{11}},{{2,2},{15},{11}},{{3,1},{5},{11}},{{3,2},{12},{11}}}
+},
+__refPoss = {
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil
+},
+}
+return ExpeditionNodeConfig

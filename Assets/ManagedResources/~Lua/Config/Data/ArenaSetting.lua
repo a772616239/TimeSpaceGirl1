@@ -1,0 +1,60 @@
+local ArenaSetting = {
+__count = 1,
+__indexs = {1},
+__values = {0,1,2,11,2,4,3,27,250,700,7000,1},
+__exVals = {1,'千战逐胜台'},
+__fields = {
+	'Id',
+	'AreanName',
+	'ColdTime',
+	'Score',
+	'BattleFree',
+	'Cost',
+	'Item',
+	'Price',
+	'MaxPrice',
+	'MostTime',
+	'BattleWinReward',
+	'BattleLoseReward'
+},
+__defaults = {
+	13,
+	3,
+	10,
+	5,
+	{7,2},
+	4,
+	{1,1,8,8},
+	9,
+	6,
+	11,
+	12
+},
+__refs = {
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil
+},
+__refPoss = {
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil
+},
+}
+return ArenaSetting

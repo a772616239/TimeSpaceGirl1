@@ -29,7 +29,7 @@ SoundConfig = {
     Sound_RoleCasting = "UI_Casting_01", --人物casting
     Sound_MonsterCasting = "UI_Casting_02", --异妖casting
     Sound_Buff = "Audio_skeff_buff_01",
-    Sound_DeBuff = "n1_snd_debuff_1",
+    Sound_DeBuff = "Audio_skeff_debuff_01",
 
     Sound_Recruit1 = "n1_ui_recurit_01",
     Sound_Recruit2 = "n1_ui_recurit_02",

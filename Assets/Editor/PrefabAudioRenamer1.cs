@@ -5,15 +5,15 @@ using System.IO;
 /// <summary>
 /// 文件夹下改名
 /// </summary>
-public class PrefabAudioRenamer1 : EditorWindow
+public class ResRenamer1 : EditorWindow
 {
     private string targetFolder = "Assets/";
     private bool includeSubfolders = true;
 
-    [MenuItem("Tools/重命名工具/批量重命名预制体和音效")]
+    [MenuItem("Tools/重命名工具/批量重命名资源")]
     public static void ShowWindow()
     {
-        GetWindow<PrefabAudioRenamer1>("重命名工具");
+        GetWindow<ResRenamer1>("重命名工具");
     }
 
     void OnGUI()
@@ -50,6 +50,7 @@ public class PrefabAudioRenamer1 : EditorWindow
         allGuids.AddRange(AssetDatabase.FindAssets("t:Prefab", new[] { targetFolder }));
         allGuids.AddRange(AssetDatabase.FindAssets("t:AudioClip", new[] { targetFolder }));
         allGuids.AddRange(AssetDatabase.FindAssets("t:AnimationClip", new[] { targetFolder }));
+        allGuids.AddRange(AssetDatabase.FindAssets("t:Material", new[] { targetFolder }));
         
         if (includeSubfolders)
         {
@@ -59,6 +60,7 @@ public class PrefabAudioRenamer1 : EditorWindow
                 allGuids.AddRange(AssetDatabase.FindAssets("t:Prefab", new[] { folder }));
                 allGuids.AddRange(AssetDatabase.FindAssets("t:AudioClip", new[] { folder }));
                 allGuids.AddRange(AssetDatabase.FindAssets("t:AnimationClip", new[] { folder }));
+                allGuids.AddRange(AssetDatabase.FindAssets("t:Material", new[] { folder }));
             }
         }
 

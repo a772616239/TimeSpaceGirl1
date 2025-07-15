@@ -1748,10 +1748,10 @@ function this.GetBattleBg(fightType)
         or fightType == BATTLE_TYPE.Ladders_Challenge
         or fightType == BATTLE_TYPE.DAILY_CHALLENGE then
         return "Map4"
-    elseif fightType == BATTLE_TYPE.DefenseTraining then
+    elseif fightType == BATTLE_TYPE.DefenseTraining 
+        or fightType == BATTLE_TYPE.Test then
         return "Map5"
     elseif fightType == BATTLE_TYPE.BLITZ_STRIKE
-        or fightType == BATTLE_TYPE.Test
         or fightType == BATTLE_TYPE.GUILD_CAR_DELAY then
         return "Map1"
     elseif fightType == BATTLE_TYPE.Climb_Tower_Advance then

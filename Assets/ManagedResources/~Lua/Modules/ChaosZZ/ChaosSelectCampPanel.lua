@@ -106,7 +106,7 @@ end
 function ChaosSelectCampPanel:RefreshView()
     
     
-    if CampData then
+    if CampData and CampData[1] ~= nil then
         local battlenum = CampData[1].totalFight  --默认第一个
         minBattleNumIndex = CampData[1].camp
         for k,v in ipairs(CampData) do
@@ -121,6 +121,9 @@ function ChaosSelectCampPanel:RefreshView()
                minBattleNumIndex = v.camp
             end
         end
+    else
+        LogRed("ChaosSelectCampPanel:RefreshView() CampData is nil")
+        return
     end
     
     

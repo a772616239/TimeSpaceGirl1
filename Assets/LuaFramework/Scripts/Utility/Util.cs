@@ -1141,38 +1141,49 @@ namespace GameLogic
                 return null;
             }
             
-            if (!string.IsNullOrEmpty(_spriteName))
+            if(L != 0)
             {
-                if(L != 0)
+                if(_spriteName.EndsWith("_zh"))
                 {
-                    if(_spriteName.EndsWith("_zh"))
+                    #region 替换下面注释的代码
+
+                    if(MultiLanguageHelper.MultiLanguageDictionary.ContainsKey(L))
                     {
-                        #region 替换下面注释的代码
-
-                        if(MultiLanguageHelper.MultiLanguageDictionary.ContainsKey(L))
-                        {
-                            _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + MultiLanguageHelper.MultiLanguageDictionary[L].SpriteNameSuffix;
-                        }
-
-                        #endregion
-
-                        //if(L == 1)
-                        //{
-                        //    _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + "_en";
-                        //}else if(L == 2)
-                        //{
-
-                        //}
+                        _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + MultiLanguageHelper.MultiLanguageDictionary[L].SpriteNameSuffix;
                     }
-                }
 
-                if (!_spriteName.StartsWith("cn2-"))
-                {
-                    _spriteName = "cn2-" + _spriteName;
+                    #endregion
+
+                    //if(L == 1)
+                    //{
+                    //    _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + "_en";
+                    //}else if(L == 2)
+                    //{
+
+                    //}
                 }
             }
-           
-            return App.ResMgr.LoadAsset<Sprite>(_spriteName);
+            
+            if (!_spriteName.StartsWith("cn2-"))
+            {
+                _spriteName = "cn2-" + _spriteName;
+            }
+            // Log("load _spriteName:"+_spriteName+"--L:"+L);
+            var sprite= App.ResMgr.LoadAsset<Sprite>(_spriteName);
+            if (sprite==null&&(_spriteName.EndsWith("_en")||_spriteName.EndsWith("_jp")))
+            {
+                Log("加载不到多语言，使用中文："+_spriteName);
+                if (_spriteName.Contains("zhucheng"))
+                {
+                    _spriteName = "cn2-X1_common_zh";
+                }
+                else
+                {
+                    _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + "_zh";
+                }
+                sprite= App.ResMgr.LoadAsset<Sprite>(_spriteName);
+            }
+            return sprite;
         }
 
         public static void LoadSpriteAsync(string spriteName, Image image)

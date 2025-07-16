@@ -248,6 +248,7 @@ end
 -- 设置audioUnit
 local function _SetAudioUnit(audioUnit, resName, auildType, volume)
     -- __DebugLog("_SetAudioUnit -------->"..resName)
+
     -- 获取声音文件
     local clipNew = poolManager:LoadAsset(resName, PoolManager.AssetType.MediaBg)
     if not clipNew then return nil end
@@ -275,6 +276,14 @@ local function _SetAudioUnit(audioUnit, resName, auildType, volume)
         audioUnit.audio:Play()
     else
         audioUnit.audio.pitch = Time.timeScale
+            -- 将 resName 转为小写
+        local lowerResName = string.lower(resName)
+        
+        -- 检查是否包含 "x1" 且不包含 "cn-2"
+        if string.find(lowerResName, "x1") and  string.find(lowerResName, "cn2%-") then
+            resName = resName:gsub("^cn2%-", "")  -- 移除开头的 "cn2-"
+        end
+        --Log("resName"..resName)
         local data = ConfigManager.GetConfigDataByKey(ConfigName.AudioConfig, "Name", resName)
         if data then
             if data.Type == 12 then

@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 using System.Collections.Generic;
 
 namespace XDebug
@@ -32,6 +33,8 @@ namespace XDebug
         {
             GameLogic.GameManager.Instance.AddUpdateEvent(UpdateLog);
         }
+
+        public static Action<string> AfterLog { get; set; }
 
         private static string getFormatStr(object[] args)
         {
@@ -76,7 +79,7 @@ namespace XDebug
             str = "[" + System.DateTime.Now.ToString("hh:mm：ss：ffff") + "] : " + str.Substring(0, str.Length - 3);
             logList.Add(new LogInfo() {str = str, color = WHITE});
         }
-
+        
         public static void l(Color color, params object[] args)
         {
             if (isEnabled == -2) return;
@@ -88,6 +91,10 @@ namespace XDebug
             logList.Add(new LogInfo() {str = str, color = color});
             if (isEnabled >= 0)
                 GameCore.BaseLogger.Log(str);
+            if (AfterLog!=null)
+            {
+                AfterLog(str);
+            }
         }
 
         public static void clear()

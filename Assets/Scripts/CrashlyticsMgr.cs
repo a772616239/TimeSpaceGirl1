@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -17,6 +18,7 @@ namespace ETModel
     {
         public static CrashlyticsMgr Inst;
         public static bool IsRelease = false;
+        public static Action<string> AfterLog { get; set; }
 
         // Use this for initialization
         public void Awake()
@@ -43,7 +45,7 @@ namespace ETModel
             {
                 var dependencyStatus = task.Result;
                 Debug.Log("Init CrashlyticsMgr: succ");
-                XDebug.Log.AfterLog = (str) =>
+                AfterLog = (str) =>
                 {
 #if !UNITY_EDITOR
                      Crashlytics.Log(str);

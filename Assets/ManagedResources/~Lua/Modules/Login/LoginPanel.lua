@@ -809,27 +809,27 @@ function this.OnConnect(network)
         return
     end
     RequestPanel.Show(GetLanguageStrById(11125))
-    -- if IsSDKLogin then
-    --     Log(LoginRoot_Url 
-    --     .. "tk/getUserInfo?openId=" .. AppConst.OpenId 
-    --     .. "&serverId=" .. LoginManager.ServerId 
-    --     .. "&token=" .. AppConst.MiTokenStr 
-    --     .. "&platform=" .. 1
-    --     .. "&sub_channel=" .. LoginRoot_SubChannel 
-    --     .. "&pid=" .. AppConst.SdkChannel   --LoginManager.pt_pId 
-    --     .. "&gid=" .. AppConst.SdkPackageName   --LoginManager.pt_gId
-    --     .. "&version=" .. LoginRoot_PackageVersion)
-    --     networkMgr:SendGetHttp(LoginRoot_Url 
-    --         .. "tk/getUserInfo?openId=" .. AppConst.OpenId 
-    --         .. "&serverId=" .. LoginManager.ServerId 
-    --         .. "&token=" .. AppConst.MiTokenStr 
-    --         .. "&platform=" .. 1
-    --         .. "&sub_channel=" .. LoginRoot_SubChannel 
-    --         .. "&pid=" .. AppConst.SdkChannel   --LoginManager.pt_pId 
-    --         .. "&gid=" .. AppConst.SdkPackageName   --LoginManager.pt_gId
-    --         .. "&version=" .. LoginRoot_PackageVersion,
-    --             this.OnReceiveLogin, nil, nil, nil)
-    -- else
+    if IsSDKLogin then
+        Log(LoginRoot_Url 
+        .. "tk/getUserInfo?openId=" .. AppConst.OpenId 
+        .. "&serverId=" .. LoginManager.ServerId 
+        .. "&token=" .. AppConst.MiTokenStr 
+        .. "&platform=" .. 1
+        .. "&sub_channel=" .. LoginRoot_SubChannel 
+        .. "&pid=" .. AppConst.SdkChannel   --LoginManager.pt_pId 
+        .. "&gid=" .. AppConst.SdkPackageName   --LoginManager.pt_gId
+        .. "&version=" .. LoginRoot_PackageVersion)
+        networkMgr:SendGetHttp(LoginRoot_Url 
+            .. "tk/getUserInfo?openId=" .. AppConst.OpenId 
+            .. "&serverId=" .. LoginManager.ServerId 
+            .. "&token=" .. AppConst.MiTokenStr 
+            .. "&platform=" .. 1
+            .. "&sub_channel=" .. LoginRoot_SubChannel 
+            .. "&pid=" .. AppConst.SdkChannel   --LoginManager.pt_pId 
+            .. "&gid=" .. AppConst.SdkPackageName   --LoginManager.pt_gId
+            .. "&version=" .. LoginRoot_PackageVersion,
+                this.OnReceiveLogin, nil, nil, nil)
+    else
         Log(LoginRoot_Url 
         .. "tk/getUserInfo?openId=" ..LoginManager.openId 
         .. "&serverId=" .. LoginManager.ServerId 
@@ -846,7 +846,7 @@ function this.OnConnect(network)
         .. "&sub_channel=" .. LoginRoot_SubChannel 
         .. "&version=" .. LoginRoot_PackageVersion,
             this.OnReceiveLogin, nil, nil, nil)
-    -- end
+    end
 end
 
 function this.OnDisconnect(network)

@@ -1,6 +1,7 @@
 ﻿using System;
 using UnityEngine;
 using System.Collections.Generic;
+using ETModel;
 
 namespace XDebug
 {
@@ -34,7 +35,6 @@ namespace XDebug
             GameLogic.GameManager.Instance.AddUpdateEvent(UpdateLog);
         }
 
-        public static Action<string> AfterLog { get; set; }
 
         private static string getFormatStr(object[] args)
         {
@@ -91,9 +91,9 @@ namespace XDebug
             logList.Add(new LogInfo() {str = str, color = color});
             if (isEnabled >= 0)
                 GameCore.BaseLogger.Log(str);
-            if (AfterLog!=null)
+            if (CrashlyticsMgr.AfterLog!=null)
             {
-                AfterLog(str);
+                CrashlyticsMgr.AfterLog(str);
             }
         }
 

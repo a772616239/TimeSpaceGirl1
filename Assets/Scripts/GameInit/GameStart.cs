@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using GameLogic;
 using System.IO;
+using XDebug;
 
 /// <summary>
 /// 游戏启动驱动
@@ -51,6 +52,8 @@ public class GameStart : MonoBehaviour
                     //     // playSplash();
                     //     PlayerPrefs.SetInt("gameStart",2);
                     // };
+                    PlayerPrefs.SetInt("gameStart",2);
+
                     playSplash();
                 }
                 else

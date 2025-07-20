@@ -67,7 +67,7 @@ public class GoogleSignMgr : MonoBehaviour
 
             string name = null;
             string pw = null;
-            GetAcc("GFFFF" + id, out name, out pw);
+            GetAcc("gt" + id, out name, out pw);
 
             XDebug.Log.l("GoogleSignMgr 3:pw:" + pw+"-acc:"+ name);
             if (callback != null)

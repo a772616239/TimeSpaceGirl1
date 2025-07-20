@@ -357,6 +357,12 @@ function this:OnOpen(...)
         -- 获取服务器列表
         this.RequestServerList(userId, this.OnReceiveServerList)
     end
+    this.LoginPlatform = PlayerPrefs.GetInt(lastLoginPlatform, 0)
+    if this.LoginPlatform  ~= 0 then
+        this.sdkLoginBtn:SetActive(true)
+        this.btnLoginPart.gameObject:SetActive(false)
+        this.serverSelectPart.gameObject:SetActive(false)
+    end
 
     local tran = this.tip:GetComponent("RectTransform")
     local offsetX = (LayoutUtility.GetPreferredWidth(tran) + Screen.width) / 2
@@ -421,7 +427,8 @@ function this.SDKLogin()
             this.isWaiting = true
             Timer.New(
                 function()
-                    SDKMgr:Login()
+                    -- SDKMgr:Login()
+                    this.OnLoginClick()
                     this.isWaiting = false
                     CustomEventManager.GameCustomEvent("登录页面弹出")
                 end,

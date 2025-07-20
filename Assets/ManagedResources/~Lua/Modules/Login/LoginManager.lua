@@ -127,18 +127,23 @@ function this.RequestRegist(name, pw, call)
                 
                 local json = require 'cjson'
                 local data = json.decode(str)
+                
+                local isEditor = AppConst and AppConst.Platform == "EDITOR"
                 if data.code==0 then
-                    PopupTipPanel.ShowTip("账号注册成功！")
-                    if call then
-                    call(data.code)
+                    if isEditor then
+                        PopupTipPanel.ShowTip("账号注册成功！")
                     end
+                    
                 else if data.code==1 then
-                    PopupTipPanel.ShowTip("该账号已被注册，请更换账号！")
-                    PlayerPrefs.SetString(openIdkey, name)
-                    PlayerPrefs.SetString(openIdPw, pw)
+                     if isEditor then
+                        PopupTipPanel.ShowTip("该账号已被注册，请更换账号！")
+                    end
+                    
                 end
-          
+                if call then
+                call(data.code)
                 end
+            end
                
             end,nil,nil,nil)
 end

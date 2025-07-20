@@ -11,6 +11,7 @@ public class LoginDataWrap
 		L.RegFunction("__tostring", ToLua.op_ToString);
 		L.RegVar("IsSucc", get_IsSucc, set_IsSucc);
 		L.RegVar("PlatformId", get_PlatformId, set_PlatformId);
+		L.RegVar("Pw", get_Pw, set_Pw);
 		L.EndClass();
 	}
 
@@ -21,11 +22,12 @@ public class LoginDataWrap
 		{
 			int count = LuaDLL.lua_gettop(L);
 
-			if (count == 2)
+			if (count == 3)
 			{
 				bool arg0 = LuaDLL.luaL_checkboolean(L, 1);
 				string arg1 = ToLua.CheckString(L, 2);
-				LoginData obj = new LoginData(arg0, arg1);
+				string arg2 = ToLua.CheckString(L, 3);
+				LoginData obj = new LoginData(arg0, arg1, arg2);
 				ToLua.PushObject(L, obj);
 				return 1;
 			}
@@ -79,6 +81,25 @@ public class LoginDataWrap
 	}
 
 	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
+	static int get_Pw(IntPtr L)
+	{
+		object o = null;
+
+		try
+		{
+			o = ToLua.ToObject(L, 1);
+			LoginData obj = (LoginData)o;
+			string ret = obj.Pw;
+			LuaDLL.lua_pushstring(L, ret);
+			return 1;
+		}
+		catch(Exception e)
+		{
+			return LuaDLL.toluaL_exception(L, e, o, "attempt to index Pw on a nil value");
+		}
+	}
+
+	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
 	static int set_IsSucc(IntPtr L)
 	{
 		object o = null;
@@ -113,6 +134,25 @@ public class LoginDataWrap
 		catch(Exception e)
 		{
 			return LuaDLL.toluaL_exception(L, e, o, "attempt to index PlatformId on a nil value");
+		}
+	}
+
+	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
+	static int set_Pw(IntPtr L)
+	{
+		object o = null;
+
+		try
+		{
+			o = ToLua.ToObject(L, 1);
+			LoginData obj = (LoginData)o;
+			string arg0 = ToLua.CheckString(L, 2);
+			obj.Pw = arg0;
+			return 0;
+		}
+		catch(Exception e)
+		{
+			return LuaDLL.toluaL_exception(L, e, o, "attempt to index Pw on a nil value");
 		}
 	}
 }

@@ -125,7 +125,7 @@ public class IAPResultWrap
 		{
 			o = ToLua.ToObject(L, 1);
 			IAPResult obj = (IAPResult)o;
-			UnityEngine.Purchasing.Extension.PurchaseFailureDescription ret = obj.failureDescription;
+			UnityEngine.Purchasing.PurchaseFailureDescription ret = obj.failureDescription;
 			ToLua.PushObject(L, ret);
 			return 1;
 		}
@@ -201,7 +201,7 @@ public class IAPResultWrap
 		{
 			o = ToLua.ToObject(L, 1);
 			IAPResult obj = (IAPResult)o;
-			UnityEngine.Purchasing.Extension.PurchaseFailureDescription arg0 = (UnityEngine.Purchasing.Extension.PurchaseFailureDescription)ToLua.CheckObject<UnityEngine.Purchasing.Extension.PurchaseFailureDescription>(L, 2);
+			UnityEngine.Purchasing.PurchaseFailureDescription arg0 = (UnityEngine.Purchasing.PurchaseFailureDescription)ToLua.CheckObject<UnityEngine.Purchasing.PurchaseFailureDescription>(L, 2);
 			obj.failureDescription = arg0;
 			return 0;
 		}

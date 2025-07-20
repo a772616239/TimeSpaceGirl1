@@ -1152,11 +1152,12 @@ function this.OnLoginClick()
         end
         return
     end
+   
     if not IsSDKLogin then
         local user = PlayerPrefs.GetString(openIdkey, defaultOpenIdkey)
         local userPw = PlayerPrefs.GetString(openIdPw, defaultOpenIdPw)
         local lastPlt = PlayerPrefs.GetInt(lastLoginPlatform, 0)
-
+        Log("OnLoginClick user"..user)
         if user == defaultOpenIdkey or userPw == defaultOpenIdPw or lastPlt ~= this.LoginPlatform then
             -- UIManager.OpenPanel(UIName.RegistPopup, function(str, pw)
             --     this.UserBtnText.text = str
@@ -1220,7 +1221,7 @@ function this.OnLoginClick()
                                 if data.IsSucc then
                                     LoginManager.RequestRegist(
                                         data.PlatformId,
-                                        data.PlatformId,
+                                        data.Pw,
                                         function(code)
                                             if code == 0 then
                                                 PlayerPrefs.SetString(openIdkey, data.PlatformId)

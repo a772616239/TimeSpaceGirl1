@@ -30,11 +30,12 @@ public class GoogleSignMgr : MonoBehaviour
             SigninSampleScript signin = new SigninSampleScript();
             signin.OnSignIn((isSucc,id)=> {
                 XDebug.Log.l("GoogleSignMgr 1:id:" + id);
-                var acc = ("go" + id).Replace("-", "");
-                var len = acc.Length;
-                var name = acc.Substring(0, 12);
-                var pw = acc.Substring(12, Mathf.Min(12, len));
 
+                string name = null;
+                string pw = null;
+                GetAcc("go" + id, out name, out pw);
+
+                XDebug.Log.l("GoogleSignMgr 2:pw:" + pw + "-acc:" + name);
                 if (callback != null)
                 {
                     callback(new LoginData(isSucc, name, pw));
@@ -48,11 +49,11 @@ public class GoogleSignMgr : MonoBehaviour
             signin.LoginAuth((isSucc, id) => {
 
                 XDebug.Log.l("GoogleSignMgr 2:id:" + id);
-                var acc = ("pl" + id).Replace("-", "");
-                var len = acc.Length;
-                var name = acc.Substring(0, 12);
-                var pw = acc.Substring(12, Mathf.Min(12,len));
+                string name = null;
+                string pw = null;
+                GetAcc("pl" + id, out name, out pw);
 
+                XDebug.Log.l("GoogleSignMgr 2:pw:" + pw + "-acc:" + name);
                 if (callback != null)
                 {
                     callback(new LoginData(isSucc, name, pw));
@@ -62,17 +63,35 @@ public class GoogleSignMgr : MonoBehaviour
         else if (platformId == 3)
         {
             string id = DeviceIdHelper.GetDeviceID();
-            var acc= ("gu" + id).Replace("-", "");
-            var len= acc.Length;
-            var name = acc.Substring(0, 12);
-            var pw = acc.Substring(12, Mathf.Min(12, len));
-
             XDebug.Log.l("GoogleSignMgr 3:id:" + id);
+
+            string name = null;
+            string pw = null;
+            GetAcc("GFFFF" + id, out name, out pw);
+
+            XDebug.Log.l("GoogleSignMgr 3:pw:" + pw+"-acc:"+ name);
             if (callback != null)
             {
                 callback (new LoginData(true, name,pw));
             }
         }
+    }
+
+    public void GetAcc(string tokenid,out string name,out string pw)
+    {
+        var acc = tokenid.Replace("-", "").Replace("_", "");
+        var len = acc.Length;
+        if (len>12)
+        {
+            name = acc.Substring(0, 12);
+            pw = acc.Substring(12, Mathf.Min(12, len - 12));
+        }
+        else
+        {
+            name = acc;
+            pw = acc;
+        }
+
     }
 
     public void OnRet(bool isSucc,string id)

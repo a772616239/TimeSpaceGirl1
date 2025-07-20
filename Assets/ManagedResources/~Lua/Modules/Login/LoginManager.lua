@@ -130,18 +130,23 @@ function this.RequestRegist(name, pw, call)
                 
                 local isEditor = AppConst and AppConst.Platform == "EDITOR"
                 if data.code==0 then
+                    
+                    if call then
+                    call(data.code)
+                    end
                     if isEditor then
                         PopupTipPanel.ShowTip("账号注册成功！")
                     end
                     
                 else if data.code==1 then
+                    
+                    if call then
+                    call(data.code)
+                    end
                      if isEditor then
                         PopupTipPanel.ShowTip("该账号已被注册，请更换账号！")
                     end
                     
-                end
-                if call then
-                call(data.code)
                 end
             end
                

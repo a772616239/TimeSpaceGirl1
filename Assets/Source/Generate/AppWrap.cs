@@ -22,6 +22,7 @@ public class AppWrap
 		L.RegVar("CompressMgr", get_CompressMgr, null);
 		L.RegVar("GameMgr", get_GameMgr, null);
 		L.RegVar("IAPMgr", get_IAPMgr, null);
+		L.RegVar("GoogleSignMgr", get_GoogleSignMgr, null);
 		L.RegVar("ImageDownloadMgr", get_ImageDownloadMgr, null);
 		L.RegVar("SpeakMgr", get_SpeakMgr, null);
 		L.RegVar("SDKMgr", get_SDKMgr, null);
@@ -234,6 +235,20 @@ public class AppWrap
 		try
 		{
 			ToLua.Push(L, App.IAPMgr);
+			return 1;
+		}
+		catch (Exception e)
+		{
+			return LuaDLL.toluaL_exception(L, e);
+		}
+	}
+
+	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
+	static int get_GoogleSignMgr(IntPtr L)
+	{
+		try
+		{
+			ToLua.Push(L, App.GoogleSignMgr);
 			return 1;
 		}
 		catch (Exception e)

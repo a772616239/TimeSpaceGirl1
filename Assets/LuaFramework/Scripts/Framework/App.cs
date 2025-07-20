@@ -98,6 +98,13 @@ public class App : UnitySingleton<App>
             return IAPManager.Inst;
         }
     }
+    public static GoogleSignMgr GoogleSignMgr
+    {
+        get
+        {
+            return GoogleSignMgr.Inst;
+        }
+    }
     //public static TapDBManager TBDMgr
     //{
     //    get

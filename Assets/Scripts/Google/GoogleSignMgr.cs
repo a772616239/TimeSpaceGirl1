@@ -25,6 +25,13 @@ public class GoogleSignMgr : MonoBehaviour
             GooglePlayGamesLogin play = new GooglePlayGamesLogin();
             play.LoginAuth(callback);
         }
+        else if (platformId == 3)
+        {
+            if (callback != null)
+            {
+                callback(true,DeviceIdHelper.GetDeviceID());
+            }
+        }
     }
 
     public void OnRet(bool isSucc,string id)

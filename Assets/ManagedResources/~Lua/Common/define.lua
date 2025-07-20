@@ -14,6 +14,7 @@ LuaHelper = GameLogic.LuaHelper
 ByteBuffer = GameLogic.ByteBuffer
 resMgr = App.ResMgr
 iapMgr = App.IAPMgr
+ggSignMgr = App.GoogleSignMgr
 --soundMgr = App.SoundMgr
 networkMgr = App.NetWorkMgr
 gameMgr = App.GameMgr

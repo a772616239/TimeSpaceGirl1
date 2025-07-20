@@ -20,6 +20,7 @@ public static class LuaBinder
 		SocketClientWrap.Register(L);
 		IAPManagerWrap.Register(L);
 		IAPResultWrap.Register(L);
+		ReviewMgrWrap.Register(L);
 		GoogleSignMgrWrap.Register(L);
 		LoginDataWrap.Register(L);
 		PurchasedInfoWrap.Register(L);

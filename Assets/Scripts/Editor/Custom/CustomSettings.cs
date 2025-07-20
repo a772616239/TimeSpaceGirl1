@@ -243,6 +243,7 @@ public static class CustomSettings
        _GT(typeof(ResourcesManager)),	
        _GT(typeof(IAPManager)),	
        _GT(typeof(IAPResult)),	
+       _GT(typeof(ReviewMgr)),	
        _GT(typeof(GoogleSignMgr)),
        _GT(typeof(LoginData)),
        _GT(typeof(PurchasedInfo)),	

@@ -22,8 +22,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using Debug = UnityEngine.Debug;
 
-namespace ETHotfix
-{
+//namespace ETHotfix
+//{
     public class ReviewMgr : MonoBehaviour
     {
         private static PlayReviewInfo _playReviewInfo;
@@ -42,7 +42,7 @@ namespace ETHotfix
             inst = this;
             _reviewManager = new ReviewManager();
             XDebug.Log.l("[ReviewMgr]Initialized key mapping");
-            StartCoroutine(Wait());
+            //StartCoroutine(Wait());
         }
 
         IEnumerator Wait()
@@ -119,4 +119,4 @@ namespace ETHotfix
             }
         }
     }
-}
+//}

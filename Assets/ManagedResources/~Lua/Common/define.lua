@@ -15,6 +15,7 @@ ByteBuffer = GameLogic.ByteBuffer
 resMgr = App.ResMgr
 iapMgr = App.IAPMgr
 ggSignMgr = App.GoogleSignMgr
+ReviewMgr = App.ReviewMgr
 --soundMgr = App.SoundMgr
 networkMgr = App.NetWorkMgr
 gameMgr = App.GameMgr
@@ -51,6 +52,7 @@ Shader = UnityEngine.Shader
 -- IsAutoWeChatLogin = true
 --为0显示所有log，为1显示警告和错误，为2显示错误
 LogModeLevel = 0
+PassTimes1=1
 --是否开启战斗调试
 IsOpenBattleDebug = not AppConst.luaBundleMode
 

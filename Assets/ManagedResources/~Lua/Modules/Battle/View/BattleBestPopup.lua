@@ -63,6 +63,11 @@ function this:OnClose()
         func2()
         func2 = nil
     end
+    if PassTimes1%5 == 0 then
+        -- 每四次弹出一次评价
+        ReviewMgr:AllInOneFlowClick()
+    end
+    PassTimes1 =PassTimes1+1
 end
 
 return this

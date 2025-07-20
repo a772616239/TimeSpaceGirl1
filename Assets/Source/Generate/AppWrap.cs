@@ -26,6 +26,7 @@ public class AppWrap
 		L.RegVar("ImageDownloadMgr", get_ImageDownloadMgr, null);
 		L.RegVar("SpeakMgr", get_SpeakMgr, null);
 		L.RegVar("SDKMgr", get_SDKMgr, null);
+		L.RegVar("ReviewMgr", get_ReviewMgr, null);
 		L.RegVar("VersionMgr", get_VersionMgr, null);
 		L.RegVar("ConfigMgr", get_ConfigMgr, null);
 		L.EndClass();
@@ -291,6 +292,20 @@ public class AppWrap
 		try
 		{
 			ToLua.Push(L, App.SDKMgr);
+			return 1;
+		}
+		catch (Exception e)
+		{
+			return LuaDLL.toluaL_exception(L, e);
+		}
+	}
+
+	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
+	static int get_ReviewMgr(IntPtr L)
+	{
+		try
+		{
+			ToLua.Push(L, App.ReviewMgr);
 			return 1;
 		}
 		catch (Exception e)

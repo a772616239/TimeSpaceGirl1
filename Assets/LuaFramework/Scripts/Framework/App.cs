@@ -167,6 +167,13 @@ public class App : UnitySingleton<App>
     //        return ShareSDKManager.Instance;
     //    }
     //}
+    public static ReviewMgr ReviewMgr
+    {
+        get
+        {
+            return ReviewMgr.inst;
+        }
+    }
 
     /// <summary>
     /// 版本管理器

@@ -21,24 +21,25 @@ namespace SignInSample {
   using UnityEngine;
   using UnityEngine.UI;
 
-  public class SigninSampleScript : MonoBehaviour {
+  public class SigninSampleScript {
 
-    public Text statusText;
+    //public Text statusText;
 
-    public string webClientId = "<your client id here>";
+    public string webClientId = "821650617317-9e4hgl3jclpcaf12dt6d3g2uitmg0lio.apps.googleusercontent.com";
 
     private GoogleSignInConfiguration configuration;
 
     // Defer the configuration creation until Awake so the web Client ID
     // Can be set via the property inspector in the Editor.
-    void Awake() {
+    public SigninSampleScript () {
       configuration = new GoogleSignInConfiguration {
             WebClientId = webClientId,
             RequestIdToken = true
       };
     }
-
-    public void OnSignIn() {
+    public  Action<bool, string> LoginCb;
+    public void OnSignIn(Action<bool, string> callback) {
+      LoginCb = callback;
       GoogleSignIn.Configuration = configuration;
       GoogleSignIn.Configuration.UseGameSignIn = false;
       GoogleSignIn.Configuration.RequestIdToken = true;
@@ -70,10 +71,30 @@ namespace SignInSample {
             AddStatusText("Got Unexpected Exception?!?" + task.Exception);
           }
         }
-      } else if(task.IsCanceled) {
+        if (LoginCb != null)
+        {
+            LoginCb(false, null);
+        }
+      }
+      else if(task.IsCanceled)
+      {
+        if (LoginCb != null)
+        {
+            LoginCb(false, null);
+        }
         AddStatusText("Canceled");
-      } else  {
-        AddStatusText("Welcome: " + task.Result.DisplayName + "!");
+      }
+      else
+      {
+
+        AddStatusText("Welcome: " + task.Result.DisplayName +
+        "---UserId:" +task.Result.UserId+"---AuthCode:"+task.Result.AuthCode );
+        //    AddStatusText("Welcome: " + task.Result.DisplayName + "!IdToken:" + task.Result.IdToken +
+        //"---UserId:" + task.Result.UserId + "---AuthCode:" + task.Result.AuthCode);
+        if (LoginCb != null)
+        {
+            LoginCb(true, task.Result.UserId);
+        }
       }
     }
 
@@ -109,7 +130,8 @@ namespace SignInSample {
       foreach (string s in messages) {
         txt += "\n" + s;
       }
-      statusText.text = txt;
+      XDebug.Log.l(txt);
+      //statusText.text = txt;
     }
   }
 }

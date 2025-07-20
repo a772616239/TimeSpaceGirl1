@@ -243,6 +243,7 @@ public static class CustomSettings
        _GT(typeof(ResourcesManager)),	
        _GT(typeof(IAPManager)),	
        _GT(typeof(IAPResult)),	
+       _GT(typeof(GoogleSignMgr)),
        _GT(typeof(PurchasedInfo)),	
 	   _GT(typeof(SceneController)),
        _GT(typeof(SpeakManager)),

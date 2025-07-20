@@ -109,6 +109,9 @@ function this.SaveLoginInfo(user, pw)
 
 end
 
+local openIdkey = "openIdkey"
+local openIdPw = "openIdPw"
+
 function this.RequestRegist(name, pw, call)
     -- 
 
@@ -128,9 +131,13 @@ function this.RequestRegist(name, pw, call)
                     PopupTipPanel.ShowTip("账号注册成功！")
                     if call then
                     call(data.code)
-                end
-                else
+                    end
+                else if data.code==1 then
                     PopupTipPanel.ShowTip("该账号已被注册，请更换账号！")
+                    PlayerPrefs.SetString(openIdkey, name)
+                    PlayerPrefs.SetString(openIdPw, pw)
+                end
+          
                 end
                
             end,nil,nil,nil)

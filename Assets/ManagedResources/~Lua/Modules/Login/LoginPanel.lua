@@ -8,6 +8,7 @@ local IsSDKLogin = AppConst.isSDK and AppConst.isSDKLogin
 
 local openIdkey = "openIdkey"
 local openIdPw = "openIdPw"
+local lastLoginPlatform = "lastLoginPlatform"
 local lastServerIndex = "lastServerIndex"
 local defaultOpenIdkey = GetLanguageStrById(11118)
 local defaultOpenIdPw = ""
@@ -36,6 +37,8 @@ function this:InitComponent()
     --开始游戏
     this.btnLoginPart = Util.GetGameObject(this.loginPart, "gameStarts")
     this.btnLogin = Util.GetGameObject(this.btnLoginPart, "btn")
+    this.googlebtn = Util.GetGameObject(this.btnLoginPart, "googlebtn")
+    this.guestBtn = Util.GetGameObject(this.btnLoginPart, "guestBtn")
 
     --this.dropDownPart = Util.GetGameObject(this.loginPart, "quyuxuanzhe")
     --this.dropDown = Util.GetGameObject(this.dropDownPart, "Dropdown"):GetComponent("Dropdown")
@@ -91,7 +94,9 @@ function this:BindEvent()
         end
     end)
 
-    Util.AddClick(this.btnLogin, this.OnLoginClick)
+    Util.AddClick(this.btnLogin, this.OnGooglePlayGamesLogin)
+    Util.AddClick(this.googlebtn, this.OnGoogleLogin)
+    Util.AddClick(this.guestBtn, this.OnGuestLogin)
     Util.AddClick(this.btnUser, function()
         local user = PlayerPrefs.GetString(openIdkey, defaultOpenIdkey)
         local userPw = PlayerPrefs.GetString(openIdPw, defaultOpenIdPw)
@@ -419,75 +424,6 @@ function this.OnReceiveServerList(str)
             ---selectServerPart
 
             this.SetServerList(data)
-
-            if not IsSDKLogin then
-                local user = PlayerPrefs.GetString(openIdkey, defaultOpenIdkey)
-                local userPw = PlayerPrefs.GetString(openIdPw, defaultOpenIdPw)
-
-                if user == defaultOpenIdkey or userPw == defaultOpenIdPw then
-                    -- UIManager.OpenPanel(UIName.RegistPopup, function(str, pw)
-                    --     this.UserBtnText.text = str
-                    --     PlayerPrefs.SetString(openIdkey, str)
-                    --     PlayerPrefs.SetString(openIdPw, pw)
-                    -- end)
-                    -- UIManager.OpenPanel(UIName.LoginPopup, nil, nil, function(str, pw)
-                    --     -- this.UserBtnText.text = str
-                    --     PlayerPrefs.SetString(openIdkey, str)
-                    --     PlayerPrefs.SetString(openIdPw, pw)
-                    -- end)
-
-                    ggSignMgr:LoginByPlatformType(1, function(isSucc, token)
-                        if isSucc then
-                            LoginManager.RequestRegist(token, token, function(code)
-                                if code == 0 then
-                                    PlayerPrefs.SetString(openIdkey, token)
-                                    PlayerPrefs.SetString(openIdPw, token)
-
-                                end
-                            end)
-                        end
-                    end)
-                else
-                    LoginManager.RequestUser(user, userPw, function(code)
-                        if code ~= 0 then
-                            UIManager.OpenPanel(UIName.LoginPopup, user, userPw, function(str, pw)
-                                -- this.UserBtnText.text = str
-                                PlayerPrefs.SetString(openIdkey, str)
-                                PlayerPrefs.SetString(openIdPw, pw)
-                            end)
-                        else
-                            --this.loginMask:SetActive(true)
-                            --Timer.New(function()
-                            --UIManager.OpenPanel(UIName.NoticePopup)
-                            -- this.loginMask:SetActive(false)
-                            --end, 2.5, 1):Start()
-                            if code == 2 then
-                                if LoginManager.IsOpenAddiction then
-                                    --> 1关闭开启notice
-                                    UIManager.OpenPanel(UIName.IdSurePopup, 1)
-                                    LoginManager.IsShowPayAddiction = true
-                                else
-                                    -- UIManager.OpenPanel(UIName.NoticePopup)
-                                end
-                            else
-                                if LoginManager.IsOpenAddiction then
-                                    -->
-                                    if tonumber(msg) < 18 then
-                                        LoginManager.IsShowPayAddiction = true
-                                    end
-                                end
-                                -- UIManager.OpenPanel(UIName.NoticePopup)
-                            end
-                        end
-                    end)
-                end
-            else
-                -- this.loginMask:SetActive(true)
-                -- Timer.New(function()
-                --     UIManager.OpenPanel(UIName.NoticePopup)
-                --     this.loginMask:SetActive(false)
-                -- end, 2.5, 1):Start()
-            end
         end)
     end
 end
@@ -656,57 +592,57 @@ function this.ExecuteLoading()
             this.LogTime(#requestList + 1)
             NetManager.PlayerInfoRequest(LoadingPanel.OnStep)
             return "PlayerInfoRequest"
-        end)                                                                                                                                                                        -- 基础信息
+        end) -- 基础信息
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.RequestMission(LoadingPanel.OnStep)
             return "RequestMission"
-        end)                                                                                                                                                                        -- 任务
+        end) -- 任务
     -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.DiceInfoRequest(2,LoadingPanel.OnStep) return "DiceInfoRequest" end)                                     -- 兵旗骰子
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.ItemInfoRequest(0, LoadingPanel.OnStep)
             return "ItemInfoRequest"
-        end)                                                                                                                                                                        -- 物品信息
+        end) -- 物品信息
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.AllEquipRequest(0, LoadingPanel.OnStep)
             return "AllEquipRequest"
-        end)                                                                                                                                                                        -- 装备
+        end) -- 装备
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             CombatPlanManager.RequestAllPlanData(LoadingPanel.OnStep)
             return "RequestAllPlanData"
-        end)                                                                                                                                                                        -- 作战方案
+        end) -- 作战方案
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.MedalGetAllRequest(LoadingPanel.OnStep)
             return "MedalGetAllRequest"
-        end)                                                                                                                                                                        -- 勋章信息
+        end) -- 勋章信息
     -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.TotemListRequest(LoadingPanel.OnStep) return "TotemListRequest" end)                                     -- 图腾
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.HeroInfoRequest(0, LoadingPanel.OnStep)
             return "HeroInfoRequest"
-        end)                                                                                                                                                                        -- 英雄信息
+        end) -- 英雄信息
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.TeamInfoRequest(LoadingPanel.OnStep)
             return "TeamInfoRequest"
-        end)                                                                                                                                                                        -- 编队
+        end) -- 编队
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.GetAllMailData(LoadingPanel.OnStep)
             return "GetAllMailData"
-        end)                                                                                                                                                                        -- 邮件
+        end) -- 邮件
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
@@ -718,244 +654,245 @@ function this.ExecuteLoading()
             this.LogTime(#requestList + 1)
             NetManager.GetActivityAllRewardRequest(LoadingPanel.OnStep)
             return "GetActivityAllRewardRequest"
-        end)                                                                                                                                                                        -- 活动奖励
+        end) -- 活动奖励
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.RequestBaseArenaData(LoadingPanel.OnStep)
             return "RequestBaseArenaData"
-        end)                                                                                                                                                                        -- 竞技场
+        end) -- 竞技场
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             ShopManager.InitData(LoadingPanel.OnStep)
             return "ShopManager.InitData"
-        end)                                                                                                                                                                        -- 商店
+        end) -- 商店
     -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.GetWorkShopInfoRequest(LoadingPanel.OnStep) return "GetWorkShopInfoRequest" end)                         -- 工坊
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             ChatManager.InitData(LoadingPanel.OnStep)
             return "ChatManager.InitData"
-        end)                                                                                                                                                                        -- 聊天
+        end) -- 聊天
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.GetAllFunState(LoadingPanel.OnStep)
             return "GetAllFunState"
-        end)                                                                                                                                                                        -- 功能开启信息
+        end) -- 功能开启信息
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.RequestGetFriendInfo(1, LoadingPanel.OnStep)
             return "RequestGetFriendInfo1"
-        end)                                                                                                                                                                        -- 好友
+        end) -- 好友
     -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.RequestGetFriendInfo(2, LoadingPanel.OnStep) return "RequestGetFriendInfo2" end)                         -- 好友搜索
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.RequestGetFriendInfo(3, LoadingPanel.OnStep)
             return "RequestGetFriendInfo3"
-        end)                                                                                                                                                                        -- 好友申请
+        end) -- 好友申请
     -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.RequestGetFriendInfo(4, LoadingPanel.OnStep) return "RequestGetFriendInfo4" end)                         -- 黑名单
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             FriendChatManager.InitData(LoadingPanel.OnStep)
             return "FriendChatManager.InitData"
-        end)                                                                                                                                                                        -- 好友消息
+        end) -- 好友消息
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             MyGuildManager.InitBaseData(LoadingPanel.OnStep)
             return "MyGuildManager.InitBaseData"
-        end)                                                                                                                                                                        -- 公会信息
+        end) -- 公会信息
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             GuildFightManager.InitBaseData(LoadingPanel.OnStep)
             return "GuildFightManager.InitBaseData"
-        end)                                                                                                                                                                        -- 公会战
+        end) -- 公会战
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.GetAllGuildSkillData(LoadingPanel.OnStep)
             return "GetAllGuildSkillData"
-        end)                                                                                                                                                                        -- 公会技能
+        end) -- 公会技能
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.InitFightPointLevelInfo(LoadingPanel.OnStep)
             return "InitFightPointLevelInfo"
-        end)                                                                                                                                                                        -- 关卡
+        end) -- 关卡
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.GuildHelpGetAllRequest(LoadingPanel.OnStep)
             return "GuildHelpGetAllRequest"
-        end)                                                                                                                                                                        -- 公会援助
+        end) -- 公会援助
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             GuildBattleManager.InitData(LoadingPanel.OnStep)
             return "GuideBattlePanel.InitData"
-        end)                                                                                                                                                                        -- 公会战
+        end) -- 公会战
     -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.TreasureOfHeavenScoreRequest(LoadingPanel.OnStep) return "TreasureOfHeavenScoreRequest" end)             -- 天宫秘宝积分
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.RankFirstRequest({ 3, 22, 20, 4, 21 }, { 0, 0, 0, 0, 20 }, LoadingPanel.OnStep)
             return "RankFirstRequest"
-        end)                                                                                                                                                                        -- 排行榜数据
+        end) -- 排行榜数据
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.GetAllAdjutantInfo(LoadingPanel.OnStep)
             return "GetAllAdjutantInfo"
-        end)                                                                                                                                                                        -- 守护数据
+        end) -- 守护数据
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.VirtualBattleGetInfo(LoadingPanel.OnStep)
             return "VirtualBattleGetInfo"
-        end)                                                                                                                                                                        -- 爬塔数据
+        end) -- 爬塔数据
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.GetSituationInfoRequest(LoadingPanel.OnStep)
             return "GetSituationInfoRequest"
-        end)                                                                                                                                                                        -- 阿登战役数据
+        end) -- 阿登战役数据
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             SupportManager.GetServerData(LoadingPanel.OnStep)
             return "GetServerData"
-        end)                                                                                                                                                                        -- 支援
+        end) -- 支援
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             GuildCarDelayManager.InitBaseData(LoadingPanel.OnStep)
             return "GuildCarDelayManager.InitBaseData"
-        end)                                                                                                                                                                        -- 明斯克战役
+        end) -- 明斯克战役
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             AircraftCarrierManager.GetLeadData(LoadingPanel.OnStep)
             return "ReqCVInfo"
-        end)                                                                                                                                                                        -- 神眷者
+        end) -- 神眷者
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             AircraftCarrierManager.GetAllPlaneReq(LoadingPanel.OnStep)
             return "GetAllPlaneReq"
-        end)                                                                                                                                                                        -- 神眷者基因
+        end) -- 神眷者基因
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.DefTrainingGetInfo(LoadingPanel.OnStep)
             return "DefTrainingGetInfo"
-        end)                                                                                                                                                                        -- 防守训练
+        end) -- 防守训练
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.chenghaoRequest(LoadingPanel.OnStep)
             return "chenghaoRequest"
-        end)                                                                                                                                                                        -- 称号信息
+        end) -- 称号信息
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             ArenaTopMatchManager.RequestTopMatchBaseInfo(LoadingPanel.OnStep)
             return "ArenaTopMatchRequest"
-        end)                                                                                                                                                                        -- 巅峰赛数据
+        end) -- 巅峰赛数据
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.CarChallengeProgressIndication(LoadingPanel.OnStep)
             return "WorldBossRequest"
-        end)                                                                                                                                                                        -- 梦魇入侵数据
+        end) -- 梦魇入侵数据
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             PlayerManager.RefreshreceivedList(LoadingPanel.OnStep)
             return "LineupRecommendRequest"
-        end)                                                                                                                                                                        -- 阵容推荐
+        end) -- 阵容推荐
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             NetManager.GetWorldArenaInfoRequest(false, false, LoadingPanel.OnStep)
             return "GetWorldArenaInfoRequest"
-        end)                                                                                                                                                                        -- 跨服
+        end) -- 跨服
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             RankingManager.InitRankingRewardList(LoadingPanel.OnStep)
             return "InitRankingRewardList"
-        end)                                                                                                                                                                        -- 全服奖励数据
+        end) -- 全服奖励数据
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             CardActivityManager.InitWish(LoadingPanel.OnStep)
             return "InitWish"
-        end)                                                                                                                                                                        -- 卡牌主题活动
+        end) -- 卡牌主题活动
     table.insert(requestList,
         function()
             this.LogTime(#requestList + 1)
             OperatingManager.GetAllWarOrderData(LoadingPanel.OnStep)
             return "GetAllWarOrderData"
-        end)                                                                                                                                                                        -- 战令
+        end)                             -- 战令
 
-    table.insert(requestList, function()                                                                                                                                            -- 登录请求最终接口，所有请求放在此接口之前
-        if AppConst.isGuide then
-            if GuideManager.GetCurId(GuideType.Force) == 1 and PlayerManager.nickName == tostring(PlayerManager.uid) then
-                --创号阶段先进入剧情对话，进入假战斗，然后对话起名，最后进入主界面
-                local exBattle = function()
+    table.insert(requestList,
+        function()                       -- 登录请求最终接口，所有请求放在此接口之前
+            if AppConst.isGuide then
+                if GuideManager.GetCurId(GuideType.Force) == 1 and PlayerManager.nickName == tostring(PlayerManager.uid) then
+                    --创号阶段先进入剧情对话，进入假战斗，然后对话起名，最后进入主界面
+                    local exBattle = function()
+                        PatFaceManager.isLogin = true
+                        UIManager.OpenPanelAsync(UIName.MainPanel, function()
+                            UIManager.OpenPanel(UIName.FightPointPassMainPanel)
+                            LoadingPanel.End()
+                        end)
+                    end
+                    StoryManager.EventTrigger(100001, exBattle)
+                    -- local func = function ()
+                    --     -- StoryManager.EventTrigger(300007)
+                    --     StoryManager.EventTrigger(100001)
+                    -- end
+                    -- UIManager.OpenPanel(UIName.VideoPanel,"cn2-X1_video_Scene01_01",func)
+
+                    --UIManager.OpenPanel(UIName.BackGroundInfoPanel,GetLanguageStrById(22551),func)
+                    --StoryManager.EventTrigger(300007)
+                else
                     PatFaceManager.isLogin = true
                     UIManager.OpenPanelAsync(UIName.MainPanel, function()
-                        UIManager.OpenPanel(UIName.FightPointPassMainPanel)
+                        if GuideManager.GetCurId(GuideType.Force) ~= -1 then
+                            UIManager.OpenPanel(UIName.FightPointPassMainPanel)
+                        end
                         LoadingPanel.End()
                     end)
                 end
-                StoryManager.EventTrigger(100001, exBattle)
-                -- local func = function ()
-                --     -- StoryManager.EventTrigger(300007)
-                --     StoryManager.EventTrigger(100001)
-                -- end
-                -- UIManager.OpenPanel(UIName.VideoPanel,"cn2-X1_video_Scene01_01",func)
-
-                --UIManager.OpenPanel(UIName.BackGroundInfoPanel,GetLanguageStrById(22551),func)
-                --StoryManager.EventTrigger(300007)
             else
-                PatFaceManager.isLogin = true
                 UIManager.OpenPanelAsync(UIName.MainPanel, function()
-                    if GuideManager.GetCurId(GuideType.Force) ~= -1 then
-                        UIManager.OpenPanel(UIName.FightPointPassMainPanel)
+                    if RoomManager.RoomAddress == nil or RoomManager.RoomAddress == "" then
+                        RoomManager.IsMatch = 0
+                    elseif RoomManager.RoomAddress == "1" then
+                        RoomManager.IsMatch = 1
+                        UIManager.OpenPanel(UIName.GMPanel)
+                        PopupTipPanel.ShowTipByLanguageId(11122)
+                    else
+                        if RoomManager.CurRoomType == 1 then
+                            RoomManager.RoomReGetGameRequest(RoomManager.RoomAddress)
+                        end
                     end
                     LoadingPanel.End()
                 end)
             end
-        else
-            UIManager.OpenPanelAsync(UIName.MainPanel, function()
-                if RoomManager.RoomAddress == nil or RoomManager.RoomAddress == "" then
-                    RoomManager.IsMatch = 0
-                elseif RoomManager.RoomAddress == "1" then
-                    RoomManager.IsMatch = 1
-                    UIManager.OpenPanel(UIName.GMPanel)
-                    PopupTipPanel.ShowTipByLanguageId(11122)
-                else
-                    if RoomManager.CurRoomType == 1 then
-                        RoomManager.RoomReGetGameRequest(RoomManager.RoomAddress)
-                    end
-                end
-                LoadingPanel.End()
-            end)
-        end
-        -- 登录成功刷新红点数据
-        RedpotManager.CheckAllRedPointStatus()
-        -- 检查新字状态
-        FunctionOpenMananger.InitCheck()
-        this.SubmitGameData()
-        DataCenterManager.CommitBootStatus()
-    end)
+            -- 登录成功刷新红点数据
+            RedpotManager.CheckAllRedPointStatus()
+            -- 检查新字状态
+            FunctionOpenMananger.InitCheck()
+            this.SubmitGameData()
+            DataCenterManager.CommitBootStatus()
+        end)
 
     --
     for _, func in ipairs(requestList) do
@@ -966,6 +903,19 @@ function this.ExecuteLoading()
 end
 
 this.isLoginClick = false
+this.LoginPlatform = 0 
+function this.OnGooglePlayGamesLogin()
+    this.LoginPlatform = 2
+    this.OnLoginClick()
+end
+function this.OnGoogleLogin()
+    this.LoginPlatform = 1
+    this.OnLoginClick()
+end
+function this.OnGuestLogin()
+    this.LoginPlatform = 3
+    this.OnLoginClick()
+end
 function this.OnLoginClick()
     -- if GetChannerConfig().PrivacyAgreement then
     --     if PlayerPrefs.GetInt("IsAgreePrivacy") == 0 then
@@ -978,6 +928,7 @@ function this.OnLoginClick()
         PopupTipPanel.ShowTipByLanguageId(22901)
         return
     end
+
     if LoginManager.state == 0 or LoginManager.state == 1 then
         local function reServerCallback(str)
             if str == nil then
@@ -1009,8 +960,95 @@ function this.OnLoginClick()
         end
         return
     end
-    -- 连接socket
-    this.RequestSocketLogin()
+    if not IsSDKLogin then
+        local user = PlayerPrefs.GetString(openIdkey, defaultOpenIdkey)
+        local userPw = PlayerPrefs.GetString(openIdPw, defaultOpenIdPw)
+        local lastPlt = PlayerPrefs.GetInt(lastLoginPlatform, 0)
+
+        if user == defaultOpenIdkey or userPw == defaultOpenIdPw or lastPlt ~= this.LoginPlatform then
+            -- UIManager.OpenPanel(UIName.RegistPopup, function(str, pw)
+            --     this.UserBtnText.text = str
+            --     PlayerPrefs.SetString(openIdkey, str)
+            --     PlayerPrefs.SetString(openIdPw, pw)
+            -- end)
+            -- UIManager.OpenPanel(UIName.LoginPopup, nil, nil, function(str, pw)
+            --     -- this.UserBtnText.text = str
+            --     PlayerPrefs.SetString(openIdkey, str)
+            --     PlayerPrefs.SetString(openIdPw, pw)
+            -- end)
+
+            ggSignMgr:LoginByPlatformType(this.LoginPlatform,
+                function(data)
+                    if data.IsSucc then
+                        LoginManager.RequestRegist(data.PlatformId, data.PlatformId, function(code)
+                            if code == 0 then
+                                PlayerPrefs.SetString(openIdkey, data.PlatformIdtoken)
+                                PlayerPrefs.SetString(openIdPw, data.PlatformId)
+                                PlayerPrefs.SetInt(lastLoginPlatform, this.LoginPlatform)
+                                -- 连接socket
+                                this.RequestSocketLogin()
+                            end
+                        end)
+                    end
+                end)
+        else
+            LoginManager.RequestUser(user, userPw, function(code)
+                if code ~= 0 then
+                    ggSignMgr:LoginByPlatformType(this.LoginPlatform,
+                        function(data)
+                            if data.IsSucc then
+                                LoginManager.RequestRegist(data.PlatformId, data.PlatformId, function(code)
+                                    if code == 0 then
+                                        PlayerPrefs.SetString(openIdkey, data.PlatformId)
+                                        PlayerPrefs.SetString(openIdPw, data.PlatformId)
+                                        PlayerPrefs.SetInt(lastLoginPlatform, this.LoginPlatform)
+                                        -- 连接socket
+                                        this.RequestSocketLogin()
+                                    end
+                                end)
+                            end
+                        end)
+                    -- UIManager.OpenPanel(UIName.LoginPopup, user, userPw, function(str, pw)
+                    --     -- this.UserBtnText.text = str
+                    --     PlayerPrefs.SetString(openIdkey, str)
+                    --     PlayerPrefs.SetString(openIdPw, pw)
+
+                    -- end)
+                else
+                    --this.loginMask:SetActive(true)
+                    --Timer.New(function()
+                    --UIManager.OpenPanel(UIName.NoticePopup)
+                    -- this.loginMask:SetActive(false)
+                    --end, 2.5, 1):Start()
+                    if code == 2 then
+                        if LoginManager.IsOpenAddiction then
+                            --> 1关闭开启notice
+                            UIManager.OpenPanel(UIName.IdSurePopup, 1)
+                            LoginManager.IsShowPayAddiction = true
+                        else
+                            -- UIManager.OpenPanel(UIName.NoticePopup)
+                        end
+                    else
+                        if LoginManager.IsOpenAddiction then
+                            -->
+                            if tonumber(msg) < 18 then
+                                LoginManager.IsShowPayAddiction = true
+                            end
+                        end
+                            -- 连接socket
+                        this.RequestSocketLogin()
+                        -- UIManager.OpenPanel(UIName.NoticePopup)
+                    end
+                end
+            end)
+        end
+    else
+        -- this.loginMask:SetActive(true)
+        -- Timer.New(function()
+        --     UIManager.OpenPanel(UIName.NoticePopup)
+        --     this.loginMask:SetActive(false)
+        -- end, 2.5, 1):Start()
+    end
 end
 
 -- 请求连接socket
@@ -1034,7 +1072,7 @@ function this.OnConnect(network)
             .. "&token=" .. AppConst.MiTokenStr
             .. "&platform=" .. 1
             .. "&sub_channel=" .. LoginRoot_SubChannel
-            .. "&pid=" .. AppConst.SdkChannel --LoginManager.pt_pId
+            .. "&pid=" .. AppConst.SdkChannel     --LoginManager.pt_pId
             .. "&gid=" .. AppConst.SdkPackageName --LoginManager.pt_gId
             .. "&version=" .. LoginRoot_PackageVersion)
         networkMgr:SendGetHttp(LoginRoot_Url

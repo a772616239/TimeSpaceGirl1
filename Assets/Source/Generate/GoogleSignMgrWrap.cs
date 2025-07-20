@@ -24,7 +24,7 @@ public class GoogleSignMgrWrap
 			ToLua.CheckArgsCount(L, 3);
 			GoogleSignMgr obj = (GoogleSignMgr)ToLua.CheckObject<GoogleSignMgr>(L, 1);
 			int arg0 = (int)LuaDLL.luaL_checknumber(L, 2);
-			System.Action<bool,string> arg1 = (System.Action<bool,string>)ToLua.CheckDelegate<System.Action<bool,string>>(L, 3);
+			System.Action<LoginData> arg1 = (System.Action<LoginData>)ToLua.CheckDelegate<System.Action<LoginData>>(L, 3);
 			obj.LoginByPlatformType(arg0, arg1);
 			return 0;
 		}

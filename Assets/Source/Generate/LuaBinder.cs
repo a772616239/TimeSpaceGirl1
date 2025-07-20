@@ -21,6 +21,7 @@ public static class LuaBinder
 		IAPManagerWrap.Register(L);
 		IAPResultWrap.Register(L);
 		GoogleSignMgrWrap.Register(L);
+		LoginDataWrap.Register(L);
 		PurchasedInfoWrap.Register(L);
 		AndroidDeviceInfoWrap.Register(L);
 		NotchScreenUtilWrap.Register(L);
@@ -424,9 +425,14 @@ public static class LuaBinder
 		L.RegFunction("Action_int", System_Action_int);
 		L.RegFunction("Comparison_int", System_Comparison_int);
 		L.RegFunction("Func_int_int", System_Func_int_int);
+		//L.RegFunction("Action_bool", System_Action_bool);
+		L.RegFunction("Action_string", System_Action_string);
 		L.RegFunction("Func_bool", System_Func_bool);
 		L.RegFunction("Action_UnityEngine_AsyncOperation", System_Action_UnityEngine_AsyncOperation);
-		L.RegFunction("Action_string", System_Action_string);
+		//L.RegFunction("Action_int_int", System_Action_int_int);
+		//L.RegFunction("Action_int_string", System_Action_int_string);
+		//L.RegFunction("Action_IAPResult", System_Action_IAPResult);
+		//L.RegFunction("Action_LoginData", System_Action_LoginData);
 		L.RegFunction("Action_bool_ResUpdate_ResourcesUpdateState_object", System_Action_bool_ResUpdate_ResourcesUpdateState_object);
 		L.RegFunction("Func_string_bool", System_Func_string_bool);
 		L.RegFunction("Func_UnityEngine_UI_ILayoutElement_float", System_Func_UnityEngine_UI_ILayoutElement_float);

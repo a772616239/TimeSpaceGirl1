@@ -2,7 +2,16 @@
 using System.Collections;
 using SignInSample;
 using System;
+public class LoginData{
+    public bool IsSucc;
+    public string PlatformId;
+    public LoginData(bool isSucc,string PlatformId)
+    {
+        this.IsSucc = isSucc;
+        this.PlatformId = PlatformId;
+    }
 
+}
 public class GoogleSignMgr : MonoBehaviour
 {
     public static GoogleSignMgr Inst;
@@ -12,24 +21,40 @@ public class GoogleSignMgr : MonoBehaviour
         Inst = this;
     }
     public int CrtPlatformId;
-    public void LoginByPlatformType(int platformId, Action<bool, string> callback)
+    public void LoginByPlatformType(int platformId, Action<LoginData> callback)
     {
         this.CrtPlatformId = platformId;
         if (platformId==1){
             SigninSampleScript signin = new SigninSampleScript();
-            signin.OnSignIn(callback);
+            signin.OnSignIn((isSucc,id)=> {
+                XDebug.Log.l("GoogleSignMgr 1:id:" + id);
+                if (callback != null)
+                {
+                    callback(new LoginData(isSucc, id));
+                }
+            });
             
         }
         else if (platformId==2)
         {
-            GooglePlayGamesLogin play = new GooglePlayGamesLogin();
-            play.LoginAuth(callback);
+            GooglePlayGamesLogin signin = new GooglePlayGamesLogin();
+            signin.LoginAuth((isSucc, id) => {
+
+                XDebug.Log.l("GoogleSignMgr 2:id:" + id);
+
+                if (callback != null)
+                {
+                    callback(new LoginData(isSucc, id));
+                }
+            });
         }
         else if (platformId == 3)
         {
+            string id = DeviceIdHelper.GetDeviceID();
+            XDebug.Log.l("GoogleSignMgr 3:id:" + id);
             if (callback != null)
             {
-                callback(true,DeviceIdHelper.GetDeviceID());
+                callback (new LoginData(true, id));
             }
         }
     }

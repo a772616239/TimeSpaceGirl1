@@ -86,6 +86,7 @@ public class DelegateFactory
 		dict.Add(typeof(UnityEngine.UI.InputField.OnValidateInput), factory.UnityEngine_UI_InputField_OnValidateInput);
 		dict.Add(typeof(UnityEngine.Events.UnityAction<string,UnityEngine.Object>), factory.UnityEngine_Events_UnityAction_string_UnityEngine_Object);
 		dict.Add(typeof(System.Action<IAPResult>), factory.System_Action_IAPResult);
+		dict.Add(typeof(System.Action<LoginData>), factory.System_Action_LoginData);
 		dict.Add(typeof(SDK.SDKManager.InitLaunchAction), factory.SDK_SDKManager_InitLaunchAction);
 		dict.Add(typeof(SDK.SDKManager.RegisterAction), factory.SDK_SDKManager_RegisterAction);
 		dict.Add(typeof(SDK.SDKManager.LoginAction), factory.SDK_SDKManager_LoginAction);
@@ -181,6 +182,7 @@ public class DelegateFactory
 		DelegateTraits<UnityEngine.UI.InputField.OnValidateInput>.Init(factory.UnityEngine_UI_InputField_OnValidateInput);
 		DelegateTraits<UnityEngine.Events.UnityAction<string,UnityEngine.Object>>.Init(factory.UnityEngine_Events_UnityAction_string_UnityEngine_Object);
 		DelegateTraits<System.Action<IAPResult>>.Init(factory.System_Action_IAPResult);
+		DelegateTraits<System.Action<LoginData>>.Init(factory.System_Action_LoginData);
 		DelegateTraits<SDK.SDKManager.InitLaunchAction>.Init(factory.SDK_SDKManager_InitLaunchAction);
 		DelegateTraits<SDK.SDKManager.RegisterAction>.Init(factory.SDK_SDKManager_RegisterAction);
 		DelegateTraits<SDK.SDKManager.LoginAction>.Init(factory.SDK_SDKManager_LoginAction);
@@ -276,6 +278,7 @@ public class DelegateFactory
 		TypeTraits<UnityEngine.UI.InputField.OnValidateInput>.Init(factory.Check_UnityEngine_UI_InputField_OnValidateInput);
 		TypeTraits<UnityEngine.Events.UnityAction<string,UnityEngine.Object>>.Init(factory.Check_UnityEngine_Events_UnityAction_string_UnityEngine_Object);
 		TypeTraits<System.Action<IAPResult>>.Init(factory.Check_System_Action_IAPResult);
+		TypeTraits<System.Action<LoginData>>.Init(factory.Check_System_Action_LoginData);
 		TypeTraits<SDK.SDKManager.InitLaunchAction>.Init(factory.Check_SDK_SDKManager_InitLaunchAction);
 		TypeTraits<SDK.SDKManager.RegisterAction>.Init(factory.Check_SDK_SDKManager_RegisterAction);
 		TypeTraits<SDK.SDKManager.LoginAction>.Init(factory.Check_SDK_SDKManager_LoginAction);
@@ -371,6 +374,7 @@ public class DelegateFactory
 		StackTraits<UnityEngine.UI.InputField.OnValidateInput>.Push = factory.Push_UnityEngine_UI_InputField_OnValidateInput;
 		StackTraits<UnityEngine.Events.UnityAction<string,UnityEngine.Object>>.Push = factory.Push_UnityEngine_Events_UnityAction_string_UnityEngine_Object;
 		StackTraits<System.Action<IAPResult>>.Push = factory.Push_System_Action_IAPResult;
+//		StackTraits<System.Action<bool,string>>.Push = factory.Push_System_Action_bool_string;
 		StackTraits<SDK.SDKManager.InitLaunchAction>.Push = factory.Push_SDK_SDKManager_InitLaunchAction;
 		StackTraits<SDK.SDKManager.RegisterAction>.Push = factory.Push_SDK_SDKManager_RegisterAction;
 		StackTraits<SDK.SDKManager.LoginAction>.Push = factory.Push_SDK_SDKManager_LoginAction;
@@ -4502,6 +4506,63 @@ public class DelegateFactory
 	}
 
 	void Push_System_Action_IAPResult(IntPtr L, System.Action<IAPResult> o)
+	{
+		ToLua.Push(L, o);
+	}
+
+	class System_Action_LoginData_Event : LuaDelegate
+	{
+		public System_Action_LoginData_Event(LuaFunction func) : base(func) { }
+		public System_Action_LoginData_Event(LuaFunction func, LuaTable self) : base(func, self) { }
+
+		public void Call(LoginData param0)
+		{
+			func.BeginPCall();
+			func.PushObject(param0);
+			func.PCall();
+			func.EndPCall();
+		}
+
+		public void CallWithSelf(LoginData param0)
+		{
+			func.BeginPCall();
+			func.Push(self);
+			func.PushObject(param0);
+			func.PCall();
+			func.EndPCall();
+		}
+	}
+
+	public System.Action<LoginData> System_Action_LoginData(LuaFunction func, LuaTable self, bool flag)
+	{
+		if (func == null)
+		{
+			System.Action<LoginData> fn = delegate(LoginData param0) { };
+			return fn;
+		}
+
+		if(!flag)
+		{
+			System_Action_LoginData_Event target = new System_Action_LoginData_Event(func);
+			System.Action<LoginData> d = target.Call;
+			target.method = d.Method;
+			return d;
+		}
+		else
+		{
+			System_Action_LoginData_Event target = new System_Action_LoginData_Event(func, self);
+			System.Action<LoginData> d = target.CallWithSelf;
+			target.method = d.Method;
+			return d;
+		}
+	}
+
+	bool Check_System_Action_LoginData(IntPtr L, int pos)
+	{
+		return TypeChecker.CheckDelegateType(typeof(System.Action<LoginData>), L, pos);
+	}
+
+	void Push_System_Action_LoginData(IntPtr L, System.Action<LoginData> o)
 	{
 		ToLua.Push(L, o);
 	}

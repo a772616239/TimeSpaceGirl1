@@ -40,7 +40,7 @@ public class GooglePlayGamesLogin
             }
             Status = "*** Failed to authenticate with " + signInStatus;
         }
-        Debug.Log(Status);
+        XDebug.Log.l("Status:"+Status);
     }
 
 }

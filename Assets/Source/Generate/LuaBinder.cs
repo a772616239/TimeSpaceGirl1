@@ -20,6 +20,7 @@ public static class LuaBinder
 		SocketClientWrap.Register(L);
 		IAPManagerWrap.Register(L);
 		IAPResultWrap.Register(L);
+		GoogleSignMgrWrap.Register(L);
 		PurchasedInfoWrap.Register(L);
 		AndroidDeviceInfoWrap.Register(L);
 		NotchScreenUtilWrap.Register(L);

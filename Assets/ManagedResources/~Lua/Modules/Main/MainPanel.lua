@@ -184,6 +184,18 @@ function this:InitComponent()
 
     this.taskGuideFinger = Util.GetGameObject(this.GuideTaskView.gameObject, "button/tipButtom")--任务引导
     this.battleGuideFinger = Util.GetGameObject(this.BtView.gameObject, "Down/btnJieLing/tipButtom")--闯关引导
+
+    local m_lan = PlayerPrefs.GetInt("multi_language", AppConst.originLan)
+    if m_lan == 1 or m_lan==2 then
+         for i, v in pairs(this.operateIcon) do
+            v.txt:SetActive(true)
+        end
+    else
+        for i, v in pairs(this.operateIcon) do
+            v.txt:SetActive(false)
+        end
+
+    end
 end
 
 local isRetract--收/缩
@@ -719,7 +731,7 @@ function this:Update()
 end
 
 function this:AddFuncItem(btnGO, pos)
-    return {go = btnGO, open = Util.GetGameObject(btnGO, "open"), lock = Util.GetGameObject(btnGO, "lock"), pos = pos}
+    return {go = btnGO, open = Util.GetGameObject(btnGO, "open"), lock = Util.GetGameObject(btnGO, "lock"), pos = pos,txt=Util.GetGameObject(btnGO, "Text")}
 end
 
 function this:InsertNewText(btn)

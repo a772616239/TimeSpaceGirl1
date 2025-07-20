@@ -137,6 +137,9 @@ function this:BindEvent()
     Util.AddClick(
         this.LoginPanel_Btn1,
         function()
+            UnityEngine.Application.OpenURL(
+                "https://doc-hosting.flycricket.io/chao-shi-kong-mei-shao-nu-er-ci-yuan-xiu-xian-fang-zhi-privacy-policy/785135bb-e220-4582-95e2-3a65e7488fb0/privacy"
+            )
             if IsSDKLogin then
                 SDKMgr:LoginPanel_Btn1()
             end
@@ -348,7 +351,7 @@ function this:OnOpen(...)
 
         local userId = PlayerPrefs.GetString(openIdkey, defaultOpenIdkey)
         -- this.UserBtn:SetActive(true)
-        this.btnUser:SetActive(true)
+        this.btnUser:SetActive(false)
         -- this.inputField.gameObject:SetActive(false)
         -- this.UserBtnText.text = userId
 
@@ -374,8 +377,11 @@ function this:OnOpen(...)
 
     local channelConfig = GetChannerConfig()
     this.LoginPanel_Btn1:SetActive(channelConfig.Button_Logon_information)
-    this.LoginPanel_Btn2:SetActive(channelConfig.Button_Logon_information)
-    this.AgeTip:SetActive(channelConfig.Button_Logon_AgeTips)
+    -- this.LoginPanel_Btn2:SetActive(channelConfig.Button_Logon_information)
+    this.LoginPanel_Btn2:SetActive(false)
+
+    -- this.AgeTip:SetActive(channelConfig.Button_Logon_AgeTips)
+    this.AgeTip:SetActive(false)
     this.declaration:SetActive(channelConfig.Button_Logon_HealthyTips)
 end
 

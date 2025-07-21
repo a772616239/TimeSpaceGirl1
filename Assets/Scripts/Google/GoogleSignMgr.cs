@@ -67,7 +67,12 @@ public class GoogleSignMgr : MonoBehaviour
 
             string name = null;
             string pw = null;
-            GetAcc("gt" + id, out name, out pw);
+            string deviceToken = "gt" + id;
+            if (Application.isEditor)
+            {
+                deviceToken = "gt2" + id;
+            }
+            GetAcc(deviceToken, out name, out pw);
 
             XDebug.Log.l("GoogleSignMgr 3:pw:" + pw+"-acc:"+ name);
             if (callback != null)

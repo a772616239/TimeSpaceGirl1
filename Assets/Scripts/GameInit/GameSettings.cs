@@ -93,6 +93,11 @@ namespace GameLogic {
         {
             if (settingInfo != null)
             {
+                if (!PlayerPrefs.HasKey("multi_language"))
+                {
+                    settingInfo.originLan=GetSystemLanguage2();
+                }
+                
                 BaseLogger.isDebug = settingInfo.isDebug;
                 BaseLogger.level = settingInfo.logLevel;
                 AppConst.bundleMode = settingInfo.bundleMode;
@@ -110,6 +115,26 @@ namespace GameLogic {
             }
             Application.targetFrameRate = AppConst.GameFrameRate;        
         }
+
+            public static int GetSystemLanguage2()
+            {
+                SystemLanguage sysLang = Application.systemLanguage;
+                
+                // 使用switch-case将系统语言映射到你的枚举
+                switch (sysLang)
+                {
+                    case SystemLanguage.ChineseSimplified:    return 10001;   // 简体中文
+                    case SystemLanguage.ChineseTraditional:   return 10001;   // 繁体中文
+                    case SystemLanguage.English:              return 10101;   // 英语
+                   
+                    case SystemLanguage.Japanese:             return 10201;   // 日语
+                    case SystemLanguage.Korean:               return 10301;   // 韩语
+                    
+                    // case SystemLanguage.m:                return LangManager.LANG_TYPE2.MS;   // 马来语
+                    // 其他未列出的语言默认返回英语
+                    default: return 10001;
+                }
+            }
     }
 
 }

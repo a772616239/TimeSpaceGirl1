@@ -17,7 +17,6 @@
 --    end
 --    table.insert(arr, string.sub(input, pos))
 --    return arr
---end
 
 --判断字符串sSource是否以sTemplate结束
 function endWith(sSource, sTemplate)
@@ -37,6 +36,16 @@ function endWith(sSource, sTemplate)
     end
 end
 
+function string.contains(str, substr)
+    if #substr > #str then return false end
+    for i = 1, #str - #substr + 1 do
+        if string.sub(str, i, i + #substr - 1) == substr then
+            return true
+        end
+    end
+    return false
+end
+
 --判断字符串sSource是否以sTemplate开始
 function startWith(sSource, sTemplate)
     if not sSource or not sTemplate then
@@ -49,6 +58,10 @@ function startWith(sSource, sTemplate)
             return false
         end
     end
+end
+
+function startswith2(str, prefix)
+    return string.find(str, prefix, 1, true) == 1
 end
 
 -- 计算字符串宽度 可以计算出字符宽度，用于显示使用

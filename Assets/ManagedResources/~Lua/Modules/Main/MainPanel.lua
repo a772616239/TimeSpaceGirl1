@@ -186,7 +186,8 @@ function this:InitComponent()
     this.battleGuideFinger = Util.GetGameObject(this.BtView.gameObject, "Down/btnJieLing/tipButtom")--闯关引导
 
     local m_lan = PlayerPrefs.GetInt("multi_language", AppConst.originLan)
-    if m_lan == 1 or m_lan==2 then
+    Log("m_lan:"..m_lan)
+    if m_lan == 10101 or m_lan==10201 then
          for i, v in pairs(this.operateIcon) do
             v.txt:SetActive(true)
         end

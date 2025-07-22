@@ -788,7 +788,7 @@ public class SocketClient
     {
         if (!IsConnected())
         {
-            UnityEngine.Debug.LogErrorFormat("Try to send message with invalid connection.");
+            XDebug.Log.l("Try to send message with invalid connection.");
             AddStateInfo(NetworkStateType.Disconnect, "bytesRead < 1");
         }
         else
@@ -800,7 +800,7 @@ public class SocketClient
                 callbacks.Add(receiveMsgId, cb);
             }
             m_SendMessage(msgId, message, m_serialId);
-            Debug.Log("SendMessageWithCallBack msgId: " + msgId + " receiveMsgId: " + receiveMsgId + " serialId: " + m_serialId);
+            XDebug.Log.l("SendMessageWithCallBack msgId: " + msgId + " receiveMsgId: " + receiveMsgId + " serialId: " + m_serialId);
         }
     }
 

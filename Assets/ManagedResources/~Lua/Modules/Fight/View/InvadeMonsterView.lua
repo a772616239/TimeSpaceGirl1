@@ -126,6 +126,7 @@ function InvadeMonsterView:AddListener()
     Game.GlobalEvent:AddEvent(GameEvent.OnlineGift.GetOnlineRewardSuccess, this.RefreshOnlineRewardShow)
     Game.GlobalEvent:AddEvent(GameEvent.OnlineGift.GetOnlineRewardSuccess, this.OnRefreshRedPoint)
     Game.GlobalEvent:AddEvent(GameEvent.RedPoint.TrainTask, this.SetTrainTaskState)
+    Game.GlobalEvent:AddEvent(GameEvent.Adventure.UpdateMultiUI,this.SetImgNative)
 end
 
 --移除事件监听（用于子类重写）
@@ -136,6 +137,11 @@ function InvadeMonsterView:RemoveListener()
     Game.GlobalEvent:RemoveEvent(GameEvent.OnlineGift.GetOnlineRewardSuccess, this.RefreshOnlineRewardShow)
     Game.GlobalEvent:RemoveEvent(GameEvent.OnlineGift.GetOnlineRewardSuccess, this.OnRefreshRedPoint)
     Game.GlobalEvent:RemoveEvent(GameEvent.RedPoint.TrainTask, this.SetTrainTaskState)
+end
+
+function this.SetImgNative()
+    this.btnRewardChapterImg = Util.GetGameObject(this.btnRewardChapter, "Image"):GetComponent("Image")
+    this.btnRewardChapterImg:SetNativeSize()
 end
 
 --界面打开时调用（用于子类重写）
@@ -201,10 +207,7 @@ function this.RefreshOnlineRewardShow()
     this.CheckOnlineRewardShow()
 
     this.adventureMainPanel.UpdateOpenSeverWelfare()
-    this.btnRewardChapterImg = Util.GetGameObject(this.btnRewardChapter, "Image"):GetComponent("Image")
-    this.btnRewardChapterImg:SetNativeSize()
-    this.btnRewardChapterImg = Util.GetGameObject(this.btnRewardChapter, "Image"):GetComponent("Image")
-    this.btnRewardChapterImg:SetNativeSize()
+
 end
 
 --倒计时时间格式化

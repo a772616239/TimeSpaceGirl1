@@ -142,6 +142,7 @@ GameEvent = {
         CallAlianInvasionTime = "Adventure.CallAlianInvasionTime",
         OnRefreshRedShow = "Adventure.OnRefreshRedShow",
         OnRefreshNextDayData = "Adventure.OnRefreshNextDayData",
+        UpdateMultiUI = "Adventure.UpdateMultiUI",
     },
     RedPoint = {
         NumChange = "RedPoint.NumChange",

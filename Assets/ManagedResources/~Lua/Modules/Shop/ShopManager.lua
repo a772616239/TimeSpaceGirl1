@@ -1080,7 +1080,7 @@ function this.CalculateCostCountByShopId(shopId, itemId, count)
     -- 判断是否打折
     local discount = itemInfo.IsDiscount == 1 and itemInfo.DiscountDegree * 0.1 or 1
     local finalNum = oriCostNum * discount
-    Log("shopId:"..shopId.."itemId"..itemId.."..costId"..costId.."--finalNum:"..finalNum.."--oriCostNum:"..oriCostNum)
+    -- Log("shopId:"..shopId.."itemId"..itemId.."..costId"..costId.."--finalNum:"..finalNum.."--oriCostNum:"..oriCostNum)
     return costId, finalNum, oriCostNum
 end
 

@@ -65,13 +65,51 @@ function this.GetNotice()
             if str == nil then
                 return
             end
+            
             local json = require 'cjson'
             local data = json.decode(str)
+            
             if data.parms then
-                -- this.TitleText.text = data.parms.title
-                this.ContentText.text = string.gsub(data.parms.content, "\\n", "\n")
+                -- 获取客户端当前语言标识（根据实际项目调整）
+                local lang = GetCurLanguage() or "10001"
+                Log("当前语言标识: " .. lang.."--获取公告内容"..GetCurLanguage())
+                local content = data.parms.content
+                
+                -- 解析多语言公告
+                local localizedContent = ""
+                local found = false
+                
+                -- 尝试查找当前语言的公告
+                for part in string.gmatch(content, "([^|]+)") do
+                    local langCode, text = string.match(part, "^(%w+):(.+)$")
+                    if langCode and text then
+                        if langCode == lang then
+                            localizedContent = text
+                            found = true
+                            break
+                        end
+                    end
+                end
+                
+                -- 如果未找到匹配语言，尝试中文或第一条公告
+                if not found then
+                    -- 尝试找中文
+                    local zhText = string.match(content, "10001:([^|]+)")
+                    if zhText then
+                        localizedContent = zhText
+                    else
+                        -- 使用第一条公告
+                        local firstPart = string.match(content, "([^|]+)")
+                        if firstPart then
+                            localizedContent = string.match(firstPart, ":%s*(.+)") or firstPart
+                        else
+                            localizedContent = content
+                        end
+                    end
+                end
+                
+                this.ContentText.text = string.gsub(localizedContent, "\\n", "\n")
             else
-                -- this.TitleText.text = GetLanguageStrById(11129)
                 this.ContentText.text = GetLanguageStrById(11130)
             end
         end, nil, nil, nil)

@@ -800,7 +800,7 @@ public class SocketClient
                 callbacks.Add(receiveMsgId, cb);
             }
             m_SendMessage(msgId, message, m_serialId);
-            XDebug.Log.l("SendMessageWithCallBack msgId: " + msgId + " receiveMsgId: " + receiveMsgId + " serialId: " + m_serialId);
+            // XDebug.Log.l("SendMessageWithCallBack msgId: " + msgId + " receiveMsgId: " + receiveMsgId + " serialId: " + m_serialId);
         }
     }
 

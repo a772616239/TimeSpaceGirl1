@@ -128,11 +128,11 @@ namespace GameLogic {
                     case SystemLanguage.English:              return 10101;   // 英语
                    
                     case SystemLanguage.Japanese:             return 10201;   // 日语
-                    case SystemLanguage.Korean:               return 10301;   // 韩语
+                    // case SystemLanguage.Korean:               return 10301;   // 韩语
                     
                     // case SystemLanguage.m:                return LangManager.LANG_TYPE2.MS;   // 马来语
                     // 其他未列出的语言默认返回英语
-                    default: return 10001;
+                    default: return 10101;
                 }
             }
     }

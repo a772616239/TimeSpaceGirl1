@@ -53,6 +53,7 @@ Shader = UnityEngine.Shader
 --为0显示所有log，为1显示警告和错误，为2显示错误
 LogModeLevel = 0
 PassTimes1=1
+ShowReviewPTimes=1
 --是否开启战斗调试
 IsOpenBattleDebug = not AppConst.luaBundleMode
 

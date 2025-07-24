@@ -780,6 +780,9 @@ function RoleView:ChangeCardSorting(sortingOrder)
 end
 
 function RoleView:Update_HPPos()
+    if self.RootPanel== nil or self.RoleLiveGO == nil or self.GameObject == nil then
+        return
+    end
     --更新血条位置
     self.GameObject.transform.localPosition = Util.WorldToLocalInRect(self.RootPanel.camera3D, self.RoleLiveGO.transform.parent.position, self.RootPanel.cameraUI, self.GameObject.transform.parent:GetComponent("RectTransform")) + self.hpOffset
 end

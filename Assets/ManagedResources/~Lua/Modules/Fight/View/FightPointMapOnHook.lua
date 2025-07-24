@@ -1334,7 +1334,7 @@ function this:OnceDamaged(livego, livenode, dmg, bCrit, combat, skill, isLeft, t
         return
     end
 
-    if not livenode then
+    if not livenode or livenode==nil then
         return
     end
 

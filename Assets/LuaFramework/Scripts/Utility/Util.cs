@@ -1132,9 +1132,8 @@ namespace GameLogic
             }
             //int lan = PlayerPrefs.GetInt("multi_language", AppConst.originLan);
             int L = ((int)Math.Floor((double)(m_lan / 100))) % 100;
-            //Debug.LogError(L);
             string _spriteName = spriteName;
-            Log("_spriteName:"+_spriteName);
+            // Log("_spriteName:"+_spriteName);
             
             if (_spriteName=="_zh")
             {

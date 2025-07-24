@@ -138,7 +138,7 @@ namespace ResMgr {
                     if (BaseLogger.isDebug) BaseLogger.LogErrorFormat("没有找到资源{0}！", name);
                     return null;
                 }
-                Debug.Log("LoadAsset Editor:"+"-path:"+path);
+                // Debug.Log("LoadAsset Editor:"+"-path:"+path);
 
                 resData = resDataPool.Get();
                 resData.Name = name;

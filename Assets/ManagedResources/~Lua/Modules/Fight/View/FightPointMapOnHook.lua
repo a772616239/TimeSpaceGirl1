@@ -1372,7 +1372,7 @@ function this:OnceDamaged(livego, livenode, dmg, bCrit, combat, skill, isLeft, t
     livego.transform.localPosition = Vector3.New(endValue, livego.transform.localPosition.y, livego.transform.localPosition.z)
     livego.transform:DOLocalMoveX(startValue, 0.3):SetEase(Ease.OutQuad)
 
-    if livenode.name ~= "role_aijiyanhou" then
+    if livenode ~=nil and livenode.name ~= "role_aijiyanhou" then
         self:PlaySpineAnim(livenode:GetComponent(SpineComponentName), 0, RoleAnimationName.Injured, false)
     end
 
@@ -1668,7 +1668,7 @@ function this:Dispose()
     liveNodesLeft = {}
 
     for i, v in pairs(liveNodesRight) do
-        if v then
+        if v ~= nil then
             local spineComponent = v:GetComponent(SpineComponentName)
             spineComponent.transform:DOKill()
             this:ResetSpineComponent(spineComponent)

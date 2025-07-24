@@ -267,8 +267,7 @@ function FightPointPassMainPanel:OnShow()
     end)
 
     SoundManager.PlayMusic(SoundConfig.BGM_Main)
-    -- 调用onshow
-    invadeMonster:OnShow()
+    
 
     if not hasLoad then
         timePressStarted = Time.realtimeSinceStartup
@@ -305,6 +304,8 @@ function FightPointPassMainPanel:OnShow()
     this.UpdateOpenSeverWelfare()
     this.RefreshFightBtn()
     this.ShowGuide()
+    -- 调用onshow
+    invadeMonster:OnShow()
 end
 
 local fightBtnSprite = {

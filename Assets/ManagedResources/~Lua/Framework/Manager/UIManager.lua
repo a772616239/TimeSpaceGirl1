@@ -758,6 +758,7 @@ function UIManager.MultiLanguageCheck(gameObject)
                 if string.sub(imgStr, -3) == "_zh" then
                     validCntImg = validCntImg + 1
                     imageArr[i].sprite = Util.LoadSprite(imgStr)
+                    imageArr[i]:SetNativeSize()
                 end
             end
         end

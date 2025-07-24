@@ -156,6 +156,7 @@ function InvadeMonsterView:OnShow(...)
         this.btnRewardChapter:SetActive(false)
     end
     this.SetTrainTaskState()
+
 end
 
 function this.SetTrainTaskState()
@@ -200,6 +201,10 @@ function this.RefreshOnlineRewardShow()
     this.CheckOnlineRewardShow()
 
     this.adventureMainPanel.UpdateOpenSeverWelfare()
+    this.btnRewardChapterImg = Util.GetGameObject(this.btnRewardChapter, "Image"):GetComponent("Image")
+    this.btnRewardChapterImg:SetNativeSize()
+    this.btnRewardChapterImg = Util.GetGameObject(this.btnRewardChapter, "Image"):GetComponent("Image")
+    this.btnRewardChapterImg:SetNativeSize()
 end
 
 --倒计时时间格式化

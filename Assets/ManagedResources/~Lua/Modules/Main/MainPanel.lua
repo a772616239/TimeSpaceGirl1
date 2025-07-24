@@ -184,7 +184,7 @@ function this:InitComponent()
 
     this.taskGuideFinger = Util.GetGameObject(this.GuideTaskView.gameObject, "button/tipButtom")--任务引导
     this.battleGuideFinger = Util.GetGameObject(this.BtView.gameObject, "Down/btnJieLing/tipButtom")--闯关引导
-
+    
     local m_lan = PlayerPrefs.GetInt("multi_language", AppConst.originLan)
     Log("m_lan:"..m_lan)
     if m_lan == 10101 or m_lan==10201 then

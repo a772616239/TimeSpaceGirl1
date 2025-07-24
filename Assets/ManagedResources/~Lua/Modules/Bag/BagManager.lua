@@ -814,7 +814,7 @@ end
 -- 将drop的数据解析存进临时背包, isSave 为true 为保存进临时背包
 function this.GetItemListFromTempBag(drop, isSave)
     local itemDataList = {}
-    if drop.itemlist ~= nil and #drop.itemlist > 0 then
+    if drop~=nil and drop.itemlist ~= nil and #drop.itemlist > 0 then
         for i = 1, #drop.itemlist do
             local itemdata = {}
             itemdata.itemType = 1

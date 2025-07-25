@@ -1535,7 +1535,7 @@ end
 
 ---obj必须是userdata(c#对象)
 function IsNull(obj)
-    return obj == nil or obj:Equals(nil)
+    return obj == nil or tolua.isnull(obj) 
 end
 
 ------- 红点相关 ----------

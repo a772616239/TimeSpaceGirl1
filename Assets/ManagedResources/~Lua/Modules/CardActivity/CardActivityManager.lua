@@ -244,7 +244,9 @@ function this.TimeDown(txt, timeDown)
         if timeDown < 0 then
             this.timer:Stop()
             this.timer = nil
-            txt.text = ""
+            if  not IsNull(txt) then
+                txt.text = ""
+            end
         end
         timeDown = timeDown - 1
     end, 1, -1, true)

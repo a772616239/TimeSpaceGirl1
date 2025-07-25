@@ -229,7 +229,9 @@ function MailMainPanel:OnClose()
     if openPanel then
         openPanel.RefreshRedPoint()
     end
-
+    if IsNull (this.mailList) then
+        return
+    end 
     for index, value in ipairs(this.mailList) do
         value:SetActive(false)
     end

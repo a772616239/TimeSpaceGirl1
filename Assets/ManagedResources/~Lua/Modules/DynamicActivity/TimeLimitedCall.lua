@@ -224,11 +224,13 @@ function TimeLimitedCall:RefreshNextLevelReward()
     local timeDown = info.endTime - PlayerManager.serverTime
     self.recruitTimeUpdate.text = string.format(GetLanguageStrById(12230)..self:TimeToDHMS(timeDown))
     Timer.New(function()
-        if timeDown < 1 then
-            self.recruitTimeUpdate.text = string.format(GetLanguageStrById(12230)..self:TimeToDHMS(0))
-        else
-            timeDown = timeDown - 1
-            self.recruitTimeUpdate.text = string.format(GetLanguageStrById(12230)..self:TimeToDHMS(timeDown))
+        if not IsNull(self.recruitTimeUpdate)  then
+            if timeDown < 1 then
+                self.recruitTimeUpdate.text = string.format(GetLanguageStrById(12230)..self:TimeToDHMS(0))
+            else
+                timeDown = timeDown - 1
+                self.recruitTimeUpdate.text = string.format(GetLanguageStrById(12230)..self:TimeToDHMS(timeDown))
+            end
         end
     end, 1, -1, true):Start()
 end

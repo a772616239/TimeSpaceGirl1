@@ -2022,6 +2022,9 @@ end
 
 --设置3D相机位置
 function this:SetCameraParent(parent)
+    if IsNull(this.camera3D ) then
+        return
+    end
     this.camera3D.transform:SetParent(parent)
     this.camera3D.transform.localPosition = Vector3.zero
     this.camera3D.transform.localEulerAngles = Vector3.zero

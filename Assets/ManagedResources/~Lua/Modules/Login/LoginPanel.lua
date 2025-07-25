@@ -376,7 +376,7 @@ function this:OnOpen(...)
     SoundManager.PlayAmbient(SoundConfig.Ambient_Login)
 
     local channelConfig = GetChannerConfig()
-    this.LoginPanel_Btn1:SetActive(channelConfig.Button_Logon_information)
+    this.LoginPanel_Btn1:SetActive(false)
     -- this.LoginPanel_Btn2:SetActive(channelConfig.Button_Logon_information)
     this.LoginPanel_Btn2:SetActive(false)
 

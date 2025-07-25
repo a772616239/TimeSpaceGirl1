@@ -140,6 +140,7 @@ function InvadeMonsterView:RemoveListener()
 end
 
 function this.SetImgNative()
+    Log("InvadeMonsterView")
     this.btnRewardChapterImg = Util.GetGameObject(this.btnRewardChapter, "Image"):GetComponent("Image")
     this.btnRewardChapterImg:SetNativeSize()
 end

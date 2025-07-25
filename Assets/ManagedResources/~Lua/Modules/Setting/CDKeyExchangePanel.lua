@@ -44,18 +44,18 @@ function CDKeyExchangePanel:OnConfirmBtnClicked()
                 PopupTipPanel.ShowTipByLanguageId(11887)
             end)
         end
-        if AppConst.isSDKLogin then
-            if SDKMgr:IsCDKey() then
-                local serverID = PlayerManager.serverInfo.server_id
-                local roleID = tostring(PlayerManager.uid)
-                SDKMgr:CDKey(self.cdKeyCode.text,serverID,roleID)
-                self.cdKeyCode.text = ""
-            else
-                fun()
-            end
-        else
+        -- if AppConst.isSDKLogin then
+        --     if SDKMgr:IsCDKey() then
+        --         local serverID = PlayerManager.serverInfo.server_id
+        --         local roleID = tostring(PlayerManager.uid)
+        --         SDKMgr:CDKey(self.cdKeyCode.text,serverID,roleID)
+        --         self.cdKeyCode.text = ""
+        --     else
+                -- fun()
+            -- end
+        -- else
             fun()
-        end
+        -- end
     end
 end
 

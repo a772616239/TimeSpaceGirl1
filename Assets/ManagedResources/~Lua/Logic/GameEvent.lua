@@ -144,6 +144,9 @@ GameEvent = {
         OnRefreshNextDayData = "Adventure.OnRefreshNextDayData",
         UpdateMultiUI = "Adventure.UpdateMultiUI",
     },
+      NoticePanel = {
+        OnOpen = "NoticePanel.OnOpen",
+    },
     RedPoint = {
         NumChange = "RedPoint.NumChange",
         StateChange = "RedPoint.StateChange",

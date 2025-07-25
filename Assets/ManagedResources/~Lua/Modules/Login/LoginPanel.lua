@@ -53,7 +53,7 @@ function this:InitComponent()
     this.btnCustomerService = Util.GetGameObject(this.loginPart, "btns/btnCustomerService") --客服
     this.LoginPanel_Btn1 = Util.GetGameObject(this.loginPart, "btns/LoginPanel_Btn1") --使用条款
     this.LoginPanel_Btn2 = Util.GetGameObject(this.loginPart, "btns/LoginPanel_Btn2") --个人信息
-
+    this.Partical = Util.GetGameObject(self.transform, "BG/Partical")
     ---selectServerPart
     this.serverSelectPart = Util.GetGameObject(this.loginPart, "serverSelect")
     this.serverImage = Util.GetGameObject(this.serverSelectPart, "Image"):GetComponent("Image")
@@ -260,6 +260,7 @@ function this:AddListener()
     Game.GlobalEvent:AddEvent(Protocal.Disconnect, this.OnDisconnect)
     Game.GlobalEvent:AddEvent(GameEvent.LoginSuccess.OnLoginSuccess, this.RefreshLoginStatus)
     Game.GlobalEvent:AddEvent(GameEvent.LoginSuccess.OnLogout, this.OnLogout)
+    Game.GlobalEvent:AddEvent(GameEvent.NoticePanel.OnOpen,this.OnOpenNoticePanel)
     -- Game.GlobalEvent:AddEvent(GameEvent.LoginSuccess.OnAgreePrivacy, this.ChangeAgreePrivacy)
 end
 
@@ -269,7 +270,13 @@ function this:RemoveListener()
     Game.GlobalEvent:RemoveEvent(Protocal.Disconnect, this.OnDisconnect)
     Game.GlobalEvent:RemoveEvent(GameEvent.LoginSuccess.OnLoginSuccess, this.RefreshLoginStatus)
     Game.GlobalEvent:RemoveEvent(GameEvent.LoginSuccess.OnLogout, this.OnLogout)
+    Game.GlobalEvent:RemoveEvent(GameEvent.NoticePanel.OnOpen,this.OnOpenNoticePanel)
     -- Game.GlobalEvent:RemoveEvent(GameEvent.LoginSuccess.OnAgreePrivacy, this.ChangeAgreePrivacy)
+end
+
+function this.OnOpenNoticePanel()
+    this.Partical.gameObject:SetActive(not this.Partical.gameObject.activeSelf)
+
 end
 
 function this:OnLogout()

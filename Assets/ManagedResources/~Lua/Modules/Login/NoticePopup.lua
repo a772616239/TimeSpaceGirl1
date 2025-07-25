@@ -9,6 +9,7 @@ function NoticePopup:InitComponent()
 	this.BackBtn = Util.GetGameObject(self.transform,"BackBtn")
     -- this.TitleText=Util.GetGameObject(self.transform,"bg/bg/Image/title"):GetComponent("Text")
     this.ContentText = Util.GetGameObject(self.transform,"bg/rect/content"):GetComponent("Text")
+
 end
 
 --绑定事件（用于子类重写）
@@ -38,6 +39,7 @@ end
 --界面打开时调用（用于子类重写）
 function NoticePopup:OnOpen(...)
     this.GetNotice()
+    Game.GlobalEvent:DispatchEvent(GameEvent.NoticePanel.OnOpen,true)
 end
 
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）
@@ -47,7 +49,7 @@ end
 
 --界面关闭时调用（用于子类重写）
 function NoticePopup:OnClose()
-
+    Game.GlobalEvent:DispatchEvent(GameEvent.NoticePanel.OnOpen,false)
 end
 
 --界面销毁时调用（用于子类重写）

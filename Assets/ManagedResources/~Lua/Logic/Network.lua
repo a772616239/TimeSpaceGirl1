@@ -149,7 +149,7 @@ end
 
 function Network:SendMessageWithCallBack(nMsgId, nReMsgId, sMsg, func, isHideMask)
     if not isHideMask then
-        RequestPanel.Show(GetLanguageStrById(23016))
+        -- RequestPanel.Show(GetLanguageStrById(23016))
     end
     self.sendFuncQueue:Enqueue(function()
         local buffer = ByteBuffer.New()

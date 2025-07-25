@@ -332,10 +332,10 @@ function this:OnOpen(...)
     this.btnCustomerService:SetActive(GetChannerConfig().Button_Logon_CustomerService)
     this.btnAgreement:SetActive(GetChannerConfig().PrivacyAgreement)
     if GetChannerConfig().Bg_Logon then
-        Util.GetGameObject(this.gameObject, "BG/None"):SetActive(false)
+        Util.GetGameObject(this.gameObject, "None"):SetActive(false)
         Util.GetGameObject(this.gameObject, "BG/" .. GetChannerConfig().Bg_Logon):SetActive(true)
     else
-        Util.GetGameObject(this.gameObject, "BG/None"):SetActive(true)
+        Util.GetGameObject(this.gameObject, "None"):SetActive(true)
     end
 
     if IsSDKLogin then

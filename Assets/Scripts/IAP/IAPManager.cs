@@ -112,6 +112,16 @@ public class IAPManager : DontDestroyOnLoad, IStoreListener
     public  void BuyItem1(int payItemId,int price,Action<IAPResult> cb)
     {
         this.Cb = cb;
+        if (price==0)
+        {
+            Cb(new IAPResult()
+            {
+                IsSucc = true,
+                product = null,
+
+            });
+            return;
+        }
         string buyKey = buycoin_base + price;
         if (m_StoreController != null)
         {

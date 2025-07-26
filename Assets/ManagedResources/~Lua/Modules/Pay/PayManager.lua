@@ -57,14 +57,19 @@ function this.Pay(context,func)
         this.EventTrigger[context.Id] = func
 
         local rechargeConfig = ConfigManager.GetConfigData(ConfigName.RechargeCommodityConfig, context.Id)
-        iapMgr:BuyItem1(context.Id,rechargeConfig.Price,function (ret1)
-            Log("充值结果回调 ret1 = ")
+        if rechargeConfig~=nil then
+            Log("充值结果回调 ret1 = "..context.Id.."rechargeConfig.Price = "..rechargeConfig.Price)
+
+            iapMgr:BuyItem1(context.Id,rechargeConfig.Price,function (ret1)
+
             if ret1.IsSucc then   
                 NetManager.RequestBuyGiftGoods(context.Id,function()
                     
                 end)
             end
         end)
+        end
+
         local payData = table.clone(context)
         payData.Name = rechargeConfig.Name
         payData.Desc = rechargeConfig.Desc 

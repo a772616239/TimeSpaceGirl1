@@ -53,7 +53,7 @@ function this:InitComponent()
     this.btnCustomerService = Util.GetGameObject(this.loginPart, "btns/btnCustomerService") --客服
     this.LoginPanel_Btn1 = Util.GetGameObject(this.loginPart, "btns/LoginPanel_Btn1") --使用条款
     this.LoginPanel_Btn2 = Util.GetGameObject(this.loginPart, "btns/LoginPanel_Btn2") --个人信息
-    this.Partical = Util.GetGameObject(self.transform, "BG/Partical")
+    -- this.Partical = Util.GetGameObject(self.transform, "BG/Partical")
     ---selectServerPart
     this.serverSelectPart = Util.GetGameObject(this.loginPart, "serverSelect")
     this.serverImage = Util.GetGameObject(this.serverSelectPart, "Image"):GetComponent("Image")
@@ -63,6 +63,7 @@ function this:InitComponent()
     this.sdkLoginBtn = Util.GetGameObject(this.loginPart, "loginBtn")
     this.AgeTip = Util.GetGameObject(this.loginPart, "ageTip")
     this.SetLoginPart(false)
+    this.Partical = Util.GetGameObject(this.loginPart, "loginBtn/Partical")
 
     this.versionText = Util.GetGameObject(this.loginPart, "version"):GetComponent("Text")
     this.versionText.text = GetLanguageStrById(11119) .. LoginRoot_Version

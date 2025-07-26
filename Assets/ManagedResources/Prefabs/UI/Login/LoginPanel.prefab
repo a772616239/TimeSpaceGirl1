@@ -29,8 +29,7 @@ RectTransform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 4123143397503902256}
+  m_Children: []
   m_Father: {fileID: 7920894165876716725}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0}
@@ -112,12 +111,14 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 6799821396337016887}
+  - {fileID: 4123143397503902256}
   - {fileID: 7369032967720175446}
   m_Father: {fileID: -2215574213872556275}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 23, y: -34}
+  m_AnchoredPosition: {x: 23, y: -139}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &-9022216819834462767
@@ -1183,11 +1184,11 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 7369032967720175446}
+  m_Father: {fileID: 7920894165876716725}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 191}
+  m_AnchoredPosition: {x: 0, y: -338}
   m_SizeDelta: {x: 435.44, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &4686050553317327776
@@ -1535,21 +1536,21 @@ MonoBehaviour:
   rawTopLeftBounds: {x: 217.72, y: -50, z: 0}
   rawBottomRightBounds: {x: -217.72, y: 50, z: 0}
   rawBottomRightTextBounds: {x: 371.03125, y: -62, z: 0}
-  topLeftBounds: {x: 165.28, y: 558, z: 0}
-  topRightBounds: {x: 600.72, y: 558, z: 0}
-  bottomLeftBounds: {x: 165.28, y: 458, z: 0}
-  bottomRightBounds: {x: 600.72, y: 458, z: 0}
-  centerBounds: {x: 383, y: 508, z: 0}
-  topLeftTextBounds: {x: 197.48438, y: 539, z: 0}
-  topRightTextBounds: {x: 568.5156, y: 539, z: 0}
-  bottomLeftTextBounds: {x: 197.48438, y: 477, z: 0}
-  bottomRightTextBounds: {x: 568.5156, y: 477, z: 0}
-  centerTextBounds: {x: 383, y: 508, z: 0}
-  finalTopLeftTextBounds: {x: 197.48438, y: 539, z: 0}
-  finalTopRightTextBounds: {x: 568.5156, y: 539, z: 0}
-  finalBottomLeftTextBounds: {x: 197.48438, y: 477, z: 0}
-  finalBottomRightTextBounds: {x: 568.5156, y: 477, z: 0}
-  finalCenterTextBounds: {x: 383, y: 508, z: 0}
+  topLeftBounds: {x: 165.28, y: 453, z: 0}
+  topRightBounds: {x: 600.72, y: 453, z: 0}
+  bottomLeftBounds: {x: 165.28, y: 353, z: 0}
+  bottomRightBounds: {x: 600.72, y: 353, z: 0}
+  centerBounds: {x: 383, y: 403, z: 0}
+  topLeftTextBounds: {x: 197.48438, y: 434, z: 0}
+  topRightTextBounds: {x: 568.5156, y: 434, z: 0}
+  bottomLeftTextBounds: {x: 197.48438, y: 372, z: 0}
+  bottomRightTextBounds: {x: 568.5156, y: 372, z: 0}
+  centerTextBounds: {x: 383, y: 403, z: 0}
+  finalTopLeftTextBounds: {x: 197.48438, y: 434, z: 0}
+  finalTopRightTextBounds: {x: 568.5156, y: 434, z: 0}
+  finalBottomLeftTextBounds: {x: 197.48438, y: 372, z: 0}
+  finalBottomRightTextBounds: {x: 568.5156, y: 372, z: 0}
+  finalCenterTextBounds: {x: 383, y: 403, z: 0}
   unwrappedBottomRightTextBounds: {x: 372, y: -62, z: 0}
   onCompleteEvent:
     m_PersistentCalls:
@@ -1575,7 +1576,7 @@ MonoBehaviour:
   debugMode: 0
   totalReadTime: 0.00001
   totalUnreadTime: 0.00001
-  currentReadTime: 8.491033
+  currentReadTime: 15.526012
   autoRead: 1
   rememberReadPosition: 1
   autoQuality: 0
@@ -3521,7 +3522,6 @@ RectTransform:
   - {fileID: 149098431260690659}
   - {fileID: 7371502705168131210}
   - {fileID: 5849130916165618244}
-  - {fileID: 6799821396337016887}
   m_Father: {fileID: 407222412651768376}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -7239,8 +7239,18 @@ PrefabInstance:
   serializedVersion: 2
   m_Modification:
     serializedVersion: 3
-    m_TransformParent: {fileID: 4678539748987504722}
+    m_TransformParent: {fileID: 7920894165876716725}
     m_Modifications:
+    - target: {fileID: 175500722355414679, guid: b54d3eeed6b62469abcb1652eca880f4,
+        type: 3}
+      propertyPath: m_SortingLayer
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1209919034111529892, guid: b54d3eeed6b62469abcb1652eca880f4,
+        type: 3}
+      propertyPath: m_SortingLayer
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 1637876415643898531, guid: b54d3eeed6b62469abcb1652eca880f4,
         type: 3}
       propertyPath: m_Pivot.x
@@ -7304,27 +7314,27 @@ PrefabInstance:
     - target: {fileID: 1637876415643898531, guid: b54d3eeed6b62469abcb1652eca880f4,
         type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: 1637876415643898531, guid: b54d3eeed6b62469abcb1652eca880f4,
         type: 3}
       propertyPath: m_LocalRotation.y
-      value: 0
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: 1637876415643898531, guid: b54d3eeed6b62469abcb1652eca880f4,
         type: 3}
       propertyPath: m_LocalRotation.z
-      value: 0
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: 1637876415643898531, guid: b54d3eeed6b62469abcb1652eca880f4,
         type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 0
+      value: -23
       objectReference: {fileID: 0}
     - target: {fileID: 1637876415643898531, guid: b54d3eeed6b62469abcb1652eca880f4,
         type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: 0
+      value: 484
       objectReference: {fileID: 0}
     - target: {fileID: 1637876415643898531, guid: b54d3eeed6b62469abcb1652eca880f4,
         type: 3}
@@ -7341,10 +7351,30 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3145063400279583919, guid: b54d3eeed6b62469abcb1652eca880f4,
+        type: 3}
+      propertyPath: m_SortingLayer
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3756145962497535883, guid: b54d3eeed6b62469abcb1652eca880f4,
+        type: 3}
+      propertyPath: m_SortingLayer
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5628174268407791911, guid: b54d3eeed6b62469abcb1652eca880f4,
+        type: 3}
+      propertyPath: m_SortingLayer
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 6616450446105203396, guid: b54d3eeed6b62469abcb1652eca880f4,
         type: 3}
       propertyPath: m_Name
       value: Partical
+      objectReference: {fileID: 0}
+    - target: {fileID: 8987052092326179995, guid: b54d3eeed6b62469abcb1652eca880f4,
+        type: 3}
+      propertyPath: m_SortingLayer
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

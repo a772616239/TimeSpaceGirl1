@@ -29,7 +29,7 @@ function RequestPanel:InitComponent()
     self.text2 = Util.GetGameObject(self.text.gameObject, "Text2"):GetComponent("Text")
 
     RequestPanel.time = Timer.New(function ()
-        if self.text2 then --销毁时可能为空
+        if not IsNull(self.text2) then --销毁时可能为空
             self.text2.text = str[index]
         end
         index = index + 1

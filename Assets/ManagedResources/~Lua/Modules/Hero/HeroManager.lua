@@ -2350,6 +2350,7 @@ function this.CalculateHeroAllProValList(_type, _heroDid, isWar, _breakId, _upSt
         if type(_heroDid) == "string" then
             LogRed("有问题英雄：".._heroDid)
         end
+        return
     end
     local curLvNum = curHeroData.lv -- heroLevelConfig[curHeroData.lv].CharacterLevelPara
     --local speedNum = heroLevelConfig[curHeroData.lv].SpeedLevelPara

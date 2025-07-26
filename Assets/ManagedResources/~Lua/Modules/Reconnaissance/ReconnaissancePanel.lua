@@ -455,6 +455,9 @@ function this.MoveBg()
         this.time = nil
     end
     this.time = Timer.New(function ()
+        if this.moveBg == nil or IsNull(this.moveBg) then
+            return
+        end
         if this.moveBg.transform.localPosition.x == 956 then
             pos = -956
             this.moveTween()

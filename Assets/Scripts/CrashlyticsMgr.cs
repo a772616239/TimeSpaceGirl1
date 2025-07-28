@@ -39,7 +39,7 @@ namespace ETModel
                 // 关闭 Unity 内置的日志输出
                 Debug.unityLogger.logEnabled = false;
             }
-            Debug.Log("Init CrashlyticsMgrCrashlyticsMgr:");
+            Debug.Log("Init CrashlyticsMgr CrashlyticsMgr:");
             // Initialize Firebase
             Firebase.FirebaseApp.CheckAndFixDependenciesAsync().ContinueWith(task =>
             {

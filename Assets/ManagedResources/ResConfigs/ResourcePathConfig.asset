@@ -3609,6 +3609,10 @@ MonoBehaviour:
   - lz4/texture/ui/cn2-x1_tongyong_background
   - lz4/updatepanel
   resInfoList:
+  - resName: lihui_shouhu2
+    extension: .prefab
+    resPathIndex: 0
+    resAbNameIndex: -1
   - resName: cn2-X1_jinbiaosai_biaoti_en
     extension: .png
     resPathIndex: 1
@@ -9425,6 +9429,10 @@ MonoBehaviour:
     extension: .png
     resPathIndex: 204
     resAbNameIndex: 197
+  - resName: MiddleGridRectTransform
+    extension: .preset
+    resPathIndex: 205
+    resAbNameIndex: 198
   - resName: cn2-X1_zhucheng_beibao
     extension: .png
     resPathIndex: 205
@@ -12265,18 +12273,6 @@ MonoBehaviour:
     extension: .png
     resPathIndex: 254
     resAbNameIndex: 247
-  - resName: cn2-X1_denglu_01_BG
-    extension: .png
-    resPathIndex: 255
-    resAbNameIndex: 248
-  - resName: cn2-X1_denglu_01_BG_01
-    extension: .png
-    resPathIndex: 255
-    resAbNameIndex: 248
-  - resName: cn2-X1_denglu_01_BG_02
-    extension: .png
-    resPathIndex: 255
-    resAbNameIndex: 248
   - resName: cn2-X1_denglu_fuwuqi_baoman
     extension: .png
     resPathIndex: 255
@@ -12369,19 +12365,11 @@ MonoBehaviour:
     extension: .png
     resPathIndex: 255
     resAbNameIndex: 248
-  - resName: cn2-bc3
-    extension: .png
-    resPathIndex: 255
-    resAbNameIndex: 248
   - resName: cn2-icon1
     extension: .png
     resPathIndex: 255
     resAbNameIndex: 248
   - resName: cn2-icon2-1
-    extension: .png
-    resPathIndex: 255
-    resAbNameIndex: 248
-  - resName: cn2-logo
     extension: .png
     resPathIndex: 255
     resAbNameIndex: 248
@@ -28285,6 +28273,10 @@ MonoBehaviour:
     extension: .prefab
     resPathIndex: 365
     resAbNameIndex: 1080
+  - resName: Partical
+    extension: .prefab
+    resPathIndex: 365
+    resAbNameIndex: 1080
   - resName: EliteMonsterPanel
     extension: .prefab
     resPathIndex: 366
@@ -28702,6 +28694,10 @@ MonoBehaviour:
     resPathIndex: 394
     resAbNameIndex: 1102
   - resName: ServerListSelectPanel
+    extension: .prefab
+    resPathIndex: 394
+    resAbNameIndex: 1102
+  - resName: StartSpine
     extension: .prefab
     resPathIndex: 394
     resAbNameIndex: 1102
@@ -32149,10 +32145,6 @@ MonoBehaviour:
     extension: .prefab
     resPathIndex: 448
     resAbNameIndex: 1843
-  - resName: lihui_shouhu2
-    extension: .prefab
-    resPathIndex: 448
-    resAbNameIndex: 1844
   - resName: lihui_shouhu3
     extension: .prefab
     resPathIndex: 448
@@ -39877,12 +39869,8 @@ MonoBehaviour:
     extension: .asset
     resPathIndex: 654
     resAbNameIndex: 2732
-  - resName: cn2-UpdatePanel_X1_denglu_01_BG
-    extension: .png
-    resPathIndex: 655
-    resAbNameIndex: 2732
-  - resName: cn2-UpdatePanel_logo
-    extension: .png
+  - resName: bg
+    extension: .jpg
     resPathIndex: 655
     resAbNameIndex: 2732
   - resName: cn2-X1_loading_jidutiao 1
@@ -39925,8 +39913,8 @@ MonoBehaviour:
     extension: .png
     resPathIndex: 655
     resAbNameIndex: 2732
-  - resName: cn2-saber
-    extension: .png
+  - resName: lihuiRectTransform
+    extension: .preset
     resPathIndex: 655
     resAbNameIndex: 2732
   assetBundleList:
@@ -42788,7 +42776,10 @@ MonoBehaviour:
     - lz4/atlas/supportpanelatlas.unity3d
     - lz4/atlas/x1publicatlas.unity3d
     - lz4/font/system_small.unity3d
+    - lz4/spine/shouhu02_lihui.unity3d
+    - lz4/spine/shouhu3_lihui.unity3d
     - lz4/texture/ui/cn2-x1_lingshi_bg_01.unity3d
+    - lz4/texture/ui/cn2-x1_xianqu_beijing.unity3d
     - lz4/updatepanel.unity3d
   - assetBundleName: lz4/prefabs/ui/luckycat.unity3d
     dependences: []
@@ -44599,7 +44590,6 @@ MonoBehaviour:
     dependences: []
   - assetBundleName: lz4/prefabs/x1effect/ui/fightstart.unity3d
     dependences:
-    - lz4/audio/bgm/split.unity3d
     - lz4/audio/bgm/starthit.unity3d
   - assetBundleName: lz4/prefabs/x1effect/ui/n1_eff_ui_click.unity3d
     dependences: []
@@ -45205,7 +45195,8 @@ MonoBehaviour:
     dependences:
     - lz4/publicartres.unity3d
   - assetBundleName: lz4/spine/shouhu02_lihui.unity3d
-    dependences: []
+    dependences:
+    - lz4/atlas/supportpanelatlas.unity3d
   - assetBundleName: lz4/spine/shouhu03.unity3d
     dependences:
     - lz4/publicartres.unity3d

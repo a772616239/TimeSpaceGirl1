@@ -20,6 +20,7 @@ local starType = 1
 local type = 1
 local pinjieImage = {"cn2-x1_TB_jieji_weijihuo","cn2-x1_TB_jieji"} --品阶图片 1是未激活 2是激活 --m5
 local liveDeviation --立绘偏移
+-- local utf8 = require("utf8")
 --英雄定位
 local ProfessionImage = {
     [1] = "cn2-X1_tongyong_yingxiongdingwei_01",
@@ -334,7 +335,9 @@ function HandBookHeroInfoPanel:OnShowHeroData(_type,_starType)
     --传记
     Util.GetGameObject(self.transform,"roleStoryLayout/infoBg/infoRect/infoText"):GetComponent("RectTransform").anchoredPosition = Vector2.New(-2, 0)
     local stroyStr = string.gsub(heroConFigData.heroConfig.HeroStory,"#","\n")
-    self.infoTextStory.text = string.gsub(GetLanguageStrById(stroyStr),"|","　　")--传记
+    
+    -- self.infoTextStory.text = string.gsub(GetLanguageStrById(stroyStr),"\\u00A0","　　")--传记
+    self.infoTextStory.text = this.decode_unicode_escapes(GetLanguageStrById(stroyStr))
 
     local hruConfig = ConfigManager.GetAllConfigsDataByDoubleKey(ConfigName.HeroRankupConfig,"Star",heroConFigData.heroConfig.Star,"Show",1) --动态获取不同英雄最大突破等阶
     local maxBreakLevel = 0
@@ -356,6 +359,17 @@ function HandBookHeroInfoPanel:OnShowHeroData(_type,_starType)
         self.lvMax.text = "/"..heroMaxConfig[#heroMaxConfig].OpenLevel
     end
 end
+
+function this.decode_unicode_escapes(raw)
+    print("raw repr:", raw)
+
+    -- gsub 会匹配 \\uXXXX，其中 XXXX 是 4 位十六进制
+    local nbsp = string.char(0xC2, 0xA0)
+
+    local decoded = raw:gsub("u{00A0}", nbsp)
+    return decoded
+end
+
 
 function this:ProShow(go,allAddProVal,HeroProType,nextallAddProVal)
     local curProSConFig = ConfigManager.GetConfigData(ConfigName.PropertyConfig,HeroProType)

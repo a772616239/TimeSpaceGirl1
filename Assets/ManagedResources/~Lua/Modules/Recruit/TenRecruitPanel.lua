@@ -192,7 +192,9 @@ function TenRecruitPanel:ShowData(index)
     Util.GetGameObject(cardGo.transform, "card/bg"):GetComponent("Image").sprite = Util.LoadSprite(GetQuantityBgImageByquality(heroConfig.Quality, heroConfig.Star))
     SetHeroStars(Util.GetGameObject(cardGo.transform, "star"), heroConfig.Star)
     Util.GetGameObject(cardGo.transform, "card/sign/core"):SetActive(heroConfig.HeroValue == 1)
-    Util.GetGameObject(cardGo.transform, "card"):GetComponent("Button").onClick:AddListener(function ()
+    local onclick= Util.GetGameObject(cardGo.transform, "card"):GetComponent("Button").onClick
+    onclick:RemoveAllListeners()
+    onclick:AddListener(function ()
 
         -- local heroConfigData=ConfigManager.GetConfigData(ConfigName.HeroConfig, heroConfig.id)
             -- LogGreen("HeroStar:"..itemConfig[data.itemId].HeroStar[1].."HeroStar2"..itemConfig[data.itemId].HeroStar[2])

@@ -333,6 +333,7 @@ function this.SystemItemAdapter(node, data, isShowTime)
         if not itemDataConFig then return end
         if itemDataConFig.ItemType == ItemType.Hero then
             local heroConfigData=ConfigManager.GetConfigData(ConfigName.HeroConfig, itemConfig[data.itemId].HeroStar[1])
+            LogGreen("HeroStar:"..itemConfig[data.itemId].HeroStar[1].."HeroStar2"..itemConfig[data.itemId].HeroStar[2])
             UIManager.OpenPanel(UIName.RoleGetInfoPopup,false,heroConfigData.Id,itemConfig[data.itemId].HeroStar[2])
         elseif itemDataConFig.ItemType == ItemType.Equip then
             UIManager.OpenPanel(UIName.HandBookEquipInfoPanel, data.itemId)

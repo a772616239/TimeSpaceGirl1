@@ -1,3 +1,4 @@
+local json = require 'cjson'
 local SettingPlayerSkin = quick_class("SettingPlayerSkin")
 local this = SettingPlayerSkin
 local playerSkinConFig --= ConfigManager.GetAllConfigsDataByKey(ConfigName.ItemConfig, "ItemType", ItemType.Skin)

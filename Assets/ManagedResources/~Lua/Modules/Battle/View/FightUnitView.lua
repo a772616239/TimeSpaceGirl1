@@ -703,7 +703,7 @@ function FightUnitView:PlayPV_UnitSupport(combat, skill, func)
     self.RootPanel.SetRoleActiveAndDoSomething(self.role, combat.HideActor, false, targets, function (roleview, active)
         self:DelayFunc(texiaoTime,function ()
             roleview.RoleLiveGO:SetActive(active)
-            if roleview.GameObject then
+            if roleview.GameObject and not IsNull(roleview.GameObject) then
                 roleview.GameObject:SetActive(active)
             end
         end)

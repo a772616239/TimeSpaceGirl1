@@ -10,6 +10,7 @@ using System.IO;
 using LuaInterface;
 using System.Runtime.InteropServices;
 using System.Text;
+//using ETModel;
 
 namespace SDK
 {
@@ -215,7 +216,8 @@ namespace SDK
         //sdk 埋点
         public void CustomEvent(int type, string param)
         {
-            if (proxy != null) proxy.CustomEvent(type, param);
+            //if (proxy != null) proxy.CustomEvent(type, param);
+            ETModel.CrashlyticsMgr.Inst.TapEvent(type, param);
         }
 
         /// <summary>

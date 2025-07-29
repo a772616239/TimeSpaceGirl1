@@ -1,38 +1,35 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.IO;
-using ETModel;
-using UnityEngine;
+    using System;
+    using System.Collections;
+    using System.Collections.Generic;
+    using System.IO;
+    using UnityEngine;
 
-// Import Firebase and Crashlytics
-using Firebase;
-using Firebase.Analytics;
-using Firebase.Crashlytics;
-// using UnityEngine.AddressableAssets;
+    // Import Firebase and Crashlytics
+    using Firebase;
+    using Firebase.Analytics;
+    using Firebase.Crashlytics;
+    // using UnityEngine.AddressableAssets;
+    namespace ETModel{
 
-namespace ETModel
-{
-    
     public class CrashlyticsMgr : MonoBehaviour
     {
         public static CrashlyticsMgr Inst;
         public static bool IsRelease = false;
         public static Action<string> AfterLog { get; set; }
-
+        bool IsInitFireBase = false;
         // Use this for initialization
         public void Awake()
         {
             Inst = this;
             string path = $"{Application.persistentDataPath}/debug.txt";
-#if RELEASE
-            IsRelease=true;
-#endif
+    #if RELEASE
+                IsRelease=true;
+    #endif
             if (File.Exists(path))
             {
                 IsRelease = false;
             }
-            
+
             if (IsRelease)
             {
                 Application.SetStackTraceLogType(UnityEngine.LogType.Log, StackTraceLogType.None);
@@ -47,9 +44,9 @@ namespace ETModel
                 Debug.Log("Init CrashlyticsMgr: succ");
                 AfterLog = (str) =>
                 {
-#if !UNITY_EDITOR
-                     Crashlytics.Log(str);
-#endif
+    #if !UNITY_EDITOR
+                         Crashlytics.Log(str);
+    #endif
                     // Debug.Log("Init CrashlyticsMgr: log:"+str);
                 };
                 if (dependencyStatus == Firebase.DependencyStatus.Available)
@@ -61,12 +58,13 @@ namespace ETModel
                     // Crashlytics will use the DefaultInstance, as well;
                     // this ensures that Crashlytics is initialized.
                     Firebase.FirebaseApp app = Firebase.FirebaseApp.DefaultInstance;
-                   
+
                     // When this property is set to true, Crashlytics will report all
                     // uncaught exceptions as fatal events. This is the recommended behavior.
                     Crashlytics.ReportUncaughtExceptionsAsFatal = true;
                     // FirebaseAnalytics.LogEvent();
                     // Set a flag here for indicating that your project is ready to use Firebase.
+                    IsInitFireBase = true;
                 }
                 else
                 {
@@ -90,6 +88,19 @@ namespace ETModel
         // }
 
         #region Core Gameplay Events
+
+        public void TapEvent(int type, string eventName)
+        {
+                if (IsInitFireBase)
+                {
+                    var cbName = type + "_" + eventName;
+                    // if (!_isFirebaseInitialized) return;
+                    XDebug.Log.l("TapEvent" + cbName);
+
+                    FirebaseAnalytics.LogEvent(cbName);
+                }
+
+        }
 
         public void LevelStart(int levelNumber, string difficulty)
         {
@@ -128,7 +139,7 @@ namespace ETModel
             );
         }
 
-        public void LevelComplete(int levelNumber, float timeSpent, int retryCount=1)
+        public void LevelComplete(int levelNumber, float timeSpent, int retryCount = 1)
         {
             FirebaseAnalytics.LogEvent(
                 "level_complete",
@@ -326,15 +337,15 @@ namespace ETModel
                 new Parameter("step_number", stepNumber)
             );
         }
-        
-        public void TutorialCmpt(int stepNumber=0)
+
+        public void TutorialCmpt(int stepNumber = 0)
         {
             FirebaseAnalytics.LogEvent(
                 "tutorial_cmpt",
                 new Parameter("step_number", stepNumber)
             );
         }
-        public void JumpOver(int stepNumber=0)
+        public void JumpOver(int stepNumber = 0)
         {
             FirebaseAnalytics.LogEvent(
                 "jump_over",
@@ -361,4 +372,4 @@ namespace ETModel
 
         #endregion
     }
-}
+    }

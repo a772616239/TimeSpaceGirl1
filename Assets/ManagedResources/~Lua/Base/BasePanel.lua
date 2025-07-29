@@ -27,8 +27,12 @@ end
 --设置渲染层级
 function BasePanel:SetSortingOrder(sortingOrder)
     self.sortingOrder = sortingOrder
-    self.canvas.overrideSorting = true
-    self.canvas.sortingOrder = sortingOrder
+    if  self.canvas and not IsNull(self.canvas) then
+        self.canvas.overrideSorting = true
+        self.canvas.sortingOrder = sortingOrder
+
+    end
+
     self:OnSortingOrderChange()
 end
 

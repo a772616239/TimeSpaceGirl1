@@ -218,6 +218,7 @@ function this:BindEvent()
         this.sdkLoginBtn,
         function()
             this.sdkLoginBtn:SetActive(false)
+            this.Partical:SetActive(false)
             this.SDKLogin()
         end
     )

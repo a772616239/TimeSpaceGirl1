@@ -64,7 +64,7 @@ function this:InitComponent()
     this.ToggleText = Util.GetGameObject(this.loginPart, "loginBtn/Toggle Text")
     this.AgeTip = Util.GetGameObject(this.loginPart, "ageTip")
     this.SetLoginPart(false)
-    this.Partical = Util.GetGameObject(this.loginPart, "loginBtn/Partical")
+    this.Partical = Util.GetGameObject(this.loginPart, "Partical")
 
     this.versionText = Util.GetGameObject(this.loginPart, "version"):GetComponent("Text")
     this.versionText.text = GetLanguageStrById(11119) .. LoginRoot_Version

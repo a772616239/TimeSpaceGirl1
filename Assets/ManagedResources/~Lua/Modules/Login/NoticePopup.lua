@@ -57,12 +57,14 @@ function NoticePopup:OnDestroy()
 
 end
 
+local noticeContent = nil
+
 function this.GetNotice()
     local timeStamp = Time.realtimeSinceStartup
     local timeSign = Util.MD5Encrypt(string.format("%s%s", timeStamp, LoginManager.sign))
     RequestPanel.Show(GetLanguageStrById(11128))
-    networkMgr:SendGetHttp(LoginRoot_Url .. "tk/getNotice?timestamp="..timeStamp.."&sign=".. timeSign,
-        function (str)
+    local showCb= function  (str)
+            noticeContent=str
             RequestPanel.Hide()
             if str == nil then
                 return
@@ -73,9 +75,9 @@ function this.GetNotice()
             
             if data.parms then
                 -- 获取客户端当前语言标识（根据实际项目调整）
-                local lang = GetCurLanguage() or "10001"
+                local lang = GetCurLanguage().."" or "10001"
                 Log("当前语言标识: " .. lang.."--获取公告内容"..GetCurLanguage())
-                local content = data.parms.content
+                local content = data.parms.title
                 
                 -- 解析多语言公告
                 local localizedContent = ""
@@ -83,7 +85,9 @@ function this.GetNotice()
                 
                 -- 尝试查找当前语言的公告
                 for part in string.gmatch(content, "([^|]+)") do
+                  
                     local langCode, text = string.match(part, "^(%w+):(.+)$")
+                      Log("公告部分langCode: " .. langCode)
                     if langCode and text then
                         if langCode == lang then
                             localizedContent = text
@@ -114,7 +118,16 @@ function this.GetNotice()
             else
                 this.ContentText.text = GetLanguageStrById(11130)
             end
-        end, nil, nil, nil)
+        end
+    if noticeContent then
+        showCb(noticeContent)
+        return
+    else
+        networkMgr:SendGetHttp(LoginRoot_Url .. "tk/getNotice?timestamp="..timeStamp.."&sign=".. timeSign,
+        showCb
+        , nil, nil, nil)
+    end
+
 end
 
 return NoticePopup

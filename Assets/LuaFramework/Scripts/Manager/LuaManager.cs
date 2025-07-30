@@ -114,6 +114,28 @@ namespace GameLogic
             main = null;
         }
 
+        public void CallLuaFunction<T>(string Path, string FunctionName, T arg1)
+        {
+
+            luaState.DoFile(Path);
+
+            LuaFunction main = luaState.GetFunction(FunctionName);
+            main.Call<T>(arg1);
+            main.Dispose();
+            main = null;
+        }
+
+        public void CallLuaFunctionByScript<T>(string scriptText, string FunctionName, T arg1)
+        {
+
+            luaState.DoString(scriptText);
+
+            LuaFunction main = luaState.GetFunction(FunctionName);
+            main.Call<T>(arg1);
+            main.Dispose();
+            main = null;
+        }
+
         /// <summary>
         /// 初始化加载第三方库
         /// </summary>

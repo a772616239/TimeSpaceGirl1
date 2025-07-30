@@ -9,15 +9,15 @@ local Limit20=20
 local Limit30=30
 
 
-local lowPlayerLv10=10
+local lowPlayerLv10=14
 local lowPlayerLv20=20
 local lowPlayerLv30=30
 local lowPlayerLv40=40
 
 local Limit10PerLv=7
-local Limit20PerLv=5
-local Limit30PerLv=4
-local MaxLimit10PerLv=3
+local Limit20PerLv=4
+local Limit30PerLv=3
+local MaxLimit10PerLv=2
 
 -- local Limit10PerLv=1
 -- local Limit20PerLv=1
@@ -95,15 +95,15 @@ function this:OnClose()
     end
     Log("PassTimes1:"..PassTimes1)
     if PlayerManager.level < lowPlayerLv10 then
-        -- 30级之前不弹出评价
-        if PassTimes1 % Limit10PerLv == 0 and ShowReviewPTimes <= 1 then
-            -- 每四次弹出一次评价
-            ReviewMgr:AllInOneFlowClick()
+        -- -- 30级之前不弹出评价
+        -- if PassTimes1 % Limit10PerLv == 0 and ShowReviewPTimes <= 1 then
+        --     -- 每四次弹出一次评价
+        --     ReviewMgr:AllInOneFlowClick()
 
-            ShowReviewPTimes = ShowReviewPTimes + 1
+        --     ShowReviewPTimes = ShowReviewPTimes + 1
 
-            PassTimes1 = 0
-        end
+        --     PassTimes1 = 0
+        -- end
     elseif PlayerManager.level < lowPlayerLv20 then
         if PassTimes1 % Limit20PerLv == 0 and ShowReviewPTimes <= 1 then
             -- 每四次弹出一次评价

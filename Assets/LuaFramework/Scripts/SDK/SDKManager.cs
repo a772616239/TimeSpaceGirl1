@@ -10,7 +10,7 @@ using System.IO;
 using LuaInterface;
 using System.Runtime.InteropServices;
 using System.Text;
-//using ETModel;
+using ETModel;
 
 namespace SDK
 {

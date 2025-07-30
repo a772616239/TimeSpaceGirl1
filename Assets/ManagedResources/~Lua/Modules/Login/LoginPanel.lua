@@ -61,6 +61,7 @@ function this:InitComponent()
     this.changeServerBtn = Util.GetGameObject(this.serverSelectPart, "changeServer")
 
     this.sdkLoginBtn = Util.GetGameObject(this.loginPart, "loginBtn")
+    this.ToggleText = Util.GetGameObject(this.loginPart, "loginBtn/Toggle Text")
     this.AgeTip = Util.GetGameObject(this.loginPart, "ageTip")
     this.SetLoginPart(false)
     this.Partical = Util.GetGameObject(this.loginPart, "loginBtn/Partical")
@@ -73,6 +74,9 @@ function this:InitComponent()
     -- this.btnAgreement = Util.GetGameObject(this.declaration, "btnAgreement")--同意协议
     -- this.btnAgreementTxt = Util.GetGameObject(this.declaration, "btnAgreement/Text")
     this.EditionDepartment = Util.GetGameObject(this.declaration, "EditionDepartment"):GetComponent("Text")
+    this.txtSc = this.ToggleText:GetComponent("SuperTextMesh")
+    this.txtSc.text = GetLanguageStrById(50385)
+    
 end
 
 --绑定事件（用于子类重写）

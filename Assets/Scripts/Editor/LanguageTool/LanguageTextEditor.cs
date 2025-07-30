@@ -16,7 +16,7 @@ public class LanguageTextEditor : UnityEditor.UI.TextEditor
     {
         serializedObject.Update();
         base.OnInspectorGUI();
-        //EditorGUILayout.PropertyField(LanguageIndex);
+        EditorGUILayout.PropertyField(LanguageIndex);
         serializedObject.ApplyModifiedProperties();
     }
 

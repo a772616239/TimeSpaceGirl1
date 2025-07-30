@@ -8,8 +8,10 @@
     using Firebase;
     using Firebase.Analytics;
     using Firebase.Crashlytics;
-    // using UnityEngine.AddressableAssets;
-    namespace ETModel{
+using SDK;
+using GameLogic;
+// using UnityEngine.AddressableAssets;
+namespace ETModel{
 
     public class CrashlyticsMgr : MonoBehaviour
     {
@@ -65,6 +67,9 @@
                     // FirebaseAnalytics.LogEvent();
                     // Set a flag here for indicating that your project is ready to use Firebase.
                     IsInitFireBase = true;
+                    SystemLanguage sysLang = Application.systemLanguage;
+
+                    SdkCustomEvent.CustomEvent(18, sysLang.ToString() + "-" + AppConst.originLan);
                 }
                 else
                 {

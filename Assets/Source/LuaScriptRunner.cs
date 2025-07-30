@@ -2,7 +2,7 @@ using LuaInterface;
 using UnityEngine;
 using System.IO;
 
-[RequireComponent(typeof(LuaClient))]
+//[RequireComponent(typeof(LuaClient))]
 public class LuaScriptRunner : MonoBehaviour
 {
     private LuaState luaState;
@@ -11,6 +11,7 @@ public class LuaScriptRunner : MonoBehaviour
     {
         // 确保Lua文件路径正确
         AddLuaSearchPath(Application.dataPath + "/Resources");
+        AddLuaSearchPath(Application.dataPath + "/ManagedResources/~Lua");
         AddLuaSearchPath(Application.dataPath + "/ToLua/Lua");
         
         // 获取LuaClient创建的LuaState

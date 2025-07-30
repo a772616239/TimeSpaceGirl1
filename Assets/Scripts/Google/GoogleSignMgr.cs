@@ -35,7 +35,7 @@ public class GoogleSignMgr : MonoBehaviour
                 string pw = null;
                 GetAcc("go" + id, out name, out pw);
 
-                XDebug.Log.l("GoogleSignMgr 2:pw:" + pw + "-acc:" + name);
+                //XDebug.Log.l("GoogleSignMgr 2:pw:" + pw + "-acc:" + name);
                 if (callback != null)
                 {
                     callback(new LoginData(isSucc, name, pw));
@@ -53,7 +53,7 @@ public class GoogleSignMgr : MonoBehaviour
                 string pw = null;
                 GetAcc("pl" + id, out name, out pw);
 
-                XDebug.Log.l("GoogleSignMgr 2:pw:" + pw + "-acc:" + name);
+                //XDebug.Log.l("GoogleSignMgr 2:pw:" + pw + "-acc:" + name);
                 if (callback != null)
                 {
                     callback(new LoginData(isSucc, name, pw));
@@ -70,11 +70,11 @@ public class GoogleSignMgr : MonoBehaviour
             string deviceToken = "gt" + id;
             if (Application.isEditor)
             {
-                deviceToken = "gt31" + id;
+                deviceToken = "gtqq" + id;
             }
             GetAcc(deviceToken, out name, out pw);
 
-            XDebug.Log.l("GoogleSignMgr 3:pw:" + pw+"-acc:"+ name);
+            //XDebug.Log.l("GoogleSignMgr 3:pw:" + pw+"-acc:"+ name);
             if (callback != null)
             {
                 callback (new LoginData(true, name,pw));

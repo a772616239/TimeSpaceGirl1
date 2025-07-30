@@ -139,6 +139,7 @@ function this.ExecuteBehavior(beType, beArgs)
 
         local isButton = true
         local go = Util.GetGameObject(UIManager.uiNode, beArgs)
+        Log("beArgs:" .. beArgs)
         local btn = nil
         if go == nil then
             LogError("找不到游戏物体:" .. beArgs)
@@ -637,7 +638,11 @@ function this.NextGuide(nextId)
     end
 end
 function this:OnSortingOrderChange()
-    self.upArrow:GetComponent("Canvas").sortingOrder = this.sortingOrder + 1
+    local canvas= self.upArrow:GetComponent("Canvas")
+    if not canvas or IsNull(canvas) then
+        return
+    end
+    canvas.sortingOrder = this.sortingOrder + 1
     Util.AddParticleSortLayer(this.buttonIcon, this.sortingOrder - orginLayer)
     orginLayer = this.sortingOrder
 end

@@ -85,7 +85,9 @@ function QuickCommonPurchasePart:OnShow(context)
 end
 
 function QuickCommonPurchasePart:OnHide()
-    self.transform.gameObject:SetActive(false)
+    if self.transform.gameObject and not IsNull(self.transform.gameObject) then
+        self.transform.gameObject:SetActive(false)
+    end
     if self.timer then
         self.timer:Stop()
         self.timer = nil

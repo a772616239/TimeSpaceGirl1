@@ -817,7 +817,7 @@ function this.CreatActivity()
                 break
             end
             activityTabs[k].go = newObjToParent(this.activityTabPrefab,root)
-            activityTabs[k].img = Util.GetGameObject(activityTabs[k].go, "icon"):GetComponent("Image")
+            activityTabs[k].img = Util.GetGameObject(activityTabs[k].go, "icon/img"):GetComponent("Image")
             activityTabs[k].timeImg = Util.GetGameObject(activityTabs[k].go, "Image_1")
             activityTabs[k].timeText = Util.GetGameObject(activityTabs[k].timeImg, "time"):GetComponent("Text")
             activityTabs[k].redpot = Util.GetGameObject(activityTabs[k].go, "redPoint")

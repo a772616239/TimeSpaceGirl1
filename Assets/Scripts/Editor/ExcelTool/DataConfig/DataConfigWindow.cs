@@ -260,6 +260,10 @@ namespace GameEditor.Core.DataConfig
                 for (int i = 0; i < files.Length; i++)
                 {
                     var item = files[i];
+                    if (item.Contains("~"))
+                    {
+                        continue;
+                    }
                     ThreadPool.QueueUserWorkItem(q =>
                     {
                         if (IsFileInUse(item))

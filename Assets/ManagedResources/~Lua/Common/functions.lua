@@ -2097,15 +2097,16 @@ function GetLan()
 end
 
 function GetLanguageStrByStr(zhStr)
+    local lang= GetLan()
     if languageDicStr then
         if languageDicStr[zhStr] then
-            if GetLan() == 0 then
+            if lang == 0 then
                 return languageDicStr[zhStr].zh
-            elseif GetLan() == 1 then
+            elseif lang == 1 then
                 return languageDicStr[zhStr].en
-            elseif GetLan() == 2 then
+            elseif lang == 2 then
                 return languageDicStr[zhStr].jp
-            elseif GetLan() == 3 then
+            elseif lang == 3 then
                 return languageDicStr[zhStr].kr
             else
                 return languageDicStr[zhStr].zh

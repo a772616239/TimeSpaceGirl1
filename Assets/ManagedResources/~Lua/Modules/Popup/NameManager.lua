@@ -70,21 +70,21 @@ end
 --得到任意名字数据
 function this.GetRandomNameData(sex)
     NetManager.GetRandomNameRequest(sex, function(randomsurname, randomname)
-        local lan = GetLan()
+        local lan = GetCurLanguage()
         local surname
         local name
-        if lan == 0 then
+        if lan == 10001 then
             surname = G_RandomName[randomsurname].Sur_name
             name = G_RandomName[randomname].Name
-        elseif lan == 1 then
+        elseif lan == 10101 then
             surname = G_RandomName[randomsurname].Sur_name_en
             name = G_RandomName[randomname].Name_en
-        elseif lan == 2 then
+        elseif lan == 10201 then
             surname = G_RandomName[randomsurname].Sur_name_jp
             name = G_RandomName[randomname].Name_jp
-        elseif lan == 3 then
-            surname = G_RandomName[randomsurname].Sur_name_kr
-            name = G_RandomName[randomname].Name_kr
+        -- elseif lan == 3 then
+        --     surname = G_RandomName[randomsurname].Sur_name_kr
+        --     name = G_RandomName[randomname].Name_kr
         else
             surname = G_RandomName[randomsurname].Sur_name
             name = G_RandomName[randomname].Name

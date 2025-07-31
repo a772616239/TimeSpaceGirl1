@@ -245,7 +245,17 @@ function  this.RefreshPanel(eventId, isFirstOpen)
     local contexts =(contents[2])
    
     --contexts = string.gsub(contexts, "【此处为玩家名】", PlayerManager.nickName)
-    contexts = string.gsub(contexts, GetLanguageStrById(11220), NameManager.roleName)
+    local lang= GetLanguageStrById(11220)
+    if lang == "" or lang==nil then
+        LogError("对话内容中有未替换的字段，请检查配置表 ChapterEventPointConfig.lua 中的 ShowValues 字段"..11220)
+        return
+    end
+    if contexts == "" or contents==nil then
+        LogError("对话内容为空，请检查配置表 ChapterEventPointConfig.lua 中的 ShowValues 字段")
+        return
+    end
+
+    contexts = string.gsub(contexts,lang , NameManager.roleName)
 
     
     -- 配音资源名

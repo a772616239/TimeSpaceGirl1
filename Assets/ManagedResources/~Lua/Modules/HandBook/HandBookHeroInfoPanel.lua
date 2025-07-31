@@ -361,7 +361,7 @@ function HandBookHeroInfoPanel:OnShowHeroData(_type,_starType)
 end
 
 function this.decode_unicode_escapes(raw)
-    print("raw repr:", raw)
+    -- print("raw repr:", raw)
 
     -- gsub 会匹配 \\uXXXX，其中 XXXX 是 4 位十六进制
     local nbsp = string.char(0xC2, 0xA0)

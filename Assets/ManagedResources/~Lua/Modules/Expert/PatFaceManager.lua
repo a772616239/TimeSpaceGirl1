@@ -325,7 +325,7 @@ function this.RemainTimeDown2(go, txt, timeDown, str)
         end
         this.timer = Timer.New(function()
             if txt ~=nil then
-                if str then
+                if str and txt ~= nil then
                     txt.text = str..TimeToDHMS(timeDown)
                 else
                     txt.text = GetLanguageStrById(10028) .. TimeToDHMS(timeDown)

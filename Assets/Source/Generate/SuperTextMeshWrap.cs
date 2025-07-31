@@ -9,7 +9,7 @@ public class SuperTextMeshWrap
 		L.BeginClass(typeof(SuperTextMesh), typeof(UnityEngine.MonoBehaviour));
 		L.RegFunction("RemoveEmoji", RemoveEmoji);
 		L.RegFunction("OnValidate", OnValidate);
-		L.RegFunction("HideInspectorStuff", HideInspectorStuff);
+		//L.RegFunction("HideInspectorStuff", HideInspectorStuff);
 		L.RegFunction("InitializeFont", InitializeFont);
 		L.RegFunction("RebuildAll", RebuildAll);
 		L.RegFunction("Rebuild", Rebuild);
@@ -212,21 +212,21 @@ public class SuperTextMeshWrap
 		}
 	}
 
-	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
-	static int HideInspectorStuff(IntPtr L)
-	{
-		try
-		{
-			ToLua.CheckArgsCount(L, 1);
-			SuperTextMesh obj = (SuperTextMesh)ToLua.CheckObject<SuperTextMesh>(L, 1);
-			obj.HideInspectorStuff();
-			return 0;
-		}
-		catch (Exception e)
-		{
-			return LuaDLL.toluaL_exception(L, e);
-		}
-	}
+	//[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
+	//static int HideInspectorStuff(IntPtr L)
+	//{
+	//	try
+	//	{
+	//		ToLua.CheckArgsCount(L, 1);
+	//		SuperTextMesh obj = (SuperTextMesh)ToLua.CheckObject<SuperTextMesh>(L, 1);
+	//		obj.HideInspectorStuff();
+	//		return 0;
+	//	}
+	//	catch (Exception e)
+	//	{
+	//		return LuaDLL.toluaL_exception(L, e);
+	//	}
+	//}
 
 	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
 	static int InitializeFont(IntPtr L)

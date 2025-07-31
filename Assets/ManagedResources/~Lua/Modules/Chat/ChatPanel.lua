@@ -352,6 +352,7 @@ end
 function this.GetScrollView(index)
     -- 不存在则创建
     if index == 1 then
+        
         -- 判断是否存在
         if not this.FriendScrollView then
             local rootHight = this.scrollRoot.transform.rect.height

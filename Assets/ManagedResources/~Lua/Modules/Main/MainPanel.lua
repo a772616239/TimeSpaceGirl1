@@ -169,7 +169,7 @@ function this:InitComponent()
 
     this.MiddleGrid = Util.GetGameObject(self.gameObject, "MiddleGrid")
     this.RightUpVertical = Util.GetGameObject(self.gameObject, "RightUpVertical")
-    this.LeftUpVertical = Util.GetGameObject(self.gameObject, "LeftUpVertical")
+    -- this.LeftUpVertical = Util.GetGameObject(self.gameObject, "LeftUpVertical")
 
     this.retractPos = Util.GetGameObject(self.gameObject, "RightUpVertical/retractPos")
     this.btnRetract = Util.GetGameObject(self.gameObject, "btnRetract")
@@ -398,11 +398,11 @@ function this:BindEvent()
             isOpen = false
             this.MiddleGrid:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_GridClose")
             this.RightUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_RightVerticalClose")
-            this.LeftUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_LeftVerticalClose")
+            -- this.LeftUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_LeftVerticalClose")
             this.timeRetract = Timer.New(function ()
                 this.MiddleGrid:SetActive(false)
                 this.RightUpVertical:SetActive(false)
-                this.LeftUpVertical:SetActive(false)
+                -- this.LeftUpVertical:SetActive(false)
                 this.timeRetract:Stop()
                 this.btnRetractIcon.sprite = Util.LoadSprite("cn2-X1_zhucheng_huodong_zhankai")
                 isStart = false
@@ -412,10 +412,10 @@ function this:BindEvent()
             isOpen = true
             this.MiddleGrid:SetActive(true)
             this.RightUpVertical:SetActive(true)
-            this.LeftUpVertical:SetActive(true)
+            -- this.LeftUpVertical:SetActive(true)
             this.MiddleGrid:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_GridOpen")
             this.RightUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_RightVerticalOpen")
-            this.LeftUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_LeftVerticalOpen")
+            -- this.LeftUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_LeftVerticalOpen")
             this.timeRetract = Timer.New(function ()
                 this.timeRetract:Stop()
                 this.btnRetractIcon.sprite = Util.LoadSprite("cn2-X1_zhucheng_huodong_shouqi")
@@ -553,10 +553,10 @@ function this:OnShow()
         isOpen = true
         this.MiddleGrid:SetActive(true)
         this.RightUpVertical:SetActive(true)
-        this.LeftUpVertical:SetActive(true)
+        -- this.LeftUpVertical:SetActive(true)
         this.MiddleGrid:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_GridOpen")
         this.RightUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_RightVerticalOpen")
-        this.LeftUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_LeftVerticalOpen")
+        -- this.LeftUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_LeftVerticalOpen")
         this.timeRetract = Timer.New(function ()
             this.timeRetract:Stop()
             this.btnRetractIcon.sprite = Util.LoadSprite("cn2-X1_zhucheng_huodong_shouqi")
@@ -807,12 +807,12 @@ function this.CreatActivity()
         if not activityTabs[k] then 
             activityTabs[k] = {}
             local root
-            if v.ShowType == 1 then
+            if v.ShowType == 1  then
                 root = this.RightUpVertical
             elseif v.ShowType == 2 then
                 root = this.MiddleGrid
             elseif v.ShowType == 3 then
-                root = this.LeftUpVertical
+                root = this.RightUpVertical
             else
                 break
             end
@@ -1543,16 +1543,24 @@ function this.RefreshActivityShow()
                             activityTabs[k].go.gameObject:SetActive(false)
                         end
                     else
-                        activityTabs[k].go.gameObject:SetActive(true)
+                        if activityTabs[k].go then
+                            activityTabs[k].go.gameObject:SetActive(true)
+                        end
                     end
                 else
-                    activityTabs[k].go.gameObject:SetActive(false)
+                    if activityTabs[k].go then
+                        activityTabs[k].go.gameObject:SetActive(false)
+                    end
                 end
             else
-                activityTabs[k].go.gameObject:SetActive(false)
+                if activityTabs[k].go then
+                    activityTabs[k].go.gameObject:SetActive(false)
+                end
             end
         else
-            activityTabs[k].go.gameObject:SetActive(false)
+            if activityTabs[k].go then
+                activityTabs[k].go.gameObject:SetActive(false)
+            end
         end
     end
 end

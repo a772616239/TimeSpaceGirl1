@@ -243,6 +243,7 @@ function BattlePanel:ShowRect_Skill(roleIcon, skillName, index, isLead)
         end
         this.enemyRect_Skill_Icon.sprite = Util.LoadSprite(GetResourcePath(roleIcon))
         this.enemyRect_Skill_SkillName.text = GetLanguageStrById(skillName)
+        this.enemyRect_Skill_title:SetNativeSize()
         Timer.New(function ()
             this.enemyRect_Skill:SetActive(false)
         end, 3):Start()

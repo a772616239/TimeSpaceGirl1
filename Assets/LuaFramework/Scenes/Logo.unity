@@ -305,6 +305,7 @@ GameObject:
   - component: {fileID: 339168453}
   - component: {fileID: 339168452}
   - component: {fileID: 339168456}
+  - component: {fileID: 339168457}
   m_Layer: 0
   m_Name: Mgrs
   m_TagString: Untagged
@@ -377,50 +378,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   CrtPlatformId: 0
---- !u!1 &378401822
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 378401824}
-  - component: {fileID: 378401823}
-  m_Layer: 0
-  m_Name: GameLogic.GameManager
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &378401823
+--- !u!114 &339168457
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 378401822}
+  m_GameObject: {fileID: 339168451}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b1545d35cb5d31e469cff9e3dbc576e9, type: 3}
+  m_Script: {fileID: 11500000, guid: 6f6c2cf90082c4eabae9e033a63ea33b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!4 &378401824
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 378401822}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1013149005
 GameObject:
   m_ObjectHideFlags: 0
@@ -466,16 +435,16 @@ MonoBehaviour:
   settingInfo:
     logLevel: 0
     isDebug: 0
-    bundleMode: 1
+    bundleMode: 0
     luaBundleMode: 0
     isUpdate: 0
     isSDK: 0
     isSDKLogin: 1
     isGuide: 1
-    isOpenGM: 0
+    isOpenGM: 1
     isOpenTLog: 0
     isOpenBLog: 0
-    originLan: 10101
+    originLan: 10001
 --- !u!224 &1013149009
 RectTransform:
   m_ObjectHideFlags: 0
@@ -566,5 +535,4 @@ SceneRoots:
   - {fileID: 1013149009}
   - {fileID: 16}
   - {fileID: 295667904}
-  - {fileID: 378401824}
   - {fileID: 339168455}

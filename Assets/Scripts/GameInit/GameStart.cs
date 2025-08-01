@@ -40,7 +40,7 @@ public class GameStart : MonoBehaviour
             AppConst.bundleMode = true;
             AppConst.luaBundleMode = true;
             AppConst.isGuide = true;
-            AppConst.isOpenGM = true;
+            //AppConst.isOpenGM = true;
             if (AppConst.bundleMode) //先走闪屏流程
             {
                 if (AppConst.isSDKLogin && !SDK.SDKManager.Instance.IsInit) //当登录sdk时，等待初始化完成后再走闪屏流程

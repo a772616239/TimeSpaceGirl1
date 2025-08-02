@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using GameCore;
 using SDK;
+using ETModel;
 
 namespace GameLogic {
     //public enum MultiLan
@@ -98,7 +99,6 @@ namespace GameLogic {
                 {
                     SystemLanguage sysLang = Application.systemLanguage;
                     settingInfo.originLan=GetSystemLanguage2(sysLang);
-               
                 }
 
                 if (!Application.isEditor)
@@ -128,8 +128,8 @@ namespace GameLogic {
 
             public static int GetSystemLanguage2(SystemLanguage sysLang)
             {
-               
-                
+
+                CrashlyticsMgr.Inst.TapEvent("sysLang:" + sysLang.ToString());
                 // 使用switch-case将系统语言映射到你的枚举
                 switch (sysLang)
                 {
@@ -144,7 +144,6 @@ namespace GameLogic {
                     // 其他未列出的语言默认返回英语
                     default: return 10101;
                 }
-               
             }
     }
 

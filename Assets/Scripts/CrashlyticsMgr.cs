@@ -107,6 +107,19 @@ namespace ETModel{
 
         }
 
+        public void TapEvent(string eventName)
+        {
+            if (IsInitFireBase)
+            {
+                var cbName = eventName;
+                // if (!_isFirebaseInitialized) return;
+                XDebug.Log.l("TapEvent" + cbName);
+
+                FirebaseAnalytics.LogEvent(cbName);
+            }
+
+        }
+
         public void LevelStart(int levelNumber, string difficulty)
         {
             // if (!_isFirebaseInitialized) return;

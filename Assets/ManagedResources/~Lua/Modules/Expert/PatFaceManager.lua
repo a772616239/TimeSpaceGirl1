@@ -222,7 +222,9 @@ function this.PatFaceSpecialMonitor(v, patFaceAllData, type, starUpGiftNum)
             canGet = true
         end
         if canGet then
-            if RedPointManager.PlayerPrefsGetStr(v.Id..PlayerManager.level.."MainLevelPatFace") == "0" then
+            local key = (v.Id or "") .. (PlayerManager.level or "") .. "MainLevelPatFace"
+
+            if RedPointManager.PlayerPrefsGetStr(key) == "0" then
                 table.insert(patFaceAllData,v)
             end
         end
@@ -271,7 +273,7 @@ function this.RemainTimeDown(go, txt, timeDown, str)
         if go then
             go:SetActive(true)
         end
-        if txt then
+        if txt ~= nil and not IsNull(txt) then
             if str then
                 txt.text = str .. TimeToDHMS(timeDown)
             else
@@ -283,7 +285,7 @@ function this.RemainTimeDown(go, txt, timeDown, str)
             this.timer = nil
         end
         this.timer = Timer.New(function()
-            if txt then
+            if txt ~= nil and not IsNull(txt) then
                 if str then
                     txt.text = str .. TimeToDHMS(timeDown)
                 else

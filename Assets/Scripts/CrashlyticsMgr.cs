@@ -98,7 +98,7 @@ namespace ETModel{
         {
                 if (IsInitFireBase)
                 {
-                    var cbName = type + "_" + eventName;
+                    var cbName = eventName;
                     // if (!_isFirebaseInitialized) return;
                     XDebug.Log.l("TapEvent" + cbName);
 

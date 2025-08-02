@@ -100,7 +100,14 @@ namespace GameLogic {
                     settingInfo.originLan=GetSystemLanguage2(sysLang);
                
                 }
-                
+
+                if (!Application.isEditor)
+                {
+                    settingInfo.luaBundleMode = true;
+                    settingInfo.isSDKLogin = true;
+                    settingInfo.bundleMode = true;
+                }
+
                 BaseLogger.isDebug = settingInfo.isDebug;
                 BaseLogger.level = settingInfo.logLevel;
                 AppConst.bundleMode = settingInfo.bundleMode;

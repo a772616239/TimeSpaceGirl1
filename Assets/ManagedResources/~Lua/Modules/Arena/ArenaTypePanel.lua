@@ -84,7 +84,7 @@ function ArenaTypePanel:OnOpen(_curIndex)
 end
 -- 打开，重新打开时回调
 function ArenaTypePanel:OnShow()
-    CheckRedPointStatus(RedPointType.Championships_Rank)
+    CheckRedPointStatus(RedPointType.Championships_Rank_Link)
     this.TabCtrl = TabBox.New()
     this.TabCtrl:SetTabAdapter(this.TabAdapter)
     this.TabCtrl:SetChangeTabCallBack(this.SwitchView)
@@ -110,10 +110,12 @@ function this.TabAdapter(tab, index, status)
     default:SetActive(status == "default")
     select:SetActive(status == "select")
     title:SetActive(status == "select")
-
+    ClearRedPointObject(RedPointType.Championships)
     if index == 2 then
+        Log("Championships TabAdapter RedPoint")
         BindRedPointObject(RedPointType.Championships, Util.GetGameObject(tab, "Redpot"))
     end
+    CheckRedPointStatus(RedPointType.Championships)
 end
 --切换视图
 function this.SwitchView(index)

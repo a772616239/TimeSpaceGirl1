@@ -1127,7 +1127,7 @@ RedPointType = {
     GuildBattle_BoxReward = 99890,          -- 公会战宝箱
     PVEStarReward = 99899,                  -- PVE星数奖励
     Championships = 99900,                  -- 锦标赛
-    Championships_Rank = 99901,             -- 锦标赛排行点赞
+    Championships_Rank_Link = 99901,             -- 锦标赛排行点赞
     -- 卡牌主题活动
     CardActivity = 99965,
     CardActivity_Haoli = 99961,

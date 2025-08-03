@@ -408,16 +408,16 @@ function this.CheckTodayIsAlreadyLike(uid)
     end
     return false
 end
-local isFistOpen = true
+-- local isFistOpen = true
 -- 点赞红点
 function this.RefreshAlreadyLikeRedpoint()
     if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.ARENA) then
         return false
     end
-    if isFistOpen then
-        isFistOpen = false
-        return true
-    end
+    -- if isFistOpen then
+    --     isFistOpen = false
+    --     return true
+    -- end
     local arenaData, myRankData = RankingManager.GetArenaInfo()
     local num = #arenaData
     if num > 10 then num = 10 end

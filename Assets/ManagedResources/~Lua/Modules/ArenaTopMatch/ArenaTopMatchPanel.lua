@@ -121,7 +121,7 @@ end
 
 --界面关闭时调用（用于子类重写）
 function ArenaTopMatchPanel:OnClose()
-    ClearRedPointObject(RedPointType.Championships_Rank)
+    ClearRedPointObject(RedPointType.Championships_Rank_Link)
     commonTitle:OnClose()
 
     if this._CurLogicIndex then
@@ -154,7 +154,7 @@ function this.TabAdapter(tab, index, status)
     select:SetActive(status == "select")
 
     if index == 4 then
-        BindRedPointObject(RedPointType.Championships_Rank, Util.GetGameObject(tab, "redpoint"))
+        BindRedPointObject(RedPointType.Championships_Rank_Link, Util.GetGameObject(tab, "redpoint"))
     end
 end
 -- tab改变回调事件

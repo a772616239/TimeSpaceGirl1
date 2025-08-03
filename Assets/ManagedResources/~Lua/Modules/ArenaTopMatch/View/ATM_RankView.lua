@@ -57,6 +57,7 @@ end
 
 --界面关闭时调用（用于子类重写）
 function ATM_RankViewPanel:OnClose()
+    CheckRedPointStatus(RedPointType.Championships)
 end
 
 --界面销毁时调用（用于子类重写）
@@ -292,7 +293,7 @@ function this.SetHeroBtnLike(root,data)
                     end
                 end
             end)
-            CheckRedPointStatus(RedPointType.Championships_Rank)
+            CheckRedPointStatus(RedPointType.Championships_Rank_Link)
         end)
     end)
 end

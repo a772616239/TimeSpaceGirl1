@@ -1120,9 +1120,21 @@ function this.CheckTodayIsAlreadyLike(uid)
 end
 
 function this.RefreshRankRedpoint()
-    if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.ARENA) then
+    -- if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.ARENA) then
+    --     return false
+    -- end
+    if not ArenaTopMatchManager.IsTopMatchActive() then
+        Log("ArenaTopMatchManager.RefreshRankRedpoint: Not active")
         return false
     end
+    if this.baseInfo.battleStage ~= TOP_MATCH_STAGE.CLOSE 
+    -- and this.baseInfo.battleStage ~= TOP_MATCH_STAGE.OVER 
+    then
+        LogError("ArenaTopMatchManager.RefreshRankRedpoint: Not in close or over stage"..
+            "  battleStage: "..tostring(this.baseInfo.battleStage))
+        return false
+    end
+
     return #this.TodayAlreadyLikeUids_TopMatch < 3
 end
 ----------------------

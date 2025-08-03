@@ -344,7 +344,7 @@ function this.InitRedPointAllRelate()
     RPData:SetParent(RedPointType.CardActivity_Task, RedPointType.CardActivity)
 
     --锦标赛
-    RPData:SetParent(RedPointType.Championships_Rank, RedPointType.Championships)
+    RPData:SetParent(RedPointType.Championships_Rank_Link, RedPointType.Championships)
 
     --主角
     RPData:SetParent(RedPointType.Lead_Assembly, RedPointType.Lead)
@@ -637,7 +637,7 @@ function this.RegisterRedCheckFunc()
     RPData:AddCheckFunc(RedPointType.CardActivity_Haoli, CardActivityManager.HaoliRedPoint)
     RPData:AddCheckFunc(RedPointType.CardActivity_Task, CardActivityManager.TaskRedPoint)
 
-    RPData:AddCheckFunc(RedPointType.Championships_Rank, ArenaTopMatchManager.RefreshRankRedpoint)
+    RPData:AddCheckFunc(RedPointType.Championships_Rank_Link, ArenaTopMatchManager.RefreshRankRedpoint)
     -- RPData:AddCheckFunc(RedPointType.PVEStarReward, PVEActivityManager.SetPveStarRewardRedpoint)
 
     --主角

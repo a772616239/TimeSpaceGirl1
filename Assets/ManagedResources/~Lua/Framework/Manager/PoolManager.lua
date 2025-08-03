@@ -213,7 +213,6 @@ function PoolManager:UnLoadAsset(resName,res, assetType)
     --        and assetType ~= PoolManager.AssetType.MediaUI
     --then
     if assetType == PoolManager.AssetType.GameObject
-            and res ~= nil
             and not IsNull(res.transform)
     then
         res.transform:SetParent(self.mPoolTrans)

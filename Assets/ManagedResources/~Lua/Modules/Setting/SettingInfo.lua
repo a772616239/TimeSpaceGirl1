@@ -82,7 +82,8 @@ function SettingInfo:BindEvent()
                     elseif LanguageID2LanID(selectLan) == 2 then
                     end
                 end
-                Game.Logout()
+                UnityEngine.Application.Quit()
+                -- Game.Logout()
             end,GetLanguageStrById(10719),GetLanguageStrById(10720),"",false,"")
         end)
     end
@@ -215,9 +216,10 @@ function SettingInfo:OnShow()
     local channelConfig = GetChannerConfig()
     this.multiLanguageDropDown.gameObject:SetActive(channelConfig.Button_PlayerSet_Language)
     this.btnCdKey:SetActive(channelConfig.Button_PlayerSet_Exchange)
-    this.btnRelation:SetActive(channelConfig.Button_PlayerSet_Relation)
+    -- this.btnRelation:SetActive(channelConfig.Button_PlayerSet_Relation)
     -- this.btnCustomerService:SetActive(channelConfig.Button_PlayerSet_Service)
     this.btnCustomerService:SetActive(false)
+    this.btnRelation:SetActive(false)
     this.btnAccountCancellation:SetActive(channelConfig.Button_PlayerSet_Cancellation)
     this.btnChangeLogin:SetActive(channelConfig.Button_switch)
 end

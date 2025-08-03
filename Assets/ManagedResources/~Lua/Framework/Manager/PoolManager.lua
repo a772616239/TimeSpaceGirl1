@@ -214,7 +214,7 @@ function PoolManager:UnLoadAsset(resName,res, assetType)
     --then
     if assetType == PoolManager.AssetType.GameObject
             and res ~= nil
-            and res.transform ~= nil
+            and not IsNull(res.transform)
     then
         res.transform:SetParent(self.mPoolTrans)
         if #pool.resList <= 5 then

@@ -1142,7 +1142,7 @@ namespace GameLogic
             
             if(L != 0)
             {
-                if(_spriteName.EndsWith("_zh"))
+                if(_spriteName.EndsWith("_zh")&& _spriteName.Length>3)
                 {
                     #region 替换下面注释的代码
 
@@ -1169,7 +1169,7 @@ namespace GameLogic
             }
             // Log("load _spriteName:"+_spriteName+"--L:"+L);
             var sprite= App.ResMgr.LoadAsset<Sprite>(_spriteName);
-            if (sprite==null&&(_spriteName.EndsWith("_en")||_spriteName.EndsWith("_jp")))
+            if (sprite==null&&(_spriteName.EndsWith("_en")||_spriteName.EndsWith("_jp")) && _spriteName.Length > 3)
             {
                 Log("加载不到多语言，使用中文："+_spriteName);
                 if (_spriteName.Contains("zhucheng"))

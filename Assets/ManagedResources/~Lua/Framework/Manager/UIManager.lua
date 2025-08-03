@@ -665,21 +665,26 @@ function UIManager.CloseAll(isDestroy)
     while(#this.stackList ~= 0)
     do
         panel = this.stackList[1]
-        panel.gameObject:SetActive(false)
-        panel:CloseUI()
-        if isDestroy then
-            this.DestroyPanel(panel)
+        if not IsNull(panel.gameObject) then
+            panel.gameObject:SetActive(false)
+            panel:CloseUI()
+            if isDestroy then
+                this.DestroyPanel(panel)
+            end
         end
+
         table.remove(this.stackList,1)
     end
 
     while(#this.fixedList ~= 0)
         do
         panel = this.fixedList[1]
-        panel.gameObject:SetActive(false)
-        panel:CloseUI()
-        if isDestroy then
-            this.DestroyPanel(panel)
+        if not IsNull(panel.gameObject) then
+            panel.gameObject:SetActive(false)
+            panel:CloseUI()
+            if isDestroy then
+                this.DestroyPanel(panel)
+            end
         end
         table.remove(this.fixedList,1)
     end

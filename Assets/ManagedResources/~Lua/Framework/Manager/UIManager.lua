@@ -348,6 +348,11 @@ end
 
 function UIManager.GetPanel(id, isSync, func, ...)
     local uiConfig = UIConfig[id]
+    if not id then
+        LogError("UIManager====>没有id:")
+        return
+    end
+
     if uiConfig == nil then
         LogError("UIManager====>没有找到UI的配置信息:"..id)
         return

@@ -448,6 +448,8 @@ UIName = {
     MedalAssembleChoosePopup = 447,                         -- 勋章套装选择装配栏位弹窗
     MedalSameTipPopup = 448,                                -- 勋章套装勋章佩戴相同提示弹窗
     ClimbTowerEliteFilterStarPopup = 449,                   -- 爬塔精英筛选星级弹窗
+    StarRewardPanel = 969,                   -- 爬塔精英筛选星级奖励弹窗
+
     GrowthManualPanel = 450,                                -- 成长手册 
     GrowthManualBuyPanel = 451,                             -- 成长手册购买
     GrowthManualLevelUpPanel = 452,                         -- 成长手册等级提升

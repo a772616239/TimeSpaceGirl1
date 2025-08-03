@@ -106,7 +106,7 @@ function ServerListSelectPanel:SetServerRecent()
         local serverInfo = self:GetServerInfo(self.context.lastServer.serverid)
         if serverInfo then
             -- self.recentLoginPart.areaBelong.text = tonumber(string.sub(self.context.lastServer.serverid, 0, -5)) .. GetLanguageStrById(11120)
-            self.recentLoginPart.serverName.text = serverInfo.name
+            self.recentLoginPart.serverName.text = GetLanguageStrByStr(serverInfo.name)
             self.recentLoginPart.serverState.sprite = Util.LoadSprite(ServerStateIconDef[serverInfo.state])
             self.recentLoginPart.playerName.text = self.context.lastServer.name --.. "\t" .. self.context.lastServer.level .. GetLanguageStrById(10072)
             self.recentLoginPart.playerLv.text = "Lv" .. self.context.lastServer.level

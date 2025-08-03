@@ -55,10 +55,10 @@ function this:InitComponent()
     this.LoginPanel_Btn2 = Util.GetGameObject(this.loginPart, "btns/LoginPanel_Btn2") --个人信息
     -- this.Partical = Util.GetGameObject(self.transform, "BG/Partical")
     ---selectServerPart
-    this.serverSelectPart = Util.GetGameObject(this.loginPart, "serverSelect")
+    this.serverSelectPart = Util.GetGameObject(this.loginPart, "gameStarts/changeServer/serverSelect")
     this.serverImage = Util.GetGameObject(this.serverSelectPart, "Image"):GetComponent("Image")
     this.serverMes = Util.GetGameObject(this.serverSelectPart, "serverMes"):GetComponent("Text")
-    this.changeServerBtn = Util.GetGameObject(this.serverSelectPart, "changeServer")
+    this.changeServerBtn = Util.GetGameObject(this.loginPart, "gameStarts/changeServer")
 
     this.sdkLoginBtn = Util.GetGameObject(this.loginPart, "loginBtn")
     this.ToggleText = Util.GetGameObject(this.loginPart, "loginBtn/Toggle Text")
@@ -187,30 +187,7 @@ function this:BindEvent()
     )
     Util.AddClick(
         this.changeServerBtn,
-        function()
-            UIManager.OpenPanel(
-                UIName.ServerListSelectPanel,
-                {
-                    serverList = this.serverList,
-                    myServerList = this.myServerList,
-                    lastServer = this.lastServer,
-                    recommend = this.recommend,
-                    callback = function(index)
-                        local list = this.serverList[index]
-                        PlayerPrefs.SetInt(lastServerIndex, index)
-                        PlayerPrefs.SetString("lastServerName", this.serverList[index].name)
-                        PlayerManager.serverInfo = list
-                        LoginManager.SocketAddress = list.ip
-                        LoginManager.SocketPort = list.port
-                        LoginManager.ServerId = list.server_id
-                        LoginManager.state = list.state
-                        -- local severArea = tonumber(string.sub(list.server_id, 0, -5))
-                        this.serverImage.sprite = Util.LoadSprite(ServerStateIconDef[list.state])
-                        this.serverMes.text = PlayerManager.serverInfo.name
-                    end
-                }
-            )
-        end
+        this.OpenSelectList
     )
 
     --SDK 登录
@@ -259,14 +236,39 @@ function this:BindEvent()
         end
     )
 end
-
+        function this.OpenSelectList()
+            UIManager.OpenPanel(
+                UIName.ServerListSelectPanel,
+                {
+                    serverList = this.serverList,
+                    myServerList = this.myServerList,
+                    lastServer = this.lastServer,
+                    recommend = this.recommend,
+                    callback = function(index)
+                        local list = this.serverList[index]
+                        PlayerPrefs.SetInt(lastServerIndex, index)
+                        PlayerPrefs.SetString("lastServerName", this.serverList[index].name)
+                        PlayerManager.serverInfo = list
+                        LoginManager.SocketAddress = list.ip
+                        LoginManager.SocketPort = list.port
+                        LoginManager.ServerId = list.server_id
+                        LoginManager.state = list.state
+                        -- local severArea = tonumber(string.sub(list.server_id, 0, -5))
+                        this.serverImage.sprite = Util.LoadSprite(ServerStateIconDef[list.state])
+                        this.serverMes.text = PlayerManager.serverInfo.name
+                    end
+                }
+            )
+        end
 --添加事件监听（用于子类重写）
+
 function this:AddListener()
     Game.GlobalEvent:AddEvent(Protocal.Connect, this.OnConnect)
     Game.GlobalEvent:AddEvent(Protocal.Disconnect, this.OnDisconnect)
     Game.GlobalEvent:AddEvent(GameEvent.LoginSuccess.OnLoginSuccess, this.RefreshLoginStatus)
     Game.GlobalEvent:AddEvent(GameEvent.LoginSuccess.OnLogout, this.OnLogout)
     Game.GlobalEvent:AddEvent(GameEvent.NoticePanel.OnOpen,this.OnOpenNoticePanel)
+    Game.GlobalEvent:AddEvent(GameEvent.UI.OnClose, this.triggerCallBack)
     -- Game.GlobalEvent:AddEvent(GameEvent.LoginSuccess.OnAgreePrivacy, this.ChangeAgreePrivacy)
 end
 
@@ -377,7 +379,7 @@ function this:OnOpen(...)
     if this.LoginPlatform  ~= 0 then
         this.sdkLoginBtn:SetActive(true)
         this.btnLoginPart.gameObject:SetActive(false)
-        this.serverSelectPart.gameObject:SetActive(false)
+        -- this.serverSelectPart.gameObject:SetActive(false)
     end
 
     local tran = this.tip:GetComponent("RectTransform")
@@ -510,11 +512,26 @@ function this.OnReceiveAnnouncement(str)
     )
 end
 
+-- Define triggerCallBack to avoid undefined global variable error
+function this.triggerCallBack(panelType, panel)
+    -- Add your callback logic here if needed
+    Log("LoginPanel triggerCallBack: " .. panelType)
+     if panelType == UIName.NoticePopup then
+          local name = PlayerPrefs.GetString("isfirstSelectServerName")
+            Log("isfirstSelectServerName:" .. name)
+            if not name or name == "" then
+                      this.OpenSelectList()
+                    PlayerPrefs.SetString("isfirstSelectServerName","true")
+            end
+
+      end
+end
+
 --获取服务器列表地址
 function this.OnReceiveServerList(str)
     Log("OnReceiveServerList" .. str)
     -- 获取服务器列表成功后，默认开启公告
-    RequestPanel.Show(GetLanguageStrById(11128))
+    -- RequestPanel.Show(GetLanguageStrById(11128))
     networkMgr:SendGetHttp(
         LoginRoot_Url .. "tk/getNotice?timestamp=" .. timeStamp .. "&sign=" .. timeSign,
         function(str)
@@ -537,6 +554,7 @@ function this.OnReceiveServerList(str)
                 ---selectServerPart
 
                 this.SetServerList(data)
+              
             end
         )
     end
@@ -608,7 +626,7 @@ function this.SetServerList(data)
 
     -- local severArea = tonumber(string.sub(this.serverList[lastIndex].server_id, 0, -5))
     this.serverImage.sprite = Util.LoadSprite(ServerStateIconDef[LoginManager.state])
-    this.serverMes.text = PlayerManager.serverInfo.name
+    this.serverMes.text = GetLanguageStrByStr(PlayerManager.serverInfo.name)
 
     RequestPanel.Hide()
 end

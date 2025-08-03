@@ -250,6 +250,7 @@ public static class CustomSettings
        _GT(typeof(PurchasedInfo)),	
 	   _GT(typeof(SceneController)),
        _GT(typeof(SpeakManager)),
+       _GT(typeof(LayoutRebuilder)),
        _GT(typeof(SDK.SDKManager)),
        _GT(typeof(SDK.SDKPayArgs)),
        _GT(typeof(SDK.SDKSubmitExtraDataArgs)),

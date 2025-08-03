@@ -190,6 +190,7 @@ public static class LuaBinder
 		UnityEngine_UI_VerticalLayoutGroupWrap.Register(L);
 		UnityEngine_UI_LayoutElementWrap.Register(L);
 		UnityEngine_UI_ContentSizeFitterWrap.Register(L);
+		UnityEngine_UI_LayoutRebuilderWrap.Register(L);
 		UnityEngine_UI_LayoutUtilityWrap.Register(L);
 		UnityEngine_UI_GraphicWrap.Register(L);
 		UnityEngine_UI_ShadowWrap.Register(L);

@@ -70,7 +70,7 @@ public class DelegateFactory
 		dict.Add(typeof(UnityEngine.Camera.CameraCallback), factory.UnityEngine_Camera_CameraCallback);
 		dict.Add(typeof(UnityEngine.Application.AdvertisingIdentifierCallback), factory.UnityEngine_Application_AdvertisingIdentifierCallback);
 		dict.Add(typeof(UnityEngine.Application.LowMemoryCallback), factory.UnityEngine_Application_LowMemoryCallback);
-		// dict.Add(typeof(UnityEngine.Application.MemoryUsageChangedCallback), factory.UnityEngine_Application_MemoryUsageChangedCallback);
+		//dict.Add(typeof(UnityEngine.Application.MemoryUsageChangedCallback), factory.UnityEngine_Application_MemoryUsageChangedCallback);
 		dict.Add(typeof(UnityEngine.Application.LogCallback), factory.UnityEngine_Application_LogCallback);
 		dict.Add(typeof(System.Action<bool>), factory.System_Action_bool);
 		dict.Add(typeof(System.Action<string>), factory.System_Action_string);
@@ -86,6 +86,13 @@ public class DelegateFactory
 		dict.Add(typeof(UnityEngine.UI.InputField.OnValidateInput), factory.UnityEngine_UI_InputField_OnValidateInput);
 		dict.Add(typeof(UnityEngine.Events.UnityAction<string,UnityEngine.Object>), factory.UnityEngine_Events_UnityAction_string_UnityEngine_Object);
 		dict.Add(typeof(System.Action<IAPResult>), factory.System_Action_IAPResult);
+		dict.Add(typeof(SuperTextMesh.OnCompleteAction), factory.SuperTextMesh_OnCompleteAction);
+		dict.Add(typeof(SuperTextMesh.OnUndrawnAction), factory.SuperTextMesh_OnUndrawnAction);
+		dict.Add(typeof(SuperTextMesh.OnRebuildAction), factory.SuperTextMesh_OnRebuildAction);
+		dict.Add(typeof(SuperTextMesh.OnPrintAction), factory.SuperTextMesh_OnPrintAction);
+		dict.Add(typeof(SuperTextMesh.OnCustomAction), factory.SuperTextMesh_OnCustomAction);
+		dict.Add(typeof(SuperTextMesh.OnVertexModAction), factory.SuperTextMesh_OnVertexModAction);
+		dict.Add(typeof(SuperTextMesh.OnPreParseAction), factory.SuperTextMesh_OnPreParseAction);
 		dict.Add(typeof(System.Action<LoginData>), factory.System_Action_LoginData);
 		dict.Add(typeof(SDK.SDKManager.InitLaunchAction), factory.SDK_SDKManager_InitLaunchAction);
 		dict.Add(typeof(SDK.SDKManager.RegisterAction), factory.SDK_SDKManager_RegisterAction);
@@ -166,7 +173,7 @@ public class DelegateFactory
 		DelegateTraits<UnityEngine.Camera.CameraCallback>.Init(factory.UnityEngine_Camera_CameraCallback);
 		DelegateTraits<UnityEngine.Application.AdvertisingIdentifierCallback>.Init(factory.UnityEngine_Application_AdvertisingIdentifierCallback);
 		DelegateTraits<UnityEngine.Application.LowMemoryCallback>.Init(factory.UnityEngine_Application_LowMemoryCallback);
-		// DelegateTraits<UnityEngine.Application.MemoryUsageChangedCallback>.Init(factory.UnityEngine_Application_MemoryUsageChangedCallback);
+		//DelegateTraits<UnityEngine.Application.MemoryUsageChangedCallback>.Init(factory.UnityEngine_Application_MemoryUsageChangedCallback);
 		DelegateTraits<UnityEngine.Application.LogCallback>.Init(factory.UnityEngine_Application_LogCallback);
 		DelegateTraits<System.Action<bool>>.Init(factory.System_Action_bool);
 		DelegateTraits<System.Action<string>>.Init(factory.System_Action_string);
@@ -182,6 +189,13 @@ public class DelegateFactory
 		DelegateTraits<UnityEngine.UI.InputField.OnValidateInput>.Init(factory.UnityEngine_UI_InputField_OnValidateInput);
 		DelegateTraits<UnityEngine.Events.UnityAction<string,UnityEngine.Object>>.Init(factory.UnityEngine_Events_UnityAction_string_UnityEngine_Object);
 		DelegateTraits<System.Action<IAPResult>>.Init(factory.System_Action_IAPResult);
+		DelegateTraits<SuperTextMesh.OnCompleteAction>.Init(factory.SuperTextMesh_OnCompleteAction);
+		DelegateTraits<SuperTextMesh.OnUndrawnAction>.Init(factory.SuperTextMesh_OnUndrawnAction);
+		DelegateTraits<SuperTextMesh.OnRebuildAction>.Init(factory.SuperTextMesh_OnRebuildAction);
+		DelegateTraits<SuperTextMesh.OnPrintAction>.Init(factory.SuperTextMesh_OnPrintAction);
+		DelegateTraits<SuperTextMesh.OnCustomAction>.Init(factory.SuperTextMesh_OnCustomAction);
+		DelegateTraits<SuperTextMesh.OnVertexModAction>.Init(factory.SuperTextMesh_OnVertexModAction);
+		DelegateTraits<SuperTextMesh.OnPreParseAction>.Init(factory.SuperTextMesh_OnPreParseAction);
 		DelegateTraits<System.Action<LoginData>>.Init(factory.System_Action_LoginData);
 		DelegateTraits<SDK.SDKManager.InitLaunchAction>.Init(factory.SDK_SDKManager_InitLaunchAction);
 		DelegateTraits<SDK.SDKManager.RegisterAction>.Init(factory.SDK_SDKManager_RegisterAction);
@@ -278,6 +292,13 @@ public class DelegateFactory
 		TypeTraits<UnityEngine.UI.InputField.OnValidateInput>.Init(factory.Check_UnityEngine_UI_InputField_OnValidateInput);
 		TypeTraits<UnityEngine.Events.UnityAction<string,UnityEngine.Object>>.Init(factory.Check_UnityEngine_Events_UnityAction_string_UnityEngine_Object);
 		TypeTraits<System.Action<IAPResult>>.Init(factory.Check_System_Action_IAPResult);
+		TypeTraits<SuperTextMesh.OnCompleteAction>.Init(factory.Check_SuperTextMesh_OnCompleteAction);
+		TypeTraits<SuperTextMesh.OnUndrawnAction>.Init(factory.Check_SuperTextMesh_OnUndrawnAction);
+		TypeTraits<SuperTextMesh.OnRebuildAction>.Init(factory.Check_SuperTextMesh_OnRebuildAction);
+		TypeTraits<SuperTextMesh.OnPrintAction>.Init(factory.Check_SuperTextMesh_OnPrintAction);
+		TypeTraits<SuperTextMesh.OnCustomAction>.Init(factory.Check_SuperTextMesh_OnCustomAction);
+		TypeTraits<SuperTextMesh.OnVertexModAction>.Init(factory.Check_SuperTextMesh_OnVertexModAction);
+		TypeTraits<SuperTextMesh.OnPreParseAction>.Init(factory.Check_SuperTextMesh_OnPreParseAction);
 		TypeTraits<System.Action<LoginData>>.Init(factory.Check_System_Action_LoginData);
 		TypeTraits<SDK.SDKManager.InitLaunchAction>.Init(factory.Check_SDK_SDKManager_InitLaunchAction);
 		TypeTraits<SDK.SDKManager.RegisterAction>.Init(factory.Check_SDK_SDKManager_RegisterAction);
@@ -374,7 +395,14 @@ public class DelegateFactory
 		StackTraits<UnityEngine.UI.InputField.OnValidateInput>.Push = factory.Push_UnityEngine_UI_InputField_OnValidateInput;
 		StackTraits<UnityEngine.Events.UnityAction<string,UnityEngine.Object>>.Push = factory.Push_UnityEngine_Events_UnityAction_string_UnityEngine_Object;
 		StackTraits<System.Action<IAPResult>>.Push = factory.Push_System_Action_IAPResult;
-//		StackTraits<System.Action<bool,string>>.Push = factory.Push_System_Action_bool_string;
+		StackTraits<SuperTextMesh.OnCompleteAction>.Push = factory.Push_SuperTextMesh_OnCompleteAction;
+		StackTraits<SuperTextMesh.OnUndrawnAction>.Push = factory.Push_SuperTextMesh_OnUndrawnAction;
+		StackTraits<SuperTextMesh.OnRebuildAction>.Push = factory.Push_SuperTextMesh_OnRebuildAction;
+		StackTraits<SuperTextMesh.OnPrintAction>.Push = factory.Push_SuperTextMesh_OnPrintAction;
+		StackTraits<SuperTextMesh.OnCustomAction>.Push = factory.Push_SuperTextMesh_OnCustomAction;
+		StackTraits<SuperTextMesh.OnVertexModAction>.Push = factory.Push_SuperTextMesh_OnVertexModAction;
+		StackTraits<SuperTextMesh.OnPreParseAction>.Push = factory.Push_SuperTextMesh_OnPreParseAction;
+		StackTraits<System.Action<LoginData>>.Push = factory.Push_System_Action_LoginData;
 		StackTraits<SDK.SDKManager.InitLaunchAction>.Push = factory.Push_SDK_SDKManager_InitLaunchAction;
 		StackTraits<SDK.SDKManager.RegisterAction>.Push = factory.Push_SDK_SDKManager_RegisterAction;
 		StackTraits<SDK.SDKManager.LoginAction>.Push = factory.Push_SDK_SDKManager_LoginAction;
@@ -3601,29 +3629,29 @@ public class DelegateFactory
 		}
 	}
 
-	// public UnityEngine.Application.MemoryUsageChangedCallback UnityEngine_Application_MemoryUsageChangedCallback(LuaFunction func, LuaTable self, bool flag)
-	// {
-	// 	if (func == null)
-	// 	{
-	// 		UnityEngine.Application.MemoryUsageChangedCallback fn = delegate(ref UnityEngine.ApplicationMemoryUsageChange param0) { };
-	// 		return fn;
-	// 	}
-	//
-	// 	if(!flag)
-	// 	{
-	// 		UnityEngine_Application_MemoryUsageChangedCallback_Event target = new UnityEngine_Application_MemoryUsageChangedCallback_Event(func);
-	// 		UnityEngine.Application.MemoryUsageChangedCallback d = target.Call;
-	// 		target.method = d.Method;
-	// 		return d;
-	// 	}
-	// 	else
-	// 	{
-	// 		UnityEngine_Application_MemoryUsageChangedCallback_Event target = new UnityEngine_Application_MemoryUsageChangedCallback_Event(func, self);
-	// 		UnityEngine.Application.MemoryUsageChangedCallback d = target.CallWithSelf;
-	// 		target.method = d.Method;
-	// 		return d;
-	// 	}
-	// }
+	//public UnityEngine.Application.MemoryUsageChangedCallback UnityEngine_Application_MemoryUsageChangedCallback(LuaFunction func, LuaTable self, bool flag)
+	//{
+	//	//if (func == null)
+	//	//{
+	//	//	UnityEngine.Application.MemoryUsageChangedCallback fn = delegate(ref UnityEngine.ApplicationMemoryUsageChange param0) { };
+	//	//	return fn;
+	//	//}
+
+	//	//if(!flag)
+	//	//{
+	//	//	UnityEngine_Application_MemoryUsageChangedCallback_Event target = new UnityEngine_Application_MemoryUsageChangedCallback_Event(func);
+	//	//	UnityEngine.Application.MemoryUsageChangedCallback d = target.Call;
+	//	//	target.method = d.Method;
+	//	//	return d;
+	//	//}
+	//	//else
+	//	//{
+	//	//	UnityEngine_Application_MemoryUsageChangedCallback_Event target = new UnityEngine_Application_MemoryUsageChangedCallback_Event(func, self);
+	//	//	UnityEngine.Application.MemoryUsageChangedCallback d = target.CallWithSelf;
+	//	//	target.method = d.Method;
+	//	//	return d;
+	//	//}
+	//}
 
 	bool Check_UnityEngine_Application_MemoryUsageChangedCallback(IntPtr L, int pos)
 	{
@@ -4506,6 +4534,395 @@ public class DelegateFactory
 	}
 
 	void Push_System_Action_IAPResult(IntPtr L, System.Action<IAPResult> o)
+	{
+		ToLua.Push(L, o);
+	}
+
+	class SuperTextMesh_OnCompleteAction_Event : LuaDelegate
+	{
+		public SuperTextMesh_OnCompleteAction_Event(LuaFunction func) : base(func) { }
+		public SuperTextMesh_OnCompleteAction_Event(LuaFunction func, LuaTable self) : base(func, self) { }
+
+		public void Call()
+		{
+			func.Call();
+		}
+
+		public void CallWithSelf()
+		{
+			func.BeginPCall();
+			func.Push(self);
+			func.PCall();
+			func.EndPCall();
+		}
+	}
+
+	public SuperTextMesh.OnCompleteAction SuperTextMesh_OnCompleteAction(LuaFunction func, LuaTable self, bool flag)
+	{
+		if (func == null)
+		{
+			SuperTextMesh.OnCompleteAction fn = delegate() { };
+			return fn;
+		}
+
+		if(!flag)
+		{
+			SuperTextMesh_OnCompleteAction_Event target = new SuperTextMesh_OnCompleteAction_Event(func);
+			SuperTextMesh.OnCompleteAction d = target.Call;
+			target.method = d.Method;
+			return d;
+		}
+		else
+		{
+			SuperTextMesh_OnCompleteAction_Event target = new SuperTextMesh_OnCompleteAction_Event(func, self);
+			SuperTextMesh.OnCompleteAction d = target.CallWithSelf;
+			target.method = d.Method;
+			return d;
+		}
+	}
+
+	bool Check_SuperTextMesh_OnCompleteAction(IntPtr L, int pos)
+	{
+		return TypeChecker.CheckDelegateType(typeof(SuperTextMesh.OnCompleteAction), L, pos);
+	}
+
+	void Push_SuperTextMesh_OnCompleteAction(IntPtr L, SuperTextMesh.OnCompleteAction o)
+	{
+		ToLua.Push(L, o);
+	}
+
+	class SuperTextMesh_OnUndrawnAction_Event : LuaDelegate
+	{
+		public SuperTextMesh_OnUndrawnAction_Event(LuaFunction func) : base(func) { }
+		public SuperTextMesh_OnUndrawnAction_Event(LuaFunction func, LuaTable self) : base(func, self) { }
+
+		public void Call()
+		{
+			func.Call();
+		}
+
+		public void CallWithSelf()
+		{
+			func.BeginPCall();
+			func.Push(self);
+			func.PCall();
+			func.EndPCall();
+		}
+	}
+
+	public SuperTextMesh.OnUndrawnAction SuperTextMesh_OnUndrawnAction(LuaFunction func, LuaTable self, bool flag)
+	{
+		if (func == null)
+		{
+			SuperTextMesh.OnUndrawnAction fn = delegate() { };
+			return fn;
+		}
+
+		if(!flag)
+		{
+			SuperTextMesh_OnUndrawnAction_Event target = new SuperTextMesh_OnUndrawnAction_Event(func);
+			SuperTextMesh.OnUndrawnAction d = target.Call;
+			target.method = d.Method;
+			return d;
+		}
+		else
+		{
+			SuperTextMesh_OnUndrawnAction_Event target = new SuperTextMesh_OnUndrawnAction_Event(func, self);
+			SuperTextMesh.OnUndrawnAction d = target.CallWithSelf;
+			target.method = d.Method;
+			return d;
+		}
+	}
+
+	bool Check_SuperTextMesh_OnUndrawnAction(IntPtr L, int pos)
+	{
+		return TypeChecker.CheckDelegateType(typeof(SuperTextMesh.OnUndrawnAction), L, pos);
+	}
+
+	void Push_SuperTextMesh_OnUndrawnAction(IntPtr L, SuperTextMesh.OnUndrawnAction o)
+	{
+		ToLua.Push(L, o);
+	}
+
+	class SuperTextMesh_OnRebuildAction_Event : LuaDelegate
+	{
+		public SuperTextMesh_OnRebuildAction_Event(LuaFunction func) : base(func) { }
+		public SuperTextMesh_OnRebuildAction_Event(LuaFunction func, LuaTable self) : base(func, self) { }
+
+		public void Call()
+		{
+			func.Call();
+		}
+
+		public void CallWithSelf()
+		{
+			func.BeginPCall();
+			func.Push(self);
+			func.PCall();
+			func.EndPCall();
+		}
+	}
+
+	public SuperTextMesh.OnRebuildAction SuperTextMesh_OnRebuildAction(LuaFunction func, LuaTable self, bool flag)
+	{
+		if (func == null)
+		{
+			SuperTextMesh.OnRebuildAction fn = delegate() { };
+			return fn;
+		}
+
+		if(!flag)
+		{
+			SuperTextMesh_OnRebuildAction_Event target = new SuperTextMesh_OnRebuildAction_Event(func);
+			SuperTextMesh.OnRebuildAction d = target.Call;
+			target.method = d.Method;
+			return d;
+		}
+		else
+		{
+			SuperTextMesh_OnRebuildAction_Event target = new SuperTextMesh_OnRebuildAction_Event(func, self);
+			SuperTextMesh.OnRebuildAction d = target.CallWithSelf;
+			target.method = d.Method;
+			return d;
+		}
+	}
+
+	bool Check_SuperTextMesh_OnRebuildAction(IntPtr L, int pos)
+	{
+		return TypeChecker.CheckDelegateType(typeof(SuperTextMesh.OnRebuildAction), L, pos);
+	}
+
+	void Push_SuperTextMesh_OnRebuildAction(IntPtr L, SuperTextMesh.OnRebuildAction o)
+	{
+		ToLua.Push(L, o);
+	}
+
+	class SuperTextMesh_OnPrintAction_Event : LuaDelegate
+	{
+		public SuperTextMesh_OnPrintAction_Event(LuaFunction func) : base(func) { }
+		public SuperTextMesh_OnPrintAction_Event(LuaFunction func, LuaTable self) : base(func, self) { }
+
+		public void Call()
+		{
+			func.Call();
+		}
+
+		public void CallWithSelf()
+		{
+			func.BeginPCall();
+			func.Push(self);
+			func.PCall();
+			func.EndPCall();
+		}
+	}
+
+	public SuperTextMesh.OnPrintAction SuperTextMesh_OnPrintAction(LuaFunction func, LuaTable self, bool flag)
+	{
+		if (func == null)
+		{
+			SuperTextMesh.OnPrintAction fn = delegate() { };
+			return fn;
+		}
+
+		if(!flag)
+		{
+			SuperTextMesh_OnPrintAction_Event target = new SuperTextMesh_OnPrintAction_Event(func);
+			SuperTextMesh.OnPrintAction d = target.Call;
+			target.method = d.Method;
+			return d;
+		}
+		else
+		{
+			SuperTextMesh_OnPrintAction_Event target = new SuperTextMesh_OnPrintAction_Event(func, self);
+			SuperTextMesh.OnPrintAction d = target.CallWithSelf;
+			target.method = d.Method;
+			return d;
+		}
+	}
+
+	bool Check_SuperTextMesh_OnPrintAction(IntPtr L, int pos)
+	{
+		return TypeChecker.CheckDelegateType(typeof(SuperTextMesh.OnPrintAction), L, pos);
+	}
+
+	void Push_SuperTextMesh_OnPrintAction(IntPtr L, SuperTextMesh.OnPrintAction o)
+	{
+		ToLua.Push(L, o);
+	}
+
+	class SuperTextMesh_OnCustomAction_Event : LuaDelegate
+	{
+		public SuperTextMesh_OnCustomAction_Event(LuaFunction func) : base(func) { }
+		public SuperTextMesh_OnCustomAction_Event(LuaFunction func, LuaTable self) : base(func, self) { }
+
+		public void Call(string param0, STMTextInfo param1)
+		{
+			func.BeginPCall();
+			func.Push(param0);
+			func.PushObject(param1);
+			func.PCall();
+			func.EndPCall();
+		}
+
+		public void CallWithSelf(string param0, STMTextInfo param1)
+		{
+			func.BeginPCall();
+			func.Push(self);
+			func.Push(param0);
+			func.PushObject(param1);
+			func.PCall();
+			func.EndPCall();
+		}
+	}
+
+	public SuperTextMesh.OnCustomAction SuperTextMesh_OnCustomAction(LuaFunction func, LuaTable self, bool flag)
+	{
+		if (func == null)
+		{
+			SuperTextMesh.OnCustomAction fn = delegate(string param0, STMTextInfo param1) { };
+			return fn;
+		}
+
+		if(!flag)
+		{
+			SuperTextMesh_OnCustomAction_Event target = new SuperTextMesh_OnCustomAction_Event(func);
+			SuperTextMesh.OnCustomAction d = target.Call;
+			target.method = d.Method;
+			return d;
+		}
+		else
+		{
+			SuperTextMesh_OnCustomAction_Event target = new SuperTextMesh_OnCustomAction_Event(func, self);
+			SuperTextMesh.OnCustomAction d = target.CallWithSelf;
+			target.method = d.Method;
+			return d;
+		}
+	}
+
+	bool Check_SuperTextMesh_OnCustomAction(IntPtr L, int pos)
+	{
+		return TypeChecker.CheckDelegateType(typeof(SuperTextMesh.OnCustomAction), L, pos);
+	}
+
+	void Push_SuperTextMesh_OnCustomAction(IntPtr L, SuperTextMesh.OnCustomAction o)
+	{
+		ToLua.Push(L, o);
+	}
+
+	class SuperTextMesh_OnVertexModAction_Event : LuaDelegate
+	{
+		public SuperTextMesh_OnVertexModAction_Event(LuaFunction func) : base(func) { }
+		public SuperTextMesh_OnVertexModAction_Event(LuaFunction func, LuaTable self) : base(func, self) { }
+
+		public void Call(UnityEngine.Vector3[] param0, UnityEngine.Vector3[] param1, UnityEngine.Vector3[] param2)
+		{
+			func.BeginPCall();
+			func.Push(param0);
+			func.Push(param1);
+			func.Push(param2);
+			func.PCall();
+			func.EndPCall();
+		}
+
+		public void CallWithSelf(UnityEngine.Vector3[] param0, UnityEngine.Vector3[] param1, UnityEngine.Vector3[] param2)
+		{
+			func.BeginPCall();
+			func.Push(self);
+			func.Push(param0);
+			func.Push(param1);
+			func.Push(param2);
+			func.PCall();
+			func.EndPCall();
+		}
+	}
+
+	public SuperTextMesh.OnVertexModAction SuperTextMesh_OnVertexModAction(LuaFunction func, LuaTable self, bool flag)
+	{
+		if (func == null)
+		{
+			SuperTextMesh.OnVertexModAction fn = delegate(UnityEngine.Vector3[] param0, UnityEngine.Vector3[] param1, UnityEngine.Vector3[] param2) { };
+			return fn;
+		}
+
+		if(!flag)
+		{
+			SuperTextMesh_OnVertexModAction_Event target = new SuperTextMesh_OnVertexModAction_Event(func);
+			SuperTextMesh.OnVertexModAction d = target.Call;
+			target.method = d.Method;
+			return d;
+		}
+		else
+		{
+			SuperTextMesh_OnVertexModAction_Event target = new SuperTextMesh_OnVertexModAction_Event(func, self);
+			SuperTextMesh.OnVertexModAction d = target.CallWithSelf;
+			target.method = d.Method;
+			return d;
+		}
+	}
+
+	bool Check_SuperTextMesh_OnVertexModAction(IntPtr L, int pos)
+	{
+		return TypeChecker.CheckDelegateType(typeof(SuperTextMesh.OnVertexModAction), L, pos);
+	}
+
+	void Push_SuperTextMesh_OnVertexModAction(IntPtr L, SuperTextMesh.OnVertexModAction o)
+	{
+		ToLua.Push(L, o);
+	}
+
+	class SuperTextMesh_OnPreParseAction_Event : LuaDelegate
+	{
+		public SuperTextMesh_OnPreParseAction_Event(LuaFunction func) : base(func) { }
+		public SuperTextMesh_OnPreParseAction_Event(LuaFunction func, LuaTable self) : base(func, self) { }
+
+		public void Call(STMTextContainer param0)
+		{
+			func.BeginPCall();
+			func.PushObject(param0);
+			func.PCall();
+			func.EndPCall();
+		}
+
+		public void CallWithSelf(STMTextContainer param0)
+		{
+			func.BeginPCall();
+			func.Push(self);
+			func.PushObject(param0);
+			func.PCall();
+			func.EndPCall();
+		}
+	}
+
+	public SuperTextMesh.OnPreParseAction SuperTextMesh_OnPreParseAction(LuaFunction func, LuaTable self, bool flag)
+	{
+		if (func == null)
+		{
+			SuperTextMesh.OnPreParseAction fn = delegate(STMTextContainer param0) { };
+			return fn;
+		}
+
+		if(!flag)
+		{
+			SuperTextMesh_OnPreParseAction_Event target = new SuperTextMesh_OnPreParseAction_Event(func);
+			SuperTextMesh.OnPreParseAction d = target.Call;
+			target.method = d.Method;
+			return d;
+		}
+		else
+		{
+			SuperTextMesh_OnPreParseAction_Event target = new SuperTextMesh_OnPreParseAction_Event(func, self);
+			SuperTextMesh.OnPreParseAction d = target.CallWithSelf;
+			target.method = d.Method;
+			return d;
+		}
+	}
+
+	bool Check_SuperTextMesh_OnPreParseAction(IntPtr L, int pos)
+	{
+		return TypeChecker.CheckDelegateType(typeof(SuperTextMesh.OnPreParseAction), L, pos);
+	}
+
+	void Push_SuperTextMesh_OnPreParseAction(IntPtr L, SuperTextMesh.OnPreParseAction o)
 	{
 		ToLua.Push(L, o);
 	}

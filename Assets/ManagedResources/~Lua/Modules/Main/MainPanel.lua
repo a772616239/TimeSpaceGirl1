@@ -396,8 +396,8 @@ function this:BindEvent()
         end
         if isOpen then
             isOpen = false
-            this.MiddleGrid:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_GridClose")
-            this.RightUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_RightVerticalClose")
+            -- this.MiddleGrid:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_GridClose")
+            -- this.RightUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_RightVerticalClose")
             -- this.LeftUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_LeftVerticalClose")
             this.timeRetract = Timer.New(function ()
                 this.MiddleGrid:SetActive(false)
@@ -413,8 +413,8 @@ function this:BindEvent()
             this.MiddleGrid:SetActive(true)
             this.RightUpVertical:SetActive(true)
             -- this.LeftUpVertical:SetActive(true)
-            this.MiddleGrid:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_GridOpen")
-            this.RightUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_RightVerticalOpen")
+            -- this.MiddleGrid:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_GridOpen")
+            -- this.RightUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_RightVerticalOpen")
             -- this.LeftUpVertical:GetComponent("Animator"):Play("cn2-X1_UI_MainPanel_LeftVerticalOpen")
             this.timeRetract = Timer.New(function ()
                 this.timeRetract:Stop()
@@ -801,7 +801,10 @@ end
 -- 创建活动
 function this.CreatActivity()
     ActivityGiftManager.SetRedState(0)
-
+    local localMiddleGrid=nil
+    local localRightGrid=nil
+    this.RightUpVertical.gameObject:SetActive(false)
+    this.MiddleGrid.gameObject:SetActive(false)
     for k,v in ipairs(activitys) do
         repeat
         if not activityTabs[k] then 
@@ -809,19 +812,27 @@ function this.CreatActivity()
             local root
             if v.ShowType == 1  then
                 root = this.RightUpVertical
+                localRightGrid=this.RightUpVertical
             elseif v.ShowType == 2 then
                 root = this.MiddleGrid
+                localMiddleGrid = this.MiddleGrid
             elseif v.ShowType == 3 then
                 root = this.RightUpVertical
+                localRightGrid=this.RightUpVertical
             else
                 break
             end
             activityTabs[k].go = newObjToParent(this.activityTabPrefab,root)
+            -- local img_2 = Util.GetGameObject(activityTabs[k].go, "Image_2")
             activityTabs[k].img = Util.GetGameObject(activityTabs[k].go, "icon/img"):GetComponent("Image")
             activityTabs[k].timeImg = Util.GetGameObject(activityTabs[k].go, "Image_1")
             activityTabs[k].timeText = Util.GetGameObject(activityTabs[k].timeImg, "time"):GetComponent("Text")
             activityTabs[k].redpot = Util.GetGameObject(activityTabs[k].go, "redPoint")
             activityTabs[k].name = Util.GetGameObject(activityTabs[k].go, "Image_2/name"):GetComponent("Text")
+            -- local ver1 = img_2:GetComponent("RectTransform")
+            -- LayoutRebuilder.ForceRebuildLayoutImmediate(ver1)
+            -- local ver2 = activityTabs[k].go:GetComponent("RectTransform")
+            -- LayoutRebuilder.ForceRebuildLayoutImmediate(ver2)
         end
 
         activityTabs[k].go.gameObject.name = "tab"..v.Id
@@ -876,6 +887,22 @@ function this.CreatActivity()
         end)
         until true
     end
+    -- if (localMiddleGrid )then
+    --     local ver1 = this.MiddleGrid:GetComponent("RectTransform")
+    --     LayoutRebuilder.ForceRebuildLayoutImmediate(ver1)
+    --     -- local ver1 = this.MiddleGrid.gameObject
+    --     -- ver1:SetActive(false)
+    --     -- ver1:SetActive(true)
+    -- end
+    -- if (localRightGrid )then
+    --     local ver1 = this.RightUpVertical:GetComponent("RectTransform")
+    --     LayoutRebuilder.ForceRebuildLayoutImmediate(ver1)
+    --     -- local ver1 = this.RightUpVertical.gameObject
+    --     -- ver1:SetActive(false)
+    --     -- ver1:SetActive(true)
+    -- end
+    this.RightUpVertical.gameObject:SetActive(true)
+    this.MiddleGrid.gameObject:SetActive(true)
 end
 
 --绑定活动按钮红点

@@ -14,6 +14,7 @@ LuaHelper = GameLogic.LuaHelper
 ByteBuffer = GameLogic.ByteBuffer
 resMgr = App.ResMgr
 iapMgr = App.IAPMgr
+iapMgr = App.IAPMgr
 ggSignMgr = App.GoogleSignMgr
 ReviewMgr = App.ReviewMgr
 --soundMgr = App.SoundMgr
@@ -39,8 +40,8 @@ LayoutUtility = UnityEngine.UI.LayoutUtility
 Tweening = DG.Tweening
 Ease = DG.Tweening.Ease
 DoTween = DG.Tweening.DOTween
-
 Rect = UnityEngine.Rect
+LayoutRebuilder = UnityEngine.UI.LayoutRebuilder
 PlayerPrefs = UnityEngine.PlayerPrefs
 Shader = UnityEngine.Shader
 

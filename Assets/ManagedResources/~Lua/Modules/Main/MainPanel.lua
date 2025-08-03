@@ -684,6 +684,8 @@ function this:OnDestroy()
                 ClearRedPointObject(RedPointType.ValuePack, activityTabs[k].redpot)
             elseif v.Id == 1500 then
                 ClearRedPointObject(RedPointType.ThousandDraw, activityTabs[k].redpot)
+            elseif v.Id  == 300 then
+                ClearRedPointObject(RedPointType.Challenge, activityTabs[k].redpot)
             elseif v.Id == 1201 then
                 ClearRedPointObject(RedPointType.NightmareInvasion, activityTabs[k].redpot)
             elseif v.Id == 400 then
@@ -907,7 +909,9 @@ end
 
 --绑定活动按钮红点
 function this.BindBtnRedPoint(redpoint, data)
+     Log("BindBtnRedPoint data.RpType = " .. data.RpType.. " data.Id = " .. data.Id)
     if data.RpType > 0 then
+       
         if data.Id == 178 then
             BindRedPointObject(RedPointType.AdjutantActivity, redpoint)
         elseif data.Id == 1000 then
@@ -922,6 +926,8 @@ function this.BindBtnRedPoint(redpoint, data)
             BindRedPointObject(RedPointType.ValuePack, redpoint)
         elseif data.Id == 1500 then
             BindRedPointObject(RedPointType.ThousandDraw, redpoint)
+        elseif data.Id == 300 then
+            BindRedPointObject(RedPointType.Challenge, redpoint)
         elseif data.Id == 1201 then
             BindRedPointObject(RedPointType.NightmareInvasion, redpoint)
         elseif data.Id == 400 then

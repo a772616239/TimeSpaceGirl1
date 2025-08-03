@@ -20,6 +20,7 @@ local EncourageTaskConfig = ConfigManager.GetAllConfigsData(ConfigName.Encourage
 local EncouragePlanConfig = ConfigManager.GetConfig(ConfigName.EncouragePlanConfig)
 local giftGoodsInfo
 local isFistShow = true
+local isFistChallengeShow = true
 
 --初始化
 function this.Initialize()
@@ -1107,6 +1108,14 @@ function this.RefreshPatFaceRedpoint()
         return not isFistShow
     end
     return isFistShow
+end
+
+function this.RefreshChallengeRedpoint()
+    if isFistChallengeShow then
+        isFistChallengeShow = false
+        return not isFistChallengeShow
+    end
+    return isFistChallengeShow
 end
 
 --刷新开服双倍红点

@@ -73,6 +73,9 @@ function this:OnClose()
     for i = 1, #this.contents do
         this.contents[i].view:OnClose()
     end
+    
+    CheckRedPointStatus(RedPointType.Challenge)
+    Log("PVEActivityPanel OnClose")
 end
 
 --界面销毁时调用（用于子类重写）
@@ -82,6 +85,7 @@ function this:OnDestroy()
     for i = 1, #this.contents do
         this.contents[i].view:OnDestroy()
     end
+    -- Log("PVEActivityPanel OnDestroy")
 end
 
 -- tab按钮自定义显示设置

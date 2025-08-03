@@ -587,7 +587,7 @@ function this.RegisterRedCheckFunc()
 
     --拍脸
     RPData:AddCheckFunc(RedPointType.PatFace,OperatingManager.RefreshPatFaceRedpoint)
-
+    RPData:AddCheckFunc(RedPointType.Challenge,OperatingManager.RefreshChallengeRedpoint)
     --主题活动
     RPData:AddCheckFunc(RedPointType.DynamicActTask,OperatingManager.CheckDynamicActTaskRed)
 

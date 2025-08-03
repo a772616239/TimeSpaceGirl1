@@ -1175,6 +1175,7 @@ RedPointType = {
     Culturalrelics = 99997,                 -- 文明遗迹
     MainCity = 99998,                       -- 主城
     TempNull = 99999,                       -- 临时红点用 
+    Challenge = 100000,                  -- 挑战
 }
 
 RedPointStatus = {

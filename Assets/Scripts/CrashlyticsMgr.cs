@@ -102,7 +102,8 @@ namespace ETModel{
                     // if (!_isFirebaseInitialized) return;
                     XDebug.Log.l("TapEvent" + cbName);
 
-                    FirebaseAnalytics.LogEvent(cbName);
+                    FirebaseAnalytics.LogEvent(cbName,
+                    new Parameter("param1", type));
                 }
 
         }

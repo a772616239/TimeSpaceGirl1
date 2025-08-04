@@ -1431,15 +1431,32 @@ function TimeToH(second)
     return string.format(GetLanguageStrById(11751), hour)
 end
 --- 将一段时间转换为时分秒
+-- function TimeToHMS(t)
+--     if not t or t < 0 then
+--         return "00:00:00"
+--     end
+--     local _sec = t % 60
+--     local allMin = math.floor(t / 60)
+--     local _min = allMin % 60
+--     local _hour = math.floor(allMin / 60)
+--     return string.format("%02d:%02d:%02d", _hour, _min, _sec), _hour, _min, _sec
+-- end
 function TimeToHMS(t)
     if not t or t < 0 then
-        return "00:00:00"
+        return "<color=#FF0000>00:00:00</color>"
     end
     local _sec = t % 60
     local allMin = math.floor(t / 60)
     local _min = allMin % 60
     local _hour = math.floor(allMin / 60)
-    return string.format("%02d:%02d:%02d", _hour, _min, _sec), _hour, _min, _sec
+    local timeStr = string.format("%02d:%02d:%02d", _hour, _min, _sec)
+
+    -- 少于30分钟时变红
+    if t <= 1800 then
+        return string.format("<color=#FF0000>%s</color>", timeStr), _hour, _min, _sec
+    else
+        return timeStr, _hour, _min, _sec
+    end
 end
 
 --- 将一段时间转换为分秒

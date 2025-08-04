@@ -408,19 +408,37 @@ function this.CheckTodayIsAlreadyLike(uid)
     end
     return false
 end
--- local isFistOpen = true
+local isFistOpen = true
 -- 点赞红点
 function this.RefreshAlreadyLikeRedpoint()
+    Log("RefreshAlreadyLikeRedpoint")
     if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.ARENA) then
         return false
     end
-    -- if isFistOpen then
-    --     isFistOpen = false
-    --     return true
-    -- end
+    
+    -- 获取当前日期字符串（格式YYYY-MM-DD）
+    local currentDate = os.date("%Y-%m-%d")
+    
+    -- 从PlayerPrefs读取上次打开日期
+    local lastOpenDate = PlayerPrefs.GetString("LastOpenDate_Arena", "")
+    
+    -- 判断是否是今天首次打开
+    local isFirstOpenToday = (lastOpenDate ~= currentDate)
+    
+    if isFirstOpenToday then
+        -- 更新存储的日期
+        PlayerPrefs.SetString("LastOpenDate_Arena", currentDate)
+        PlayerPrefs.Save()
+        -- 首次打开时需要执行的逻辑（例如重置计数）
+        -- this.TodayAlreadyLikeNum = 0  -- 如果需要重置计数，取消注释
+        return true  -- 今天首次打开
+    end
+    
     local arenaData, myRankData = RankingManager.GetArenaInfo()
     local num = #arenaData
+    Log("RefreshAlreadyLikeRedpoint"..num)
     if num > 10 then num = 10 end
+    
     return this.TodayAlreadyLikeNum < num
 end
 return this

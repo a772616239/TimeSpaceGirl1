@@ -53,7 +53,26 @@ function GVM.GetTaskById(id, ...)
     if id == 1 then
         str = string.format(GetLanguageStrById(22518), TaskTypeProfession[args[1]], TaskTypeRange[args[2]], args[3])
     elseif id == 2 then
-        str = string.format(GetLanguageStrById(22518), TaskTypeControy[args[1]], TaskTypeRange[args[2]], args[3])
+        -- 验证参数数量和有效性
+        if #args < 3 then
+            error(string.format("GetTaskById(id=2) requires 3 arguments, got %d", #args))
+        end
+        if not args[1] or not TaskTypeControy[args[1]] then
+            args[1] = "UNKNOWN_TYPE" -- 默认值
+        end
+        if not args[2] or not TaskTypeRange[args[2]] then
+            args[2] = "UNKNOWN_RANGE"
+        end
+        if not args[3] then
+            args[3] = 0 -- 默认值
+        end
+        
+        str = string.format(
+            GetLanguageStrById(22518), 
+            TaskTypeControy[args[1]], 
+            TaskTypeRange[args[2]], 
+            args[3]
+        )
     elseif id == 3 then
         str = string.format(GetLanguageStrById(22519), args[1])
     elseif id == 4 then

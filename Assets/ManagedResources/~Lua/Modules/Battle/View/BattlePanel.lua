@@ -610,9 +610,11 @@ function this:OnOpen(_fightData, _fightType, _endFunc, _fightId, _fightTypeSub)
         BattleView:StartBattle()
         this.InitPanelData()
     end
-
+    Util.SetGray(this.btnJump, false)
     if fightType == BATTLE_TYPE.STORY_FIGHT then
         if G_MainLevelConfig[FightPointPassManager.curOpenFight].BossShow == 1 then
+            Util.SetGray(this.btnJump, true)
+
             --先驱守护隐藏
             Util.GetGameObject(this.gameObject.transform.parent, "BattlePanel/DownRoot/option/OuterUnit/mine"):SetActive(false)
             Util.GetGameObject(this.gameObject.transform.parent, "BattlePanel/DownRoot/option/OuterUnit/enemy"):SetActive(false)

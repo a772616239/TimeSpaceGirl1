@@ -515,7 +515,7 @@ end
 -- Define triggerCallBack to avoid undefined global variable error
 function this.triggerCallBack(panelType, panel)
     -- Add your callback logic here if needed
-    Log("LoginPanel triggerCallBack: " .. panelType)
+    -- Log("LoginPanel triggerCallBack: " .. panelType)
      if panelType == UIName.NoticePopup then
           local name = PlayerPrefs.GetString("isfirstSelectServerName")
             Log("isfirstSelectServerName:" .. name)

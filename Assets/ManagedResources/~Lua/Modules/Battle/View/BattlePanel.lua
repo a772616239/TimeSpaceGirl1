@@ -626,6 +626,7 @@ function this:OnOpen(_fightData, _fightType, _endFunc, _fightId, _fightTypeSub)
                 fightTipsUI_Boss.transform:SetParent(self.gameObject.transform)
                 fightTipsUI_Boss.transform.localScale = Vector3.one
                 fightTipsUI_Boss.transform.localPosition = Vector3.zero
+                SoundManager.PlaySound(SoundConfig.n1_ui_boss)
                 --特效时间后销毁
                 --更换多语言资源
                 local font = Util.GetGameObject(fightTipsUI_Boss.gameObject, "font"):GetComponent("MeshRenderer").materials[0]

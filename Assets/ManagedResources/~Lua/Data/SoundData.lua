@@ -43,6 +43,9 @@ SoundConfig = {
     Sound_FootStep = "Footsteps_Run_0", --1-7随机播放
 
     Sound_UICancel = "n1_ui_sound_refresh_click",
+    Sound_UI_place_army="ui_place_army",
+    n1_ui_boss="n1_ui_boss",
+
     Sound_UIClick = "x1_ui_sound_normal_click",
     Sound_Dispelling = "UI_Dispelling",
     Sound_Dispelling_01 = "UI_Dispelling_01",

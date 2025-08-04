@@ -1262,6 +1262,9 @@ end
 
 --设置一键上阵
 function this.SetOneKeyGo()
+    Log("SetOneKeyGo")
+    SoundManager.PlaySound(SoundConfig.Sound_UI_place_army)
+
     if not this.opView.ChangeFormation then
         PopupTipPanel.ShowTipByLanguageId(12555)
         return

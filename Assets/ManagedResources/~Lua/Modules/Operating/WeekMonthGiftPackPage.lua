@@ -308,6 +308,9 @@ function WeekMonthGiftPackPage:GetRemainTime()
         if not localSelf.localTimer then
             return
         end
+        if IsNull(self.endTime) then
+            return
+        end
        local showfreshTime = freshTime - GetTimeStamp()
         if showfreshTime > 0 then
             -- 剩余小时

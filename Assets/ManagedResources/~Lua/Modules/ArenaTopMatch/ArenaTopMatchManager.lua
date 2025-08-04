@@ -1130,8 +1130,8 @@ function this.RefreshRankRedpoint()
     if this.baseInfo.battleStage ~= TOP_MATCH_STAGE.CLOSE 
     -- and this.baseInfo.battleStage ~= TOP_MATCH_STAGE.OVER 
     then
-        LogError("ArenaTopMatchManager.RefreshRankRedpoint: Not in close or over stage"..
-            "  battleStage: "..tostring(this.baseInfo.battleStage))
+        -- LogError("ArenaTopMatchManager.RefreshRankRedpoint: Not in close or over stage"..
+        --     "  battleStage: "..tostring(this.baseInfo.battleStage))
         return false
     end
 

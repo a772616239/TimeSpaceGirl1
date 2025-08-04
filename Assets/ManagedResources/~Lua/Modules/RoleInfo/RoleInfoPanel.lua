@@ -405,6 +405,7 @@ function RoleInfoPanel:BindEvent()
     Util.AddClick(this.btnAbility, function()
         this:OnClickBtnAbility()
     end)
+   
     --芯片
     Util.AddClick(this.btnChip, function()
         if ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.MEDAL) then
@@ -554,6 +555,7 @@ end
 --界面打开时调用（用于子类重写）（初始数据，英雄数据，是否上阵，上阵数量）
 function RoleInfoPanel:OnOpen(_curHeroData, _heroDatas, _isGoToBattle)--, _GoToBattleNum)
     curHeroData, heroDatas, isGoToBattle--[[, GoToBattleNum]] = _curHeroData, _heroDatas, _isGoToBattle--, _GoToBattleNum
+    this.btnChip.gameObject:SetActive(ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.MEDAL))
 end
 
 function RoleInfoPanel:OnShow()

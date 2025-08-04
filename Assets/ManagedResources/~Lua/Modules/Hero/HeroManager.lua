@@ -4285,23 +4285,35 @@ function this.GetCurHeroIsShowRedPoint(curHeroData)
     end
     -- return false
     hasBetterRings1, betterRingsState1 = this.GetRingsIsShowRedPoin(curHeroData)
-    if betterRingsState1 ~= nil then
-        return this.GetCurHeroUpLvOrUpStarSData(curHeroData) or
-            this.LvUpBtnRedPoint(curHeroData) or
-            this.IsShowUpStarRedPoint(curHeroData) or
-            #this.GetHeroIsUpEquip(curHeroData.dynamicId) > 0 or
-            this.GetIsShowSoulPrintRedPoint(curHeroData) or
-            this.GetIsShowTalismanRedPoint(curHeroData) or 
-            this.GetCurHeroAbilityIsShowRedPoint(curHeroData)["ability1"] or  this.GetCurHeroAbilityIsShowRedPoint(curHeroData)["ability2"] or
-            (betterRingsState1["Rings1"] or betterRingsState1["Rings2"])
-    end
-    return this.GetCurHeroUpLvOrUpStarSData(curHeroData) or 
+    this.IsShowRedPoint=this.GetCurHeroUpLvOrUpStarSData(curHeroData) or 
         this.LvUpBtnRedPoint(curHeroData) or
         this.IsShowUpStarRedPoint(curHeroData) or
         #this.GetHeroIsUpEquip(curHeroData.dynamicId) > 0 or
         this.GetIsShowSoulPrintRedPoint(curHeroData) or
-        this.GetIsShowTalismanRedPoint(curHeroData) or 
+        this.GetIsShowTalismanRedPoint(curHeroData) or
         this.GetCurHeroAbilityIsShowRedPoint(curHeroData)["ability1"] or  this.GetCurHeroAbilityIsShowRedPoint(curHeroData)["ability2"]
+    -- LogRed("GetCurHeroIsShowRedPoint this.IsShowRedPoint:" .. tostring(this.IsShowRedPoint))
+    -- LogRed(
+    --  " GetCurHeroAbilityIsShowRedPoint" ..tostring(this.GetCurHeroAbilityIsShowRedPoint(curHeroData)["ability1"] or this.GetCurHeroAbilityIsShowRedPoint(curHeroData)["ability2"])
+    -- )
+    -- LogRed(
+    --   " GetIsShowTalismanRedPoint" .. tostring(this.GetIsShowTalismanRedPoint(curHeroData)).." "
+    -- )
+    -- LogRed(
+    --   " GetIsShowSoulPrintRedPoint" .. tostring(this.GetIsShowSoulPrintRedPoint(curHeroData)).." "
+    -- )
+    --   LogRed(
+    --   " GetIsShowTalismanRedPoint" .. tostring(#this.GetHeroIsUpEquip(curHeroData.dynamicId) > 0).." "
+    -- )
+    --    LogRed(
+    --   " IsShowUpStarRedPoint" .. tostring(this.IsShowUpStarRedPoint(curHeroData)).." "
+    -- )
+    if betterRingsState1 ~= nil then
+        return this.IsShowRedPoint or
+            (betterRingsState1["Rings1"] or betterRingsState1["Rings2"])
+    end
+    return this.IsShowRedPoint 
+        
 end
 
 --单个英雄所有红点判断,去掉装备红点判断

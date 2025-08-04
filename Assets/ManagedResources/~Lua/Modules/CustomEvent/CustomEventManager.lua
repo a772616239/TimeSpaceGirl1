@@ -29,7 +29,7 @@ function CustomEventManager.hanleOnOpen(panelType)
         for i, v in ConfigPairs(ConfigManager.GetConfig(ConfigName.GlobalSystemConfig)) do
             if v.OpenRules then
                 if v.OpenRules[1] == 2 and PlayerManager.level >= v.OpenRules[2] and v.IsOpen == 1 then--等级解锁
-                    this.CustomEvent(1,"功能解锁"..v.Id)
+                    this.CustomEvent(v.Id,"功能解锁")
                 end
             end
         end
@@ -41,7 +41,7 @@ function CustomEventManager.handleOnOpenFight(fightId)
     for i, v in ConfigPairs(ConfigManager.GetConfig(ConfigName.GlobalSystemConfig)) do
         if v.OpenRules then
             if v.OpenRules[1] == 1 and fightId == v.OpenRules[2] and v.IsOpen == 1 then--1关卡开启
-                this.CustomEvent(1,"关卡解锁"..v.Id)
+                this.CustomEvent(v.Id,"关卡解锁")
             end
         end
     end
@@ -62,23 +62,23 @@ function CustomEventManager.handleOnUpdateHeroDatas()
     for i, v in pairs(HeroManager.GetAllHeroDatas()) do
         count = count+1
     end
-    this.CustomEvent(3,"获得新的英雄"..count)
+    this.CustomEvent(count,"获得新的英雄")
 end
 
 --玩家升级
 function CustomEventManager.hanldeOnPlayerLvChange()
-    this.CustomEvent(4,"玩家升级"..PlayerManager.level)
+    this.CustomEvent(PlayerManager.level,"玩家升级"..PlayerManager.level)
 end
 
 
 --Vip等级改变
 function CustomEventManager.handlenVipRankChanged()
-    this.CustomEvent(5,"Vip等级改变"..VipManager.GetVipLevel())
+    this.CustomEvent(VipManager.GetVipLevel(),"Vip等级改变")
 end
 
 --战力变化
 function CustomEventManager.handleOnPowerChange(maxPower)
-    this.CustomEvent(6,"战力变化"..maxPower)
+    this.CustomEvent(maxPower,"战力变化")
 end
 
 --加入公会

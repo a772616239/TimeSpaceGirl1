@@ -310,9 +310,11 @@ function GuildMainCityPanel:OnShow()
     end
 
     local pos = MyGuildManager.GetMyPositionInGuild()
-    Util.SetGray(this.InviteBtn, pos == GUILD_GRANT.MEMBER)
-    Util.SetGray(this.RequirementBtn, pos == GUILD_GRANT.MEMBER)
-
+    local isHighPos = pos == GUILD_GRANT.MASTER or pos == GUILD_GRANT.ADMIN
+    this.RequirementBtn:SetActive(isHighPos)
+    this.InviteBtn:SetActive(isHighPos)
+    this.ChangeDeclarationBtn:SetActive(isHighPos)
+    this.ChangeNameBtn:SetActive(isHighPos)
     this.RefreshGuildInfo()
     MyGuildManager.RequestMyGuildApplyList()
 end

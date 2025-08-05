@@ -150,6 +150,7 @@ end
 
 --界面关闭时调用（用于子类重写）
 function ExpertPanel:OnClose()
+    PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 --界面销毁时调用（用于子类重写）

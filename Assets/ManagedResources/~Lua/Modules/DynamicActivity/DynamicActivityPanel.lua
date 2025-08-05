@@ -54,6 +54,7 @@ function DynamicActivityPanel:BindEvent()
     -- 关闭界面打开主城
     Util.AddClick(this.btnBack, function()
         this:ClosePanel()
+        PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
     end)
 end
 

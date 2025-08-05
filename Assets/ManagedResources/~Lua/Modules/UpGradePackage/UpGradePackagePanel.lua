@@ -319,6 +319,7 @@ function this:OnClose()
         Game.GlobalEvent:DispatchEvent(GameEvent.PatFace.RefreshRightUp)
     end,1):Start()
     CheckRedPointStatus(RedPointType.PatFace)
+    PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 --界面销毁时调用（用于子类重写）

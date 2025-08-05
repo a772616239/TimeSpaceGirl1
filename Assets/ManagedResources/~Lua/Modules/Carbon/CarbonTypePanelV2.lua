@@ -361,6 +361,7 @@ function this.BtnClick(id)
     elseif id == FUNCTION_OPEN_TYPE.BLITZ_STRIKE then
         JumpManager.GoJump(8101)
     end
+    PlaySoundWithoutClick(SoundConfig.Sound_Click_Iron)
 end
 
 function this:OnSortingOrderChange()

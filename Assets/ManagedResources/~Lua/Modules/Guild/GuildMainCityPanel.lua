@@ -317,6 +317,8 @@ function GuildMainCityPanel:OnShow()
     this.ChangeNameBtn:SetActive(isHighPos)
     this.RefreshGuildInfo()
     MyGuildManager.RequestMyGuildApplyList()
+    SoundManager.PlaySound(SoundConfig.Sound_n1_ui_sound_campwar_detect)
+
 end
 
 function this.RefreshStageShow()

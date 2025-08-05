@@ -419,20 +419,20 @@ local jumpDic = {
     --     UIManager.OpenPanel(UIName.GrowGiftPopup)
     -- end,
     [JumpType.Setting] = function(data)
-        UIManager.OpenPanel(UIName.SettingPanel, data[1])
+        UIManager.OpenPanelWithSound(UIName.SettingPanel, data[1])
     end,
     [JumpType.LuckyTurn] = function(data)
-        UIManager.OpenPanel(UIName.LuckyTurnTablePanel, data[1])
+        UIManager.OpenPanelWithSound(UIName.LuckyTurnTablePanel, data[1])
     end,
     -- [JumpType.FindFairy] = function(data)
     --     UIManager.OpenPanel(UIName.FindFairyPanel,data[1])
     -- end,
     [JumpType.FindTreasure] = function()
-        UIManager.OpenPanel(UIName.FindTreasureMainPanel)
+        UIManager.OpenPanelWithSound(UIName.FindTreasureMainPanel)
     end,
     [JumpType.Achievement] = function()
         if ActTimeCtrlManager.SingleFuncState(JumpType.Achievement) then
-            UIManager.OpenPanel(UIName.MissionDailyPanel,2)
+            UIManager.OpenPanelWithSound(UIName.MissionDailyPanel,2)
         else
             PopupTipPanel.ShowTip(ActTimeCtrlManager.GetFuncTip(FUNCTION_OPEN_TYPE.Achiecement))
         end
@@ -857,6 +857,7 @@ local jumpDic = {
                             else
                                 UIManager.OpenPanel(UIName.FormationPanelV2, FORMATION_TYPE.DefenseTraining, DefenseTrainingManager.curFightId)
                             end
+                            SoundManager.PlaySound(SoundConfig.Sound_Ui_XiTongKaiQi)
                         end)
                     end)
                 end)
@@ -866,6 +867,7 @@ local jumpDic = {
                         DefenseTrainingManager.SetFriendSupportHeroDatas(msg)
                         NetManager.GetTankInfoOfTeam(FormationTypeDef.DEFENSE_TRAINING, function()--拉剩余血量数据
                             UIManager.OpenPanel(UIName.DefenseTrainingPopup)
+                            SoundManager.PlaySound(SoundConfig.Sound_Ui_XiTongKaiQi)
                         end)
                     end)
                 end)

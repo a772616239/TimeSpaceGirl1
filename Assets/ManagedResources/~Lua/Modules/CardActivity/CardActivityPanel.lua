@@ -145,6 +145,7 @@ function CardActivityPanel:OnClose()
     for i = 1, #this.contents do
         this.contents[i].view:OnClose()
     end
+    PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 --界面销毁时调用（用于子类重写）

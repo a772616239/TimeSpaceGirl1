@@ -124,6 +124,7 @@ function DailyRechargePanel:OnShow()
 end
 
 function DailyRechargePanel:OnClose()
+    PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
     -- Game.GlobalEvent:RemoveEvent(GameEvent.Activity.OnActivityOpenOrClose, self.RefreshPanel, self)
 end
 

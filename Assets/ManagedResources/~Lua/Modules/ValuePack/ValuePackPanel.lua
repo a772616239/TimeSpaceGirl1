@@ -165,6 +165,7 @@ function ValuePackPanel:CountDown()
 end
 
 function ValuePackPanel:OnClose()
+    PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 function ValuePackPanel:OnDestroy()

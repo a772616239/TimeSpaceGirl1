@@ -142,6 +142,7 @@ function MissionDailyPanel:OnClose()
     end
     ClearRedPointObject(RedPointType.DailyTask)
     ClearRedPointObject(RedPointType.Achievement_Main)
+    PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 --界面销毁时调用（用于子类重写）

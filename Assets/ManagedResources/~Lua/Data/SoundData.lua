@@ -18,18 +18,25 @@ SoundConfig = {
     BGM_GuildFight = "x1_bgm_prewar",
     BGM_Battle_1 = "x1_battle_BGM_LetsRock",
     
+    Sound_INTERFACE_Button_Clickdialogue="INTERFACE_Button_Clickdialogue",
     BGM_Story_1 = "x1_bgm_prewar",
+    Sound_n1_ui_sound_open_book = "n1_ui_sound_open_book", --打开书本音效
+    Sound_n1_ui_sound_battle_click = "n1_ui_sound_battle_click", --战斗界面点击音效
+
+    Sound_UI_Bag = "UI_Bag", --战斗界面点击音效
 
     Sound_BattleStart_01 = "n1_ui_tank_open_wnd", --打开布阵界面
     Sound_BattleStart_02 = "UI_Battle_02", --战斗开始
     Sound_BattleStart_03 = "n1_ui_sound_battle_start", --战斗开始
     Sound_BattleStart_04 = "UI_Battle_04", --战斗开始
+    Sound_UI_zhiyuan = "UI_zhiyuan", --支援界面
     Sound_BattleWin = "x1_ui_sound_battle_win",
     Sound_BattleLose = "x1_ui_sound_battle_lose",
     Sound_RoleCasting = "UI_Casting_01", --人物casting
     Sound_MonsterCasting = "UI_Casting_02", --异妖casting
     Sound_Buff = "Audio_skeff_buff_01",
     Sound_DeBuff = "Audio_skeff_debuff_01",
+    Sound_Ui_XiTongKaiQi = "Ui_XiTongKaiQi",
 
     Sound_Recruit1 = "n1_ui_recurit_01",
     Sound_Recruit2 = "n1_ui_recurit_02",
@@ -41,6 +48,7 @@ SoundConfig = {
     Sound_Recruit_GetHero_3 = "x1_ui_Lottery_HeroShow_03",--获得5星
 
     Sound_FootStep = "Footsteps_Run_0", --1-7随机播放
+    Sound_Click_Iron = "Ui_QiangHuaYes",
 
     Sound_UICancel = "n1_ui_sound_refresh_click",
     Sound_UI_place_army="ui_place_army",
@@ -60,7 +68,7 @@ SoundConfig = {
     Sound_Door ="UI_Door_01",
     Sound_Upgrade ="UI_Upgrade_01",
     Sound_Breach ="UI_Breach_01",
-
+    Sound_n1_ui_sound_campwar_detect="n1_ui_sound_campwar_detect",
     Sound_Arena_Result ="UI_020",
     Sound_UpLevel ="UI_021",
     Sound_VipUpLevel ="UI_022",

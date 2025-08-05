@@ -111,6 +111,8 @@ function GoodFriendMainPanel:BindEvent()
     Util.AddClick(this.btnBack, function()
         self:ClosePanel()
         --UIManager.OpenPanel(UIName.MainPanel)
+        PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
+
     end)
     Util.AddClick(this.blackListRemoveAllBtn, function()
         GoodFriendManager.RequestDeleteFromBlackList(0, function()

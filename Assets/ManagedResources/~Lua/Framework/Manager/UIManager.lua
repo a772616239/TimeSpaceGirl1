@@ -295,6 +295,19 @@ function UIManager.OpenPanel(id, ...)
     return panel
 end
 
+function UIManager.OpenPanelWithSound(id, ...)
+    if this.shieldSwitch then
+        -- if id == UIName.RewardItemSingleShowPopup then return end
+        -- if id == UIName.RewardEquipSingleShowPopup then return end
+    end
+    local startTime = System.DateTime.Now
+    local panel = UIManager.GetPanel(id, true, nil, ...)
+    local useTime = (System.DateTime.Now - startTime).TotalSeconds
+    UIManager.AddUseTime(id, useTime)
+    PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Clickdialogue)
+    return panel
+end
+
 --异步打开面板
 function UIManager.OpenPanelAsync(id, func, ...)
     local startTime = System.DateTime.Now

@@ -240,36 +240,36 @@ function this:BindEvent()
     --GM工具
     Util.AddClick(this.headPos, function()
         if AppConst.isOpenGM then
-            UIManager.OpenPanel(UIName.GMPanel)
+            UIManager.OpenPanelWithSound(UIName.GMPanel)
         else
-            UIManager.OpenPanel(UIName.SettingPanel)
+            UIManager.OpenPanelWithSound(UIName.SettingPanel)
         end
     end)
 
     --猎头公司
     this:AddButtonEventTriggerListener(this.btnRecruit, function()
         this.FunctionClickEvent(FUNCTION_OPEN_TYPE.RECURITY, function ()
-            UIManager.OpenPanel(UIName.RecruitPanel)
+            UIManager.OpenPanelWithSound(UIName.RecruitPanel)
         end)
         this.ScenceBtnClick(FUNCTION_OPEN_TYPE.RECURITY)
     end)
     --俱乐部
     this:AddButtonEventTriggerListener(this.btnElementDrawCard, function()
         this.FunctionClickEvent(FUNCTION_OPEN_TYPE.ELEMENT_RECURITY, function ()
-            UIManager.OpenPanel(UIName.CompoundHeroPanel)
+            UIManager.OpenPanelWithSound(UIName.CompoundHeroPanel)
         end)
         this.ScenceBtnClick(FUNCTION_OPEN_TYPE.ELEMENT_RECURITY)
     end)
     --实验室
     this:AddButtonEventTriggerListener(this.btnhecheng, function()
         this.FunctionClickEvent(FUNCTION_OPEN_TYPE.ASSEMBLE, function ()
-            UIManager.OpenPanel(UIName.AssemblePanel)
+            UIManager.OpenPanelWithSound(UIName.AssemblePanel)
         end)
     end)
     --医院
     this:AddButtonEventTriggerListener(this.btnzhihuan, function()
         this.FunctionClickEvent(FUNCTION_OPEN_TYPE.HeroExchange, function ()
-            UIManager.OpenPanel(UIName.HeroExchangePanel)
+            UIManager.OpenPanelWithSound(UIName.HeroExchangePanel)
         end)
     end)
 
@@ -277,7 +277,7 @@ function this:BindEvent()
     this:AddButtonEventTriggerListener(this.btnJingjichang, function()
         -- JumpManager.GoJump(8001)
         if ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.ARENA) then
-            UIManager.OpenPanel(UIName.ArenaMainPanel)
+            UIManager.OpenPanelWithSound(UIName.ArenaMainPanel)
         else
             local tip = ActTimeCtrlManager.GetFuncTip(FUNCTION_OPEN_TYPE.ARENA)
             PopupTipPanel.ShowTip(tip)
@@ -292,7 +292,7 @@ function this:BindEvent()
         or ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.MINSKBATTLE)
         or ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.ALAMEIN_WAR) then
             PlayerManager.carbonType = 2
-            UIManager.OpenPanel(UIName.CarbonTypePanelV2)
+            UIManager.OpenPanelWithSound(UIName.CarbonTypePanelV2)
         else
             PopupTipPanel.ShowTip(ActTimeCtrlManager.GetFuncTip(FUNCTION_OPEN_TYPE.TRIAL))
         end
@@ -319,7 +319,7 @@ function this:BindEvent()
     --研究所
     this:AddButtonEventTriggerListener(this.btnEquipCompound, function()
         if ActTimeCtrlManager.IsQualifiled(66) then
-            UIManager.OpenPanel(UIName.CompoundPanel)
+            UIManager.OpenPanelWithSound(UIName.CompoundPanel)
         end
         this.ScenceBtnClick(FUNCTION_OPEN_TYPE.COMPOUND)
     end)
@@ -337,7 +337,7 @@ function this:BindEvent()
     --无限战争
     this:AddButtonEventTriggerListener(this.btnInfiniteWar, function ()
         if ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.laddersChallenge) then
-            UIManager.OpenPanel(UIName.LaddersTypePanel)
+            UIManager.OpenPanelWithSound(UIName.LaddersTypePanel)
         else
             PopupTipPanel.ShowTip(ActTimeCtrlManager.SystemOpenTip(FUNCTION_OPEN_TYPE.laddersChallenge))
         end
@@ -345,12 +345,12 @@ function this:BindEvent()
 
     --日常任务
     Util.AddClick(this.btnDailyMission, function()
-        UIManager.OpenPanel(UIName.MissionDailyPanel)
+        UIManager.OpenPanelWithSound(UIName.MissionDailyPanel)
     end)
 
     --邮件
     Util.AddClick(this.btnYouJian, function()
-        UIManager.OpenPanel(UIName.MailMainPanel)
+        UIManager.OpenPanelWithSound(UIName.MailMainPanel)
     end)
 
     --排行
@@ -365,7 +365,7 @@ function this:BindEvent()
                 end
             end
             NetManager.RankFirstRequest(types,activiteIds,function (msg)
-                UIManager.OpenPanel(UIName.RankingListMainPanel,msg)
+                UIManager.OpenPanelWithSound(UIName.RankingListMainPanel,msg)
             end)
         else
             local tip = ActTimeCtrlManager.GetFuncTip(FUNCTION_OPEN_TYPE.ALLRANKING)
@@ -376,12 +376,12 @@ function this:BindEvent()
 
     -- 好友
     Util.AddClick(this.btnFriend, function()
-        UIManager.OpenPanel(UIName.GoodFriendMainPanel)
+        UIManager.OpenPanelWithSound(UIName.GoodFriendMainPanel)
     end)
 
     --手札
     Util.AddClick(this.btnBattlePass, function()
-        UIManager.OpenPanel(UIName.BattlePassPanel)
+        UIManager.OpenPanelWithSound(UIName.BattlePassPanel)
     end)
 
     --收缩按钮
@@ -430,16 +430,16 @@ function this:BindEvent()
     --[[
     -- --特权
     -- Util.AddClick(this.vipPrivilegeBtn, function()
-    --     UIManager.OpenPanel(UIName.VipPanelV2)
+    --     UIManager.OpenPanelWithSound(UIName.VipPanelV2)
     -- end)
     -- --逐胜之巅
     -- Util.AddClick(this.zhuShengBtn,function ()
-    --     UIManager.OpenPanel(UIName.ArenaTopMatchPanel)
+    --     UIManager.OpenPanelWithSound(UIName.ArenaTopMatchPanel)
     -- end)
     -- --秘盒
     -- this:AddButtonEventTriggerListener(this.btnSecretBox, function()
     --     this.FunctionClickEvent(FUNCTION_OPEN_TYPE.SECRETBOX, function ()
-    --         UIManager.OpenPanel(UIName.SecretBoxPanel)
+    --         UIManager.OpenPanelWithSound(UIName.SecretBoxPanel)
     --     end)
     --     this.ScenceBtnClick(FUNCTION_OPEN_TYPE.SECRETBOX)
     -- end)
@@ -451,7 +451,7 @@ function this:BindEvent()
     -- -- 场景中的外敌
     -- this:AddButtonEventTriggerListener(this.btnWaiDi, function ()
     --     this.FunctionClickEvent(FUNCTION_OPEN_TYPE.FIGHT_ALIEN, function ()
-    --         UIManager.OpenPanel(UIName.AlienMainPanel)
+    --         UIManager.OpenPanelWithSound(UIName.AlienMainPanel)
     --     end)
 
     --     this.ScenceBtnClick(FUNCTION_OPEN_TYPE.FIGHT_ALIEN)
@@ -459,7 +459,7 @@ function this:BindEvent()
     -- -- 异妖
     -- this:AddButtonEventTriggerListener(this.btnYiYao, function ()
     --     this.FunctionClickEvent(FUNCTION_OPEN_TYPE.DIFFER_DEMONS, function ()
-    --         UIManager.OpenPanel(UIName.DiffMonsterPanel)
+    --         UIManager.OpenPanelWithSound(UIName.DiffMonsterPanel)
     --     end)
 
     --     this.ScenceBtnClick(FUNCTION_OPEN_TYPE.DIFFER_DEMONS)
@@ -594,7 +594,7 @@ function this:OnShow()
 
     -- if AdventureManager.drop ~= nil and AdventureManager.offlineTime ~= 0 then
     --     if AdventureManager.isFirstEnterGetReward and #AdventureManager.drop.itemlist > 0 then
-    --         UIManager.OpenPanel(UIName.AdventureProgressPopup)
+    --         UIManager.OpenPanelWithSound(UIName.AdventureProgressPopup)
     --         AdventureManager.isFirstEnterGetReward = false
     --     end
     -- end
@@ -609,7 +609,7 @@ function this:OnShow()
             local isEject = PlayerPrefs.GetInt(PlayerManager.uid .. "FirstRechargePanelisEject") == 0
             if isEject then
                 PlayerPrefs.SetInt(PlayerManager.uid .. "FirstRechargePanelisEject", 1)
-                UIManager.OpenPanel(UIName.FirstRechargePanel)
+                UIManager.OpenPanelWithSound(UIName.FirstRechargePanel)
             end
         end
     end
@@ -622,7 +622,7 @@ function this:OnShow()
             FirstRechargeManager.PlayerPrefsSetStrItemId(1)
             --发送埋点数据
             patBool = false
-            UIManager.OpenPanel(UIName.FirstRechargePanel,nil,function()
+            UIManager.OpenPanelWithSound(UIName.FirstRechargePanel,nil,function()
             end)
         end
     end
@@ -945,116 +945,116 @@ end
 function this:TabBtnAction(id, actType, data)
     if actType == 1 then
         if id == ActivityTypeDef.FirstRecharge then
-            UIManager.OpenPanel(UIName.FirstRechargePanel)
+            UIManager.OpenPanelWithSound(UIName.FirstRechargePanel)
         elseif id == ActivityTypeDef.SevenDayCarnival then
-            UIManager.OpenPanel(UIName.SevenDayCarnivalPanelV2,SevenDayCarnivalManager.GetPriorityDayNumber())
+            UIManager.OpenPanelWithSound(UIName.SevenDayCarnivalPanelV2,SevenDayCarnivalManager.GetPriorityDayNumber())
         elseif id == ActivityTypeDef.WarPowerSort then
-            UIManager.OpenPanel(UIName.WarPowerSortPanel)
+            UIManager.OpenPanelWithSound(UIName.WarPowerSortPanel)
         elseif id == ActivityTypeDef.DailyRecharge or id == ActivityTypeDef.DailyRecharge_2 then
-            UIManager.OpenPanel(UIName.DailyRechargePanel)
+            UIManager.OpenPanelWithSound(UIName.DailyRechargePanel)
         elseif id == ActivityTypeDef.Pray then
-            UIManager.OpenPanel(UIName.PrayMainPanel)
+            UIManager.OpenPanelWithSound(UIName.PrayMainPanel)
         elseif id == ActivityTypeDef.DemonSlayer then
-            UIManager.OpenPanel(UIName.DemonSlayerPanel)
+            UIManager.OpenPanelWithSound(UIName.DemonSlayerPanel)
         elseif id == ActivityTypeDef.TreasureOfSomeBody then
-            UIManager.OpenPanel(UIName.GrowthManualPanel,2,1)
+            UIManager.OpenPanelWithSound(UIName.GrowthManualPanel,2,1)
         elseif id == ActivityTypeDef.TreasureStore then
             ActivityGiftManager.SetRedState(1)
             CheckRedPointStatus(RedPointType.MunitionsMerchant)
-            UIManager.OpenPanel(UIName.TreasureStorePopup, ActivityTypeDef.TreasureStore)
+            UIManager.OpenPanelWithSound(UIName.TreasureStorePopup, ActivityTypeDef.TreasureStore)
         elseif id == ActivityTypeDef.DynamicAct then
             local dynamicAct = ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.DynamicAct)
             local curindex = 1
             if dynamicAct then
                 curindex = GlobalActConfig[dynamicAct].ShowArt
             end
-            UIManager.OpenPanel(UIName.DynamicActivityPanel,curindex)
+            UIManager.OpenPanelWithSound(UIName.DynamicActivityPanel,curindex)
         elseif id == ActivityTypeDef.SupremeHero then
-            UIManager.OpenPanel(UIName.SupremeHeroPopup)
+            UIManager.OpenPanelWithSound(UIName.SupremeHeroPopup)
         elseif id == ActivityTypeDef.NiuZhuan then
-            UIManager.OpenPanel(UIName.NiuZhuanQianKunPanel)
+            UIManager.OpenPanelWithSound(UIName.NiuZhuanQianKunPanel)
         elseif id == ActivityTypeDef.NiuQi then            
-            UIManager.OpenPanel(UIName.NiuQiChongTianPanel,data)
+            UIManager.OpenPanelWithSound(UIName.NiuQiChongTianPanel,data)
         elseif id == ActivityTypeDef.FuXingGaoZhao then
-            UIManager.OpenPanel(UIName.FuXingGaoZhaoPanel)
+            UIManager.OpenPanelWithSound(UIName.FuXingGaoZhaoPanel)
         elseif id == ActivityTypeDef.EightDayGift then
-            UIManager.OpenPanel(UIName.EightDayGiftPanel)
+            UIManager.OpenPanelWithSound(UIName.EightDayGiftPanel)
         elseif id == 78 then
             local tabIndex = 7
             if ActivityGiftManager.IsQualifiled(ActivityTypeDef.LifeMemebr) and not not ActivityGiftManager.GetActivityTypeInfo(ActivityTypeDef.LifeMemebr) then
                 tabIndex = 12
             end
-            UIManager.OpenPanel(UIName.OperatingPanel,{tabIndex = tabIndex, extraParam = 2, showType = 2})
+            UIManager.OpenPanelWithSound(UIName.OperatingPanel,{tabIndex = tabIndex, extraParam = 2, showType = 2})
         elseif id == ActivityTypeDef.AdjutantCurrent then
-            UIManager.OpenPanel(UIName.AdjutantActivityPanel)
+            UIManager.OpenPanelWithSound(UIName.AdjutantActivityPanel)
         elseif id == ActivityTypeDef.SignInDays then
-            UIManager.OpenPanel(UIName.SignInDays)
+            UIManager.OpenPanelWithSound(UIName.SignInDays)
         elseif id == ActivityTypeDef.FestivalActivity then
-            UIManager.OpenPanel(UIName.FestivalActivityPanel)
+            UIManager.OpenPanelWithSound(UIName.FestivalActivityPanel)
         elseif id == ActivityTypeDef.ArtilleryDrills then
-            UIManager.OpenPanel(UIName.ArtilleryDrillsPanel)
+            UIManager.OpenPanelWithSound(UIName.ArtilleryDrillsPanel)
         elseif id == 50000 then
-            UIManager.OpenPanel(UIName.CardActivityPanel)
+            UIManager.OpenPanelWithSound(UIName.CardActivityPanel)
         elseif id == FUNCTION_OPEN_TYPE.Questionnaire then
             local url = ConfigManager.GetConfigDataByKey(ConfigName.SpecialConfig, "Key", "Hanbok_Questionnaire_URL").Value
             UnityEngine.Application.OpenURL(url)
         elseif id == FUNCTION_OPEN_TYPE.OpenServiceGift then
-            UIManager.OpenPanel(UIName.OpenServiceGiftPanel)
+            UIManager.OpenPanelWithSound(UIName.OpenServiceGiftPanel)
         elseif id == 6001 then
-            UIManager.OpenPanel(UIName.TreasureStorePopup, ActivityTypeDef.OpenServiceShop)
+            UIManager.OpenPanelWithSound(UIName.TreasureStorePopup, ActivityTypeDef.OpenServiceShop)
         end
     elseif actType == 2 then
         if id == FUNCTION_OPEN_TYPE.SERVER_START_GIFT then
-            UIManager.OpenPanel(UIName.CourtesyDressPanel)
+            UIManager.OpenPanelWithSound(UIName.CourtesyDressPanel)
         elseif id == JumpType.recharge then 
-            UIManager.OpenPanel(UIName.MainRechargePanel)
+            UIManager.OpenPanelWithSound(UIName.MainRechargePanel)
         elseif id == JumpType.ChaosZz then 
             --混乱之治
                 NetManager.CampSimpleInfoGetReq(function (msg)
                     if msg.camp~=0 then
                         NetManager.CampWarInfoGetReq(function (msg)
-                            UIManager.OpenPanel(UIName.ChaosMainPanel,msg)
+                            UIManager.OpenPanelWithSound(UIName.ChaosMainPanel,msg)
                         end)
                     else
-                        UIManager.OpenPanel(UIName.ChaosSelectCampPanel,msg)
+                        UIManager.OpenPanelWithSound(UIName.ChaosSelectCampPanel,msg)
                     end
                 end)
         elseif id == FUNCTION_OPEN_TYPE.EXPERT then
-            UIManager.OpenPanel(UIName.ExpertPanel)
+            UIManager.OpenPanelWithSound(UIName.ExpertPanel)
         elseif id == JumpType.Welfare then
-            UIManager.OpenPanel(UIName.OperatingPanel)
+            UIManager.OpenPanelWithSound(UIName.OperatingPanel)
         elseif id == FUNCTION_OPEN_TYPE.LUCKYTURN then
-            UIManager.OpenPanel(UIName.LuckyTurnTablePanel)
+            UIManager.OpenPanelWithSound(UIName.LuckyTurnTablePanel)
         elseif id == FUNCTION_OPEN_TYPE.Achiecement then
-            UIManager.OpenPanel(UIName.AchievementPanel)
+            UIManager.OpenPanelWithSound(UIName.AchievementPanel)
         elseif id == FUNCTION_OPEN_TYPE.GUILD_BATTLE then
             JumpManager.GoJump(75001)
         elseif id == FUNCTION_OPEN_TYPE.ARENA then
-            UIManager.OpenPanel(UIName.ArenaTopMatchPanel)
+            UIManager.OpenPanelWithSound(UIName.ArenaTopMatchPanel)
         elseif id == 105 then
-            UIManager.OpenPanel(UIName.UpGradePackagePanel)
+            UIManager.OpenPanelWithSound(UIName.UpGradePackagePanel)
         elseif id == 94 then
             local tabIndex = 7
             if ActivityGiftManager.IsQualifiled(ActivityTypeDef.LifeMemebr) and not not ActivityGiftManager.GetActivityTypeInfo(ActivityTypeDef.LifeMemebr) then
                 tabIndex = 12
             end
-            UIManager.OpenPanel(UIName.OperatingPanel,{tabIndex = tabIndex, extraParam = 2, showType = 2})
+            UIManager.OpenPanelWithSound(UIName.OperatingPanel,{tabIndex = tabIndex, extraParam = 2, showType = 2})
         elseif id == 95 then
-            UIManager.OpenPanel(UIName.TimeLimitSkinPanel)
+            UIManager.OpenPanelWithSound(UIName.TimeLimitSkinPanel)
         elseif id == FUNCTION_OPEN_TYPE.ValuePack then
-            UIManager.OpenPanel(UIName.ValuePackPanel)
+            UIManager.OpenPanelWithSound(UIName.ValuePackPanel)
         elseif id == JumpType.MinskBattle then
             JumpManager.GoJump(76001)
         elseif id == JumpType.TopMatch then
             JumpManager.GoJump(57001)
         elseif id == FUNCTION_OPEN_TYPE.ThousandDraw then
-            UIManager.OpenPanel(UIName.ThousandDrawPanel)
+            UIManager.OpenPanelWithSound(UIName.ThousandDrawPanel)
         elseif id == FUNCTION_OPEN_TYPE.laddersChallenge then
             NetManager.RequestArenaRankData(1, function()
-                UIManager.OpenPanel(UIName.LaddersMainPanel)
+                UIManager.OpenPanelWithSound(UIName.LaddersMainPanel)
             end)
         elseif id == FUNCTION_OPEN_TYPE.PVEActivity then
-            UIManager.OpenPanel(UIName.PVEActivityPanel)
+            UIManager.OpenPanelWithSound(UIName.PVEActivityPanel)
         end
     else
     end
@@ -1505,7 +1505,7 @@ function this.RefreshActivityShow()
                                     local isEject = PlayerPrefs.GetInt(PlayerManager.uid .. "SupremeHeroPopupisEject") == 0
                                     if isEject then
                                         PlayerPrefs.SetInt(PlayerManager.uid .. "SupremeHeroPopupisEject", 1)
-                                        UIManager.OpenPanel(UIName.SupremeHeroPopup)
+                                        UIManager.OpenPanelWithSound(UIName.SupremeHeroPopup)
                                     end
                                 end
                             else

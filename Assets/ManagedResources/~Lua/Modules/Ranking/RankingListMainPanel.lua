@@ -245,6 +245,7 @@ function RankingListMainPanel:OnClose()
     end
     this.playerHeroListGo ={}
     this.playerHeroListHead ={}
+    PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 --界面销毁时调用（用于子类重写）

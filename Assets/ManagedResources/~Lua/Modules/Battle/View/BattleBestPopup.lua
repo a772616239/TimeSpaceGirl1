@@ -105,7 +105,11 @@ function this:OnClose()
         --     PassTimes1 = 0
         -- end
     elseif PlayerManager.level < lowPlayerLv20 then
-        if PassTimes1 % Limit20PerLv == 0 and ShowReviewPTimes <= 1 then
+        if 
+        -- PassTimes1 % Limit20PerLv == 0 and
+        PassTimes1>1 and 
+        ShowReviewPTimes <= 1 
+        then
             -- 每四次弹出一次评价
             ReviewMgr:AllInOneFlowClick()
             ShowReviewPTimes = ShowReviewPTimes + 1

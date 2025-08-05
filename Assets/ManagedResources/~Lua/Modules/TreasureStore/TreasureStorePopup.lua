@@ -58,6 +58,7 @@ function TreasureStorePopup:OnClose()
         this.timer = nil
     end
     CheckRedPointStatus(RedPointType.OpenServiceShop)
+    PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 function TreasureStorePopup:OnDestroy()

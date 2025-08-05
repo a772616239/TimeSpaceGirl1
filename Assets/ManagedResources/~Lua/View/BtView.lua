@@ -58,6 +58,7 @@ end
 function this:OPenMainCity()
     if not UIManager.IsOpen(UIName.MainPanel) then
         UIManager.OpenPanel(UIName.MainPanel)
+        PlaySoundWithoutClick(SoundConfig.Sound_n1_ui_sound_battle_click)
     end
 end
 --打开英雄列表界面
@@ -67,6 +68,7 @@ function this:OpenChengYuan()
         HeroManager.heroListPanelProID = 0
         -- RoleListPanelUI = UIManager.OpenPanel(UIName.RoleListPanel)
         RoleListPanelUI = UIManager.OpenPanel(UIName.HeroMainPanel,1)
+         PlaySoundWithoutClick(SoundConfig.Sound_n1_ui_sound_open_book)
     end
 end
 --打开仓库界面
@@ -77,17 +79,20 @@ function this:OpenCangKu()
     -- end
     if not UIManager.IsOpen(UIName.BagPanel) or (bagPanelUI and bagPanelUI.isFristOpen == false) then
         bagPanelUI =  UIManager.OpenPanel(UIName.BagPanel)
+         PlaySoundWithoutClick(SoundConfig.Sound_UI_Bag)
     end
 end
 
 -- 挂机界面
 function this:OpenJieling()
     UIManager.OpenPanel(UIName.FightPointPassMainPanel)
+    PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_04)
 end
 -- 打开副本选择界面
 function this:OpenCarbon()
     PlayerManager.carbonType = 1
     UIManager.OpenPanel(UIName.CarbonTypePanelV2)
+     PlaySoundWithoutClick(SoundConfig.Sound_n1_ui_sound_battle_click)
 end
 function this:OpenGuild()
     JumpManager.GoJump(4001)
@@ -98,6 +103,7 @@ end
 --> 后勤
 function this:OpenLogistics()
     UIManager.OpenPanel(UIName.LogisticsMainPanel)
+    PlaySoundWithoutClick(SoundConfig.Sound_n1_ui_sound_battle_click)
 end
 
 --绑定事件（用于子类重写）

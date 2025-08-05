@@ -272,6 +272,7 @@ function FirstRechargePanel:OnClose()
         Util.ClearChild(this.oneLihui.transform)
         this.Onelive = nil
     end
+    PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 return FirstRechargePanel

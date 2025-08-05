@@ -1776,7 +1776,6 @@ MonoBehaviour:
   - lz4/audio/ui/common/ui_021
   - lz4/audio/ui/common/ui_022
   - lz4/audio/ui/common/ui_023
-  - lz4/audio/ui/common/ui_033
   - lz4/audio/ui/common/ui_battle_01
   - lz4/audio/ui/common/ui_battle_02
   - lz4/audio/ui/common/ui_battle_03
@@ -1799,6 +1798,7 @@ MonoBehaviour:
   - lz4/audio/ui/common/ui_takeoff_01
   - lz4/audio/ui/common/ui_upgrade_01
   - lz4/audio/ui/common/ui_wear_01
+  - lz4/audio/ui/common/ui_033
   - lz4/audio/ui/other/ui_024
   - lz4/audio/ui/other/ui_025
   - lz4/audio/ui/other/ui_026
@@ -17698,6 +17698,30 @@ MonoBehaviour:
     extension: .wav
     resPathIndex: 309
     resAbNameIndex: 894
+  - resName: INTERFACE_Button_ClickTab
+    extension: .wav
+    resPathIndex: 310
+    resAbNameIndex: 894
+  - resName: INTERFACE_Button_Clickdialogue
+    extension: .wav
+    resPathIndex: 310
+    resAbNameIndex: 894
+  - resName: INTERFACE_Button_Closecommon
+    extension: .wav
+    resPathIndex: 310
+    resAbNameIndex: 894
+  - resName: INTERFACE_Skill_Clickskill
+    extension: .wav
+    resPathIndex: 310
+    resAbNameIndex: 894
+  - resName: Other_money
+    extension: .mp3
+    resPathIndex: 310
+    resAbNameIndex: 894
+  - resName: StartBattle
+    extension: .wav
+    resPathIndex: 310
+    resAbNameIndex: 894
   - resName: UI_020
     extension: .mp3
     resPathIndex: 310
@@ -17714,96 +17738,128 @@ MonoBehaviour:
     extension: .mp3
     resPathIndex: 310
     resAbNameIndex: 898
-  - resName: UI_033
-    extension: .mp3
+  - resName: UI_Bag
+    extension: .wav
     resPathIndex: 310
-    resAbNameIndex: 899
+    resAbNameIndex: 898
   - resName: UI_Battle_01
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 900
+    resAbNameIndex: 899
   - resName: UI_Battle_02
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 901
+    resAbNameIndex: 900
   - resName: UI_Battle_03
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 902
+    resAbNameIndex: 901
   - resName: UI_Battle_04
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 903
+    resAbNameIndex: 902
   - resName: UI_Breach_01
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 904
+    resAbNameIndex: 903
   - resName: UI_Cancel
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 905
+    resAbNameIndex: 904
   - resName: UI_Casting_01
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 906
+    resAbNameIndex: 905
   - resName: UI_Casting_02
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 907
+    resAbNameIndex: 906
   - resName: UI_CommonClick
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 908
+    resAbNameIndex: 907
   - resName: UI_Dispelling
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 909
+    resAbNameIndex: 908
   - resName: UI_Dispelling_01
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 910
+    resAbNameIndex: 909
   - resName: UI_Dispelling_02
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 911
+    resAbNameIndex: 910
   - resName: UI_Door_01
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 912
+    resAbNameIndex: 911
   - resName: UI_Injection_01
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 913
+    resAbNameIndex: 912
   - resName: UI_Recruit_01
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 914
+    resAbNameIndex: 913
   - resName: UI_Recruit_02
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 915
+    resAbNameIndex: 914
   - resName: UI_Recruit_03
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 916
+    resAbNameIndex: 915
   - resName: UI_Reward
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 917
+    resAbNameIndex: 916
   - resName: UI_Sublimation_01
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 918
+    resAbNameIndex: 917
   - resName: UI_TakeOff_01
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 919
+    resAbNameIndex: 918
   - resName: UI_Upgrade_01
     extension: .mp3
     resPathIndex: 310
-    resAbNameIndex: 920
+    resAbNameIndex: 919
   - resName: UI_Wear_01
     extension: .mp3
+    resPathIndex: 310
+    resAbNameIndex: 920
+  - resName: UI_zhiyuan
+    extension: .mp3
+    resPathIndex: 310
+    resAbNameIndex: 921
+  - resName: Ui_QiangHuaYes
+    extension: .mp3
+    resPathIndex: 310
+    resAbNameIndex: 921
+  - resName: Ui_XiTongKaiQi
+    extension: .mp3
+    resPathIndex: 310
+    resAbNameIndex: 921
+  - resName: ui_022
+    extension: .wav
+    resPathIndex: 310
+    resAbNameIndex: 921
+  - resName: ui_024
+    extension: .wav
+    resPathIndex: 310
+    resAbNameIndex: 921
+  - resName: ui_028
+    extension: .wav
+    resPathIndex: 310
+    resAbNameIndex: 921
+  - resName: ui_029
+    extension: .wav
+    resPathIndex: 310
+    resAbNameIndex: 921
+  - resName: ui_030
+    extension: .wav
     resPathIndex: 310
     resAbNameIndex: 921
   - resName: UI_024
@@ -41836,8 +41892,6 @@ MonoBehaviour:
     dependences: []
   - assetBundleName: lz4/audio/ui/common/ui_023.unity3d
     dependences: []
-  - assetBundleName: lz4/audio/ui/common/ui_033.unity3d
-    dependences: []
   - assetBundleName: lz4/audio/ui/common/ui_battle_01.unity3d
     dependences: []
   - assetBundleName: lz4/audio/ui/common/ui_battle_02.unity3d
@@ -41881,6 +41935,8 @@ MonoBehaviour:
   - assetBundleName: lz4/audio/ui/common/ui_upgrade_01.unity3d
     dependences: []
   - assetBundleName: lz4/audio/ui/common/ui_wear_01.unity3d
+    dependences: []
+  - assetBundleName: lz4/audio/ui/common/ui_033.unity3d
     dependences: []
   - assetBundleName: lz4/audio/ui/other/ui_024.unity3d
     dependences: []

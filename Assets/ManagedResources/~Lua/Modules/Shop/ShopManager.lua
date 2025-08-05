@@ -205,6 +205,7 @@ function this.RequestBuyShopItem(shopType, shopItemId, num, func)
         -- 消耗物品 改为后端刷新了
         -- 完成回调
         if func then func() end
+        PlaySoundWithoutClick(SoundConfig.Sound_Other_money)
 
         -- 如果是购买金币，刷新一下红点显示
         if shopItemId == 10005 then
@@ -213,7 +214,8 @@ function this.RequestBuyShopItem(shopType, shopItemId, num, func)
         -- 检测商店红点
         this.CheckShopRedpot(shopType)
         this.SortItemList(shopType)
-
+        
+        -- this.SaveRedpotDataToLocal(shopType, shopItemId, num)
         -- 更新事件
         Game.GlobalEvent:DispatchEvent(GameEvent.Shop.OnShopInfoChange)
         Game.GlobalEvent:DispatchEvent(GameEvent.Bag.BagGold)

@@ -100,7 +100,7 @@ function FightPointPassMainPanel:BindEvent()
     -- 日常任务
     Util.AddClick(this.btnDailyMission, function ()
         FightPointPassManager.isBeginFight = true
-        UIManager.OpenPanel(UIName.MissionDailyPanel)
+        UIManager.OpenPanelWithSound(UIName.MissionDailyPanel)
     end)
 
     -- 关卡排行
@@ -108,12 +108,12 @@ function FightPointPassMainPanel:BindEvent()
         --PopupTipPanel.ShowTip("关卡排行！")
         FightPointPassManager.isBeginFight = true
         --UIManager.OpenPanel(UIName.FightPointPassRankPopup)
-        UIManager.OpenPanel(UIName.RankingSingleListPanel,RankKingList[1])
+        UIManager.OpenPanelWithSound(UIName.RankingSingleListPanel,RankKingList[1])
     end)
 
     -- 挂机奖励
     Util.AddClick(this.btnrewardDetail, function ()
-        UIManager.OpenPanel(UIName.FightAreaRewardPopup)
+        UIManager.OpenPanelWithSound(UIName.FightAreaRewardPopup)
     end)
 
     Util.AddClick(this.btnFight, function ()

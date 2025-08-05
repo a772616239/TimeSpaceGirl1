@@ -49,6 +49,8 @@ SoundConfig = {
 
     Sound_FootStep = "Footsteps_Run_0", --1-7随机播放
     Sound_Click_Iron = "Ui_QiangHuaYes",
+    Sound_INTERFACE_Button_Entergame = "INTERFACE_Button_Entergame",
+    Sound_Other_money = "INTERFACE_Other_money",
 
     Sound_UICancel = "n1_ui_sound_refresh_click",
     Sound_UI_place_army="ui_place_army",

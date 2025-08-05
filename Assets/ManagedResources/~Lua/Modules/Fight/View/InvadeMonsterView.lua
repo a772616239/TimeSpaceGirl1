@@ -87,7 +87,7 @@ function InvadeMonsterView:BindEvent()
     end)
     -- 通关奖励
     Util.AddClick(this.btnRewardChapter, function()
-        UIManager.OpenPanel(UIName.CourtesyDressPanel, ActivityTypeDef.ChapterAward, true)
+        UIManager.OpenPanelWithSound(UIName.CourtesyDressPanel, ActivityTypeDef.ChapterAward, true)
     end)
 
     BindRedPointObject(RedPointType.QuickTrain,this.expeditionRedPoint)

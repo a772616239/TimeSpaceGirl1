@@ -147,6 +147,10 @@ function this.TabAdapter(tab, index, status)
     local img = Util.GetGameObject(tab, "bg")
     local select = Util.GetGameObject(tab, "select")
     local default = Util.GetGameObject(tab, "default")
+    if IsNull(img) or IsNull(select) or IsNull(default) then
+        LogError("ArenaTopMatchPanel TabAdapter error, img or select or default is null")
+        return
+    end
     img:GetComponent("Image").sprite = Util.LoadSprite(_TabImgData[status])
     default:GetComponent("Text").text = _TabData[index].txt
     select:GetComponent("Text").text = _TabData[index].txt

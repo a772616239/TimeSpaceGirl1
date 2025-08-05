@@ -83,6 +83,8 @@ end
 
 --界面打开时调用（用于子类重写）
 function BlitzStrikePanel:OnOpen()
+    PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Entergame)
+
 end
 
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）
@@ -101,6 +103,7 @@ function BlitzStrikePanel:OnShow()
         end)
         this.UpdateMain()
     end
+
 end
 
 local boxSprite = {

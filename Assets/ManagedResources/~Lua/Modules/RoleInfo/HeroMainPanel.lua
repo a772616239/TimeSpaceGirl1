@@ -82,10 +82,10 @@ function HeroMainPanel:BindEvent()
         end
     end)
     Util.AddClick(this.recommendBtn,function ()
-        UIManager.OpenPanel(UIName.LineupRecommend)
+        UIManager.OpenPanelWithSound(UIName.LineupRecommend)
     end)
     Util.AddClick(this.recommendBtn2,function ()
-        UIManager.OpenPanel(UIName.LineupRecommend)
+        UIManager.OpenPanelWithSound(UIName.LineupRecommend)
     end)
 
     --子模块

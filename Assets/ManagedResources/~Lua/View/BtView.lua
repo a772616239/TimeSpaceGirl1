@@ -68,7 +68,7 @@ function this:OpenChengYuan()
         HeroManager.heroListPanelProID = 0
         -- RoleListPanelUI = UIManager.OpenPanel(UIName.RoleListPanel)
         RoleListPanelUI = UIManager.OpenPanel(UIName.HeroMainPanel,1)
-         PlaySoundWithoutClick(SoundConfig.Sound_n1_ui_sound_open_book)
+         PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Window_OpenMap)
     end
 end
 --打开仓库界面

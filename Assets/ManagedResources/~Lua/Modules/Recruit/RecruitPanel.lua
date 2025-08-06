@@ -156,7 +156,7 @@ function RecruitPanel:BindEvent()
     --推荐阵容
     Util.AddClick(this.recommendBtn, function ()
         -- UIManager.OpenPanel(UIName.GiveMePowerPanel)
-        UIManager.OpenPanel(UIName.LineupRecommend)
+        UIManager.OpenPanelWithSound(UIName.LineupRecommend)
      end)
     --跳过动画
      Util.AddClick(this.btnJump, function ()

@@ -21,6 +21,7 @@ SoundConfig = {
     Sound_INTERFACE_Button_Clickdialogue="INTERFACE_Button_Clickdialogue",
     BGM_Story_1 = "x1_bgm_prewar",
     Sound_n1_ui_sound_open_book = "n1_ui_sound_open_book", --打开书本音效
+    Sound_INTERFACE_Window_OpenMap="INTERFACE_Window_OpenMap",
     Sound_n1_ui_sound_battle_click = "n1_ui_sound_battle_click", --战斗界面点击音效
     Sound_n1_x1_tab = "n1_tab", --战斗界面点击音效
 

@@ -13,7 +13,7 @@ function Game.Initialize()
     Screen.sleepTimeout = U3d.SleepTimeout.NeverSleep
     this.GlobalEvent = EventManager.New()
     this.InitManagers()
-    UIManager.OpenPanel(UIName.LoginPanel)
+    UIManager.OpenPanelWithNoSound(UIName.LoginPanel)
 end
 
 --初始化管理器

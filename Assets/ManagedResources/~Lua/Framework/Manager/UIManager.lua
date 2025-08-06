@@ -90,7 +90,7 @@ function UIManager.InitCommonPanels()
     require("Modules/Popup/CostConfirmPopup")
     require("Modules/Message/HorseRaceLampView")
     require("Modules/Message/MissionDailyTipPanel")
-    UIManager.OpenPanel(UIName.HorseRaceLampView)
+    UIManager.OpenPanelWithNoSound(UIName.HorseRaceLampView)
 end
 
 function UIManager.Adapter()
@@ -289,6 +289,23 @@ function UIManager.OpenPanel(id, ...)
         -- if id == UIName.RewardEquipSingleShowPopup then return end
     end
     local startTime = System.DateTime.Now
+    local panel = UIManager.GetPanel(id, true, function ()
+        
+        -- PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Clickdialogue)
+
+    end, ...)
+    -- PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Clickdialogue)
+    local useTime = (System.DateTime.Now - startTime).TotalSeconds
+    UIManager.AddUseTime(id, useTime)
+    return panel
+end
+
+function UIManager.OpenPanelWithNoSound(id, ...)
+    if this.shieldSwitch then
+        -- if id == UIName.RewardItemSingleShowPopup then return end
+        -- if id == UIName.RewardEquipSingleShowPopup then return end
+    end
+    local startTime = System.DateTime.Now
     local panel = UIManager.GetPanel(id, true, nil, ...)
     local useTime = (System.DateTime.Now - startTime).TotalSeconds
     UIManager.AddUseTime(id, useTime)
@@ -301,10 +318,11 @@ function UIManager.OpenPanelWithSound(id, ...)
         -- if id == UIName.RewardEquipSingleShowPopup then return end
     end
     local startTime = System.DateTime.Now
-    local panel = UIManager.GetPanel(id, true, nil, ...)
+    -- PlaySoundWithoutClick()
+    local panel = UIManager.GetPanelWithSound(id, true, nil, true,...)
     local useTime = (System.DateTime.Now - startTime).TotalSeconds
     UIManager.AddUseTime(id, useTime)
-    PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Clickdialogue)
+    
     return panel
 end
 
@@ -314,6 +332,7 @@ function UIManager.OpenPanelAsync(id, func, ...)
     local finishAction = function (panel)
         local useTime = (System.DateTime.Now - startTime).TotalSeconds
         UIManager.AddUseTime(id, useTime)
+        -- PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Clickdialogue)
 
         if func then
             func(panel)
@@ -358,8 +377,7 @@ local SetSortingOrder = function(uiConfig, panel, isStackPanel, ...)
     panel.openNum = panel.openNum + 1
     delayDestoryList[panel.uiConfig.id] = nil
 end
-
-function UIManager.GetPanel(id, isSync, func, ...)
+function UIManager.GetPanelWithSound(id, isSync, func,isWithPopSound ,...)
     local uiConfig = UIConfig[id]
     if not id then
         LogError("UIManager====>没有id:")
@@ -379,6 +397,18 @@ function UIManager.GetPanel(id, isSync, func, ...)
             --如果找到了，从桟中移除
             table.remove(list, i)
             break
+        end
+    end
+    if uiConfig.type == UIType.Popup then
+        PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Clickdialogue)
+    end
+    
+    if isWithPopSound then
+        Log("UIManager====>assetName:"..uiConfig.assetName)
+        if uiConfig.type == UIType.FullType and uiConfig.assetName ~=UIName.RewardItemPopup and uiConfig.assetName ~=UIName.WorkShopCastSuccessPanel and uiConfig.assetName ~=UIName.WorkShopMadeSuccessPanel then
+            Log("")
+
+            PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Skill_Clickskill)
         end
     end
 
@@ -409,6 +439,7 @@ function UIManager.GetPanel(id, isSync, func, ...)
                         --> MultiLanguage
                         this.MultiLanguageCheck(panel.gameObject)
                     end
+                    
                 end)
             end
         end
@@ -424,6 +455,103 @@ function UIManager.GetPanel(id, isSync, func, ...)
                 SetSortingOrder(uiConfig, panel, isStackPanel,unpack(args, 1, table.maxn(args)))
             end
         end
+        
+    end
+    
+    if isStackPanel and uiConfig.type == UIType.FullType then --如果栈界面有需要播放关闭动画的界面，则新打开的界面需要等到关闭动画播放完成以后
+        local closeNum = 0
+        local closeTotal = 0
+        for i = 1, #this.stackList do
+            if this.stackList[i].isOpened and this.stackList[i].OnCloseBefore then
+                closeTotal = closeTotal + 1
+                this.stackList[i]:OnCloseBefore(function()
+                    closeNum = closeNum + 1
+                    if closeNum == closeTotal then
+                        this.eventSystem:SetActive(true)
+                        return action(panel)
+                    end
+                end)
+            end
+        end
+        if closeTotal == 0 then
+            return action(panel)
+        else
+            this.eventSystem:SetActive(false)
+        end
+    else
+        return action(panel)
+    end
+end
+function UIManager.GetPanel(id, isSync, func, ...)
+    local uiConfig = UIConfig[id]
+    if not id then
+        LogError("UIManager====>没有id:")
+        return
+    end
+
+    if uiConfig == nil then
+        LogError("UIManager====>没有找到UI的配置信息:"..id)
+        return
+    end
+    local panel
+    local isStackPanel = uiConfig.type == UIType.FullType or uiConfig.type == UIType.Popup
+    local list = isStackPanel and this.stackList or this.fixedList
+    for i = 1, #list do
+        if list[i].uiConfig.id == uiConfig.id then
+            panel = list[i]
+            --如果找到了，从桟中移除
+            table.remove(list, i)
+            break
+        end
+    end
+    if uiConfig.type == UIType.Popup then
+        PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Clickdialogue)
+    end
+
+    local args = {...}
+    local action = function(panel)
+        local needTrans = false
+        if not panel then --在缓存里面找一找
+            panel = this.openedList[uiConfig.id]
+        end
+        if not panel then
+            panel = reimport("Modules/"..uiConfig.script)
+            this.openedList[uiConfig.id] = panel
+            needTrans = true
+            panel.uiConfig = uiConfig
+            if isSync then
+                local gameObject = this.CreatePanel(uiConfig, isStackPanel and this.uiNode or this.fixedNode)
+                panel:CreateUI(gameObject)
+                --> MultiLanguage
+                --this.MultiLanguageCheck(gameObject)
+            else
+                this.CreatePanelAsync(uiConfig, isStackPanel and this.uiNode or this.fixedNode, function (gameObject)
+                    panel:CreateUI(gameObject)
+                    --> MultiLanguage
+                    --this.MultiLanguageCheck(gameObject)
+                    SetSortingOrder(uiConfig, panel, isStackPanel,unpack(args, 1, table.maxn(args)))
+                    if func then
+                        func(panel)
+                        --> MultiLanguage
+                        this.MultiLanguageCheck(panel.gameObject)
+                    end
+                    
+                end)
+            end
+        end
+        if isSync then
+            SetSortingOrder(uiConfig, panel, isStackPanel,unpack(args, 1, table.maxn(args)))
+            if needTrans then
+                --> MultiLanguage
+                this.MultiLanguageCheck(panel.gameObject)
+            end
+            return panel
+        else
+            if panel.gameObject then
+                SetSortingOrder(uiConfig, panel, isStackPanel,unpack(args, 1, table.maxn(args)))
+            end
+        end
+        
     end
     
     if isStackPanel and uiConfig.type == UIType.FullType then --如果栈界面有需要播放关闭动画的界面，则新打开的界面需要等到关闭动画播放完成以后

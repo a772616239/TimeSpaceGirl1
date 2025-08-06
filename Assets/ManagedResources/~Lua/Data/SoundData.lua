@@ -22,7 +22,9 @@ SoundConfig = {
     BGM_Story_1 = "x1_bgm_prewar",
     Sound_n1_ui_sound_open_book = "n1_ui_sound_open_book", --打开书本音效
     Sound_n1_ui_sound_battle_click = "n1_ui_sound_battle_click", --战斗界面点击音效
+    Sound_n1_x1_tab = "n1_tab", --战斗界面点击音效
 
+    Sound_INTERFACE_Skill_Clickskill="INTERFACE_Skill_Clickskill",
     Sound_UI_Bag = "UI_Bag", --战斗界面点击音效
 
     Sound_BattleStart_01 = "n1_ui_tank_open_wnd", --打开布阵界面

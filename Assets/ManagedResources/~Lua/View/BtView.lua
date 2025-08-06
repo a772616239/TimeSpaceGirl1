@@ -58,7 +58,7 @@ end
 function this:OPenMainCity()
     if not UIManager.IsOpen(UIName.MainPanel) then
         UIManager.OpenPanel(UIName.MainPanel)
-        PlaySoundWithoutClick(SoundConfig.Sound_n1_ui_sound_battle_click)
+        PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_01)
     end
 end
 --打开英雄列表界面
@@ -92,7 +92,7 @@ end
 function this:OpenCarbon()
     PlayerManager.carbonType = 1
     UIManager.OpenPanel(UIName.CarbonTypePanelV2)
-     PlaySoundWithoutClick(SoundConfig.Sound_n1_ui_sound_battle_click)
+     PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_01)
 end
 function this:OpenGuild()
     JumpManager.GoJump(4001)
@@ -103,7 +103,7 @@ end
 --> 后勤
 function this:OpenLogistics()
     UIManager.OpenPanel(UIName.LogisticsMainPanel)
-    PlaySoundWithoutClick(SoundConfig.Sound_n1_ui_sound_battle_click)
+    PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_01)
 end
 
 --绑定事件（用于子类重写）

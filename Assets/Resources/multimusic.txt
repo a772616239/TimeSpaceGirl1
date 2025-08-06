@@ -1,0 +1,20 @@
+multimusic={}
+function Awake(go)
+    print("Hello from Lua!")
+    -- 调用Unity API
+    Log("Unity log from Lua!"..go.name)
+end
+
+function OnEnable(soundName)
+    print("OnEnable Lua!"..soundName)
+    -- 调用Unity API
+    
+    SoundManager.PlayMusic(soundName)
+end
+
+function OnDisable(soundName)
+    print("OnDisable Lua!")
+    -- 调用Unity API
+    
+    SoundManager.StopMusic()
+end

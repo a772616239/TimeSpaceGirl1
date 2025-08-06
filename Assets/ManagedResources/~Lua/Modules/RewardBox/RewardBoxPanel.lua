@@ -179,7 +179,7 @@ function RewardBoxPanel:SetSingleGiftData(index, item, boxId, tagNum)
             end
             go:SetActive(true)
 			choosedBg:SetActive(true)
-            -- curId = rewardGroup[boxId].ShowItem[index][1]
+            curId = rewardGroup[boxId].ShowItem[index][1]
         end
         -- self:SetGiftData(tagNum)
     end)

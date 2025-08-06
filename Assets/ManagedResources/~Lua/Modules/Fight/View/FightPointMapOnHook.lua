@@ -447,7 +447,7 @@ end
 ---所有节点播放动画
 function this:allLiveNodesPlayAnim(liveNodes, time, name, isLoop)
     for key, value in pairs(liveNodes) do
-        if value then
+        if not IsNull(value) then
             self:PlaySpineAnim(value:GetComponent(SpineComponentName), time, name, isLoop)
         end
     end
@@ -1668,7 +1668,7 @@ function this:Dispose()
     liveNodesLeft = {}
 
     for i, v in pairs(liveNodesRight) do
-        if v ~= nil then
+        if not IsNull(v)  then
             local spineComponent = v:GetComponent(SpineComponentName)
             spineComponent.transform:DOKill()
             this:ResetSpineComponent(spineComponent)

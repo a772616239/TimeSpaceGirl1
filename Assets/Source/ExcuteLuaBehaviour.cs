@@ -9,9 +9,20 @@ using GameLogic;
 // 示例：在另一个脚本中使用
 public class ExcuteLuaBehaviour : MonoBehaviour
 {
-    public TextAsset textAsset;
-    void Start()
+    public string SoundName;
+    private static String LangLuaText;
+    void Awake()
     {
-       App.LuaMgr.CallLuaFunctionByScript(textAsset.text, "Awake",gameObject);
+        if (LangLuaText==null)
+        {
+            LangLuaText=Resources.Load<TextAsset>("multilang").text;
+        }
+        App.LuaMgr.CallLuaFunctionByScript(LangLuaText, "Awake",gameObject);
+       
+    }
+
+    void OnEnable()
+    {
+        App.LuaMgr.CallLuaFunctionByScript(LangLuaText, "OnEnable", SoundName);
     }
 }

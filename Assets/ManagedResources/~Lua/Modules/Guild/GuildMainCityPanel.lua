@@ -269,6 +269,7 @@ end
 
 --界面打开时调用（用于子类重写）
 function GuildMainCityPanel:OnOpen(...)
+    SoundManager.PlaySound(SoundConfig.Sound_n1_ui_sound_campwar_detect)
 end
 
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）
@@ -317,7 +318,7 @@ function GuildMainCityPanel:OnShow()
     this.ChangeNameBtn:SetActive(isHighPos)
     this.RefreshGuildInfo()
     MyGuildManager.RequestMyGuildApplyList()
-    SoundManager.PlaySound(SoundConfig.Sound_n1_ui_sound_campwar_detect)
+
 
 end
 

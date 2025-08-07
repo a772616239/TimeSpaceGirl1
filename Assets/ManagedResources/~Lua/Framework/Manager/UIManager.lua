@@ -399,7 +399,7 @@ function UIManager.GetPanelWithSound(id, isSync, func,isWithPopSound ,...)
             break
         end
     end
-    if uiConfig.type == UIType.Popup and uiConfig.assetName ~=UIName.RewardItemPopup and uiConfig.assetName ~=UIName.WorkShopCastSuccessPanel and uiConfig.assetName ~=UIName.WorkShopMadeSuccessPanel then
+    if uiConfig.type == UIType.Popup and uiConfig.assetName ~="RewardItemPopup"  then
         PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Clickdialogue)
     end
     
@@ -504,7 +504,7 @@ function UIManager.GetPanel(id, isSync, func, ...)
             break
         end
     end
-    if uiConfig.type == UIType.Popup then
+    if uiConfig.type == UIType.Popup and uiConfig.assetName ~="RewardItemPopup"  then
         PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Clickdialogue)
     end
 

@@ -155,6 +155,10 @@ function WarOrder:SetBanner()
         CardActivityManager.TimeDown(self.time, warOrder.cycleEndingTime-GetTimeStamp())
     end
     self.timeObj:SetActive(warOrder.cycleEndingTime > 0)
+    local lang= GetCurLanguage()
+    if lang == 10101 then
+       multiple.gameObject:SetActive(false)
+    end
 end
 
 local btnImg = {

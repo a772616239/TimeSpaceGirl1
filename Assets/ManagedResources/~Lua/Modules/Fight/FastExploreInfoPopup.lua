@@ -30,6 +30,8 @@ function this:InitComponent()
     this.btnTrain = Util.GetGameObject(this.mask, "btnTrain")--快速训练
     this.trainTime = Util.GetGameObject(this.btnTrain, "Text"):GetComponent("Text")--快速训练次数
     this.btnBuyPrivilege = Util.GetGameObject(this.privilegePanel, "btn")--购买特权
+    this.privilegePanelImg = Util.GetGameObject(this.privilegePanel, "Image"):GetComponent("Image")--购买特权
+
     this.itemGrid = Util.GetGameObject(this.taskPanel, "scroll/Viewport/Content")
     this.costItem = Util.GetGameObject(this.btnTrain, "costItem")--消耗道具
     this.btnReceive = Util.GetGameObject(this.taskPanel, "btnReceive")--领取阶段奖励
@@ -37,6 +39,7 @@ function this:InitComponent()
     --无任务
     this.notTaskGrid = Util.GetGameObject(this.notTaskPanel, "grid")
     this.notTaskItem = Util.GetGameObject(this.notTaskPanel, "grid/pos")
+
 end
 
 --绑定事件（用于子类重写）
@@ -98,6 +101,8 @@ end
 function this:AddListener()
     Game.GlobalEvent:AddEvent(GameEvent.RedPoint.TrainTask, this.RefreshTask)
     Game.GlobalEvent:AddEvent(GameEvent.Adventure.OnFastBattleChanged, this.OnShow)
+    Game.GlobalEvent:AddEvent( GameEvent.Adventure.UpdateMultiUI, this.OnChangedLang)
+   
 end
 
 --移除事件监听（用于子类重写）
@@ -108,6 +113,11 @@ end
 
 --界面打开时调用（用于子类重写）
 function this:OnOpen(...)
+    
+end
+
+function this:OnChangedLang()
+    this.privilegePanelImg:SetNativeSize()
 end
 
 function this:OnShow()
@@ -116,6 +126,7 @@ function this:OnShow()
     this.RefreshItemNum()
     this.InitRewardShow()
     this.RefreshTask()
+    
 end
 
 function this:OnSortingOrderChange()

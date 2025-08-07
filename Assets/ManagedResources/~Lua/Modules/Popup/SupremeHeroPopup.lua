@@ -70,6 +70,10 @@ function SupremeHeroPopup:InitComponent()
     --this.LoadLive2D()
     this.hero = Util.GetGameObject(self.gameObject, "Panel/hero")
     this.progress = Util.GetGameObject(self.gameObject, "Panel/Middle/progress"):GetComponent("Text")
+    local lang= GetCurLanguage()
+    if lang ~= 10001 then
+       this.hero.transform.localPosition = Vector3.New(338,266, 0)
+    end
 end
 
 -- function SupremeHeroPopup:OnSortingOrderChange()

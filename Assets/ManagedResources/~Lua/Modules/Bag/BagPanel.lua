@@ -255,6 +255,7 @@ function this.OnClickTabBtn(_index, _clickBtn)
     itemData = {}
     local itemNumText = this.itemNumText:GetComponent("Text")
     this:SetSelectBtn(_clickBtn)
+    PlaySoundWithoutClick("n1_tab2")
     if _index == ItemBaseType.Equip then
         local allEquipData = BagManager.GetBagItemDataByItemType(ItemBaseType.Equip)
         itemNumText.text = GetLanguageStrById(10188)..LengthOfTable(allEquipData).."/"..ConfigManager.GetConfigData(ConfigName.GameSetting,1).EquipNumlimit

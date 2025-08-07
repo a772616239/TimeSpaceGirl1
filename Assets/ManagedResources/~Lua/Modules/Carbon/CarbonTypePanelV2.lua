@@ -4,6 +4,7 @@ local this = CarbonTypePanelV2
 local orginLayer = 0
 local trigger = nil
 local specialConfig = ConfigManager.GetConfig(ConfigName.SpecialConfig)
+local isDraging=false
 local type = {
     [1] = {
         [2] = {--物资收集
@@ -148,7 +149,42 @@ function CarbonTypePanelV2:BindEvent()
             BindRedPointObject(data.redPointType,Util.GetGameObject(v, "RedPoint"))
         end
     end
+    UpdateBeat:Add(this.update, this)
+
 end
+
+local lastPos=Vector3.zero
+local isMoving = false
+function this.update()
+        if Input.GetMouseButtonUp(0) then
+            SoundManager.StopMusic()
+        end
+        Log("CarbonTypePanelV2 update")
+        if Input.GetMouseButton(0) then
+
+            Log("CarbonTypePanelV2 GetMouseButton")
+            local v2 = Input.mousePosition
+            if isDraging then
+              
+                local abX= math.abs( lastPos.x -v2.x)
+                local abY= math.abs( lastPos.y -v2.y)
+                  Log("CarbonTypePanelV2 isDraging abX"..abX.."abY:"..abY)
+                if abX>=1 or
+                    abY>=1
+                then
+                    isMoving=true
+                    SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission,false)
+                else
+                    isMoving=false
+                    SoundManager.StopMusic()
+                end
+
+            end
+            lastPos=v2
+        end
+
+end
+
 
 --添加事件监听（用于子类重写）
 function CarbonTypePanelV2:AddListener()
@@ -220,33 +256,64 @@ function this.GetItemCount()
     return count
 end
 
+
 --beginDragPosY = 0
 --direction = 0 --单纯记录方向，单次只计算一个方向 1是上 -1是下
 --isDrag = false
 function this.OnBeginDrag(p,d)
+    Log("OnBeginDrag")
+    SoundManager.StopMusic()
+    SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission,false)
+    isDraging=true
 end
 
 function this.OnEndDrag(p,d)
-    isDrag = false
+        isDrag = false
+        Log("OnEndDrag")
+        SoundManager.StopMusic()
+    isDraging=false
+
 end
 
 function this.OnDrag(p,d)
+    Log("OnDrag y:".. tostring(d.delta.y))
+    isDraging=true
+    -- if d.delta.y<3 and d.delta.y>-3 then
+    --     SoundManager.StopMusic()
+    --     Log("OnDrag StopMusic:".. tostring(d.delta.y))
+    -- else
+    --     isDraging=true
+    -- end
+      SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission)
     if d.delta.y > 0 then--向上划
         if RotstionAngle == (this.GetItemCount() - 2)*40 then
+            SoundManager.StopMusic()
             return
         end
+        if isDraging then
+              
+        end
+
 
         RotstionAngle = RotstionAngle+1*speed
         this.ImageRot.transform.localEulerAngles = Vector3.New(0,0,RotstionAngle)
         this.ImageMinRot.transform.localEulerAngles = Vector3.New(0,0,-RotstionAngle)
     elseif d.delta.y < 0 then--向下划
         if RotstionAngle == 0 then
+            SoundManager.StopMusic()
             return
         end
+        
+        -- if isDraging then
+        --         SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission)
+        -- end
 
         RotstionAngle = RotstionAngle-1*speed
         this.ImageRot.transform.localEulerAngles = Vector3.New(0,0,RotstionAngle)
         this.ImageMinRot.transform.localEulerAngles = Vector3.New(0,0,-RotstionAngle)
+    else
+        SoundManager.StopMusic()
+        Log("OnDrag0")
     end
 end
 
@@ -379,6 +446,8 @@ end
 --界面关闭时调用（用于子类重写）
 function CarbonTypePanelV2:OnClose()
     carbonType = 0
+    UpdateBeat:Remove(this.update, this)
+
 end
 
 --界面销毁时调用（用于子类重写）

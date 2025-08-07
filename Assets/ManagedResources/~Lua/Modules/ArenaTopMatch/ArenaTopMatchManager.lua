@@ -736,14 +736,14 @@ function this.GetRankNameByRank(rank)
     local opTurnMaxRank = math.pow(2, opTurn)
     if rank <= opTurnMaxRank then
         
-        return opTurnMaxRank..GetLanguageStrById(10097)
+        return tonumber(opTurnMaxRank) ..GetLanguageStrById(10097)
     end
     --- 如果大于当前的轮数，则可能已被淘汰，返回相应的被淘汰轮数的名称
     for turn = opTurn + 1, maxTurn do
         local turnMaxRank = math.pow(2, turn)
         if rank <= turnMaxRank then
             
-            return turnMaxRank..GetLanguageStrById(10097)
+            return tonumber(turnMaxRank)..GetLanguageStrById(10097)
         end
     end
     -- 数据没错的情况下不会出现这种情况

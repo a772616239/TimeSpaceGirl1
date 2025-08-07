@@ -19,6 +19,7 @@ SoundConfig = {
     BGM_Battle_1 = "x1_battle_BGM_LetsRock",
     
     Sound_INTERFACE_Button_Clickdialogue="INTERFACE_Button_Clickdialogue",
+    Sound_INTERFACE_Mainmenu_OpenMission="x1_NTERFACE_Mainmenu_OpenMission",
     BGM_Story_1 = "x1_bgm_prewar",
     Sound_n1_ui_sound_open_book = "n1_ui_sound_open_book", --打开书本音效
     Sound_INTERFACE_Window_OpenMap="INTERFACE_Window_OpenMap",
@@ -40,7 +41,7 @@ SoundConfig = {
     Sound_Buff = "Audio_skeff_buff_01",
     Sound_DeBuff = "Audio_skeff_debuff_01",
     Sound_Ui_XiTongKaiQi = "Ui_XiTongKaiQi",
-
+    Sound_Gate_Close_01="cn2-x1_Gate_Close_01",
     Sound_Recruit1 = "n1_ui_recurit_01",
     Sound_Recruit2 = "n1_ui_recurit_02",
     Sound_Recruit3 = "UI_Recruit_03",

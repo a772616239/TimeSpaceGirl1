@@ -806,12 +806,14 @@ local jumpDic = {
                     else        
                         PopupTipPanel.ShowTipByLanguageId(11048)
                     end
+                    SoundManager.PlaySound(SoundConfig.Sound_Gate_Close_01)
                 end)
             end)
         else
             NetManager.VirtualBattleGetInfo(function()
                 ClimbTowerManager.GetRankData(function()
                     UIManager.OpenPanel(UIName.ClimbTowerPanel)
+                    SoundManager.PlaySound(SoundConfig.Sound_Gate_Close_01)
                 end)
             end)
         end

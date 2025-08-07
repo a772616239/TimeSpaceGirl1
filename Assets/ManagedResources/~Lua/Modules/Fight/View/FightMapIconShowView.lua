@@ -69,7 +69,9 @@ function this.InitRegisterComponent(parent)
     -- 加载初始化资源
     -- 初始化3个伤害字体
     this.hurtNum = {}
-
+    if GetCurLanguage() == 10101 then
+       hurtRes="FloatingText_en"
+    end
     for i = 1, 3 do
         this.hurtNum[i] = poolManager:LoadAsset(hurtRes, PoolManager.AssetType.GameObject)
         -- 设置父级

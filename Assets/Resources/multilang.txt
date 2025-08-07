@@ -1,11 +1,6 @@
 print("Hello  Lua!")
 
 LanguageItem={}
-function Awake(go)
-    print("Hello from Lua!")
-    -- 调用Unity API
-    Log("Unity log from Lua!"..go.name)
-end
 
 function OnEnable(soundName)
     print("OnEnable Lua!")

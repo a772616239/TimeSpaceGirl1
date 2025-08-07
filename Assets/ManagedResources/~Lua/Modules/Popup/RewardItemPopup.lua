@@ -22,7 +22,7 @@ local showHero = 1  --是否展示英雄
 local leftPlayerHeadList
 local rightPlayerHeadList
 local fightType
-local autoFightTotalTime = 5
+local autoFightTotalTime = 4
 local autoFightCurTime = autoFightTotalTime
 local isFirst = true
 local getExp--获取的经验
@@ -664,7 +664,7 @@ end
 
 --开始倒计时
 function RewardItemPopup.BeginTimeDown()
-    autoFightCurTime = autoFightTotalTime
+    autoFightCurTime = autoFightTotalTime+1
     if not this.TimeCounter then
         this.TimeCounter = Timer.New(RewardItemPopup.TimeDown, 1, -1, true)
         this.TimeCounter:Start()
@@ -674,14 +674,21 @@ end
 
 --继续挑战倒计时
 function RewardItemPopup.TimeDown()
-    this.nextStageTime.text = string.format(GetLanguageStrById(50015),autoFightCurTime)
-    if autoFightCurTime <= 0 then
-        RewardItemPopup.NextStageClick()
-        RewardItemPopup.EndTimeDown()
-        return
-    end
+    this.nextStageTime.gameObject:SetActive(true)
+   
 
     autoFightCurTime = autoFightCurTime - 1
+
+    this.nextStageTime.text = string.format(GetLanguageStrById(50015),autoFightCurTime)
+
+        if autoFightCurTime <= 1 then
+            RewardItemPopup.NextStageClick()
+            if autoFightCurTime <= 0 then
+                RewardItemPopup.EndTimeDown()
+            return
+        end
+        return
+    end
 end
 
 --倒计时结束

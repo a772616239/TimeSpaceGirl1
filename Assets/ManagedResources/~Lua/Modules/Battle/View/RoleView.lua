@@ -17,6 +17,7 @@ local cdChangedEffect = "c_jz_0002_skeff_slidesk_buff"
 local floatingEffect = "FloatingText"
 local buffFloatingEffect = "BuffFloatingText"
 local skillFloatingEffect = "SkillFloatingText"
+local langSpace=""
 
 --英雄动画脚本名字
 local SpineComponentName = "SkeletonAnimation"
@@ -300,7 +301,10 @@ function RoleView.New(go, role, position, root, spineLivePos)
         instance.RootPanel.root:InitIcons_Skill(instance.role.skillArray,nil,instance.role.camp,unlockSlot)
         -- LogError("InitIcons_Skill")
     end
-
+    if GetCurLanguage() == 10101 then
+       floatingEffect="FloatingText_en"
+       langSpace=" "
+    end
     return instance
 end
 
@@ -2651,18 +2655,18 @@ function RoleView:OnBuffStart(buff)
     if not eConfig then return end
 
     -- LogError(string.format("buff.type:%s DescColorType:%s des:%s",buff.type,eConfig.DescColorType,GetLanguageStrById(eConfig.Describe)))
-    
+   
     if buff.type == BuffName.PropertyChange then
         if buff.changeType == 1 or buff.changeType == 2 then
             self:AddBuffEffect(eConfig.Hit)
             self:AddBuffEffect(eConfig.Continue, false, eConfig.ContinueOffset)
-            self:TextBuffFloating(eConfig.DescColorType, GetLanguageStrById(eConfig.Describe)..GetLanguageStrById(10281))
+            self:TextBuffFloating(eConfig.DescColorType, GetLanguageStrById(eConfig.Describe)..langSpace..GetLanguageStrById(10281))
             self:AddBuffIcon(buff, eConfig.Icon)
             SoundManager.PlayBattleSound(SoundConfig.Sound_Buff)
         else
             self:AddBuffEffect(eConfig.DHit)
             self:AddBuffEffect(eConfig.DContinue)
-            self:TextBuffFloating(eConfig.DDescColorType, GetLanguageStrById(eConfig.Describe)..GetLanguageStrById(10282))
+            self:TextBuffFloating(eConfig.DDescColorType, GetLanguageStrById(eConfig.Describe)..langSpace..GetLanguageStrById(10282))
             self:AddBuffIcon(buff, eConfig.DIcon)
             SoundManager.PlayBattleSound(SoundConfig.Sound_DeBuff)
         end

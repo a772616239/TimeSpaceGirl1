@@ -207,6 +207,9 @@ function this:InitComponent(root, parent, battleSceneLogic, battleScene)
         local obj = Util.GetGameObject(talk, "text" .. tostring(i))
         table.insert(this.talkList,obj)
     end
+    if GetCurLanguage() == 10101 then
+       floatingEffect="FloatingText_en"
+    end
 end
 
 function this:AddListener()

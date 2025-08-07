@@ -76,6 +76,7 @@ function this:InitComponent()
     this.EditionDepartment = Util.GetGameObject(this.declaration, "EditionDepartment"):GetComponent("Text")
     this.txtSc = this.ToggleText:GetComponent("SuperTextMesh")
     this.txtSc.text = GetLanguageStrById(50385)
+    CustomEventManager.CustomEvent(101,"version"..LoginRoot_Version)
     
 end
 
@@ -389,6 +390,7 @@ function this:OnOpen(...)
 
     SoundManager.PlayMusic(SoundConfig.BGM_Login)
     SoundManager.PlayAmbient(SoundConfig.Ambient_Login)
+    
 
     local channelConfig = GetChannerConfig()
     this.LoginPanel_Btn1:SetActive(false)

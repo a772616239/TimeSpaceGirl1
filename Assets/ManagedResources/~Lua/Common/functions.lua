@@ -2074,7 +2074,7 @@ function GetLanguageStrById(zhStr)
             elseif GetLan() == 1 then
                 return languageDic[languageID].en
             elseif GetLan() == 2 then
-                LogRed("GetLanguageStrById: " .. zhStr.."--jp"..languageDic[languageID].jp)
+                -- LogRed("GetLanguageStrById: " .. zhStr.."--jp"..languageDic[languageID].jp)
                 return languageDic[languageID].jp
             elseif GetLan() == 3 then
                 return languageDic[languageID].kr

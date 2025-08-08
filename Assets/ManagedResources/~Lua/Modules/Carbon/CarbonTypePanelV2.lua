@@ -149,39 +149,7 @@ function CarbonTypePanelV2:BindEvent()
             BindRedPointObject(data.redPointType,Util.GetGameObject(v, "RedPoint"))
         end
     end
-    UpdateBeat:Add(this.update, this)
-
-end
-
-local lastPos=Vector3.zero
-local isMoving = false
-function this.update()
-        if Input.GetMouseButtonUp(0) then
-            SoundManager.StopMusic()
-        end
-        Log("CarbonTypePanelV2 update")
-        if Input.GetMouseButton(0) then
-
-            Log("CarbonTypePanelV2 GetMouseButton")
-            local v2 = Input.mousePosition
-            if isDraging then
-              
-                local abX= math.abs( lastPos.x -v2.x)
-                local abY= math.abs( lastPos.y -v2.y)
-                  Log("CarbonTypePanelV2 isDraging abX"..abX.."abY:"..abY)
-                if abX>=1 or
-                    abY>=1
-                then
-                    isMoving=true
-                    SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission,false)
-                else
-                    isMoving=false
-                    SoundManager.StopMusic()
-                end
-
-            end
-            lastPos=v2
-        end
+    
 
 end
 
@@ -236,6 +204,7 @@ function CarbonTypePanelV2:OnOpen()
         trigger.onDrag = trigger.onDrag + this.OnDrag
         trigger.onEndDrag = trigger.onEndDrag + this.OnEndDrag
     end
+    UpdateBeat:Add(this.update, this)
 end
 
 function this.GetItem(index)
@@ -270,10 +239,57 @@ end
 function this.OnEndDrag(p,d)
         isDrag = false
         Log("OnEndDrag")
-        SoundManager.StopMusic()
-    isDraging=false
+        this.StopMusic()
+        isDraging=false
 
 end
+
+
+local lastPos=Vector3.zero
+local isMoving = false
+function this.update()
+
+        Log("CarbonTypePanelV2 update")
+        
+        local v2 = Input.mousePosition
+
+
+        local abX= math.abs( lastPos.x -v2.x)
+
+        local abY= math.abs( lastPos.y -v2.y)
+
+        if Input.GetMouseButton(0) then
+
+            Log("CarbonTypePanelV2 GetMouseButton")
+            
+            if isDraging then
+              
+                  Log("CarbonTypePanelV2 isDraging abX"..abX.."abY:"..abY)
+                if abX>=1 or
+                    abY>=1
+                then
+                    isMoving=true
+                    SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission,false)
+                end
+
+            end
+        end
+
+        if abX<1 and
+           abY<1
+        then
+            this.StopMusic()
+        end
+        
+        lastPos=v2
+        if Input.GetMouseButtonUp(0) then
+            this.StopMusic()
+        end
+end
+function this.StopMusic()
+    SoundManager.PlayMusic("cn2-x1_NTERFACE_Mainmenu_OpenMission_Stop",false)
+end
+
 
 function this.OnDrag(p,d)
     Log("OnDrag y:".. tostring(d.delta.y))
@@ -287,20 +303,16 @@ function this.OnDrag(p,d)
       SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission)
     if d.delta.y > 0 then--向上划
         if RotstionAngle == (this.GetItemCount() - 2)*40 then
-            SoundManager.StopMusic()
+            this.StopMusic()
             return
         end
-        if isDraging then
-              
-        end
-
 
         RotstionAngle = RotstionAngle+1*speed
         this.ImageRot.transform.localEulerAngles = Vector3.New(0,0,RotstionAngle)
         this.ImageMinRot.transform.localEulerAngles = Vector3.New(0,0,-RotstionAngle)
     elseif d.delta.y < 0 then--向下划
         if RotstionAngle == 0 then
-            SoundManager.StopMusic()
+            this.StopMusic()
             return
         end
         
@@ -312,7 +324,7 @@ function this.OnDrag(p,d)
         this.ImageRot.transform.localEulerAngles = Vector3.New(0,0,RotstionAngle)
         this.ImageMinRot.transform.localEulerAngles = Vector3.New(0,0,-RotstionAngle)
     else
-        SoundManager.StopMusic()
+        this.StopMusic()
         Log("OnDrag0")
     end
 end

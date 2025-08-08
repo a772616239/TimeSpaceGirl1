@@ -134,9 +134,6 @@ function BattleFailPopup:OnOpen(battlePanel, showRecord, backPanel,_fightType)
     elseif fightType == BATTLE_TYPE.Climb_Tower_Advance then
         NetManager.VirtualElitBattleGetInfo()
     end
-   
-    Game.GlobalEvent:DispatchEvent( BattleEventName.BattleEndClearSceneRoles)
-    Log("BattleEndClearSceneRoles")
 end
 
 function this:LoseJump(id)

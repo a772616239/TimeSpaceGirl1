@@ -37,6 +37,7 @@ local iHaveAircraft --我方主角
 local enemyHaveSupport  --敌方守护
 local enemyHaveAdjutant --敌方先驱
 local enemyHaveAircraft --敌方主角
+local IsEndBattle=false
 --live
 FightCampLocalPosition = {
     [0] = {},
@@ -215,6 +216,7 @@ function this:InitComponent(root, battleSceneLogic, battleScene)
     this.TotalDmg = Util.GetGameObject(this.gameObject, "TotalDmg")
 
     this.HelpHeroShow = Util.GetGameObject(this.transform, "HelpHeroShow")
+    Game.GlobalEvent:AddEvent(BattleEventName.BattleEndClearSceneRoles, this.ClearSceneRoles)
 end
 
 function this:BindEvent()
@@ -237,6 +239,9 @@ function this:OnOpen(data)
     this.IsJumpGameEnd = false
 
     this.SetAgainstInfoUI()
+
+    -- IsEndBattle=false
+
 end
 
 function this:OnOpenCustom()
@@ -474,14 +479,17 @@ function this.EndBattle(result)
     -- 战斗结束
     this.root.BattleEnd(result)
 
-    
-
     BattleManager.BattleIsStart = false
     BattleManager.BattleIsEnd = true
 
     Game.GlobalEvent:DispatchEvent(GameEvent.Battle.OnBattleUIEnd)
     -- this:ClearRole()
-
+    Log("BattleView.EndBattle:"..tostring(this.gameObject.activeInHierarchy))
+    if this.gameObject.activeInHierarchy then
+        IsEndBattle=true
+    else
+        Game.GlobalEvent:DispatchEvent(BattleEventName.BattleEndClearSceneRoles)
+    end
 end
 
 function BattleView.Clear()
@@ -543,7 +551,7 @@ function this.InitBattleEvent()
     BattleLogic.Event:AddEvent(BattleEventName.BattleRoundChange, this.UpdateCVSkillUI)
     BattleLogic.Event:AddEvent(BattleEventName.BattleTibuRoundBegin, this.OnAddTiRole)
     BattleLogic.Event:AddEvent(BattleEventName.BattleTibuRoundEnd, this.OnEndTibu)
-    Game.GlobalEvent:AddEvent(BattleEventName.BattleEndClearSceneRoles, this.ClearSceneRoles)
+
     BattleLogic.Event:AddEvent(BattleEventName.FloatTotal, this.FloatTotal)
 
     BattleLogic.Event:AddEvent(BattleEventName.AddUnit, this.OnAddUnit)
@@ -1875,6 +1883,10 @@ function this:OnClose()
     SoundManager.SetAudioSpeed(1)
     SoundManager.StopAllChannelSound()
     --SoundManager.StopMusic()
+    if IsEndBattle then
+        Game.GlobalEvent:DispatchEvent(BattleEventName.BattleEndClearSceneRoles)
+        IsEndBattle=false
+    end
 end
 
 function this.ClearSkillRootEffect()

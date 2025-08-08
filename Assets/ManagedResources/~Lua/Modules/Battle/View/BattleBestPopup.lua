@@ -79,7 +79,6 @@ function this:OnOpen(heroTId, damageValue, allDamage, func, _func2, isShowStatis
         1,
         true
     ):Start()
-    Game.GlobalEvent:DispatchEvent( BattleEventName.BattleEndClearSceneRoles)
 end
 
 --界面关闭时调用（用于子类重写）

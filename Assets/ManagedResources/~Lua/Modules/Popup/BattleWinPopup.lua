@@ -69,6 +69,9 @@ function BattleWinPopup:OnOpen(battlePanel, isBack, fightType, result, showRecor
     Timer.New(function()
         self:NextStep()
     end, 0.1):Start()
+    BattleManager.IsEndBattle=false 
+    Game.GlobalEvent:DispatchEvent(BattleEventName.BattleEndClearSceneRoles)
+
 end
 
 --界面关闭时调用（用于子类重写）

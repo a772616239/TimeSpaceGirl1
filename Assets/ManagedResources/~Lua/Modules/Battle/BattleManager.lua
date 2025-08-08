@@ -10,6 +10,7 @@ local MainLevelConfig = ConfigManager.GetConfig(ConfigName.MainLevelConfig)
 local BattleEventConfig = ConfigManager.GetConfig(ConfigName.BattleEventConfig)
 local FormationConfig = ConfigManager.GetConfig(ConfigName.FormationConfig)
 local MotherShipPlaneConfig =ConfigManager.GetConfig(ConfigName.MotherShipPlaneConfig)
+this.IsEndBattle=false
 
 local function pairsByKeys(t)
     local a = {}

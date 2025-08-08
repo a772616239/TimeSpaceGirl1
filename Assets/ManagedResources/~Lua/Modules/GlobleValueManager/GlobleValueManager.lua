@@ -66,7 +66,7 @@ function GVM.GetTaskById(id, ...)
         if not args[3] then
             args[3] = 0 -- 默认值
         end
-        
+        LogPink("GetTaskById(id=2) args[1]:"..tostring(args[1]).." args[2]:"..tostring(args[2]).." args[3]:"..tostring(args[3]))
         str = string.format(
             GetLanguageStrById(22518), 
             TaskTypeControy[args[1]], 

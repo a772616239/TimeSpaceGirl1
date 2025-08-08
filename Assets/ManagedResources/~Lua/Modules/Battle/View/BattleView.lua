@@ -37,7 +37,6 @@ local iHaveAircraft --我方主角
 local enemyHaveSupport  --敌方守护
 local enemyHaveAdjutant --敌方先驱
 local enemyHaveAircraft --敌方主角
-local IsEndBattle=false
 --live
 FightCampLocalPosition = {
     [0] = {},
@@ -486,7 +485,7 @@ function this.EndBattle(result)
     -- this:ClearRole()
     Log("BattleView.EndBattle:"..tostring(this.gameObject.activeInHierarchy))
     if this.gameObject.activeInHierarchy then
-        IsEndBattle=true
+        BattleManager.IsEndBattle=true
     else
         Game.GlobalEvent:DispatchEvent(BattleEventName.BattleEndClearSceneRoles)
     end
@@ -1883,9 +1882,9 @@ function this:OnClose()
     SoundManager.SetAudioSpeed(1)
     SoundManager.StopAllChannelSound()
     --SoundManager.StopMusic()
-    if IsEndBattle then
+    if BattleManager.IsEndBattle then
         Game.GlobalEvent:DispatchEvent(BattleEventName.BattleEndClearSceneRoles)
-        IsEndBattle=false
+        BattleManager.IsEndBattle=false
     end
 end
 

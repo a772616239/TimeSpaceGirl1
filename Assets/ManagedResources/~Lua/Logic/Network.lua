@@ -159,9 +159,9 @@ function Network:SendMessageWithCallBack(nMsgId, nReMsgId, sMsg, func, isHideMas
         self.sendFlag = true
         self.sendWaitTime = 0
 
-        if not isHideMask then
-            RequestPanel.Show(self.resendTimes > 0 and GetLanguageStrById(23017) or GetLanguageStrById(23016))
-        end
+        -- if not isHideMask then
+        --     RequestPanel.Show(self.resendTimes > 0 and GetLanguageStrById(23017) or GetLanguageStrById(23016))
+        -- end
         self.socket:SendMessageWithCallBack(nMsgId, nReMsgId, buffer, function(b)
             self.sendFlag = false
             self.resendTimes = 0

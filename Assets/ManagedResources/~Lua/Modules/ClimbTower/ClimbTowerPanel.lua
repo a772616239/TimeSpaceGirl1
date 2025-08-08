@@ -125,6 +125,7 @@ end
 --界面打开时调用（用于子类重写）
 function ClimbTowerPanel:OnOpen()
     self.climbTowerType = ClimbTowerManager.ClimbTowerType.Normal
+    SoundManager.PlaySound(SoundConfig.Sound_Gate_Close_01)
 end
 
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）

@@ -248,20 +248,13 @@ end
 local lastPos=Vector3.zero
 local isMoving = false
 function this.update()
-
-        Log("CarbonTypePanelV2 update")
-        
+        -- Log("CarbonTypePanelV2 update")
         local v2 = Input.mousePosition
-
-
         local abX= math.abs( lastPos.x -v2.x)
-
         local abY= math.abs( lastPos.y -v2.y)
-
         if Input.GetMouseButton(0) then
+            -- Log("CarbonTypePanelV2 GetMouseButton")
 
-            Log("CarbonTypePanelV2 GetMouseButton")
-            
             if isDraging then
               
                   Log("CarbonTypePanelV2 isDraging abX"..abX.."abY:"..abY)

@@ -497,6 +497,8 @@ function HandBookHeroInfoPanel:RightBtnOnClick()
         this.rightBtn:GetComponent("Button").enabled = true
         isClickLeftOrRightBtn = true
     end):SetEase(Ease.Linear)
+     SoundManager.PlaySound(SoundConfig.Sound_Switch)
+
 end
 --左切换按钮点击
 function HandBookHeroInfoPanel:LeftBtnOnClick()
@@ -546,6 +548,7 @@ function HandBookHeroInfoPanel:LeftBtnOnClick()
         this.leftBtn:GetComponent("Button").enabled = true
         isClickLeftOrRightBtn = true
     end):SetEase(Ease.Linear)
+     SoundManager.PlaySound(SoundConfig.Sound_Switch)
 end
 
 --手指滑动

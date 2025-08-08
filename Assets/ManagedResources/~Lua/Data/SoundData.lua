@@ -17,7 +17,7 @@ SoundConfig = {
     BGM_Guild = "x1_battle_BGM_EpicBattleLoop",
     BGM_GuildFight = "x1_bgm_prewar",
     BGM_Battle_1 = "x1_battle_BGM_LetsRock",
-    
+    Sound_Switch="Sound_Switch",
     Sound_INTERFACE_Button_Clickdialogue="INTERFACE_Button_Clickdialogue",
     Sound_INTERFACE_Mainmenu_OpenMission="x1_NTERFACE_Mainmenu_OpenMission",
     BGM_Story_1 = "x1_bgm_prewar",

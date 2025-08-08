@@ -40,6 +40,7 @@ end
 
 function HegemonyPanel:OnOpen(...)
     HegemonyManager.isFirstOn = false
+    SoundManager.PlaySound(SoundConfig.UI_Recruit_03)
 end
 
 local rankList = {}

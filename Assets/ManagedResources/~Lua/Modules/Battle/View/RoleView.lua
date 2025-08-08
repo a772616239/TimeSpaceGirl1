@@ -784,7 +784,7 @@ function RoleView:ChangeCardSorting(sortingOrder)
 end
 
 function RoleView:Update_HPPos()
-    if self.RootPanel== nil or self.RoleLiveGO == nil or self.GameObject == nil or self.RootPanel.camera3D==nil then
+    if self.RootPanel== nil or self.RoleLiveGO == nil or self.GameObject == nil or IsNull(self.RootPanel.camera3D) then
         return
     end
     --更新血条位置

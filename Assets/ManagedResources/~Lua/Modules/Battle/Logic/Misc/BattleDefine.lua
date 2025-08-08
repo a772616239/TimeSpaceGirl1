@@ -9,6 +9,7 @@ BattleEventName = {
     BattleOrderEnd = indexAdd(),
     BeforeBattleEnd = indexAdd(),
     BattleEnd = indexAdd(),
+    BattleEndClearSceneRoles = indexAdd(),
     AddRole = indexAdd(),
     RemoveRole = indexAdd(),
     BattleRoleDead = indexAdd(),

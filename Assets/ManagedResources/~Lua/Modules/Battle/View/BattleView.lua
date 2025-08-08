@@ -454,7 +454,7 @@ function this.EndBattle(result)
     end
 
     -- 清空数据
-    this.Clear()
+    BattleView.CatheStat()
     -- 判断结果
     local record = {
         fightData = this.fightData,
@@ -474,17 +474,23 @@ function this.EndBattle(result)
     -- 战斗结束
     this.root.BattleEnd(result)
 
-    this.BattleEndClear()
+    
 
     BattleManager.BattleIsStart = false
     BattleManager.BattleIsEnd = true
 
     Game.GlobalEvent:DispatchEvent(GameEvent.Battle.OnBattleUIEnd)
+    -- this:ClearRole()
+
 end
 
 function BattleView.Clear()
     --> 防止使用tbRole 报错 清理前 dispose
     this:ClearRole()
+    BattleView.CatheStat()
+end
+
+function BattleView.CatheStat()
 
     tbRoleDispose = {} --战斗统计前将roleView收集到该容器中，tbRole清理掉
     for _, v in pairs(tbRole) do
@@ -492,7 +498,6 @@ function BattleView.Clear()
     end
     tbRole = {}
 end
-
 
 -- 初始化战斗数据
 function this.InitBattleData()
@@ -538,7 +543,7 @@ function this.InitBattleEvent()
     BattleLogic.Event:AddEvent(BattleEventName.BattleRoundChange, this.UpdateCVSkillUI)
     BattleLogic.Event:AddEvent(BattleEventName.BattleTibuRoundBegin, this.OnAddTiRole)
     BattleLogic.Event:AddEvent(BattleEventName.BattleTibuRoundEnd, this.OnEndTibu)
-
+    Game.GlobalEvent:AddEvent(BattleEventName.BattleEndClearSceneRoles, this.ClearSceneRoles)
     BattleLogic.Event:AddEvent(BattleEventName.FloatTotal, this.FloatTotal)
 
     BattleLogic.Event:AddEvent(BattleEventName.AddUnit, this.OnAddUnit)
@@ -561,6 +566,7 @@ function this.ClearBattleEvent()
     BattleLogic.Event:RemoveEvent(BattleEventName.BattleTibuRoundBegin, this.OnAddTiRole)
     BattleLogic.Event:RemoveEvent(BattleEventName.BattleTibuRoundEnd, this.OnEndTibu)
     BattleLogic.Event:RemoveEvent(BattleEventName.FloatTotal, this.FloatTotal)
+    -- BattleLogic.Event:RemoveEvent(BattleEventName.BattleEndClearSceneRoles, this.ClearSceneRoles)
 
     BattleLogic.Event:RemoveEvent(BattleEventName.AddUnit, this.OnAddUnit)
     BattleLogic.Event:RemoveEvent(BattleEventName.RemoveUnit, this.OnRemoveUnit)
@@ -573,7 +579,12 @@ function this.ClearBattleEvent()
     -- BattleLogic.Event:RemoveEvent(BattleEventName.BattleRoundChange, xRollBack)
     BattleLogic.Event:RemoveEvent(BattleEventName.RoleTurnStart, xMovewRollBack)
 end
+function this.ClearSceneRoles()
+    Log("ClearSceneRoles")
 
+    this:ClearRole()
+    this.BattleEndClear()
+end
 function this.RoundBeginDialogue(dialogueId)
     if BattleManager.IsInBackBattle() then
         if not UIManager.IsOpen(UIName.BattlePanel) then
@@ -1671,10 +1682,13 @@ function this.SetRoleActive(roleData, type, active, targets)
             end
         end
     elseif type == 2 then
+        if IsNull(tbRole[roleData].RoleLiveGO) then
+            return
+        end
         tbRole[roleData].RoleLiveGO:SetActive(active)
     elseif type == 999 then
         for rd, roleview in pairs(tbRole) do
-            if not rd:IsDead() then
+            if not rd:IsDead() and not IsNull(roleview.RoleLiveGO) then
                 roleview.RoleLiveGO:SetActive(active)
                 roleview.GameObject:SetActive(active)
             end
@@ -1938,7 +1952,7 @@ function this:ShakeCamera(time, dx, dy, dz, callBack)
     end
     isShaking = true
 
-    if this.camera3D == nil then
+    if  IsNull(this.camera3D) then
         return
     end
 

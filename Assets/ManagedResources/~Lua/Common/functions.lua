@@ -1354,9 +1354,16 @@ end
 
 --获取服务器当前星期几
 function GetSeverWeek()
-    local severTime = GetTimeStamp()
-    local time = GetTimeShow(severTime)
-    return System.DateTime.Parse(time).DayOfWeek:ToInt()
+    local severTime = GetTimeStamp()  -- 获取时间戳（假设是秒级）
+    
+    -- 创建 1970-01-01 起始时间（不使用 DateTimeKind）
+    local epoch = System.DateTime(1970, 1, 1, 0, 0, 0)
+    
+    -- 添加时间戳得到 UTC 时间
+    local utcTime = epoch:AddSeconds(severTime)
+    
+    -- 转换为本地时间后获取星期
+    return utcTime:ToLocalTime().DayOfWeek:ToInt()
 end
 
 --- 获取当前时间戳

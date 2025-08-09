@@ -256,7 +256,7 @@ end
                         LoginManager.state = list.state
                         -- local severArea = tonumber(string.sub(list.server_id, 0, -5))
                         this.serverImage.sprite = Util.LoadSprite(ServerStateIconDef[list.state])
-                        this.serverMes.text = PlayerManager.serverInfo.name
+                        this.serverMes.text = GetLanguageStrByStr(PlayerManager.serverInfo.name)
                     end
                 }
             )

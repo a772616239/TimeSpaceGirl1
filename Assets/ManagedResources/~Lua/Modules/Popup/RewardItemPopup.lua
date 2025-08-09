@@ -112,6 +112,8 @@ function RewardItemPopup:BindEvent()
     end)
     Util.AddClick(this.btnResult, function ()
         UIManager.OpenPanel(UIName.DamageResultPanel, 1)
+        this.TimeCounter:Stop()
+        this.nextStageTime.gameObject:SetActive(false)
     end)
 
     Util.AddClick(this.nextStage, function ()

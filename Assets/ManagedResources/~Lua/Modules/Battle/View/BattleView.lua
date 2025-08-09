@@ -1689,7 +1689,7 @@ function this.SetRoleActive(roleData, type, active, targets)
             end
         end
     elseif type == 2 then
-        if IsNull(tbRole[roleData].RoleLiveGO) then
+        if IsNull(tbRole[roleData]) or IsNull(tbRole[roleData].RoleLiveGO) then
             return
         end
         tbRole[roleData].RoleLiveGO:SetActive(active)

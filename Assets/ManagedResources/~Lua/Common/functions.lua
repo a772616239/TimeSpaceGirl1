@@ -2260,7 +2260,7 @@ end
 --卸载立绘
 function UnLoadHerolive(_heroConfig,_obj)
     local artResourcesConfig = ConfigManager.GetConfig(ConfigName.ArtResourcesConfig)
-    if _heroConfig.RoleImage ~= 0 then
+    if _heroConfig~=nil and _heroConfig.RoleImage ~= 0 then
         poolManager:UnLoadLive(artResourcesConfig[_heroConfig.RoleImage].Name, _obj)
     else 
         poolManager:UnLoadAsset("TestImg", _obj, PoolManager.AssetType.gameObject)

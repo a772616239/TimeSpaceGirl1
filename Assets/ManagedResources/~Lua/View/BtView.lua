@@ -53,19 +53,27 @@ function this:InitComponent()
         [PanelTypeView.Logistics] = {node = self.BtnTeQuan, funcId = {79, 76, 90}, rpType = RedPointType.Logistics, clickFunc = self.OpenLogistics},    --< 特权改后勤
     }
 end
-
+local LastClickingIndex = 0
 -- 主城
 function this:OPenMainCity()
+    if LastClickingIndex == 1 then
+        return
+    end
     if not UIManager.IsOpen(UIName.MainPanel) then
         UIManager.OpenPanel(UIName.MainPanel)
+        LastClickingIndex=1
         PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_01)
     end
 end
 --打开英雄列表界面
 function this:OpenChengYuan()
+    if LastClickingIndex == 2 then
+        return
+    end
     if not UIManager.IsOpen(UIName.HeroMainPanel)  or (RoleListPanelUI and RoleListPanelUI.isFirstOpen == false)then
         HeroManager.heroListPanelSortID = 1
         HeroManager.heroListPanelProID = 0
+        LastClickingIndex=2
         -- RoleListPanelUI = UIManager.OpenPanel(UIName.RoleListPanel)
         RoleListPanelUI = UIManager.OpenPanel(UIName.HeroMainPanel,1)
          PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Window_OpenMap)
@@ -77,24 +85,40 @@ function this:OpenCangKu()
     --     UIManager.OpenPanel(UIName.HeroMonumentPanel)
     --     return
     -- end
+    if LastClickingIndex == 3 then
+        return
+    end
     if not UIManager.IsOpen(UIName.BagPanel) or (bagPanelUI and bagPanelUI.isFristOpen == false) then
         bagPanelUI =  UIManager.OpenPanel(UIName.BagPanel)
          PlaySoundWithoutClick(SoundConfig.Sound_UI_Bag)
+         LastClickingIndex=3
     end
 end
 
 -- 挂机界面
 function this:OpenJieling()
+    if LastClickingIndex == 4 then
+        return
+    end
+    LastClickingIndex=4
     UIManager.OpenPanel(UIName.FightPointPassMainPanel)
     PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_04)
 end
 -- 打开副本选择界面
 function this:OpenCarbon()
+    if LastClickingIndex == 5 then
+        return
+    end
+    LastClickingIndex=5
     PlayerManager.carbonType = 1
     UIManager.OpenPanel(UIName.CarbonTypePanelV2)
      PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_01)
 end
 function this:OpenGuild()
+    if LastClickingIndex == 6 then
+        return
+    end
+    LastClickingIndex=6
     JumpManager.GoJump(4001)
 end
 function this:OpenVIP()
@@ -102,6 +126,10 @@ function this:OpenVIP()
 end
 --> 后勤
 function this:OpenLogistics()
+    if LastClickingIndex == 7 then
+        return
+    end
+    LastClickingIndex=7
     UIManager.OpenPanel(UIName.LogisticsMainPanel)
     PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_01)
 end

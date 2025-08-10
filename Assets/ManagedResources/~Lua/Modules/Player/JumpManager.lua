@@ -5,6 +5,7 @@ function this.Initialize()
 
 end
 local IsOpenningTowner = false
+local IsOpenningGuild = false
 local jumpDic = {
     [JumpType.Lottery] = function(data)
        UIManager.OpenPanel(UIName.RecruitPanel)
@@ -14,18 +15,25 @@ local jumpDic = {
     -- end,
     [JumpType.Guild] = function()
         if not MyGuildManager.CheckGuildExitCdTime(true) then return end
-
+        if IsOpenningGuild then
+            Log("GuildPanel IsOpenningGuild")
+            return
+        end
+        IsOpenningGuild=true
         if ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.GUILD) then
             if PlayerManager.familyId == 0 then
                 UIManager.OpenPanel(UIName.GuildFindPopup)
+                IsOpenningGuild=false
             else
                 -- 进入公会界面之前初始化一遍数据
                 MyGuildManager.InitAllData(function()
                     UIManager.OpenPanel(UIName.GuildMainCityPanel)
+                    IsOpenningGuild=false
                 end)
             end
         else
             PopupTipPanel.ShowTip(ActTimeCtrlManager.GetFuncTip(FUNCTION_OPEN_TYPE.GUILD))
+            IsOpenningGuild=false
         end
     end,
     [JumpType.GuideBattle] = function()

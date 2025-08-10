@@ -2235,6 +2235,9 @@ end
 -- 加载立绘
 function LoadHerolive(_heroConfig, _objPoint)
     local artResourcesConfig = ConfigManager.GetConfig(ConfigName.ArtResourcesConfig)
+    if _heroConfig==nil then
+        return nil
+    end
     if _heroConfig.RoleImage ~= 0 then
         --动态加载立绘
         local liveName = artResourcesConfig[_heroConfig.RoleImage].Name

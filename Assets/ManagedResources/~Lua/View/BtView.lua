@@ -198,6 +198,7 @@ function this:OnOpen(context)
     -- 刷新显示状态
     self:RefreshBtnState()
     self:BattleEnd()
+    LastClickingIndex=0
 end
 
 function this:RefreshBtnState()
@@ -320,6 +321,7 @@ function this:OnClose()
 
     bagPanelUI = nil
     RoleListPanelUI = nil
+    LastClickingIndex=0
 end
 
 

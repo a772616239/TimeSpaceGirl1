@@ -45,6 +45,7 @@ function Expert:InitComponent(gameObject)
 
     this.content = Util.GetGameObject(gameObject, "rect"):GetComponent("RectTransform")
     this.firstReward = Util.GetGameObject(gameObject, "firstReward")
+    this.bannerBg = Util.GetGameObject(gameObject, "bannerBg")
     this.grid = Util.GetGameObject(gameObject, "firstReward/gird")
 end
 
@@ -96,6 +97,7 @@ function Expert:OnShowData(index)
     self.sortBtn:SetActive(false)
     this.content.offsetMax = Vector2.New(0,-500)
     this.firstReward:SetActive(false)
+    this.bannerBg :SetActive(true)
     
     local globalActive = ConfigManager.GetConfigData(ConfigName.GlobalActivity, ActivityGiftManager.GetOpenExpertIdByActivityType(NumExChange[activeIndext]))
     if globalActive and globalActive.OpenRanking == 1 then
@@ -104,6 +106,7 @@ function Expert:OnShowData(index)
 
         --排行第一可获得的奖励
         this.firstReward:SetActive(true)
+        this.bannerBg :SetActive(false)
         this.content.offsetMax = Vector2.New(0,-720)
         local rewardConfig = ConfigManager.GetConfigDataByDoubleKey(ConfigName.ActivityRankingReward, "ActivityId", ActivityGiftManager.GetOpenExpertIdByActivityType(NumExChange[activeIndext]), "MinRank", 1)
         Util.ClearChild(this.grid.transform)

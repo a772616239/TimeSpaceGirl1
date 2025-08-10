@@ -312,7 +312,7 @@ function  this.RefreshPanel(eventId, isFirstOpen)
         -- end
 
         -- local data = artResConfig[resId]
-        if resId=="" then
+        if resId=="" or resId== nil then
             this.RoleName.text=""
         else
             this.RoleName.text =string.gsub(resId, GetLanguageStrById(11225), NameManager.roleName)

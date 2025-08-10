@@ -328,8 +328,7 @@ function RoleView:AddDelayRecycleRes(path, go, delayTime, delayFunc, delType, be
                 beforeFunc()
             end
             for i = 1, #self.delayRecycleList[path] do
-                if self.delayRecycleList[path][i].node == go then
-                    
+                if not IsNull(go) and self.delayRecycleList[path][i].node == go then
                     
                     if self.delayRecycleList[path][i].type == PoolManager.AssetTypeGo.GameObjectFrame then
                         poolManager:UnLoadSpine(path, go)

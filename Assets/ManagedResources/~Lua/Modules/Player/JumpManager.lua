@@ -4,7 +4,7 @@ local JumpConfig = ConfigManager.GetConfig(ConfigName.JumpConfig)
 function this.Initialize()
 
 end
-
+local IsOpenningTowner = false
 local jumpDic = {
     [JumpType.Lottery] = function(data)
        UIManager.OpenPanel(UIName.RecruitPanel)
@@ -796,9 +796,17 @@ local jumpDic = {
     end,
     [JumpType.ClimbTower] = function(data)
         -- 1主界面 2布阵
+        if IsOpenningTowner then
+            -- Log("ClimbTowerPanel0 IsOpenningTowner")
+            return
+         end
+        IsOpenningTowner=true
         if data and data[1] == 2 then
+
+            -- Log("ClimbTowerPanel1")
             NetManager.VirtualBattleGetInfo(function()
                 ClimbTowerManager.GetRankData(function()
+                    -- Log("ClimbTowerPanel2")
                     UIManager.OpenPanel(UIName.ClimbTowerPanel)
                     if ClimbTowerManager.GetCount(ClimbTowerManager.ClimbTowerType.Normal) > 0 then
                         UIManager.OpenPanel(UIName.FormationPanelV2, FORMATION_TYPE.CLIMB_TOWER, ClimbTowerManager.fightId)
@@ -806,13 +814,16 @@ local jumpDic = {
                     else        
                         PopupTipPanel.ShowTipByLanguageId(11048)
                     end
+                    IsOpenningTowner=false
                 end)
             end)
         else
+            -- Log("ClimbTowerPanel3")
             NetManager.VirtualBattleGetInfo(function()
                 ClimbTowerManager.GetRankData(function()
+                    -- Log("ClimbTowerPanel4")
                     UIManager.OpenPanel(UIName.ClimbTowerPanel)
-                  
+                    IsOpenningTowner=false
                 end)
             end)
         end

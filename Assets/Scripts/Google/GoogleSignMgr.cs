@@ -70,7 +70,9 @@ public class GoogleSignMgr : MonoBehaviour
             string deviceToken = "gt" + id;
             if (Application.isEditor)
             {
-                deviceToken = "gtr" + id;
+                //deviceToken = "gtr" + id;
+                deviceToken = "gtrc" + id;
+
             }
             GetAcc(deviceToken, out name, out pw);
 

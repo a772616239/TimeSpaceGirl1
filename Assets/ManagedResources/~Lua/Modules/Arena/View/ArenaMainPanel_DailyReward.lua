@@ -108,8 +108,10 @@ function ArenaMainPanel_DailyReward:SetMy(reward)
         self.desc:SetActive(true)
 
         for _, configInfo in ConfigPairs(ConfigManager.GetConfig(ConfigName.ArenaReward)) do
-            if ArenaManager.MyRank.rank <= configInfo.MaxRank and ArenaManager.MyRank.rank >= configInfo.MinRank then
-                self.ArenaRewardData = configInfo
+                if configInfo~=nil then
+                    if ArenaManager.MyRank.rank <= configInfo.MaxRank and ArenaManager.MyRank.rank >= configInfo.MinRank then
+                    self.ArenaRewardData = configInfo
+                end
             end
         end
 

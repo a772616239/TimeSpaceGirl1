@@ -122,12 +122,33 @@ function this:RemoveListener()
     Game.GlobalEvent:RemoveEvent(GameEvent.MissionDaily.OnMissionDailyChanged,this.RefreshPassData)
     Game.GlobalEvent:RemoveEvent(GameEvent.MissionDaily.OnMissionDailyChanged,this.RefreshAllTaskBtn)
 end
-
+local indexName={
+        [1]="战队", -- 默认状态
+        [2]="基础",  -- 选中状态
+        [3]="招募",     -- 锁定状态
+        [4]="装备大师",
+        [5]="戒指芯片",
+        [6]="培养",
+        [7]="竞技",
+        [8]="探索",
+        [9]="物资收集",
+        [10]="神之塔",
+        [11]="公会",
+        [12]="试炼",
+        [13]="时空战场",
+}
 function this.TabAdapter(tab, index, status)
     local title = Util.GetGameObject(tab, "title"):GetComponent("Image")
     title.sprite = Util.LoadSprite(GetPictureFont(_TabData[index][status]))
     local select = Util.GetGameObject(tab, "select")
-    select:SetActive(status == "Select")
+    select:SetActive(status == "select")
+
+    local txt = Util.GetGameObject(tab, "Text"):GetComponent("Text")
+    local HighText = Util.GetGameObject(tab, "title/HighText"):GetComponent("Text")
+    txt.text=GetLanguageStrByStr(indexName[index]) or ("Tab"..index)
+    HighText.text=GetLanguageStrByStr(indexName[index]) or ("Tab"..index)
+    HighText.gameObject:SetActive(status == "select")
+    txt.gameObject:SetActive(status ~= "select")
 end
 
 function this.SwitchView(index)

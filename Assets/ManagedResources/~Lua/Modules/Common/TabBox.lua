@@ -158,12 +158,14 @@ function this:Init(gameObject, tabData, defaultSelect)
             self.SelectIndex = nil
         end
     end
+
     --- 开始创建tab
     self.TabList = {}
     Util.ClearChild(box.transform)
     for index = 1, #self.TabData do
         local newTab = newObjToParent(tab, box)
         newTab:SetActive(true)
+
         self.TabList[index] = newTab
         -- 检测tab是否可用
         local isLock = false
@@ -194,6 +196,8 @@ function this:Init(gameObject, tabData, defaultSelect)
                     return
                 end
             end
+            -- HighText.gameObject:SetActive(true)
+            -- txt.gameObject:SetActive(false)
             -- 切换页签
             self:ChangeTab(index)
         end)

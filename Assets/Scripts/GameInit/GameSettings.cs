@@ -95,11 +95,13 @@ namespace GameLogic {
         {
             if (settingInfo != null)
             {
+                SystemLanguage sysLang = Application.systemLanguage;
                 if (!PlayerPrefs.HasKey("multi_language"))
                 {
-                    SystemLanguage sysLang = Application.systemLanguage;
                     settingInfo.originLan=GetSystemLanguage2(sysLang);
                 }
+
+                CrashlyticsMgr.Inst.TapEvent("sysLang:" + sysLang.ToString());
 
                 if (!Application.isEditor)
                 {
@@ -129,7 +131,7 @@ namespace GameLogic {
             public static int GetSystemLanguage2(SystemLanguage sysLang)
             {
 
-                CrashlyticsMgr.Inst.TapEvent("sysLang:" + sysLang.ToString());
+                
                 // 使用switch-case将系统语言映射到你的枚举
                 switch (sysLang)
                 {

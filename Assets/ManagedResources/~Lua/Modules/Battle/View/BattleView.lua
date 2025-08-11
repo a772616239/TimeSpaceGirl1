@@ -1386,7 +1386,7 @@ function this.SetRoleHighLight(caster, targets, func, skill, cambat)
     end
     if targets then
         for _, data in ipairs(targets) do
-            if caster ~= tbRole[data] then
+            if caster ~= tbRole[data] and not IsNull(tbRole[data]) then
                 -- max = max - 1
                 tbRole[data]:SetHighLight(true, 1, 0.2)
 

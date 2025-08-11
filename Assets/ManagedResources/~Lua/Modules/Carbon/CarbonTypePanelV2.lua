@@ -204,7 +204,10 @@ function CarbonTypePanelV2:OnOpen()
         trigger.onDrag = trigger.onDrag + this.OnDrag
         trigger.onEndDrag = trigger.onEndDrag + this.OnEndDrag
     end
+
+    UpdateBeat:Remove(this.update, this)
     UpdateBeat:Add(this.update, this)
+    Log("CarbonTypePanelV2 OnOpen")
 end
 
 function this.GetItem(index)
@@ -452,7 +455,7 @@ end
 function CarbonTypePanelV2:OnClose()
     carbonType = 0
     UpdateBeat:Remove(this.update, this)
-
+    Log("CarbonTypePanelV2 OnClose")
 end
 
 --界面销毁时调用（用于子类重写）

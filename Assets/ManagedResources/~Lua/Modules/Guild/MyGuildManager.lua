@@ -625,6 +625,7 @@ function MyGuildManager.CheckGuildFeteRedPoint()
         return
     end
     if this.MyFeteInfo.lastFeteType == 0 then --未捐献
+        -- Log("公会捐献红点检测 未捐献 #d = " )
         return true
     end
 
@@ -635,20 +636,29 @@ function MyGuildManager.CheckGuildFeteRedPoint()
         end
         if this.MyFeteInfo.score >= guildSacrificeRewardConfig[i].Score and this.MyGuildInfo.id == this.MyFeteInfo.lastFeteGuildId then --有未领取 并且是当前公会 与上次捐献公会相同
             table.insert(d,i)
+            -- Log("公会捐献红点检测 insert " .. tostring(#d).."-"..i)
         end
     end
 
-    for n = 1, #d do
-        for index, v in ipairs(this.MyFeteInfo.takeFeteReward) do --已领
-            if d[n] == v then
-                table.remove(d,n) --删除已领数据 剩余未领取数据
-            end
+    -- 先创建"已领取奖励"的快速查找表
+    local takenSet = {}
+    for _, v in ipairs(MyGuildManager.MyFeteInfo.takeFeteReward) do
+        takenSet[v] = true
+    end
+
+    -- 倒序遍历d表（避免删除时索引错位）
+    for n = #d, 1, -1 do
+        local current = d[n]
+        if takenSet[current] then  -- 如果是已领取项
+            -- Log(string.format("公会捐献红点检测 remove %s (index:%d) | 剩余未领取数:%d", current, n, #d-1))
+            table.remove(d, n)  -- 删除已领取项
         end
     end
 
     local isOn = false
     --若剩余数据 有未领取
     isOn = #d > 0
+    -- Log("公会捐献红点检测 #d = " .. tostring(#d))
     return isOn
 end
 

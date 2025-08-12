@@ -253,6 +253,10 @@ local function _SetAudioUnit(audioUnit, resName, auildType, volume)
     -- if string.find(lowerResName, "x1") and  string.find(lowerResName, "cn2%-") then
     --     lowerResName = resName:gsub("^cn2%-", "")  -- 移除开头的 "cn2-"
     -- end
+    if not resName or resName == "" then
+        __DebugLog("音效资源名不能为空")
+        return
+    end
     -- 获取声音文件
     local clipNew = poolManager:LoadAsset(resName, PoolManager.AssetType.MediaBg)
     if not clipNew then return nil end
@@ -403,6 +407,10 @@ end
 ---- ==============================播放音效===================================
 function SoundManager.PlaySound(clipName, fadeType, runType, channel, outChannel)
     -- __DebugLog("*****")
+    if not clipName or clipName == "" then
+        __DebugLog("音效资源名不能为空")
+        return
+    end
     -- 判断是否符合音效时间限制
     if _AudioPlayList[clipName] then
         local startTime = _AudioPlayList[clipName].startTime

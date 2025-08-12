@@ -118,6 +118,8 @@ function this.SetPanel()
                 this.RefreshPanel()
                 CheckRedPointStatus(RedPointType.Revenue_Free)
                 Game.GlobalEvent:DispatchEvent(GameEvent.RedPoint.TrainTask)
+                PlaySoundWithoutClick("INTERFACE_Window_OpenShouchong")
+
             end)
         end)
     end

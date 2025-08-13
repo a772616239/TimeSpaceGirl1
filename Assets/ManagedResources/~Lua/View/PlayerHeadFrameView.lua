@@ -91,20 +91,54 @@ function PlayerHeadFrameView:OnClose()
 
     --self:Reset()
 end
-
 function PlayerHeadFrameView:RefreshPlayerInfoShow()
-    self.expVaule.value = PlayerManager.exp / PlayerManager.userLevelData[PlayerManager.level].Exp
-    self.expVauleText.text = PlayerManager.exp.."/".. PlayerManager.userLevelData[PlayerManager.level].Exp
-    self.icon.sprite = GetPlayerHeadSprite(PlayerManager.head)
-    self.frame.sprite = GetPlayerHeadFrameSprite(PlayerManager.frame)
-    self.levelLv.text = "Lv." .. tostring(PlayerManager.level)
+    -- Safely get level data
+    local levelData = nil
+    if PlayerManager and PlayerManager.userLevelData and PlayerManager.level then
+        levelData = PlayerManager.userLevelData[PlayerManager.level]
+    end
+    if  PlayerManager.exp then
+         -- Handle exp display with fallbacks
+        if self.expVaule and levelData then
+            self.expVaule.value = PlayerManager.exp / levelData.Exp
+        elseif self.expVaule then
+            self.expVaule.value = 0  -- Fallback value
+        end
 
-    self.VIPLevel.sprite = VipManager.SetVipLevelImg()
-    -- self.power.text = FormationManager.GetFormationPower(FormationManager.curFormationIndex)
-    self.power.text = FormationManager.GetFormationPower(1) --固定显示闯关战力
-    FormationManager.UserPowerChanged()
-    self.name.text = PlayerManager.nickName
+        if self.expVauleText and levelData then
+            self.expVauleText.text = PlayerManager.exp.."/".. levelData.Exp
+        elseif self.expVauleText then
+            self.expVauleText.text = PlayerManager.exp.."/0"  -- Fallback text
+        end
+    end
 
+
+    -- Safe UI updates with nil checks
+    if self.icon then
+        self.icon.sprite = GetPlayerHeadSprite(PlayerManager.head)
+    end
+
+    if self.frame then
+        self.frame.sprite = GetPlayerHeadFrameSprite(PlayerManager.frame)
+    end
+
+    if self.levelLv then
+        self.levelLv.text = "Lv." .. tostring(PlayerManager.level or 0)
+    end
+
+    if self.VIPLevel then
+        self.VIPLevel.sprite = VipManager.SetVipLevelImg()
+    end
+
+    if self.power then
+        -- Fixed to show clearance power
+        self.power.text = FormationManager.GetFormationPower(1) 
+        FormationManager.UserPowerChanged()
+    end
+
+    if self.name then
+        self.name.text = PlayerManager.nickName or ""
+    end
 end
 
 

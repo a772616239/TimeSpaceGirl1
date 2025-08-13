@@ -296,7 +296,7 @@ function OnlineRewardPanel:RemainTimeDownUpdata()
     local timeNum = GetTimeStamp() - ActivityGiftManager.cuOnLineTimestamp
     local newSort = 0
     for i = 1, #ActivityGiftManager.onlineData do
-        local curValue = ActivityGiftManager.onlineData[i].Values[1][1]*60
+        local curValue = ActivityGiftManager.onlineData[i].Values[1][1] * 60
         local curSort = ActivityGiftManager.onlineData[i].Sort
         if ActivityGiftManager.onlineGetRewardState[ActivityGiftManager.onlineData[i].Id] == 0 then
             if math.floor(timeNum) >= curValue and newSort < curSort then
@@ -308,17 +308,21 @@ function OnlineRewardPanel:RemainTimeDownUpdata()
     end
     if newSort ~= ActivityGiftManager.currentTimeIndex then
         ActivityGiftManager.currentTimeIndex = newSort
-        this:OnShowActivityData()--(ActivityGiftManager.onlineData, ActivityTypeDef.OnlineGift, ActivityGiftManager.onlineGetRewardState, ActivityGiftManager.currentTimeIndex)
+        self:OnShowActivityData()
     end
-    if newSort < 12 then
-        local hour,min,sec = OnlineRewardPanel:Time(ActivityGiftManager.onlineData[newSort+1].Values[1][1]*60-timeNum)
-        this.hour.text = hour
-        this.min.text = min
-        this.sec.text = sec
-    else
-        this.hour.text = "00"
-        this.min.text = "00"
-        this.sec.text = "00"
+    
+    -- Guard: Only update if UI elements exist
+    if self.hour and self.min and self.sec then
+        if newSort < 12 then
+            local hour, min, sec = OnlineRewardPanel:Time(ActivityGiftManager.onlineData[newSort + 1].Values[1][1] * 60 - timeNum)
+            self.hour.text = hour
+            self.min.text = min
+            self.sec.text = sec
+        else
+            self.hour.text = "00"
+            self.min.text = "00"
+            self.sec.text = "00"
+        end
     end
 end
 

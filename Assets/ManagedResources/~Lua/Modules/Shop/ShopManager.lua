@@ -1229,6 +1229,9 @@ end
 
 -- 从本地加载红点数据
 function this.LoadRedpotDataFromLocal()
+    if PlayerManager.uid ==nil then
+        return
+    end
     -- 检测所有商店
     for _, type in pairs(SHOP_TYPE) do
         _ShopCheckTime[type] = PlayerPrefs.GetInt(PlayerManager.uid.."_ShopRedPot_"..type)

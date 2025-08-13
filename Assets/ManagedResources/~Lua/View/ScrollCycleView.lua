@@ -326,127 +326,142 @@ function ScrollCycleView:OnOpen(itemGO, scrollBar, scrollSizeDeltaV2, dragType, 
 end
 
 function this:SetData(dataList, updateFunc, extData)
-	self.dataList = dataList --传入的数据列表
-	self.updateFunc = updateFunc --刷新回调，返回数据列表的索引和对应预设
-	self.dataCount = #dataList
+    -- FIX 1: Ensure dataList is never nil
+    self.dataList = dataList or {}
+    self.updateFunc = updateFunc
+    self.dataCount = #self.dataList  -- Use safe dataList reference
 
-	if self.dragType == 1 then
-		-- self.itemDis = self.itemHeight * math.ceil(self.dataCount / self.fixedCount) + self.spacing.y - self.rectTransform.sizeDelta.y
-		self.itemDis = self.itemHeight * math.ceil(self.dataCount / self.fixedCount) - self.rectTransform.sizeDelta.y
-		self.maxOffset = math.max(math.ceil(self.dataCount / self.fixedCount) - self.itemCount, 0)
-	elseif self.dragType == 2 then
-		-- self.itemDis = self.itemWidth * math.ceil(self.dataCount / self.fixedCount) + self.spacing.x - self.rectTransform.sizeDelta.x
-		self.itemDis = self.itemWidth * math.ceil(self.dataCount / self.fixedCount) - self.rectTransform.sizeDelta.x
-		self.maxOffset = math.max(math.ceil(self.dataCount / self.fixedCount) - self.itemCount, 0)
-	end
+    -- FIX 2: Handle empty dataset case gracefully
+    -- if self.dataCount == 0 then
+    --     -- Clear existing items
+    --     for j = 1, self.fixedCount do
+    --         for i = 1, self.itemCount do
+    --             local item = self.cellItemList[j][i]
+    --             if item and item.go then
+    --                 item.go:SetActive(false)
+    --             end
+    --         end
+    --     end
+        
+    --     -- Reset positions and scrollbar
+    --     self.dragGOTran.anchoredPosition = Vector2.zero
+    --     if self.scrollBar then
+    --         self.scrollBar.size = 1
+    --         self.scrollBar.value = 0
+    --     end
+    --     return
+    -- end
 
-	self.goItemList = {}
-	self.goItemDataRefList = {}
-	if self.tmpTween then
-		self.tmpTween:Kill()
-		self.tmpTween = nil
-	end
+    -- Original layout calculations (now safe)
+    if self.dragType == 1 then
+        self.itemDis = self.itemHeight * math.ceil(self.dataCount / self.fixedCount) - self.rectTransform.sizeDelta.y
+        self.maxOffset = math.max(math.ceil(self.dataCount / self.fixedCount) - self.itemCount, 0)
+    elseif self.dragType == 2 then
+        self.itemDis = self.itemWidth * math.ceil(self.dataCount / self.fixedCount) - self.rectTransform.sizeDelta.x
+        self.maxOffset = math.max(math.ceil(self.dataCount / self.fixedCount) - self.itemCount, 0)
+    end
 
-	local oldIndex = self.dataIndex
-	local oldPos = self.dragGOTran.anchoredPosition
-	self.dataIndex = 0
-	self.dragGOTran.anchoredPosition = Vector2.New(0, 0)
-	local index, item
-	-- if self.piclineArray then
-	-- 	table.walk(self.piclineArray, function(obj)
-	-- 		destroy(obj)
-	-- 	end)
-	-- end
-	-- self.piclineArray = {}
+    self.goItemList = {}
+    self.goItemDataRefList = {}
+    if self.tmpTween then
+        self.tmpTween:Kill()
+        self.tmpTween = nil
+    end
 
-	for j = 1, self.fixedCount do
-		for i = 1, self.itemCount do
-			item = self.cellItemList[j][i]
-			index = j+(i-1)*self.fixedCount
+    local oldIndex = self.dataIndex
+    local oldPos = self.dragGOTran.anchoredPosition
+    self.dataIndex = 0
+    self.dragGOTran.anchoredPosition = Vector2.New(0, 0)
+    local index, item
 
-			if not item.go and index <= self.dataCount then
-				local go = newObject(self.item)
-				go.name = "item"..index
-				go.transform:SetParent(self.dragGO.transform)
-				go.transform.localScale = Vector3.one * self.itemGoScale
-				go.transform.localPosition = Vector3.zero
-				go:SetActive(false)
+    for j = 1, self.fixedCount do
+        for i = 1, self.itemCount do
+            item = self.cellItemList[j][i]
+            index = j+(i-1)*self.fixedCount
 
-				local tran = go:GetComponent("RectTransform")
-				tran.anchorMin = Vector2.New(0, 1)
-				tran.anchorMax = Vector2.New(0, 1)
+            -- FIX 3: Only create items for valid indices
+            if not item.go and index <= self.dataCount then
+                local go = newObject(self.item)
+                go.name = "item"..index
+                go.transform:SetParent(self.dragGO.transform)
+                go.transform.localScale = Vector3.one * self.itemGoScale
+                go.transform.localPosition = Vector3.zero
+                go:SetActive(false)
 
-				item.go = go
-				item.tran = tran
-			end
+                local tran = go:GetComponent("RectTransform")
+                tran.anchorMin = Vector2.New(0, 1)
+                tran.anchorMax = Vector2.New(0, 1)
 
-			if item.go then
-				if self.dragType == 1 then
-					item.tran.anchoredPosition = Vector2.New(self.itemWidth * (j-1), (0.5-i) * self.itemHeight)
-				else
-					item.tran.anchoredPosition = Vector2.New((i-0.5) * self.itemWidth, self.itemHeight * (1-j))
-				end
-				self.goItemList[index] = item.go
-			end
-			SetUpdate(self, index, item)
+                item.go = go
+                item.tran = tran
+            end
 
-			
-			-- if item.go and item.go.activeSelf and j == 1 and extData and extData.picline ~= nil and extData.piclineOffset ~= nil and self.dragType == 1 then
-			-- 	local piclineGo = newObjToParent(self.picline, self.dragGO.transform)
-			-- 	table.insert(self.piclineArray, piclineGo)
-			-- 	if self.dragType == 1 then
-			-- 		local w = self.fixedCount % 2 == 0 and self.itemWidth * self.fixedCount / 2 - self.itemWidth * 0.5 or self.itemWidth * math.floor(self.fixedCount / 2)
-			-- 		piclineGo.transform.anchoredPosition = Vector2.New(w, (0.5-i) * self.itemHeight) + extData.piclineOffset
-			-- 		piclineGo.transform:SetAsFirstSibling()
-			-- 	else
-			-- 		--todo
-			-- 	end
-			-- end
-		end
-	end
+            if item.go then
+                if self.dragType == 1 then
+                    item.tran.anchoredPosition = Vector2.New(self.itemWidth * (j-1), (0.5-i) * self.itemHeight)
+                else
+                    item.tran.anchoredPosition = Vector2.New((i-0.5) * self.itemWidth, self.itemHeight * (1-j))
+                end
+                self.goItemList[index] = item.go
+            end
+            
+            -- FIX 4: Only update visible items within data range
+            if index <= self.dataCount then
+                SetUpdate(self, index, item)
+            elseif item.go then
+                item.go:SetActive(false)  -- Hide out-of-range items
+            end
+        end
+    end
 
-	if self.scrollBar then
-		if self.dragType == 1 then
-			self.scrollBar.size = self.rectTransform.sizeDelta.y / (self.itemHeight * math.ceil(self.dataCount / self.fixedCount) + self.spacing.y)
-		elseif self.dragType == 2 then
-			self.scrollBar.size = self.rectTransform.sizeDelta.x / (self.itemWidth * math.ceil(self.dataCount / self.fixedCount) + self.spacing.x)
-		end
-		if not oldIndex then
-			self.scrollBar.value = 0
-		else
-			if self.dragType == 1 then
-				self.scrollBar.value = oldPos.y / self.itemDis
-			else
-				self.scrollBar.value = -oldPos.x / self.itemDis
-			end
-		end
-		self.scrollBar.onValueChanged:AddListener(function(f)
-			local v2, curIndex
-			if self.dragType == 1 then
-				v2 = Vector2.Lerp(Vector2.zero, Vector2.New(0, self.itemDis), f)
-				curIndex = math.floor(v2.y / self.itemHeight)
-			elseif self.dragType == 2 then
-				v2 = Vector2.Lerp(Vector2.zero, Vector2.New(-self.itemDis, 0), f)
-				curIndex = math.floor(-v2.x / self.itemWidth)
-			end
+    -- FIX 5: Prevent division by zero in scrollbar calculations
+    if self.scrollBar then
+        local totalSize, viewSize, scrollValue
+        if self.dragType == 1 then
+            totalSize = self.itemHeight * math.ceil(self.dataCount / self.fixedCount) + self.spacing.y
+            viewSize = self.rectTransform.sizeDelta.y
+            scrollValue = oldPos and (oldPos.y / self.itemDis) or 0
+        elseif self.dragType == 2 then
+            totalSize = self.itemWidth * math.ceil(self.dataCount / self.fixedCount) + self.spacing.x
+            viewSize = self.rectTransform.sizeDelta.x
+            scrollValue = oldPos and (-oldPos.x / self.itemDis) or 0
+        end
 
-			self.dragGOTran.anchoredPosition = v2
-			SetItemIndex(self, curIndex)
-		end)
-	end
+        -- Handle cases where content is smaller than viewport
+        if totalSize <= viewSize then
+            self.scrollBar.size = 1
+            self.scrollBar.value = 0
+        else
+            self.scrollBar.size = viewSize / totalSize
+            self.scrollBar.value = scrollValue
+        end
 
-	if oldIndex then
-		if self.itemDis > 0 then
-			if self.dragType == 1 then
-				self.dragGOTran.anchoredPosition = Vector2.New(0, math.clamp(oldPos.y, 0, self.itemDis))
-			elseif self.dragType == 2 then
-				self.dragGOTran.anchoredPosition = Vector2.New(math.clamp(oldPos.x, -self.itemDis, 0), 0)
-			end
-		end
-		SetItemIndex(self, oldIndex)
-	end
+        self.scrollBar.onValueChanged:AddListener(function(f)
+            local v2, curIndex
+            if self.dragType == 1 then
+                v2 = Vector2.Lerp(Vector2.zero, Vector2.New(0, self.itemDis), f)
+                curIndex = math.floor(v2.y / self.itemHeight)
+            elseif self.dragType == 2 then
+                v2 = Vector2.Lerp(Vector2.zero, Vector2.New(-self.itemDis, 0), f)
+                curIndex = math.floor(-v2.x / self.itemWidth)
+            end
+
+            self.dragGOTran.anchoredPosition = v2
+            SetItemIndex(self, curIndex)
+        end)
+    end
+
+    if oldIndex then
+        if self.itemDis > 0 then
+            if self.dragType == 1 then
+                self.dragGOTran.anchoredPosition = Vector2.New(0, math.clamp(oldPos.y, 0, self.itemDis))
+            elseif self.dragType == 2 then
+                self.dragGOTran.anchoredPosition = Vector2.New(math.clamp(oldPos.x, -self.itemDis, 0), 0)
+            end
+        end
+        SetItemIndex(self, oldIndex)
+    end
 end
-
 function this:ForeachItemGO(func)
 	if not func or not self.goItemList then return end
 	for i = 1, math.min(#self.goItemList, self.dataCount) do

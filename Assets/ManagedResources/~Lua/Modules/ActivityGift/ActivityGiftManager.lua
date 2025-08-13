@@ -274,10 +274,18 @@ end
 
 --- 记录神秘军火商按钮点击红点
 function this.GetRedState()
+    if PlayerManager.uid==nil then
+        return
+    end
+
     return PlayerPrefs.GetInt(PlayerManager.uid .. "MunitionsMerchant") == 0
 end
 
 function this.SetRedState(value)
+    if PlayerManager.uid==nil then
+        return
+    end
+    
     PlayerPrefs.SetInt(PlayerManager.uid .. "MunitionsMerchant", value)
 end
 
@@ -309,7 +317,7 @@ function this.GetActivityTypeInfo(type)
     local globalActConfigs = ConfigManager.GetAllConfigsDataByKey(ConfigName.GlobalActivity, "Type", type)
     local missionData = nil
     table.walk(globalActConfigs, function(actConfigInfo)
-        if this.mission[actConfigInfo.Id] then
+        if this.mission~=nil and this.mission[actConfigInfo.Id] then
             missionData = this.mission[actConfigInfo.Id]
         end
     end)

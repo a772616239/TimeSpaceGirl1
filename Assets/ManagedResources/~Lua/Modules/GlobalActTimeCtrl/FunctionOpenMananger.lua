@@ -48,6 +48,9 @@ end
 
 -- 某个功能开启后，点击按键设置状态
 function this.CleadNewText(openId)
+    if PlayerManager.uid == nil then
+        return
+    end
     PlayerPrefs.SetInt(PlayerManager.uid .. FUNC_OPEN_STR[openId], 1)
 end
 

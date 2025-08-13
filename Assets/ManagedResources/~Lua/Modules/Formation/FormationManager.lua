@@ -213,13 +213,25 @@ function this.GetAllFormationHeroId()
 end
 --获取单个编队所有上阵英雄
 function this.GetWuJinFormationHeroIds(index)
-   local forMationData = this.GetFormationByID(index).teamHeroInfos
-    local index = 1
-    local list = {}
-    for j = 1, #forMationData do
-        list[forMationData[j].heroId] = index
-        index = index + 1
+    -- Safely get formation data
+    local formation = this.GetFormationByID(index)
+    if not formation or not formation.teamHeroInfos then
+        return {}  -- Return empty table instead of crashing
     end
+
+    local formationData = formation.teamHeroInfos
+    local positionCounter = 1  -- Renamed to avoid shadowing parameter
+    local list = {}
+    
+    -- Safely iterate through hero data
+    for j = 1, #formationData do
+        local heroInfo = formationData[j]
+        if heroInfo and heroInfo.heroId then  -- Check for valid hero entry
+            list[heroInfo.heroId] = positionCounter
+            positionCounter = positionCounter + 1
+        end
+    end
+    
     return list
 end
 -- 获取编队信息

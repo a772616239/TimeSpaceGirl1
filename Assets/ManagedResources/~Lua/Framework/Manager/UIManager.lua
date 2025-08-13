@@ -504,7 +504,7 @@ function UIManager.GetPanel(id, isSync, func, ...)
             break
         end
     end
-    if uiConfig.type == UIType.Popup and uiConfig.assetName ~="RewardItemPopup"  then
+    if uiConfig.type == UIType.Popup and uiConfig.assetName ~="RewardItemPopup"and uiConfig.assetName ~="BattleBestPopup"  then
         PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Clickdialogue)
     end
 

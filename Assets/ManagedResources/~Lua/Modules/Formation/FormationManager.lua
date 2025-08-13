@@ -289,6 +289,10 @@ function this.GetFormationPower(formationId)
         ExpeditionManager.ExpeditionRrefreshFormation()--刷新编队
     end
     local formationList = this.GetFormationByID(formationId)
+    if formationList== nil then
+        return 0
+    end
+
     local power = 0
     for i = 1, 6 do
         if formationList.teamHeroInfos[i] then
@@ -297,7 +301,9 @@ function this.GetFormationPower(formationId)
             if #formationList.teamHeroInfos <= 0 then return 0 end
             local allHeroTeamAddProVal = HeroManager.GetAllHeroTeamAddProVal(formationList.teamHeroInfos,formationList.teamHeroInfos[i].heroId)
             local allEquipAddProVal = HeroManager.CalculateHeroAllProValList(1, heroData.dynamicId,false,nil,nil,true,allHeroTeamAddProVal)
-            power = power + allEquipAddProVal[HeroProType.WarPower]
+            if allEquipAddProVal~=nil then
+                power = power + allEquipAddProVal[HeroProType.WarPower]
+            end
         end
     end
     -- substitute 为 dynamicId 需要转化
@@ -305,7 +311,9 @@ function this.GetFormationPower(formationId)
         -- local heroDid = HeroManager.GetSingleHeroData(formationList.substitute).id
         -- local allHeroTeamAddProVal = HeroManager.GetAllHeroTeamAddProVal(formationList.teamHeroInfos,heroDid)
         local allEquipAddProVal = HeroManager.CalculateHeroAllProValList(1, formationList.substitute,false,nil,nil,true,allHeroTeamAddProVal)
-        power = power + allEquipAddProVal[HeroProType.WarPower]
+        if allEquipAddProVal~=nil then
+            power = power + allEquipAddProVal[HeroProType.WarPower]
+        end
     end
     -- 主线编队战斗力
     -- ThinkingAnalyticsManager.SetSuperProperties({
@@ -345,6 +353,9 @@ function this.UserPowerChanged(teamId)
 end
 
 function this.GetMaxPowerForTeamID(teamId)
+    if this.formationList==nil  then
+        return
+    end
     local teamId = teamId or FormationTypeDef.FORMATION_NORMAL
     local maxPower = 0
     for _, teamInfo in pairs(this.formationList) do

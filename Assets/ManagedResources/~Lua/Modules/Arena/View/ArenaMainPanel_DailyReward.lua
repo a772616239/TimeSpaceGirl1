@@ -86,7 +86,7 @@ function ArenaMainPanel_DailyReward:SetMy(reward)
     self.rank = Util.GetGameObject(myReward, "RankIcon/rankText/Text"):GetComponent("Text")
     self.rankIcon = Util.GetGameObject(myReward, "RankIcon/rank")
     self.desc=Util.GetGameObject(myReward, "tip (1)")
-    if(ArenaManager.MyRank.rank ~= -1) then
+    if(ArenaManager.MyRank.rank~=nil and ArenaManager.MyRank.rank ~= -1) then
         if ArenaManager.MyRank.rank == 1 then
             self.rank.gameObject:SetActive(false)
             self.rankIcon:SetActive(true)

@@ -562,7 +562,10 @@ function CourtesyDressPanel:RemainTimeDown()
 end
 function CourtesyDressPanel:RemainTimeDownUpdata()
     local timeNum = GetTimeStamp() - ActivityGiftManager.cuOnLineTimestamp
-    this.remaindTimeText.text =   GetLanguageStrById(10024)..TimeToHMS(timeNum)
+    
+    if not IsNull(this.remaindTimeText) then
+        this.remaindTimeText.text =   GetLanguageStrById(10024)..TimeToHMS(timeNum)
+    end
 
     local newSort = 0
     for i = 1, #ActivityGiftManager.onlineData do

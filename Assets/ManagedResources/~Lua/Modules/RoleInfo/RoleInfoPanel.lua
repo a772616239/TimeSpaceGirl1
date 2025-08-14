@@ -695,7 +695,7 @@ function this:UpdatePanelData()
     if curHeroData.heroConfig.GrowthSwitch then
         this.HideAllLayout()
         this.SetActive(this.roleInfoLayout,true)
-        this:SetSelectBtn(this.btnInfo)
+        this:SetSelectBtn(this.btnInfo,this.roleInfoLayout)
     end
     this:GetCurHeroUpLvOrUpStarSData()  --获取当前英雄的下一进阶 和 升星 静态数据
     this:UpdateHeroUpStarData()         --更新英雄升星数据
@@ -2894,7 +2894,7 @@ function this.HideAllLayout()
 end
 
 --页签选中效果设置
-function this:SetSelectBtn(_btn)
+function this:SetSelectBtn(_btn,btnHorizontal)
     local btnListCount = self.btnList.transform.childCount
     for i = 0, btnListCount - 1 do
         Util.GetGameObject(this.btnList.transform:GetChild(i),"bg"):GetComponent("Image").sprite = Util.LoadSprite("cn2-X1_tongyong_fenlan_weixuanzhong_02")    
@@ -2910,8 +2910,8 @@ function this:SetSelectBtn(_btn)
     if this.isFirstOpen then
         this.isFirstOpen = false
     else
-        this.leftBtn.transform.position = Util.GetGameObject(this.roleInfoLayout,"leftBtnPos").transform.position
-        this.rightBtn.transform.position = Util.GetGameObject(this.roleInfoLayout,"rightBtnPos").transform.position
+        this.leftBtn.transform.position = Util.GetGameObject(btnHorizontal,"leftBtnPos").transform.position
+        this.rightBtn.transform.position = Util.GetGameObject(btnHorizontal,"rightBtnPos").transform.position
     end
 end
 
@@ -2930,7 +2930,7 @@ function this:OnClickBtnInfo()
     this.SetActive(this.CommentBtn,true)
     this.SetActive(this.LockingBtn,true)
     this.SetActive(this.ResetBtn,false)
-    this:SetSelectBtn(this.btnInfo)
+    this:SetSelectBtn(this.btnInfo,this.roleInfoLayout)
     this.MoveLive(-150)
     liveDeviation = -1
 end
@@ -2941,7 +2941,7 @@ function this:OnClickBtnEquip()
     this.SetActive(this.CommentBtn,false)
     this.SetActive(this.LockingBtn,false)
     this.SetActive(this.ResetBtn,false)
-    this:SetSelectBtn(this.btnEquip)
+    this:SetSelectBtn(this.btnEquip,this.roleInfoLayout)
     this.MoveLive(0)
     liveDeviation = 0
 end
@@ -2950,7 +2950,7 @@ function this:OnClickBtnCulture()
     this.HideAllLayout()
     this.SetActive(this.roleUpStarLayout,true)
     this.SetActive(this.btnCultureBtnList,true)
-    this:SetSelectBtn(this.btnCulture)
+    this:SetSelectBtn(this.btnCulture,this.btnCulture)
     this.SetActive(this.CommentBtn,false)
     this.SetActive(this.LockingBtn,false)
     this.SetActive(this.ResetBtn,false)
@@ -2982,7 +2982,7 @@ function this:OnClickBtnAbility()
     this.MoveLive(150)
     liveDeviation = 1
 end
---芯片
+--芯片SetSelectBtn
 function this:OnClickBtnChip()
     this.HideAllLayout()
     this.SetActive(this.btnCultureBtnList,true)

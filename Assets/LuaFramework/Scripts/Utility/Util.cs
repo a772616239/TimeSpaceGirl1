@@ -1125,8 +1125,15 @@ namespace GameLogic
 
         public static Sprite LoadSprite(string spriteName)
         {
+            // 新增空值检查
+            if (string.IsNullOrEmpty(spriteName)|| spriteName == "_zh")
+            {
+                Log("LoadSprite: 传入的 spriteName 为空或空字符串");
+                return null; // 或返回默认占位图
+            }
+
             //> multiLanguage
-            if(m_lan == 0)
+            if (m_lan == 0)
             {
                 m_lan = PlayerPrefs.GetInt("multi_language", AppConst.originLan);
             }
@@ -1134,12 +1141,7 @@ namespace GameLogic
             int L = ((int)Math.Floor((double)(m_lan / 100))) % 100;
             string _spriteName = spriteName;
             // Log("_spriteName:"+_spriteName);
-            
-            if (_spriteName=="_zh")
-            {
-                return null;
-            }
-            
+       
             if(L != 0)
             {
                 if(_spriteName.EndsWith("_zh")&& _spriteName.Length>3)

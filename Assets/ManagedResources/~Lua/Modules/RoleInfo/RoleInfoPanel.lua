@@ -114,8 +114,7 @@ function RoleInfoPanel:InitComponent()
     this.HeadFrameView = SubUIManager.Open(SubUIConfig.PlayerHeadFrameView, self.transform)
     this.UpView = SubUIManager.Open(SubUIConfig.UpView, self.gameObject.transform, { showType = UpViewOpenType.ShowRight})
 
-    this.leftBtn = Util.GetGameObject(self.transform, "leftBtn")
-    this.rightBtn = Util.GetGameObject(self.transform, "rightBtn")
+
     this.curObj = Util.GetGameObject(self.transform, "curObj")
     this.leftObj = Util.GetGameObject(self.transform, "leftObj")
     this.rightObj = Util.GetGameObject(self.transform, "rightObj")
@@ -165,6 +164,8 @@ function RoleInfoPanel:InitComponent()
 
     this.posText = Util.GetGameObject(this.roleInfoLayout,"Info/Text"):GetComponent("Text") --定位
     this.pro = Util.GetGameObject(this.roleInfoLayout,"Info/pro")
+    this.leftBtn = Util.GetGameObject(this.transform, "rolePanel/leftBtn")
+    this.rightBtn = Util.GetGameObject(this.transform, "rolePanel/rightBtn")
     this.atkPro = Util.GetGameObject(this.pro,"atk")
     this.hpPro = Util.GetGameObject(this.pro,"hp")
     this.phyDef = Util.GetGameObject(this.pro,"phyDef")
@@ -246,10 +247,10 @@ function RoleInfoPanel:InitComponent()
     this.planGo3 = Util.GetGameObject(self.transform, "roleEquipLayout/equipInfo/equip7")
     this.planGo4 = Util.GetGameObject(self.transform, "roleEquipLayout/equipInfo/equip8")
 
-    this.ResetBtn = Util.GetGameObject(this.info, "ResetBtn")--重置
-    this.LockingBtn = Util.GetGameObject(this.info, "LockingBtn")--锁定
+    this.ResetBtn = Util.GetGameObject(this.roleInfoLayout, "ResetBtn")--重置
+    this.LockingBtn = Util.GetGameObject(this.roleInfoLayout, "LockingBtn")--锁定
     this.lockTxt = Util.GetGameObject(this.LockingBtn, "Text"):GetComponent("Text")
-    this.CommentBtn = Util.GetGameObject(this.info, "CommentBtn")--评论
+    this.CommentBtn = Util.GetGameObject(this.roleInfoLayout, "CommentBtn")--评论
 
     --能力
     this.preViewBtn = Util.GetGameObject(this.roleAbilityLayout, "preViewBtn")
@@ -2909,8 +2910,8 @@ function this:SetSelectBtn(_btn)
     if this.isFirstOpen then
         this.isFirstOpen = false
     else
-        this.leftBtn.transform.position = Util.GetGameObject(_btn,"leftBtnPos").transform.position
-        this.rightBtn.transform.position = Util.GetGameObject(_btn,"rightBtnPos").transform.position
+        this.leftBtn.transform.position = Util.GetGameObject(this.roleInfoLayout,"leftBtnPos").transform.position
+        this.rightBtn.transform.position = Util.GetGameObject(this.roleInfoLayout,"rightBtnPos").transform.position
     end
 end
 

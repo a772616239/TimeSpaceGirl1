@@ -65,8 +65,9 @@ function this.GetNotice()
     RequestPanel.Show(GetLanguageStrById(11128))
     local showCb= function  (str)
             noticeContent=str
+            Log("获取公告内容: " .. tostring(str))
             RequestPanel.Hide()
-            if str == nil then
+            if str == nil or str == "" then
                 return
             end
             
@@ -87,6 +88,8 @@ function this.GetNotice()
                 for part in string.gmatch(content, "([^|]+)") do
                   
                     local langCode, text = string.match(part, "^(%w+):(.+)$")
+                    if  langCode== nil then
+                        langCode = "10001" -- 默认语言标识
                       Log("公告部分langCode: " .. langCode)
                     if langCode and text then
                         if langCode == lang then
@@ -96,7 +99,7 @@ function this.GetNotice()
                         end
                     end
                 end
-                
+            end
                 -- 如果未找到匹配语言，尝试中文或第一条公告
                 if not found then
                     -- 尝试找中文

@@ -17,7 +17,7 @@ namespace GameEditor.FrameTool
         /// <summary>
         /// Trunk、Tag开发服
         /// </summary>
-        [ServerPathTypeValue("http://120.92.119.145:8080/", "http://120.92.119.145/game_res/", null, "http://120.92.119.145:8081/idip/sfzb/sdk", "http://120.92.119.145:8081/idip/sfzb", "dev")]
+        [ServerPathTypeValue("http://192.168.5.2:8080/", "http://192.168.5.2:81/", null, "http://120.92.119.145:8081/idip/sfzb/sdk", "http://120.92.119.145:8081/idip/sfzb", "dev")]
         开发服 = 0,
 
         /// <summary>

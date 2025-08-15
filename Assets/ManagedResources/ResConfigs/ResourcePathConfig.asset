@@ -4171,6 +4171,18 @@ MonoBehaviour:
     extension: .png
     resPathIndex: 22
     resAbNameIndex: 20
+  - resName: cn2-X1_zhutihuodong_anyinghzixi_en
+    extension: .psd
+    resPathIndex: 22
+    resAbNameIndex: 20
+  - resName: cn2-X1_zhutihuodong_baisesishen_en
+    extension: .png
+    resPathIndex: 22
+    resAbNameIndex: 20
+  - resName: cn2-X1_zhutihuodong_bumiejinshen_en
+    extension: .png
+    resPathIndex: 22
+    resAbNameIndex: 20
   - resName: cn2-X1_zhutihuodong_yeqian_01_en
     extension: .png
     resPathIndex: 22
@@ -4897,6 +4909,10 @@ MonoBehaviour:
     resAbNameIndex: 44
   - resName: cn2-X1_zhanling_yiduan_02_en
     extension: .png
+    resPathIndex: 45
+    resAbNameIndex: 44
+  - resName: cn2-X1_zhanling_yiduan_bg_en
+    extension: .psd
     resPathIndex: 45
     resAbNameIndex: 44
   - resName: cn2-X1_zhanling_yijiesuo_en
@@ -8207,6 +8223,10 @@ MonoBehaviour:
     extension: .png
     resPathIndex: 177
     resAbNameIndex: 172
+  - resName: bannerCV
+    extension: .prefab
+    resPathIndex: 178
+    resAbNameIndex: 173
   - resName: cn2-X1_chaozhijj_diban_zh
     extension: .png
     resPathIndex: 178
@@ -8272,6 +8292,10 @@ MonoBehaviour:
     resPathIndex: 178
     resAbNameIndex: 173
   - resName: cn2-X1_zhanling_shenyuan_bg_zh
+    extension: .png
+    resPathIndex: 178
+    resAbNameIndex: 173
+  - resName: cn2-X1_zhanling_yiduan_bg2_zh
     extension: .png
     resPathIndex: 178
     resAbNameIndex: 173
@@ -40801,7 +40825,9 @@ MonoBehaviour:
   - assetBundleName: lz4/artfont_zh/onlinerewardpanelatlas.unity3d
     dependences: []
   - assetBundleName: lz4/artfont_zh/operatingpanelatlas.unity3d
-    dependences: []
+    dependences:
+    - lz4/atlas/operatingpanelatlas.unity3d
+    - lz4/font/system_small.unity3d
   - assetBundleName: lz4/artfont_zh/pveactivitypanelatlas.unity3d
     dependences: []
   - assetBundleName: lz4/artfont_zh/partsmainpopupatlas.unity3d
@@ -43044,6 +43070,7 @@ MonoBehaviour:
     - lz4/font/system_small.unity3d
     - lz4/iconsprite/herohead.unity3d
     - lz4/iconsprite/item.unity3d
+    - lz4/spine/uispine.unity3d
     - lz4/texture/ui/cn2-x1_tongyong_background.unity3d
   - assetBundleName: lz4/prefabs/ui/dailyrecharge.unity3d
     dependences:

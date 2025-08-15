@@ -994,9 +994,9 @@ end
 -- 获取商品最多购买数量（跟据要消耗的物品计算）
 function this.GetShopItemMaxBuy(shopType, itemId)
     local shopData = this.GetShopDataByType(shopType)
-    local startNum = nil
+    local startNum = 0
     for _, v in ipairs(shopData.storeItem) do
-        if v.id == itemId then
+        if v and v.id == itemId then
             startNum = v.buyNum
             break
         end

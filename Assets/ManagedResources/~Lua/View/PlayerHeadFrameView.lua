@@ -97,7 +97,7 @@ function PlayerHeadFrameView:RefreshPlayerInfoShow()
     if PlayerManager and PlayerManager.userLevelData and PlayerManager.level then
         levelData = PlayerManager.userLevelData[PlayerManager.level]
     end
-    if  PlayerManager.exp then
+    if  not IsNull(PlayerManager.exp) then
          -- Handle exp display with fallbacks
         if self.expVaule and levelData then
             self.expVaule.value = PlayerManager.exp / levelData.Exp
@@ -114,29 +114,29 @@ function PlayerHeadFrameView:RefreshPlayerInfoShow()
 
 
     -- Safe UI updates with nil checks
-    if self.icon then
+    if not IsNull(self.icon) then
         self.icon.sprite = GetPlayerHeadSprite(PlayerManager.head)
     end
 
-    if self.frame then
+    if not IsNull(self.frame) then
         self.frame.sprite = GetPlayerHeadFrameSprite(PlayerManager.frame)
     end
 
-    if self.levelLv then
+    if not IsNull(self.levelLv) then
         self.levelLv.text = "Lv." .. tostring(PlayerManager.level or 0)
     end
 
-    if self.VIPLevel then
+    if not IsNull(self.VIPLevel) then
         self.VIPLevel.sprite = VipManager.SetVipLevelImg()
     end
 
-    if self.power then
+    if not IsNull(self.power) then
         -- Fixed to show clearance power
         self.power.text = FormationManager.GetFormationPower(1) 
         FormationManager.UserPowerChanged()
     end
 
-    if self.name then
+    if not IsNull(self.name) then
         self.name.text = PlayerManager.nickName or ""
     end
 end

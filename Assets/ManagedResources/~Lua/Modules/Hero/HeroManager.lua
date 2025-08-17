@@ -693,6 +693,10 @@ end
 
 function this.GetAllFormationByHeroId(heroId)
     local teamIdList = {}
+    if FormationManager.formationList == nil then
+        LogError("FormationManager.formationList == nil")
+        return teamIdList
+    end
     for index, value in pairs(FormationManager.formationList) do
         for j = 1, #value.teamHeroInfos do
             if value.teamHeroInfos[j].heroId == heroId then
@@ -2302,31 +2306,35 @@ function this.GetAllHeroTeamAddProVal(teamHeroInfos,curteamHeroDid)
     --> 被动 能力 戒指
     for i = 1, 5 do
         if teamHeroInfos[i] then
-            local heroSkillSingleHeroProVal, heroSkillLvProVal, heroSkillAllHeroProVal, heroSkillSpecialProVal =
+            local heroData=HeroManager.GetSingleHeroData(curteamHeroDid)
+            if  heroData then
+                local heroSkillSingleHeroProVal, heroSkillLvProVal, heroSkillAllHeroProVal, heroSkillSpecialProVal =
                 CalculateHeroPassiveSkillProAddVal(1, 
                 teamHeroInfos[i].heroId,
                 nil,
                 nil,
                 curteamHeroDid and
-                HeroManager.GetSingleHeroData(curteamHeroDid).heroConfig.PropertyName or nil)
-            -- local falismanSingleHeroProVal, falismanLvProVal, falismanAllHeroProVal, falismanSpecialProVal =
-                -- CalculateHeroUpTalismanProAddVal(teamHeroInfos[i].heroId,nil,nil, curteamHeroDid and  HeroManager.GetSingleHeroData(curteamHeroDid).heroConfig.PropertyName or nil)
-            -- local soulPrinSingleHeroProVal,soulPrinLvProVal,soulPrinAllHeroProVal,soulPrinSpecialProVal = CalculateSoulPrintAddVal(teamHeroInfos[i].heroId)
-            -- local singleHeroProValWarWay, lvProValWarWay, allHeroProValWarWay, specialProValWarWay = CalculateWarWayAddVal(teamHeroInfos[i].heroId)
-            -- local singleHeroProValCombatPlan, lvProValCombatPlan, allHeroProValCombatPlan, specialProValCombatPlan = CalculateCombatPlanAddVal(teamHeroInfos[i].heroId)
+                heroData.heroConfig.PropertyName or nil)
+                -- local falismanSingleHeroProVal, falismanLvProVal, falismanAllHeroProVal, falismanSpecialProVal =
+                    -- CalculateHeroUpTalismanProAddVal(teamHeroInfos[i].heroId,nil,nil, curteamHeroDid and  HeroManager.GetSingleHeroData(curteamHeroDid).heroConfig.PropertyName or nil)
+                -- local soulPrinSingleHeroProVal,soulPrinLvProVal,soulPrinAllHeroProVal,soulPrinSpecialProVal = CalculateSoulPrintAddVal(teamHeroInfos[i].heroId)
+                -- local singleHeroProValWarWay, lvProValWarWay, allHeroProValWarWay, specialProValWarWay = CalculateWarWayAddVal(teamHeroInfos[i].heroId)
+                -- local singleHeroProValCombatPlan, lvProValCombatPlan, allHeroProValCombatPlan, specialProValCombatPlan = CalculateCombatPlanAddVal(teamHeroInfos[i].heroId)
 
-            local _, _, allHeroProValCombatPlanAndWarWay, _ = CalculateCombatPlanAndWarWayAddVal(teamHeroInfos[i].heroId)
+                local _, _, allHeroProValCombatPlanAndWarWay, _ = CalculateCombatPlanAndWarWayAddVal(teamHeroInfos[i].heroId)
 
-            -- local medalSuitAddPro , lvProValMedalSuit, allHeroProValMedalSuit, specialProValMedalSuit = CalculateMedalSuitAddVal(teamHeroInfos[i].heroId)
-            local singleHeroProValTalent, lvProValTalent, allHeroProValTalent, specialProValTalent = CalculateTalentAddVal(teamHeroInfos[i].heroId)
-            this.DoubleTableCompound(teamProVal, heroSkillAllHeroProVal)
-            -- this.DoubleTableCompound(teamProVal, allHeroProValWarWay)
-            -- this.DoubleTableCompound(teamProVal, allHeroProValCombatPlan)
-            this.DoubleTableCompound(teamProVal, allHeroProValCombatPlanAndWarWay)
-            this.DoubleTableCompound(teamProVal, allHeroProValTalent)
-            -- this.DoubleTableCompound(teamProVal, allHeroProValMedalSuit)
-            -- this.DoubleTableCompound(teamProVal, falismanAllHeroProVal)
-            -- this.DoubleTableCompound(teamProVal,soulPrinAllHeroProVal)
+                -- local medalSuitAddPro , lvProValMedalSuit, allHeroProValMedalSuit, specialProValMedalSuit = CalculateMedalSuitAddVal(teamHeroInfos[i].heroId)
+                local singleHeroProValTalent, lvProValTalent, allHeroProValTalent, specialProValTalent = CalculateTalentAddVal(teamHeroInfos[i].heroId)
+                this.DoubleTableCompound(teamProVal, heroSkillAllHeroProVal)
+                -- this.DoubleTableCompound(teamProVal, allHeroProValWarWay)
+                -- this.DoubleTableCompound(teamProVal, allHeroProValCombatPlan)
+                this.DoubleTableCompound(teamProVal, allHeroProValCombatPlanAndWarWay)
+                this.DoubleTableCompound(teamProVal, allHeroProValTalent)
+                -- this.DoubleTableCompound(teamProVal, allHeroProValMedalSuit)
+                -- this.DoubleTableCompound(teamProVal, falismanAllHeroProVal)
+                -- this.DoubleTableCompound(teamProVal,soulPrinAllHeroProVal)
+            end
+            
         end
     end
     --光环加成

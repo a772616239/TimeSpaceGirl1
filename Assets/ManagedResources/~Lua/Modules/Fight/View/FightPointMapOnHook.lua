@@ -239,10 +239,13 @@ function this:Init()
     local curFormation = FormationManager.GetFormationByID(FormationTypeDef.FORMATION_NORMAL)
     --上阵列表赋值
     local heroPosArray = {}
-    for j = 1, #curFormation.teamHeroInfos do
-        local teamInfo = curFormation.teamHeroInfos[j]
-        table.insert(heroPosArray, teamInfo.position, HeroManager.GetSingleHeroData(teamInfo.heroId))
+    if curFormation ~= nil and curFormation.teamHeroInfos ~= nil then
+        for j = 1, #curFormation.teamHeroInfos do
+            local teamInfo = curFormation.teamHeroInfos[j]
+            table.insert(heroPosArray, teamInfo.position, HeroManager.GetSingleHeroData(teamInfo.heroId))
+         end
     end
+
 
     rightCount = 0
     liveNodesLeft = {}

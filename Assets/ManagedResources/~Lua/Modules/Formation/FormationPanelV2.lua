@@ -405,9 +405,12 @@ function this:OnShow()
             this.TabAddListen(tabBtns[i].type)
         end)
     end
+    local formation= FormationManager.GetFormationByID(this.curFormationIndex)
+    if formation then
+        this.choosedFormationId =formation.formationId
+        FormationManager.SetFormationId(this.choosedFormationId)
+    end
 
-    this.choosedFormationId = FormationManager.GetFormationByID(this.curFormationIndex).formationId
-    FormationManager.SetFormationId(this.choosedFormationId)
 
     this.RefreshFormation()
 

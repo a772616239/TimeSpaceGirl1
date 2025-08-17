@@ -348,6 +348,9 @@ end
 function this.UserPowerChanged(teamId)
     local teamId = teamId or FormationTypeDef.FORMATION_NORMAL
     local maxPower = 0
+    if not this.formationList then
+        return
+    end
     for _, teamInfo in pairs(this.formationList) do
         if teamId == teamInfo.teamId then
             if #teamInfo.teamHeroInfos > 0 then

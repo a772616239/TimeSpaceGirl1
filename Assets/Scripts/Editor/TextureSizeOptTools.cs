@@ -300,13 +300,14 @@ namespace LJ_OptTools
                     // Debug.Log($"Max Texture Size: {importer.maxTextureSize}");
                     // Debug.Log($"Texture Format: {importer.textureCompression}");
                     // Debug.Log($"Alpha Source: {importer.alphaSource}");
-                    TextureImporterPlatformSettings settings = importer.GetPlatformTextureSettings("Android");
-                    if (settings.format==TextureImporterFormat.ETC_RGB4Crunched||settings.format==TextureImporterFormat.ETC2_RGBA8Crunched)
-                    {
-                        Debug.Log("已经是crunched，忽略："+path);
-                        return;
-                        continue;
-                    }
+
+                    //TextureImporterPlatformSettings settings = importer.GetPlatformTextureSettings("Android");
+                    //if (settings.format==TextureImporterFormat.ETC_RGB4Crunched||settings.format==TextureImporterFormat.ETC2_RGBA8Crunched)
+                    //{
+                    //    Debug.Log("已经是crunched，忽略："+path);
+                    //    return;
+                    //    continue;
+                    //}
                     // 你可以在这里获取更多设置或进行修改
                 }
                 else

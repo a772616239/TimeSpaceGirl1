@@ -238,7 +238,7 @@ function this.TimeDown(txt, timeDown)
         this.timer = nil
     end
     this.timer = Timer.New(function()
-        if txt then
+        if not IsNull(txt) then
             txt.text = GetLanguageStrById(12321) .. TimeToDHMS(timeDown)
         end
         if timeDown < 0 then

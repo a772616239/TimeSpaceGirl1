@@ -3178,7 +3178,7 @@ function this:RightBtnOnClick()
         this.rightBtn:GetComponent("Button").enabled = true
         isClickLeftOrRightBtn = true
     end):SetEase(Ease.Linear)
-    PlaySoundWithoutClick(SoundConfig.Sound_Switch)
+    -- PlaySoundWithoutClick(SoundConfig.Sound_Switch)
 end
 
 --左切换按钮点击
@@ -3220,7 +3220,7 @@ function this:LeftBtnOnClick()
         this.leftBtn:GetComponent("Button").enabled = true
         isClickLeftOrRightBtn = true
     end):SetEase(Ease.Linear)
-     PlaySoundWithoutClick(SoundConfig.Sound_Switch)
+    --  PlaySoundWithoutClick(SoundConfig.Sound_Switch)
 end
 
 --设置显隐

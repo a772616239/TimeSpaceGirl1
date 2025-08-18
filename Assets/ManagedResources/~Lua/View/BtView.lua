@@ -102,7 +102,8 @@ function this:OpenJieling()
     end
     LastClickingIndex=4
     UIManager.OpenPanel(UIName.FightPointPassMainPanel)
-    PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_04)
+    PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_01)
+    -- PlaySoundWithoutClick(SoundConfig.Sound_BattleStart_04)
 end
 -- 打开副本选择界面
 function this:OpenCarbon()

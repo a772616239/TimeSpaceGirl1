@@ -638,6 +638,10 @@ function this.NextGuide(nextId)
     end
 end
 function this:OnSortingOrderChange()
+    if IsNull(self.upArrow) then
+        return
+    end
+    
     local canvas= self.upArrow:GetComponent("Canvas")
     if not canvas or IsNull(canvas) then
         return

@@ -61,6 +61,8 @@ function ArenaMainPanel:BindEvent()
     Util.AddClick(this.btnBack, function()
         PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
         this:ClosePanel()
+        ArenaTopMatchManager.HasReqedTopMatchData=false
+        ArenaTopMatchManager.HasReqedArenaData=false
         UIManager.OpenPanel(UIName.ArenaTypePanel)
     end)
     Util.AddClick(this.shopBtn, function()

@@ -58,6 +58,7 @@ end
 
 function this:BindEvent()
     Util.AddClick(this.TopMatch_btnEnter, function()
+        ArenaTopMatchManager.HasReqedTopMatchData=false
         UIManager.OpenPanel(UIName.ArenaTopMatchPanel)
     end)
     Util.AddClick(this.TopMatch_btnRank, function()
@@ -83,24 +84,36 @@ function this:OnSortingOrderChange(_sortingOrder)
     sortingOrder = _sortingOrder
 end
 
+
 function this:OnShow(...)
     sortingOrder = 0
+    
+    if ArenaTopMatchManager.HasReqedTopMatchData then
+        this:OnUpdateRankUI()
+    else
+        ArenaTopMatchManager.RequestTopMatchBaseInfo(function ()
+            this:OnUpdateRankUI()
+            -- ArenaTopMatchManager.HasReqedTopMatchData=true
+        end)
+    end
      -- 巅峰战
-    ArenaTopMatchManager.RequestTopMatchBaseInfo(function()
+    
+    this.showRank()
+
+end
+function this:OnUpdateRankUI()
         this.RefreshTopMatchShow()
-        -- 计时器
+
         if this.TimeCounter then return end
         this.TimeCounter = Timer.New(this.TimeUpdate, 1, -1, true)
         this.TimeCounter:Start()
         this.TimeUpdate()
-    end)
-    do
-        this.showRank()
-    end
+
 end
 
 function this:OnClose()
     ClearRedPointObject(RedPointType.ArenaTodayAlreadyLike, this.btnRankRedpoint)
+    Log("OnClose ArenaTypePanel_TopMatch")
 end
 
 function this:OnDestroy()
@@ -110,6 +123,8 @@ function this:OnDestroy()
     end
 
     btnLikeList = {}
+
+    -- Log("OnDestroy ArenaTypePanel_TopMatch")
 end
 
 -- 刷新巅峰战显示
@@ -174,8 +189,20 @@ function this.TimeUpdate()
 end
 
 function this.showRank()
-    ArenaTopMatchManager.RequestRankData(1,function ()            
-        local rankData ,myRankData = ArenaTopMatchManager.GetRankData()
+    if ArenaTopMatchManager.HasReqedTopMatchData then
+        this.OnUpdateRankUI1()
+    else
+        ArenaTopMatchManager.RequestRankData(1, function ()
+            this.OnUpdateRankUI1()
+            ArenaTopMatchManager.HasReqedTopMatchData=true
+            
+        end)
+    end
+ 
+end
+
+function this.OnUpdateRankUI1()
+     local rankData ,myRankData = ArenaTopMatchManager.GetRankData()
         for i = 1, 3 do
             if rankData[i] then
                 btnLikeList[rankData[i].uid] = this.tableTopThree[i].addBtn
@@ -213,9 +240,8 @@ function this.showRank()
             end
         end
         this.LikeBtnState()
-    end)
-end
 
+end
 function this.GetHeroInfo(playerUid,index)
     NetManager.RequestPlayerInfo(playerUid, FormationTypeDef.FORMATION_ARENA_DEFEND, function(msg)         
         local teamInfo = msg.teamInfo.team

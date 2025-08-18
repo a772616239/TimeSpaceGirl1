@@ -2,6 +2,9 @@ ArenaTopMatchManager = {}
 local this = ArenaTopMatchManager
 this.CurTabIndex = 0
 this.curIsShowDoGuessPopup = false
+this.HasReqedTopMatchData = false
+this.HasReqedArenaData = false
+
 local isChange = false
 local stageNameTable = {
     [1] = 32 .. GetLanguageStrById(10097),--强

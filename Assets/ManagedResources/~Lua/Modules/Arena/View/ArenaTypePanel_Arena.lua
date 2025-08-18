@@ -9,7 +9,7 @@ local selectData
 local itemList = {}
 local itemDefultList = {}
 local gradeList = {}
-
+local page1 ,msg1
 function this:InitComponent(gameObject)
     this.Arena = Util.GetGameObject(gameObject, "ArenaTypePanel_Arena")
     --this.Arena_Name = Util.GetGameObject(this.Arena, "Name"):GetComponent("Text")
@@ -45,6 +45,7 @@ end
 
 function this:BindEvent()
     Util.AddClick(this.Arena_btnEnter, function()
+        ArenaManager.HasReqedArenaData=false
         JumpManager.GoJump(8001)
     end)
 end
@@ -65,8 +66,25 @@ function this:OnShow(...)
         value:SetActive(false)
         Util.GetGameObject(value.transform.parent.gameObject, "roleImage"):SetActive(false)
     end
+    if ArenaManager.HasReqedArenaData then
+        this:UpdateUI(page1,msg1)
+    else
 
-    NetManager.RequestArenaRankData(1,function(page,msg)      --这块排行走了两套逻辑 RankingManager ArenaManager
+        NetManager.RequestArenaRankData(1,function(page,msg)      --这块排行走了两套逻辑 RankingManager ArenaManager
+            
+            ArenaManager.RequestTodayAlreadyLikeUids_Arena(function()
+                this:UpdateUI(page,msg)
+                ArenaManager.HasReqedArenaData = true
+            end)
+
+        end)
+    end
+
+end
+
+function this:UpdateUI( page,msg )
+        page1=page
+        msg1=msg
         RankingManager.ReceiveArenaData(page,msg)
 
         this.RefreshArenaShow()
@@ -83,14 +101,11 @@ function this:OnShow(...)
             return
         end
 
-        ArenaManager.RequestTodayAlreadyLikeUids_Arena(function()
-            for i = 1, LengthOfTable(gradeList) do
+          for i = 1, LengthOfTable(gradeList) do
                 if gradeList[i] ~= nil then
                     this:SetHeadsInfo(gradeList[i],this.dt[i])
                 end
             end
-        end)
-    end)
 end
 
 function this:OnClose()

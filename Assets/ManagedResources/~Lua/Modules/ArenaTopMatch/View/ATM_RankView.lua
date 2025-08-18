@@ -50,6 +50,7 @@ end
 --界面打开时调用（用于子类重写）
 function ATM_RankViewPanel:OnOpen(...)
     this.RefreshRankInfo()
+    CheckRedPointStatus(RedPointType.ArenaTodayAlreadyLike)
 end
 
 function ATM_RankViewPanel:OnSortingOrderChange(sortingOrder)

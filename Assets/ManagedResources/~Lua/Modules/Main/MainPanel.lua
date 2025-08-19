@@ -824,6 +824,7 @@ function this.CreatActivity()
             else
                 break
             end
+            
             activityTabs[k].go = newObjToParent(this.activityTabPrefab,root)
             -- local img_2 = Util.GetGameObject(activityTabs[k].go, "Image_2")
             activityTabs[k].img = Util.GetGameObject(activityTabs[k].go, "icon/img"):GetComponent("Image")

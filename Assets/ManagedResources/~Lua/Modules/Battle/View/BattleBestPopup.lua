@@ -14,7 +14,7 @@ local lowPlayerLv20=20
 local lowPlayerLv30=30
 local lowPlayerLv40=40
 
-local Limit10PerLv=7
+local Limit10PerLv=5
 local Limit20PerLv=4
 local Limit30PerLv=3
 local MaxLimit10PerLv=2
@@ -43,6 +43,7 @@ function BattleBestPopup:BindEvent()
         end
     )
 end
+
 
 function this:OnOpen(heroTId, damageValue, allDamage, func, _func2, isShowStatistic)
     if UIManager.IsOpen(UIName.PublicGetHeroPanel) then
@@ -96,19 +97,19 @@ function this:OnClose()
     Log("PassTimes1:"..PassTimes1)
     if PlayerManager.level < lowPlayerLv10 then
         -- -- 30级之前不弹出评价
-        -- if PassTimes1 % Limit10PerLv == 0 and ShowReviewPTimes <= 1 then
-        --     -- 每四次弹出一次评价
-        --     ReviewMgr:AllInOneFlowClick()
+        if PassTimes1 % Limit10PerLv == 0 and ShowReviewPTimes <= 2 then
+            -- 每四次弹出一次评价
+            ReviewMgr:AllInOneFlowClick()
 
-        --     ShowReviewPTimes = ShowReviewPTimes + 1
+            ShowReviewPTimes = ShowReviewPTimes + 1
 
-        --     PassTimes1 = 0
-        -- end
+            PassTimes1 = 0
+        end
     elseif PlayerManager.level < lowPlayerLv20 then
         if 
         -- PassTimes1 % Limit20PerLv == 0 and
         PassTimes1>1 and 
-        ShowReviewPTimes <= 1 
+        ShowReviewPTimes <= 2 
         then
             -- 每四次弹出一次评价
             ReviewMgr:AllInOneFlowClick()
@@ -117,7 +118,7 @@ function this:OnClose()
             PassTimes1 = 0
         end
     elseif PlayerManager.level < lowPlayerLv40 then
-        if PassTimes1 % Limit30PerLv == 0 and ShowReviewPTimes <= 1 then
+        if PassTimes1 % Limit30PerLv == 0 and ShowReviewPTimes <= 2 then
             -- 每四次弹出一次评价
             ReviewMgr:AllInOneFlowClick()
             ShowReviewPTimes = ShowReviewPTimes + 1
@@ -125,7 +126,7 @@ function this:OnClose()
             PassTimes1 = 0
         end
     else
-        if PassTimes1 % MaxLimit10PerLv == 0 and ShowReviewPTimes <= 1 then
+        if PassTimes1 % MaxLimit10PerLv == 0 and ShowReviewPTimes <= 2 then
             -- 每四次弹出一次评价
             ReviewMgr:AllInOneFlowClick()
             ShowReviewPTimes = ShowReviewPTimes + 1

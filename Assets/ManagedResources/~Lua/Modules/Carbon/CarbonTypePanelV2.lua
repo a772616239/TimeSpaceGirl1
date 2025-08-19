@@ -274,15 +274,22 @@ function this.update()
         if abX<1 and
            abY<1
         then
-            this.StopMusic()
+            if isDraging then
+                Log("CarbonTypePanelV2 isDraging StopMusic")
+                this.StopMusic()
+            end
         end
         
         lastPos=v2
         if Input.GetMouseButtonUp(0) then
-            this.StopMusic()
+            if isDraging then
+                Log("CarbonTypePanelV2 isDraging StopMusic")
+                this.StopMusic()
+            end
         end
 end
 function this.StopMusic()
+    Log("CarbonTypePanelV2 StopMusic")
     SoundManager.PlayMusic("cn2-x1_NTERFACE_Mainmenu_OpenMission_Stop",false)
 end
 

@@ -118,6 +118,10 @@ function PoolManager:PreLoadAsset(resName,num, assetType, func)
 end
 
 function PoolManager:LoadAsset(resName, assetType)
+    if self.mPoolTable == nil then
+        return nil
+    end
+    
     local tempTable = self.mPoolTable[resName]
     if tempTable == nil then
         tempTable = {}

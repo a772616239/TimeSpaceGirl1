@@ -48,14 +48,17 @@ function QuickCommonPurchasePart:OnShow(context)
 end
 
 function QuickCommonPurchasePart:OnHide()
-    this.transform.gameObject:SetActive(false)
+    if not IsNull(this.transform.gameObject) then
+        this.transform.gameObject:SetActive(false)
+    end
+
     if this.timer then
         this.timer:Stop()
         this.timer = nil
     end
     Game.GlobalEvent:RemoveEvent(GameEvent.Shop.OnShopInfoChange ,this.RefreshPanel)
 
-    if redPoint then
+    if not IsNull(redPoint) then
         redPoint:SetActive(false)
         ClearRedPointObject(RedPointType.Revenue_Free)
     end

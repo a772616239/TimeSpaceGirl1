@@ -62,12 +62,12 @@ function CustomEventManager.handleOnUpdateHeroDatas()
     for i, v in pairs(HeroManager.GetAllHeroDatas()) do
         count = count+1
     end
-    this.CustomEvent(count,"获得新的英雄")
+    -- this.CustomEvent(count,"获得新的英雄")
 end
 
 --玩家升级
 function CustomEventManager.hanldeOnPlayerLvChange()
-    this.CustomEvent(PlayerManager.level,"玩家升级"..PlayerManager.level)
+    this.CustomEvent(PlayerManager.level,"玩家升级"..PlayerManager.uid)
 end
 
 

@@ -15,7 +15,7 @@ end
 
 function Stack:Pop()
     if self.count == 0 then
-        error('lua stack is isEmpty')
+        warn('lua stack is isEmpty')
         return
     end
     local e = self.list[self.count]

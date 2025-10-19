@@ -560,7 +560,9 @@ function RewardItemPopup:SetItemShow(drop)
                 -- this.SetItemData(itemDataList[i])
                 Timer.New(function ()
                     isPopGetSSR = false
-                    callList:Pop()()
+                    if callList then
+                        callList:Pop()()
+                    end
                 end, 0.05):Start()
             end
             if curItemData.configData and curItemData.itemType == 3 and curItemData.configData.Quality == 5 and showHero then

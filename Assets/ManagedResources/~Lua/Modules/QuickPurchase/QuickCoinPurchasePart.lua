@@ -48,7 +48,7 @@ function QuickCommonPurchasePart:OnShow(context)
 end
 
 function QuickCommonPurchasePart:OnHide()
-    if not IsNull(this.transform.gameObject) then
+    if not IsNull(this.transform) then
         this.transform.gameObject:SetActive(false)
     end
 
@@ -142,7 +142,10 @@ function this.TimeCountDown(timeDown)
            return
        end
        timeDown = timeDown - 1
-       this.time.text =  GetLanguageStrById(10028)..TimeToHMS(timeDown)
+       if not IsNull(this.time) then
+              this.time.text =  GetLanguageStrById(10028)..TimeToHMS(timeDown)
+        end
+
    end, 1, -1, true)
    this.timer:Start()
 end

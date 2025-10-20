@@ -208,7 +208,7 @@ end
 ]]
 function PoolManager:UnLoadAsset(resName,res, assetType)    
     local pool = self.mPoolTable[resName]
-    if pool == nil or pool.resList == nil then
+    if pool == nil or pool.resList == nil or res == nil then
         return
     end
 
@@ -219,6 +219,9 @@ function PoolManager:UnLoadAsset(resName,res, assetType)
     if assetType == PoolManager.AssetType.GameObject
            and res~=nil and not IsNull(res.transform)
     then
+        if IsNull(self.mPoolTrans) then
+            return
+        end
         res.transform:SetParent(self.mPoolTrans)
         if #pool.resList <= 5 then
             table.insert(pool.resList,res)

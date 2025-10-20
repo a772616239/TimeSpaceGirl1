@@ -1126,64 +1126,93 @@ namespace GameLogic
         public static Sprite LoadSprite(string spriteName)
         {
             // 新增空值检查
-            if (string.IsNullOrEmpty(spriteName)|| spriteName == "_zh")
+            if (string.IsNullOrEmpty(spriteName) || spriteName == "_zh")
             {
                 Log("LoadSprite: 传入的 spriteName 为空或空字符串");
-                return null; // 或返回默认占位图
+                return null;
             }
 
-            //> multiLanguage
+            // multiLanguage
             if (m_lan == 0)
             {
                 m_lan = PlayerPrefs.GetInt("multi_language", AppConst.originLan);
             }
-            //int lan = PlayerPrefs.GetInt("multi_language", AppConst.originLan);
+
             int L = ((int)Math.Floor((double)(m_lan / 100))) % 100;
             string _spriteName = spriteName;
-            // Log("_spriteName:"+_spriteName);
-       
-            if(L != 0)
+
+            if (L != 0)
             {
-                if(_spriteName.EndsWith("_zh")&& _spriteName.Length>3)
+                if (_spriteName.EndsWith("_zh") && _spriteName.Length > 3)
                 {
-                    #region 替换下面注释的代码
-
-                    if(MultiLanguageHelper.MultiLanguageDictionary.ContainsKey(L))
+                    // 修复：添加字典存在性检查和键存在性检查
+                    if (MultiLanguageHelper.MultiLanguageDictionary != null &&
+                       MultiLanguageHelper.MultiLanguageDictionary.ContainsKey(L) &&
+                       MultiLanguageHelper.MultiLanguageDictionary[L] != null)
                     {
-                        _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + MultiLanguageHelper.MultiLanguageDictionary[L].SpriteNameSuffix;
+                        string suffix = MultiLanguageHelper.MultiLanguageDictionary[L].SpriteNameSuffix;
+                        if (!string.IsNullOrEmpty(suffix))
+                        {
+                            _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + suffix;
+                        }
                     }
-
-                    #endregion
-
-                    //if(L == 1)
-                    //{
-                    //    _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + "_en";
-                    //}else if(L == 2)
-                    //{
-
-                    //}
+                    else
+                    {
+                        Log($"多语言字典未初始化或找不到语言ID: {L}，使用默认中文资源");
+                    }
                 }
             }
-            
+
             if (!_spriteName.StartsWith("cn2-"))
             {
                 _spriteName = "cn2-" + _spriteName;
             }
-            // Log("load _spriteName:"+_spriteName+"--L:"+L);
-            var sprite= App.ResMgr.LoadAsset<Sprite>(_spriteName);
-            if (sprite==null&&(_spriteName.EndsWith("_en")||_spriteName.EndsWith("_jp")) && _spriteName.Length > 3)
+
+            // 添加资源加载前的安全检查
+            Sprite sprite = null;
+            try
             {
-                Log("加载不到多语言，使用中文："+_spriteName);
+                sprite = App.ResMgr.LoadAsset<Sprite>(_spriteName);
+            }
+            catch (System.Exception e)
+            {
+                Log($"加载精灵图失败: {_spriteName}, 错误: {e.Message}");
+            }
+
+            if (sprite == null && (_spriteName.EndsWith("_en") || _spriteName.EndsWith("_jp")) && _spriteName.Length > 3)
+            {
+                Log("加载不到多语言，使用中文：" + _spriteName);
+
+                // 修复：添加更安全的字符串操作
+                string fallbackName;
                 if (_spriteName.Contains("zhucheng"))
                 {
-                    _spriteName = "cn2-X1_common_zh";
+                    fallbackName = "cn2-X1_common_zh";
                 }
                 else
                 {
-                    _spriteName = _spriteName.Substring(0, _spriteName.Length - 3) + "_zh";
+                    // 确保不会出现索引越界
+                    int lastUnderscoreIndex = _spriteName.LastIndexOf('_');
+                    if (lastUnderscoreIndex > 0 && lastUnderscoreIndex < _spriteName.Length - 1)
+                    {
+                        fallbackName = _spriteName.Substring(0, lastUnderscoreIndex) + "_zh";
+                    }
+                    else
+                    {
+                        fallbackName = _spriteName + "_zh";
+                    }
                 }
-                sprite= App.ResMgr.LoadAsset<Sprite>(_spriteName);
+
+                try
+                {
+                    sprite = App.ResMgr.LoadAsset<Sprite>(fallbackName);
+                }
+                catch (System.Exception e)
+                {
+                    Log($"回退加载中文精灵图失败: {fallbackName}, 错误: {e.Message}");
+                }
             }
+
             return sprite;
         }
 

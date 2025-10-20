@@ -147,7 +147,7 @@ function MainShopPanel:OnOpen(chooseShopType)
         end
     end
 
-    assert(this._ChooseCategoryIndex and this._ChoosePageIndex and this._ChooseShopIndex, GetLanguageStrById(11927))
+    -- assert(this._ChooseCategoryIndex and this._ChoosePageIndex and this._ChooseShopIndex, GetLanguageStrById(11927))
 end
 
 -- 打开，重新打开时回调

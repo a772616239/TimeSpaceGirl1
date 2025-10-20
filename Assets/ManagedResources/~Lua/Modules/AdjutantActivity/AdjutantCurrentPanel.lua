@@ -75,6 +75,9 @@ local buttonState = {
     [1] = { sprite = "cn2-X1_xianquhuodong_yiduihuan"},
 }
 function AdjutantCurrentPanel:ShowContent()
+    if this.shop == nil or this.adjutantShop == nil or IsNull(this.shop) or IsNull(this.adjutantShop) then
+        return
+    end
     if globalActivityConfig.ShopId[1] ~= 0 then
         this.adjutantShop:SetActive(true)
         if globalActivityConfig.ShopId[2] then

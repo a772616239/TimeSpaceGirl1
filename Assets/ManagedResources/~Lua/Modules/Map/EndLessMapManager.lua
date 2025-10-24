@@ -93,10 +93,24 @@ function this.UpDateTeamMaxHp(info)
         Game.GlobalEvent:DispatchEvent(GameEvent.Map.FormationHpChange)
     end)
 end
-function this.RrefreshFormationStart( ... )
-    -- body
+
+
+function this.RrefreshFormationStart(...)
+    -- Add comprehensive nil checks
+    if FormationManager == nil or
+       FormationManager.formationList == nil or
+       FormationManager.formationList[FormationTypeDef.FORMATION_ENDLESS_MAP] == nil then
+        
+        -- Handle the error case appropriately
+        print("ERROR: Formation data not available for endless map")
+        this.formation = {} -- Set default empty formation
+        return
+    end
+    
+    -- Body
     this.formation = FormationManager.formationList[FormationTypeDef.FORMATION_ENDLESS_MAP].teamHeroInfos
 end
+
 function this.InitRefreshPoint(refreshInfo, func)
     
     this.freshPointData = {}
@@ -672,18 +686,59 @@ end
 
 --刷新英雄，去掉使用的自己的英雄和死了的英雄
 function this.RrefreshFormation()
+    -- 添加安全检查，确保 FormationManager 和相关数据存在
+    if not FormationManager then
+        LogError("FormationManager is nil in RrefreshFormation")
+        return
+    end
+    
     local tempList = {}
+    
+    -- 安全获取当前阵型
     local curFormation = FormationManager.GetFormationByID(FormationTypeDef.FORMATION_ENDLESS_MAP)
-    for k,v in pairs(curFormation.teamHeroInfos) do
-        if (not this.allHeroBlood[v.heroId] or this.allHeroBlood[v.heroId].curHp > 0) then
-            table.insert(tempList,v)
+    if not curFormation then
+        LogError("curFormation is nil for formation type: " .. tostring(FormationTypeDef.FORMATION_ENDLESS_MAP))
+        return
+    end
+    
+    if not curFormation.teamHeroInfos then
+        LogError("curFormation.teamHeroInfos is nil")
+        return
+    end
+    
+    -- 初始化 allHeroBlood 如果不存在
+    if not this.allHeroBlood then
+        this.allHeroBlood = {}
+    end
+    
+    -- 构建临时列表
+    for k, v in pairs(curFormation.teamHeroInfos) do
+        if v and v.heroId then
+            -- 检查英雄血量，如果不存在或者血量大于0则加入列表
+            local heroBlood = this.allHeroBlood[v.heroId]
+            if not heroBlood or heroBlood.curHp > 0 then
+                table.insert(tempList, v)
+            end
         end
     end
-    table.sort(tempList,function(a,b)
-        return a.position < b.position
+    
+    -- 按位置排序
+    table.sort(tempList, function(a, b)
+        if not a or not b then
+            return false
+        end
+        local aPos = a.position or 0
+        local bPos = b.position or 0
+        return aPos < bPos
     end)
-    FormationManager.formationList[FormationTypeDef.FORMATION_ENDLESS_MAP].teamHeroInfos = tempList
-    this.formation = FormationManager.formationList[FormationTypeDef.FORMATION_ENDLESS_MAP].teamHeroInfos
+    
+    -- 安全更新阵型列表
+    if FormationManager.formationList and FormationManager.formationList[FormationTypeDef.FORMATION_ENDLESS_MAP] then
+        FormationManager.formationList[FormationTypeDef.FORMATION_ENDLESS_MAP].teamHeroInfos = tempList
+        this.formation = tempList
+    else
+        LogError("FormationManager.formationList or formation entry is nil")
+    end
 end
 
 function this.CheckFormationIsEmpty()

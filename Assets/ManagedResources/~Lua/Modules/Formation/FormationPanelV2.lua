@@ -763,90 +763,159 @@ end
 
 --排序英雄数据
 function this.SortHeroDatas(_heroDatas)
+    -- 添加参数验证
+    if not _heroDatas or type(_heroDatas) ~= "table" or #_heroDatas == 0 then
+        return {}
+    end
+    
     local choosed = {}
     local dieHeros = {}
+    
+    -- 安全获取当前阵型
     local curFormation = FormationManager.GetFormationByID(this.curFormationIndex)
+    if not curFormation or not curFormation.teamHeroInfos then
+        -- 如果没有阵型数据，直接返回原始数据或简单排序
+        table.sort(_heroDatas, function(a, b)
+            if not a or not b then return false end
+            return (a.sortId or 0) > (b.sortId or 0)
+        end)
+        return _heroDatas
+    end
 
+    -- 构建死亡英雄列表
     for i = 1, #_heroDatas do
-        local heroHp = FormationManager.GetFormationHeroHp(this.curFormationIndex, _heroDatas[i].dynamicId)
-        if heroHp then
-            if heroHp <= 0 then
-                dieHeros[_heroDatas[i].dynamicId] = _heroDatas[i].dynamicId
+        local heroData = _heroDatas[i]
+        if heroData and heroData.dynamicId then
+            local heroHp = FormationManager.GetFormationHeroHp(this.curFormationIndex, heroData.dynamicId)
+            if heroHp and heroHp <= 0 then
+                dieHeros[heroData.dynamicId] = true
             end
         end
     end
+    
+    -- 构建已选择英雄列表
     for j = 1, #curFormation.teamHeroInfos do
         local teamInfo = curFormation.teamHeroInfos[j]
-        choosed[teamInfo.heroId] = j
+        if teamInfo and teamInfo.heroId then
+            choosed[teamInfo.heroId] = j
+        end
     end
 
+    -- 安全的排序函数
     table.sort(_heroDatas, function(a, b)
-        if (choosed[a.dynamicId] and choosed[b.dynamicId]) or
-                (not choosed[a.dynamicId] and not choosed[b.dynamicId])
-        then
-            if (dieHeros[a.dynamicId] and dieHeros[b.dynamicId]) or
-                    (not dieHeros[a.dynamicId] and not dieHeros[b.dynamicId])
-            then
-                if sortType == SortTypeConst.Natural then
-                    if a.heroConfig.Natural == b.heroConfig.Natural then
-                        if a.heroConfig.Quality == b.heroConfig.Quality then
-                            if a.star == b.star then
-                                if a.lv == b.lv then
-                                    if a.warPower == b.warPower then
-                                        if a.id == b.id then
-                                            return a.sortId > b.sortId
-                                        else
-                                            return a.id > b.id
-                                        end
-                                    else
-                                        return a.warPower > b.warPower
-                                    end
-                                else
-                                    return a.lv > b.lv
-                                end
-                            else
-                                return a.star > b.star
-                            end
-                        else
-                            return a.heroConfig.Quality > b.heroConfig.Quality
-                        end
-                    else
-                        return a.heroConfig.Natural > b.heroConfig.Natural
-                    end
-                else
-                    if a.lv == b.lv then
-                        if a.heroConfig.Quality == b.heroConfig.Quality then
-                            if a.star == b.star then
-                                if a.heroConfig.Natural == b.heroConfig.Natural then
-                                    if a.warPower == b.warPower then
-                                        if a.id == b.id then
-                                            return a.sortId > b.sortId
-                                        else
-                                            return a.id > b.id
-                                        end
-                                    else
-                                        return a.warPower > b.warPower
-                                    end
-                                else
-                                    return a.heroConfig.Natural > b.heroConfig.Natural
-                                end
-                            else
-                                return a.star > b.star
-                            end
-                        else
-                            return a.heroConfig.Quality > b.heroConfig.Quality
-                        end
-                    else
-                        return a.lv > b.lv
-                    end
-                end
-            else
-                return not dieHeros[a.dynamicId] and  dieHeros[b.dynamicId]
+        -- 添加 nil 检查
+        if not a or not b then
+            return false
+        end
+        
+        -- 确保必要的字段存在
+        local aDynamicId = a.dynamicId or 0
+        local bDynamicId = b.dynamicId or 0
+        local aHeroConfig = a.heroConfig or {}
+        local bHeroConfig = b.heroConfig or {}
+        
+        local aChosen = choosed[aDynamicId] ~= nil
+        local bChosen = choosed[bDynamicId] ~= nil
+        local aDead = dieHeros[aDynamicId] ~= nil
+        local bDead = dieHeros[bDynamicId] ~= nil
+        
+        -- 已选择和未选择的优先级
+        if aChosen and not bChosen then
+            return true
+        elseif not aChosen and bChosen then
+            return false
+        end
+        
+        -- 存活和死亡的优先级
+        if not aDead and bDead then
+            return true
+        elseif aDead and not bDead then
+            return false
+        end
+        
+        -- 根据排序类型进行详细比较
+        if sortType == SortTypeConst.Natural then
+            -- 自然排序逻辑
+            local aNatural = aHeroConfig.Natural or 0
+            local bNatural = bHeroConfig.Natural or 0
+            if aNatural ~= bNatural then
+                return aNatural > bNatural
             end
+            
+            local aQuality = aHeroConfig.Quality or 0
+            local bQuality = bHeroConfig.Quality or 0
+            if aQuality ~= bQuality then
+                return aQuality > bQuality
+            end
+            
+            local aStar = a.star or 0
+            local bStar = b.star or 0
+            if aStar ~= bStar then
+                return aStar > bStar
+            end
+            
+            local aLv = a.lv or 0
+            local bLv = b.lv or 0
+            if aLv ~= bLv then
+                return aLv > bLv
+            end
+            
+            local aWarPower = a.warPower or 0
+            local bWarPower = b.warPower or 0
+            if aWarPower ~= bWarPower then
+                return aWarPower > bWarPower
+            end
+            
+            local aId = a.id or 0
+            local bId = b.id or 0
+            if aId ~= bId then
+                return aId > bId
+            end
+            
+            return (a.sortId or 0) > (b.sortId or 0)
         else
-            return choosed[a.dynamicId] and not choosed[b.dynamicId]
+            -- 其他排序逻辑
+            local aLv = a.lv or 0
+            local bLv = b.lv or 0
+            if aLv ~= bLv then
+                return aLv > bLv
+            end
+            
+            local aQuality = aHeroConfig.Quality or 0
+            local bQuality = bHeroConfig.Quality or 0
+            if aQuality ~= bQuality then
+                return aQuality > bQuality
+            end
+            
+            local aStar = a.star or 0
+            local bStar = b.star or 0
+            if aStar ~= bStar then
+                return aStar > bStar
+            end
+            
+            local aNatural = aHeroConfig.Natural or 0
+            local bNatural = bHeroConfig.Natural or 0
+            if aNatural ~= bNatural then
+                return aNatural > bNatural
+            end
+            
+            local aWarPower = a.warPower or 0
+            local bWarPower = b.warPower or 0
+            if aWarPower ~= bWarPower then
+                return aWarPower > bWarPower
+            end
+            
+            local aId = a.id or 0
+            local bId = b.id or 0
+            if aId ~= bId then
+                return aId > bId
+            end
+            
+            return (a.sortId or 0) > (b.sortId or 0)
         end
     end)
+    
+    return _heroDatas
 end
 
 --设置每条英雄数据

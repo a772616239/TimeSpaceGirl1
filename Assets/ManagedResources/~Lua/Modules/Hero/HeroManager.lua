@@ -1014,7 +1014,8 @@ function this.GetUpStarHeroListData(heroRankUpGroupId, heroData)
     --0 没有 1 有满足条件单位英雄
     needHeroListData.heroList = {}
     local heroRankUpGroup = heroRankUpGroup[heroRankUpGroupId]
-    for i, v in pairs(heroDatas) do
+    if heroDatas ~= nil and LengthOfTable(heroDatas) > 0 then
+        for i, v in pairs(heroDatas) do
         --TODONow
         local isLock = false
         local teamIdList = HeroManager.GetAllFormationByHeroId(v.dynamicId)
@@ -1084,8 +1085,11 @@ function this.GetUpStarHeroListData(heroRankUpGroupId, heroData)
             end
         end
     end
+    end
+
+
     --删除编队上的英雄
-    if needHeroListData.heroList and LengthOfTable(needHeroListData.heroList) > 0 then
+    if needHeroListData.heroList and LengthOfTable(needHeroListData.heroList) > 0 and FormationManager.formationList and LengthOfTable(FormationManager.formationList) > 0 then
         for i, v in pairs(needHeroListData.heroList) do
             for n, w in pairs(FormationManager.formationList) do
                 if this.heroResolveLicence[n] then

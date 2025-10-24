@@ -344,6 +344,9 @@ function SupportManager.SetFormationSupportId(teamId, supportId)
     this.supportId[teamId] = supportId
 end
 function SupportManager.GetFormationSupportId(teamId)
+    if this.supportId == nil then
+        return 0
+    end
     return this.supportId[teamId] or 0
 end
 

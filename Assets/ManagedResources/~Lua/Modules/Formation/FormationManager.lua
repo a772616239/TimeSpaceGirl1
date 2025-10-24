@@ -203,10 +203,12 @@ end
 function this.GetAllFormationHeroId()
     local list = {}
     local index = 1
-    for i, team in pairs(this.formationList) do
-        for j = 1, #team.teamHeroInfos do
-            list[team.teamHeroInfos[j].heroId] = index
-            index = index + 1
+    if this.formationList ~= nil and LengthOfTable(this.formationList) > 0 then
+        for i, team in pairs(this.formationList) do
+            for j = 1, #team.teamHeroInfos do
+                list[team.teamHeroInfos[j].heroId] = index
+                index = index + 1
+            end
         end
     end
     return list

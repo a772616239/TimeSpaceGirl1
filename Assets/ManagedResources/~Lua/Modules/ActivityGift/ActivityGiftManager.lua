@@ -471,8 +471,12 @@ function this.CheckRedFunc(redType)
         end
     end
 end
-
 function this.RefreshActivityData(respond)
+    -- 初始化 mission 字段，确保不为 nil
+    if not this.mission then
+        this.mission = {}
+    end
+    
     if respond.closeActivityId then
         for i = 1, #respond.closeActivityId do
             if this.mission[respond.closeActivityId[i]] then
@@ -504,6 +508,10 @@ function this.RefreshActivityData(respond)
     --newOpen
     if respond.activityInfo then
         for i = 1, #respond.activityInfo do
+            -- 确保 mission 表存在
+            if not this.mission then
+                this.mission = {}
+            end
             this.mission[respond.activityInfo[i].activityId] = respond.activityInfo[i]
             local activityType = this.GetActivityTypeFromId(respond.activityInfo[i].activityId)
             if activityType == ActivityTypeDef.LuckyCat then --招财猫

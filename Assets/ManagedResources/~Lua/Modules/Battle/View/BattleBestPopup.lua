@@ -14,15 +14,11 @@ local lowPlayerLv20=20
 local lowPlayerLv30=30
 local lowPlayerLv40=40
 
-local Limit10PerLv=5
-local Limit20PerLv=4
-local Limit30PerLv=3
-local MaxLimit10PerLv=2
-
--- local Limit10PerLv=1
--- local Limit20PerLv=1
--- local Limit30PerLv=1
--- local MaxLimit10PerLv=1
+local Limit10PerLv=2
+local Limit20PerLv=1
+local Limit30PerLv=1
+local MaxLimit10PerLv=1
+local MaxShowReviewPTimes=10 -- 增加最大弹出次数限制到10次
 function this:InitComponent()
     this.firstPanel = Util.GetGameObject(self.transform, "first")
     this.firstRole = Util.GetGameObject(this.firstPanel, "root") --m5
@@ -97,7 +93,7 @@ function this:OnClose()
     Log("PassTimes1:"..PassTimes1)
     if PlayerManager.level < lowPlayerLv10 then
         -- -- 30级之前不弹出评价
-        if PassTimes1 % Limit10PerLv == 0 and ShowReviewPTimes <= 2 then
+        if PassTimes1 % Limit10PerLv == 0 and ShowReviewPTimes <= MaxShowReviewPTimes then
             -- 每四次弹出一次评价
             ReviewMgr:AllInOneFlowClick()
 
@@ -106,11 +102,7 @@ function this:OnClose()
             PassTimes1 = 0
         end
     elseif PlayerManager.level < lowPlayerLv20 then
-        if 
-        -- PassTimes1 % Limit20PerLv == 0 and
-        PassTimes1>1 and 
-        ShowReviewPTimes <= 2 
-        then
+        if PassTimes1 % Limit20PerLv == 0 and ShowReviewPTimes <= MaxShowReviewPTimes then
             -- 每四次弹出一次评价
             ReviewMgr:AllInOneFlowClick()
             ShowReviewPTimes = ShowReviewPTimes + 1
@@ -118,7 +110,7 @@ function this:OnClose()
             PassTimes1 = 0
         end
     elseif PlayerManager.level < lowPlayerLv40 then
-        if PassTimes1 % Limit30PerLv == 0 and ShowReviewPTimes <= 2 then
+        if PassTimes1 % Limit30PerLv == 0 and ShowReviewPTimes <= MaxShowReviewPTimes then
             -- 每四次弹出一次评价
             ReviewMgr:AllInOneFlowClick()
             ShowReviewPTimes = ShowReviewPTimes + 1
@@ -126,7 +118,7 @@ function this:OnClose()
             PassTimes1 = 0
         end
     else
-        if PassTimes1 % MaxLimit10PerLv == 0 and ShowReviewPTimes <= 2 then
+        if PassTimes1 % MaxLimit10PerLv == 0 and ShowReviewPTimes <= MaxShowReviewPTimes then
             -- 每四次弹出一次评价
             ReviewMgr:AllInOneFlowClick()
             ShowReviewPTimes = ShowReviewPTimes + 1

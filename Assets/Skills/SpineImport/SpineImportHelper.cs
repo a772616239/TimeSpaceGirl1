@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using Spine.Unity;
@@ -74,3 +75,4 @@ namespace Spine.Skills
         }
     }
 }
+#endif

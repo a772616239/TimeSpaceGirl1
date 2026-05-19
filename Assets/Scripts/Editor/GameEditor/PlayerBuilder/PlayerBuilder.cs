@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using UnityEngine;
 using UnityEditor;
 using System.IO;
@@ -86,7 +86,8 @@ namespace GameEditor.GameEditor.PlayerBuilder
             {
                 EditorUserBuildSettings.androidBuildSystem = AndroidBuildSystem.Gradle;
                 EditorUserBuildSettings.exportAsGoogleAndroidProject = false;
-                buildPlayerOptions.locationPathName = locationPathName + ".apk";
+                string ext = EditorUserBuildSettings.buildAppBundle ? ".aab" : ".apk";
+                buildPlayerOptions.locationPathName = locationPathName + ext;
                 //buildPlayerOptions.options = BuildOptions.None;
             }
 

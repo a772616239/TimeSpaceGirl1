@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
@@ -97,6 +97,11 @@ namespace GameEditor.FrameTool
 
         void OnGUI()
         {
+            if (version == null)
+            {
+                InitGames();
+            }
+
             EditorGUILayout.BeginVertical();
             EditorGUILayout.Space();
             EditorGUILayout.LabelField(string.Format("当前平台:{0}", EditorUserBuildSettings.activeBuildTarget.ToString()));
@@ -413,12 +418,21 @@ namespace GameEditor.FrameTool
             int code = CheckVersion();
             if (code != -1)
             {
+                // 每次打包自增版本号并保存
+                code += 1;
+                string[] arr = defaultVersion.Split('.');
+                defaultVersion = arr[0] + "." + arr[1] + "." + code;
+                SaveVersionFile();
+
                 //版本号
                 PlayerSettings.bundleVersion = defaultVersion;
 
-                //热更版本号
-                PlayerSettings.Android.bundleVersionCode = code;
-                PlayerSettings.iOS.buildNumber = code.ToString();
+                // BundleVersionCode 独立自增并保存
+                PlayerSettings.Android.bundleVersionCode++;
+                PlayerSettings.iOS.buildNumber = PlayerSettings.Android.bundleVersionCode.ToString();
+                
+                // 确保 ProjectSettings 的修改被保存落盘
+                AssetDatabase.SaveAssets();
             }
 
             PlayerBuilder.Export(isRelease);

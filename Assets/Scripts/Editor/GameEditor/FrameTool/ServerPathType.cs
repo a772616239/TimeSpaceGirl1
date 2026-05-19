@@ -23,13 +23,13 @@ namespace GameEditor.FrameTool
         /// <summary>
         /// 商务服
         /// </summary>
-        [ServerPathTypeValue("http://120.92.119.145:8080/", "http://162.62.232.128:81/")]
+        [ServerPathTypeValue("http://120.92.119.145:8080/", "http://129.226.213.65:81/")]
         商务服,
 
          /// <summary>
         /// 商务服
         /// </summary>
-        [ServerPathTypeValue("http://162.62.232.128:8080/", "http://162.62.232.128:81/")]
+        [ServerPathTypeValue("http://129.226.213.65:8080/", "http://129.226.213.65:81/")]
         柯测试服,
 
         /// <summary>

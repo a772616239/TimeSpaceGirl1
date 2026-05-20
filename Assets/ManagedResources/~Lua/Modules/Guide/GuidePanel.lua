@@ -668,12 +668,16 @@ function this:OnOpen(id, func, ...)
         this.dialogRoot:SetActive(false)
         this.tipButtomRoot:SetActive(false)
         this.mask:SetActive(false)
-        Timer.New(
+        if this.delayTimer then
+            this.delayTimer:Stop()
+        end
+        this.delayTimer = Timer.New(
             function()
                 this.ShowGuide(id)
             end,
             delay
-        ):Start()
+        )
+        this.delayTimer:Start()
     else
         this.ShowGuide(id)
     end
@@ -719,6 +723,10 @@ end
 
 --界面关闭时调用（用于子类重写）
 function this:OnClose()
+    if this.delayTimer then
+        this.delayTimer:Stop()
+        this.delayTimer = nil
+    end
     if this.sortingOrder == 6300 then
         this:SetSortingOrder(6000)
     end

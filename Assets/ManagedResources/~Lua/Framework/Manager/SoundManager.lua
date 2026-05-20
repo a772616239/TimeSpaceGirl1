@@ -289,7 +289,7 @@ local function _SetAudioUnit(audioUnit, resName, auildType, volume)
         
   
         --Log("resName"..resName)
-        local data = ConfigManager.GetConfigDataByKey(ConfigName.AudioConfig, "Name", resName)
+        local data = ConfigManager.TryGetConfigDataByKey(ConfigName.AudioConfig, "Name", resName)
         if data then
             if data.Type == 12 then
                 audioUnit.audio.pitch = 1

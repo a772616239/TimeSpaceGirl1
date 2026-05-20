@@ -7,11 +7,11 @@ namespace GameLogic
 {
 
     /// <summary>
-    /// À©Õ¹ÒôÔ´
+    /// æ‰©å±•éŸ³æº
     /// </summary>
     public class ExtAudioClip {
         /// <summary>
-        /// ÒôĞ§Ãû
+        /// éŸ³æ•ˆå
         /// </summary>
         public string name {
             get {
@@ -20,12 +20,12 @@ namespace GameLogic
             }
         }
         /// <summary>
-        /// ÒôĞ§×ÊÔ´
+        /// éŸ³æ•ˆèµ„æº
         /// </summary>
         public AudioClip audioClip;
 
         /// <summary>
-        /// ³õÊ¼»¯
+        /// åˆå§‹åŒ–
         /// </summary>
         /// <param name="audioClip"></param>
         public void Init(AudioClip audioClip) {
@@ -33,7 +33,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// Ğ¶ÔØ
+        /// å¸è½½
         /// </summary>
         public void UnLoad() {
             if (audioClip == null) return;
@@ -42,12 +42,12 @@ namespace GameLogic
     }
 
     /// <summary>
-    /// À©Õ¹ÒôÀÖ²¥·ÅÆ÷
+    /// æ‰©å±•éŸ³ä¹æ’­æ”¾å™¨
     /// </summary>
     public class ExtAudioSource : MonoBehaviour
     {
         /// <summary>
-        /// ÒôÀÖ²¥·ÅÔ´
+        /// éŸ³ä¹æ’­æ”¾æº
         /// </summary>
         AudioSource audioSource;
 
@@ -91,7 +91,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// ²¥·Å
+        /// æ’­æ”¾
         /// </summary>
         /// <param name="game"></param>
         /// <param name="audioClip"></param>
@@ -109,7 +109,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// Í£Ö¹²¥·Å
+        /// åœæ­¢æ’­æ”¾
         /// </summary>
         public void Stop()
         {
@@ -123,59 +123,59 @@ namespace GameLogic
             toRealease.UnLoad();
         });
         /// <summary>
-        /// ÒôÀÖ¿ª¹Ø
+        /// éŸ³ä¹å¼€å…³
         /// </summary>
         const string IsPlayMusicKey = "IsPlayMusicKey";
         /// <summary>
-        /// ÒôĞ§¿ª¹Ø
+        /// éŸ³æ•ˆå¼€å…³
         /// </summary>
         const string IsPlayAudioKey = "IsPlayAudioKey";
 
         /// <summary>
-        /// ÒôÀÖÒôÁ¿
+        /// éŸ³ä¹éŸ³é‡
         /// </summary>
         const string MusicVolumeKey = "MusicVolumeKey";
 
         /// <summary>
-        /// ÒôĞ§ÒôÁ¿
+        /// éŸ³æ•ˆéŸ³é‡
         /// </summary>
         const string AudioVolumeKey = "AudioVolumeKey";
 
         /// <summary>
-        /// Í¬Ê±²¥·ÅµÄÒôĞ§ÊıÁ¿
+        /// åŒæ—¶æ’­æ”¾çš„éŸ³æ•ˆæ•°é‡
         /// </summary>
-        private int aduioCount = 5;
+        private int aduioCount = 16;
         /// <summary>
-        /// ±³¾°ÒôÁ¿
+        /// èƒŒæ™¯éŸ³é‡
         /// </summary>
         private float musicVolume = 1f;
         /// <summary>
-        /// ÒôĞ§ÒôÁ¿
+        /// éŸ³æ•ˆéŸ³é‡
         /// </summary>
         private float aduioVolume = 1f;
         /// <summary>
-        /// ÊÇ·ñ¹Ø±ÕÉùÒô
+        /// æ˜¯å¦å…³é—­å£°éŸ³
         /// </summary>
         private bool isPlayMusic = true;
         /// <summary>
-        /// ÊÇ·ñ¹Ø±ÕÒôĞ§
+        /// æ˜¯å¦å…³é—­éŸ³æ•ˆ
         /// </summary>
         private bool isPlayAudio = true;
         /// <summary>
-        /// ±³¾°Òô
+        /// èƒŒæ™¯éŸ³
         /// </summary>
         ExtAudioSource audioSource;
         /// <summary>
-        /// ÒôĞ§Òô
+        /// éŸ³æ•ˆéŸ³
         /// </summary>
         ExtAudioSource[] audioSources;
         /// <summary>
-        /// ÏÂÒ»¸ö±³¾°Òô
+        /// ä¸‹ä¸€ä¸ªèƒŒæ™¯éŸ³
         /// </summary>
         ExtAudioClip nextBGM;
 
         /// <summary>
-        /// ³õÊ¼»¯
+        /// åˆå§‹åŒ–
         /// </summary>
         private void Awake()
         {
@@ -193,7 +193,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// ³õÊ¼»¯
+        /// åˆå§‹åŒ–
         /// </summary>
         private void Init()
         {
@@ -212,6 +212,7 @@ namespace GameLogic
                     if (audioSource.clip != null)
                     {
                         audioClipPool.Release(audioSource.clip);
+                        audioSource.clip = null;
                     }
                     audioSource.Play(nextBGM);
                     nextBGM = null;
@@ -236,7 +237,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// ²¥·Å±³¾°ÒôÀÖ
+        /// æ’­æ”¾èƒŒæ™¯éŸ³ä¹
         /// </summary>
         public void PlayMusic(string name)
         {
@@ -262,7 +263,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// ²¥·ÅÒôĞ§
+        /// æ’­æ”¾éŸ³æ•ˆ
         /// </summary>
         /// <param name="name">Name.</param>
         public void PlayAudio(string name)
@@ -285,7 +286,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// »ñÈ¡Ò»¸öaudioClip
+        /// è·å–ä¸€ä¸ªaudioClip
         /// </summary>
         /// <param name="audioClip"></param>
         /// <returns></returns>
@@ -296,7 +297,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// »ØÊÕÒ»¸öaudioClip
+        /// å›æ”¶ä¸€ä¸ªaudioClip
         /// </summary>
         /// <param name="extAudioClip"></param>
         private void ReleaseClip(ExtAudioClip extAudioClip) {
@@ -305,7 +306,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// »ñÈ¡×îºóÒ»¸öÒôĞ§²¥·ÅÆ÷
+        /// è·å–æœ€åä¸€ä¸ªéŸ³æ•ˆæ’­æ”¾å™¨
         /// </summary>
         /// <returns>The audio soure.</returns>
         private ExtAudioSource GetAudioSoure()
@@ -318,11 +319,12 @@ namespace GameLogic
             }
             source = source == null ? audioSources[0] : source;
             ReleaseClip(source.clip);
+            source.clip = null;
             return source;
         }
 
         /// <summary>
-        /// Í£Ö¹ËùÓĞÒôĞ§
+        /// åœæ­¢æ‰€æœ‰éŸ³æ•ˆ
         /// </summary>
         public void StopAllAudio()
         {
@@ -334,6 +336,7 @@ namespace GameLogic
                     {
                         audioSources[i].Stop();
                         ReleaseClip(audioSources[i].clip);
+                        audioSources[i].clip = null;
                     }
                 }
             }
@@ -366,7 +369,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// ÊÇ·ñ²¥·ÅÒôÀÖ
+        /// æ˜¯å¦æ’­æ”¾éŸ³ä¹
         /// </summary>
         public bool IsPlayMusic
         {
@@ -382,7 +385,7 @@ namespace GameLogic
         }
 
         /// <summary>
-        /// ÊÇ·ñ²¥·ÅÒôĞ§
+        /// æ˜¯å¦æ’­æ”¾éŸ³æ•ˆ
         /// </summary>
         public bool IsPlayAudio
         {

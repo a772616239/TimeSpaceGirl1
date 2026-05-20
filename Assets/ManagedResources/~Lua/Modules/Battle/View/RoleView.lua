@@ -970,6 +970,13 @@ end
 
 -- 缩放
 function RoleView:DoScale(scale, dur, func)
+    if IsNull(self.GameObject) or IsNull(self.RoleLiveGO) then
+        if func then
+            func()
+        end
+        return
+    end
+
     if self.dsTween then
         self.dsTween:Kill()
     end
@@ -1002,6 +1009,13 @@ function RoleView:SetHighLight(isLight, eScale, dur, func)
         --Util.SetColor(self.RoleLiveGO, color)
         
         --self:DoScale(0.8, dur, func)
+        return
+    end
+
+    if IsNull(self.GameObject) or IsNull(self.RoleLiveGO) then
+        if func then
+            func()
+        end
         return
     end
 

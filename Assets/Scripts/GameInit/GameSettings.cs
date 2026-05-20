@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using GameCore;
@@ -98,7 +98,10 @@ namespace GameLogic {
                 SystemLanguage sysLang = Application.systemLanguage;
                 if (!PlayerPrefs.HasKey("multi_language"))
                 {
-                    settingInfo.originLan=GetSystemLanguage2(sysLang);
+                    if (settingInfo.originLan == 0)
+                    {
+                        settingInfo.originLan = GetSystemLanguage2(sysLang);
+                    }
                 }
 
                 CrashlyticsMgr.Inst.TapEvent("sysLang:" + sysLang.ToString());

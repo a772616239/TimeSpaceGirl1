@@ -40,9 +40,14 @@ namespace SignInSample {
     public  Action<bool, string> LoginCb;
     public void OnSignIn(Action<bool, string> callback) {
       LoginCb = callback;
-      GoogleSignIn.Configuration = configuration;
-      GoogleSignIn.Configuration.UseGameSignIn = false;
-      GoogleSignIn.Configuration.RequestIdToken = true;
+      
+      // Ensure configuration is only set once to prevent "DefaultInstance already created" exception
+      if (GoogleSignIn.Configuration == null) {
+          GoogleSignIn.Configuration = configuration;
+          GoogleSignIn.Configuration.UseGameSignIn = false;
+          GoogleSignIn.Configuration.RequestIdToken = true;
+      }
+      
       AddStatusText("Calling SignIn");
 
       GoogleSignIn.DefaultInstance.SignIn().ContinueWith(
@@ -99,9 +104,11 @@ namespace SignInSample {
     }
 
     public void OnSignInSilently() {
-      GoogleSignIn.Configuration = configuration;
-      GoogleSignIn.Configuration.UseGameSignIn = false;
-      GoogleSignIn.Configuration.RequestIdToken = true;
+      if (GoogleSignIn.Configuration == null) {
+          GoogleSignIn.Configuration = configuration;
+          GoogleSignIn.Configuration.UseGameSignIn = false;
+          GoogleSignIn.Configuration.RequestIdToken = true;
+      }
       AddStatusText("Calling SignIn Silently");
 
       GoogleSignIn.DefaultInstance.SignInSilently()
@@ -110,9 +117,11 @@ namespace SignInSample {
 
 
     public void OnGamesSignIn() {
-      GoogleSignIn.Configuration = configuration;
-      GoogleSignIn.Configuration.UseGameSignIn = true;
-      GoogleSignIn.Configuration.RequestIdToken = false;
+      if (GoogleSignIn.Configuration == null) {
+          GoogleSignIn.Configuration = configuration;
+          GoogleSignIn.Configuration.UseGameSignIn = true;
+          GoogleSignIn.Configuration.RequestIdToken = false;
+      }
 
       AddStatusText("Calling Games SignIn");
 

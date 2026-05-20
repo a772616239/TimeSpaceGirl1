@@ -11,11 +11,21 @@ issameclan_col = headers.index('IsSameClan') + 1
 isid_col = headers.index('IsId') + 1
 
 changes = 0
-for row in range(4, sheet.max_row + 1):
+for row in range(8, sheet.max_row + 1):
     issame_val = sheet.cell(row=row, column=issame_col).value
     isid_val = sheet.cell(row=row, column=isid_col).value
     
-    if isid_val and int(isid_val) > 0 and (issame_val is None or int(issame_val) != 1):
+    try:
+        isid_int = int(isid_val) if isid_val is not None else 0
+    except (ValueError, TypeError):
+        isid_int = 0
+        
+    try:
+        issame_int = int(issame_val) if issame_val is not None else 0
+    except (ValueError, TypeError):
+        issame_int = 0
+        
+    if isid_int > 0 and issame_int != 1:
         # Update values
         sheet.cell(row=row, column=isid_col).value = 0
         sheet.cell(row=row, column=issameclan_col).value = 1
@@ -23,3 +33,4 @@ for row in range(4, sheet.max_row + 1):
 
 print(f"Made {changes} changes to {file_path}.")
 wb.save(file_path)
+

@@ -18,6 +18,7 @@ local jewelResonanceConfig = ConfigManager.GetConfig(ConfigName.JewelResonanceCo
 local monsterConfig = ConfigManager.GetConfig(ConfigName.MonsterConfig)
 local unlockSkill = ConfigManager.GetConfig(ConfigName.UnlockSkill)
 local skillLogicConfig = ConfigManager.GetConfig(ConfigName.SkillLogicConfig)
+
 local HeroRankConfig = ConfigManager.GetConfig(ConfigName.HeroRankConfig)
 local HeroStarConfig = ConfigManager.GetConfig(ConfigName.HeroStarConfig)
 local HeroStarBackConfig = ConfigManager.GetConfig(ConfigName.HeroStarBackConfig)

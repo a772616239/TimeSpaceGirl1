@@ -161,26 +161,62 @@ sed -i 's/a772616239:Wang177752/a772616239:Wang/g' /home/java/gameserver/conf/ap
 tar -czvf   /home/java/  /home/java/test.tar.gz
 sed -i 's/x1_cn_test_login/m5_x1_game_10001/g'  /home/java/gameserver/config/logicSrv.properties
 
-#启动
+#启动 (2核4G服务器性能优化版)
+# 优化说明：
+# 1. 2核4G服务器物理内存极度紧张，默认JVM会自动分配过多内存，导致3个Java进程 + MongoDB/Redis直接挤爆内存，从而触发Linux Swap交换分区导致CPU跑满极卡。
+# 2. 我们对每个Java服务进行严格的内存限制：
+#    - gameserver (游戏主服): 限制堆内存 1200m，采用 G1 垃圾回收并限制GC线程数为2，降低CPU切换损耗。
+#    - chatserver (聊天服): 限制堆内存 256m，采用 SerialGC (串行垃圾回收)，单线程回收最省CPU和内存。
+#    - loginserver (登录服Tomcat): 限制堆内存 512m，采用 SerialGC 节约CPU资源。
+# 3. 强烈建议修改 MongoDB 配置，限制 WiredTiger 缓存为 512M（默认会吃掉1.5G+）：
+#    在 /etc/mongod.conf 的 storage 节点下添加：
+#    wiredTiger:
+#      engineConfig:
+#        cacheSizeGB: 0.5
+
 redis-cli FLUSHDB
 
+# 1. 启动游戏主服
 cd /home/java/gameserver
-sudo nohup java -jar gameSrv-1.0.0.jar --spring.config.location=config/logicSrv.properties > log.file 2>&1 &
+sudo nohup java -server -Xms1200m -Xmx1200m -XX:+UseG1GC -XX:ParallelGCThreads=2 -XX:ConcGCThreads=1 -XX:MaxGCPauseMillis=100 -XX:+UnlockDiagnosticVMOptions -XX:-UseBiasedLocking -jar gameSrv-1.0.0.jar --spring.config.location=config/logicSrv.properties > log.file 2>&1 &
 
 
+# 2. 启动聊天服
 cd /home/java/chatserver
-sudo nohup java -jar chatserver-1.0.0.jar > log.file 2>&1 &
+sudo nohup java -server -Xms256m -Xmx256m -XX:+UseSerialGC -XX:-UseBiasedLocking -jar chatserver-1.0.0.jar > log.file 2>&1 &
 
-#启动
+# 3. 启动登录服
+# Tomcat需要通过设置环境变量来限制内存
 cd /home/java/loginserver/apache-tomcat-8.5.95/bin
+# 创建或配置 setenv.sh 来使内存限制永久生效
+echo 'export JAVA_OPTS="-server -Xms512m -Xmx512m -XX:+UseSerialGC -XX:-UseBiasedLocking"' > setenv.sh
+chmod +x setenv.sh
 sudo ./startup.sh
 
 cd /home/java/loginserver/apache-tomcat-8.5.95/logs
 
-关闭
+#关闭所有服务进程
+# 优化说明：
+# 1. 优先关闭 Tomcat 登录服。
+# 2. 优雅关闭游戏主服和聊天服（使用 pkill 发送 SIGTERM 信号），使主服能将未保存的缓存玩家数据写入 MongoDB/Redis。
+# 3. 等待 3 秒后，强制杀死（kill -9）任何残留进程，确保端口（如 16081、7916等）彻底释放，防止下次启动时报“端口已被占用”错误。
 
+# 1. 停止 Tomcat 登录服
 cd /home/java/loginserver/apache-tomcat-8.5.95/bin
-sudo ./shutdown.sh 
+sudo ./shutdown.sh
+
+# 2. 优雅关闭游戏主服和聊天服
+sudo pkill -f gameSrv-1.0.0.jar
+sudo pkill -f chatserver-1.0.0.jar
+
+# 等待 3 秒让数据写入数据库
+sleep 3
+
+# 3. 强制清理残留进程（防止下次启动时端口冲突）
+sudo pkill -9 -f gameSrv-1.0.0.jar
+sudo pkill -9 -f chatserver-1.0.0.jar
+
+echo "所有相关游戏服务进程已彻底关闭！"
 
 
 修改客户端：

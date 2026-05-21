@@ -27,3 +27,18 @@ function InitLanguageData()
 end 
 
 InitLanguageData()
+
+-- 补充手动翻译（Config/Data/Language.lua 中缺失的条目）
+local function AddManualTranslation(zhStr, enStr)
+    if not languageDicStr[zhStr] then
+        languageDicStr[zhStr] = {}
+        languageDicStr[zhStr].zh = zhStr
+        languageDicStr[zhStr].en = enStr
+        languageDicStr[zhStr].jp = zhStr
+        languageDicStr[zhStr].kr = zhStr
+    end
+end
+
+AddManualTranslation("英雄祭品未选满", "Not all hero sacrifice slots are filled.")
+AddManualTranslation("升星材料不足", "Insufficient materials for limit break.")
+AddManualTranslation("材料不足且英雄祭品未满", "Insufficient materials and hero sacrifice slots not filled.")

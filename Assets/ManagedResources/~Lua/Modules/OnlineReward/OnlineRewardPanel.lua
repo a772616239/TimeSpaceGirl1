@@ -250,6 +250,10 @@ end
 
 --界面销毁时调用（用于子类重写）
 function OnlineRewardPanel:OnDestroy()
+    if self.timer then
+        self.timer:Stop()
+        self.timer = nil
+    end
     itemPreList = {}
 end
 
@@ -269,9 +273,11 @@ end
 function OnlineRewardPanel:RemainTimeDown()
     self:RemainTimeDownUpdata()
     if ActivityGiftManager.currentTimeIndex == #ActivityGiftManager.onlineData then
-        this.hour.text = "00"
-        this.min.text = "00"
-        this.sec.text = "00"
+        if this.hour and this.min and this.sec then
+            this.hour.text = "00"
+            this.min.text = "00"
+            this.sec.text = "00"
+        end
     end
     if self.timer then
         self.timer:Stop()
@@ -284,9 +290,11 @@ function OnlineRewardPanel:RemainTimeDown()
         if ActivityGiftManager.currentTimeIndex == #ActivityGiftManager.onlineData then
             self.timer:Stop()
             self.timer = nil
-            this.hour.text = "00"
-            this.min.text = "00"
-            this.sec.text = "00"
+            if this.hour and this.min and this.sec then
+                this.hour.text = "00"
+                this.min.text = "00"
+                this.sec.text = "00"
+            end
         end
     end, 1, -1, true)
     self.timer:Start()

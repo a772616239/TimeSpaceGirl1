@@ -455,19 +455,25 @@ function FightPointPassMainPanel:OnSortingOrderChange()
     self.sortingOrder = self.canvas.sortingOrder
 
     invadeMonster:OnSortingOrderChange()
-    -- Util.AddParticleSortLayer(this.GuideEffectGo, self.sortingOrder - orginLayer)
-    -- Util.AddParticleSortLayer(this.GuideJumpEffectGo, self.sortingOrder - orginLayer)
-    Util.AddParticleSortLayer(this.pgEffect, self.sortingOrder - orginLayer)
-    Util.AddParticleSortLayer(this.vipPrivilegeBtn, self.sortingOrder - orginLayer)
-    -- Util.AddParticleSortLayer(this.UI_MuBiaoJiangLi, self.sortingOrder - orginLayer)
-    -- fightMap:OnSortingOrderChange(self.sortingOrder)
+    if this.pgEffect then
+        Util.AddParticleSortLayer(this.pgEffect, self.sortingOrder - orginLayer)
+    end
+    if this.vipPrivilegeBtn then
+        Util.AddParticleSortLayer(this.vipPrivilegeBtn, self.sortingOrder - orginLayer)
+    end
     fightOnHook:OnSortingOrderChange(self.sortingOrder)
     chatPanel:OnSortingOrderChange(self.sortingOrder)
     orginLayer = self.sortingOrder
 
-    this.PlayerHeadFrameView:OnSortingOrderChange(self.sortingOrder + 50)
-    this.BtView:SetOrderStatus({ sortOrder = self.sortingOrder + 50})
-    this.UpView:OnSortingOrderChange(self.sortingOrder + 51)
+    if this.PlayerHeadFrameView then
+        this.PlayerHeadFrameView:OnSortingOrderChange(self.sortingOrder + 50)
+    end
+    if this.BtView then
+        this.BtView:SetOrderStatus({ sortOrder = self.sortingOrder + 50})
+    end
+    if this.UpView then
+        this.UpView:OnSortingOrderChange(self.sortingOrder + 51)
+    end
 
     Util.GetGameObject(this.battleGuideFinger,"icon"):GetComponent("Canvas").sortingOrder = self.canvas.sortingOrder + 55
     Util.SetParticleSortLayer(Util.GetGameObject(this.battleGuideFinger,"icon/ring"), self.canvas.sortingOrder + 55)

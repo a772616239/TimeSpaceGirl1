@@ -1675,7 +1675,7 @@ end
 
 --- 获取玩家头像资源
 function GetPlayerHeadSprite(headId)
-    if headId == 0 then
+    if headId == nil or headId == 0 then
         if PlayerManager.sex then
            headId = 71000
         else
@@ -1683,13 +1683,21 @@ function GetPlayerHeadSprite(headId)
         end
      end
     local head = ConfigManager.GetConfigData(ConfigName.ItemConfig, headId)
+    if head == nil then
+        return nil
+    end
     return Util.LoadSprite(GetResourcePath(head.ResourceID))
 end
 
 --- 获取玩家头像框资源
 function GetPlayerHeadFrameSprite(frameId)
-    if frameId == 0 then frameId = 80000 end
+    if frameId == nil or frameId == 0 then
+        frameId = 80000
+    end
     local frame = ConfigManager.GetConfigData(ConfigName.ItemConfig, frameId)
+    if frame == nil then
+        return nil
+    end
     return Util.LoadSprite(GetResourcePath(frame.ResourceID))
 end
 

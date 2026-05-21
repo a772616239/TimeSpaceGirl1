@@ -315,8 +315,10 @@ function GuildFindPopup:OnClose()
     -- 控制挂机界面伤害文字显示
     FightPointPassManager.isBeginFight = false
     needDataList = {}
-    for index, value in ipairs(this.itemList) do
-        value:SetActive(false)
+    if this.itemList then
+        for index, value in ipairs(this.itemList) do
+            value:SetActive(false)
+        end
     end
 end
 

@@ -411,6 +411,9 @@ end
 
 -- 红点检测监听方法
 function this.CheckRedFunc(redType)
+    if not this.mission then
+        return false
+    end
     if redType == RedPointType.CourtesyDress_SevenDay then
         if this.mission[ActivityTypeDef.EightDayGift] then
             local number = 0

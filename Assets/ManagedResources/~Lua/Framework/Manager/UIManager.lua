@@ -347,7 +347,9 @@ local SetSortingOrder = function(uiConfig, panel, isStackPanel, ...)
         if uiConfig.type == UIType.FullType then
             for i = 1, #this.stackList do
                 if this.stackList[i] and this.stackList[i].isOpened then
-                    this.stackList[i].gameObject:SetActive(false)
+                    if this.stackList[i].gameObject and not IsNull(this.stackList[i].gameObject) then
+                        this.stackList[i].gameObject:SetActive(false)
+                    end
                     this.stackList[i]:CloseUI()
                 end
             end
@@ -372,7 +374,9 @@ local SetSortingOrder = function(uiConfig, panel, isStackPanel, ...)
         this.fixedList[#this.fixedList+1] = panel
         panel:SetSortingOrder(uiConfig.sortingOrder)
     end
-    panel.gameObject:SetActive(true)
+    if panel.gameObject and not IsNull(panel.gameObject) then
+        panel.gameObject:SetActive(true)
+    end
     panel:OpenUI(false, ...)
     panel.openNum = panel.openNum + 1
     delayDestoryList[panel.uiConfig.id] = nil

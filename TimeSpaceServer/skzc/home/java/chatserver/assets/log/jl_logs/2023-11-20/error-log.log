@@ -1,0 +1,6 @@
+2023-11-20 15:13:49.099 [rpc] ERROR RPCServerTask - run->Could not create ServerSocket on address /127.0.0.1:17181.
+org.apache.thrift.transport.TTransportException: Could not create ServerSocket on address /127.0.0.1:17181.
+	at org.apache.thrift.transport.TServerSocket.<init>(TServerSocket.java:109)
+	at org.apache.thrift.transport.TServerSocket.<init>(TServerSocket.java:91)
+	at org.apache.thrift.transport.TServerSocket.<init>(TServerSocket.java:87)
+	at com.chat.network.pool.RPCServerTask.run(RPCServerTask.java:38)

@@ -1,0 +1,271 @@
+2024-07-11 21:34:56.689 [main] ERROR AreaManager - the exception {}
+org.springframework.data.mongodb.UncategorizedMongoDbException: Query failed with error code 13 and error message 'not authorized on x1_cn_test_login to execute command { find: "server_area_manager", filter: { _id: 1 }, limit: 1, singleBatch: true, $readPreference: { mode: "secondaryPreferred" }, $db: "x1_cn_test_login" }' on server localhost:27017; nested exception is com.mongodb.MongoQueryException: Query failed with error code 13 and error message 'not authorized on x1_cn_test_login to execute command { find: "server_area_manager", filter: { _id: 1 }, limit: 1, singleBatch: true, $readPreference: { mode: "secondaryPreferred" }, $db: "x1_cn_test_login" }' on server localhost:27017
+	at org.springframework.data.mongodb.core.MongoExceptionTranslator.translateExceptionIfPossible(MongoExceptionTranslator.java:107)
+	at org.springframework.data.mongodb.core.MongoTemplate.potentiallyConvertRuntimeException(MongoTemplate.java:2146)
+	at org.springframework.data.mongodb.core.MongoTemplate.executeFindOneInternal(MongoTemplate.java:1928)
+	at org.springframework.data.mongodb.core.MongoTemplate.doFindOne(MongoTemplate.java:1736)
+	at org.springframework.data.mongodb.core.MongoTemplate.findById(MongoTemplate.java:656)
+	at org.springframework.data.mongodb.core.MongoTemplate.findById(MongoTemplate.java:649)
+	at com.ljsd.jieling.core.CoreLogic.findServerArenaInfoManager(CoreLogic.java:34)
+	at com.ljsd.jieling.db.mongo.AreaManager.initParm(AreaManager.java:79)
+	at com.ljsd.jieling.db.mongo.AreaManager.init(AreaManager.java:51)
+	at com.ljsd.jieling.db.mongo.MongoUtil.init(MongoUtil.java:77)
+	at com.ljsd.GameApplication.main(GameApplication.java:57)
+Caused by: com.mongodb.MongoQueryException: Query failed with error code 13 and error message 'not authorized on x1_cn_test_login to execute command { find: "server_area_manager", filter: { _id: 1 }, limit: 1, singleBatch: true, $readPreference: { mode: "secondaryPreferred" }, $db: "x1_cn_test_login" }' on server localhost:27017
+	at com.mongodb.operation.FindOperation$1.call(FindOperation.java:521)
+	at com.mongodb.operation.FindOperation$1.call(FindOperation.java:510)
+	at com.mongodb.operation.OperationHelper.withConnectionSource(OperationHelper.java:435)
+	at com.mongodb.operation.OperationHelper.withConnection(OperationHelper.java:408)
+	at com.mongodb.operation.FindOperation.execute(FindOperation.java:510)
+	at com.mongodb.operation.FindOperation.execute(FindOperation.java:81)
+	at com.mongodb.Mongo.execute(Mongo.java:836)
+	at com.mongodb.Mongo$2.execute(Mongo.java:823)
+	at com.mongodb.DBCursor.initializeCursor(DBCursor.java:870)
+	at com.mongodb.DBCursor.hasNext(DBCursor.java:142)
+	at com.mongodb.DBCursor.one(DBCursor.java:679)
+	at com.mongodb.DBCollection.findOne(DBCollection.java:833)
+	at com.mongodb.DBCollection.findOne(DBCollection.java:796)
+	at com.mongodb.DBCollection.findOne(DBCollection.java:743)
+	at org.springframework.data.mongodb.core.MongoTemplate$FindOneCallback.doInCollection(MongoTemplate.java:2197)
+	at org.springframework.data.mongodb.core.MongoTemplate$FindOneCallback.doInCollection(MongoTemplate.java:2181)
+	at org.springframework.data.mongodb.core.MongoTemplate.executeFindOneInternal(MongoTemplate.java:1925)
+	... 8 common frames omitted
+2024-07-11 21:37:45.540 [main] ERROR AreaManager - the exception {}
+org.springframework.data.mongodb.UncategorizedMongoDbException: Query failed with error code 13 and error message 'not authorized on x1_cn_test_login to execute command { find: "server_area_manager", filter: { _id: 1 }, limit: 1, singleBatch: true, $readPreference: { mode: "secondaryPreferred" }, $db: "x1_cn_test_login" }' on server localhost:27017; nested exception is com.mongodb.MongoQueryException: Query failed with error code 13 and error message 'not authorized on x1_cn_test_login to execute command { find: "server_area_manager", filter: { _id: 1 }, limit: 1, singleBatch: true, $readPreference: { mode: "secondaryPreferred" }, $db: "x1_cn_test_login" }' on server localhost:27017
+	at org.springframework.data.mongodb.core.MongoExceptionTranslator.translateExceptionIfPossible(MongoExceptionTranslator.java:107)
+	at org.springframework.data.mongodb.core.MongoTemplate.potentiallyConvertRuntimeException(MongoTemplate.java:2146)
+	at org.springframework.data.mongodb.core.MongoTemplate.executeFindOneInternal(MongoTemplate.java:1928)
+	at org.springframework.data.mongodb.core.MongoTemplate.doFindOne(MongoTemplate.java:1736)
+	at org.springframework.data.mongodb.core.MongoTemplate.findById(MongoTemplate.java:656)
+	at org.springframework.data.mongodb.core.MongoTemplate.findById(MongoTemplate.java:649)
+	at com.ljsd.jieling.core.CoreLogic.findServerArenaInfoManager(CoreLogic.java:34)
+	at com.ljsd.jieling.db.mongo.AreaManager.initParm(AreaManager.java:79)
+	at com.ljsd.jieling.db.mongo.AreaManager.init(AreaManager.java:51)
+	at com.ljsd.jieling.db.mongo.MongoUtil.init(MongoUtil.java:77)
+	at com.ljsd.GameApplication.main(GameApplication.java:57)
+Caused by: com.mongodb.MongoQueryException: Query failed with error code 13 and error message 'not authorized on x1_cn_test_login to execute command { find: "server_area_manager", filter: { _id: 1 }, limit: 1, singleBatch: true, $readPreference: { mode: "secondaryPreferred" }, $db: "x1_cn_test_login" }' on server localhost:27017
+	at com.mongodb.operation.FindOperation$1.call(FindOperation.java:521)
+	at com.mongodb.operation.FindOperation$1.call(FindOperation.java:510)
+	at com.mongodb.operation.OperationHelper.withConnectionSource(OperationHelper.java:435)
+	at com.mongodb.operation.OperationHelper.withConnection(OperationHelper.java:408)
+	at com.mongodb.operation.FindOperation.execute(FindOperation.java:510)
+	at com.mongodb.operation.FindOperation.execute(FindOperation.java:81)
+	at com.mongodb.Mongo.execute(Mongo.java:836)
+	at com.mongodb.Mongo$2.execute(Mongo.java:823)
+	at com.mongodb.DBCursor.initializeCursor(DBCursor.java:870)
+	at com.mongodb.DBCursor.hasNext(DBCursor.java:142)
+	at com.mongodb.DBCursor.one(DBCursor.java:679)
+	at com.mongodb.DBCollection.findOne(DBCollection.java:833)
+	at com.mongodb.DBCollection.findOne(DBCollection.java:796)
+	at com.mongodb.DBCollection.findOne(DBCollection.java:743)
+	at org.springframework.data.mongodb.core.MongoTemplate$FindOneCallback.doInCollection(MongoTemplate.java:2197)
+	at org.springframework.data.mongodb.core.MongoTemplate$FindOneCallback.doInCollection(MongoTemplate.java:2181)
+	at org.springframework.data.mongodb.core.MongoTemplate.executeFindOneInternal(MongoTemplate.java:1925)
+	... 8 common frames omitted
+2024-07-11 21:49:30.979 [main] ERROR AreaManager - the exception {}
+org.springframework.data.mongodb.UncategorizedMongoDbException: Query failed with error code 13 and error message 'not authorized on x1_cn_test_login to execute command { find: "server_area_manager", filter: { _id: 1 }, limit: 1, singleBatch: true, $readPreference: { mode: "secondaryPreferred" }, $db: "x1_cn_test_login" }' on server localhost:27017; nested exception is com.mongodb.MongoQueryException: Query failed with error code 13 and error message 'not authorized on x1_cn_test_login to execute command { find: "server_area_manager", filter: { _id: 1 }, limit: 1, singleBatch: true, $readPreference: { mode: "secondaryPreferred" }, $db: "x1_cn_test_login" }' on server localhost:27017
+	at org.springframework.data.mongodb.core.MongoExceptionTranslator.translateExceptionIfPossible(MongoExceptionTranslator.java:107)
+	at org.springframework.data.mongodb.core.MongoTemplate.potentiallyConvertRuntimeException(MongoTemplate.java:2146)
+	at org.springframework.data.mongodb.core.MongoTemplate.executeFindOneInternal(MongoTemplate.java:1928)
+	at org.springframework.data.mongodb.core.MongoTemplate.doFindOne(MongoTemplate.java:1736)
+	at org.springframework.data.mongodb.core.MongoTemplate.findById(MongoTemplate.java:656)
+	at org.springframework.data.mongodb.core.MongoTemplate.findById(MongoTemplate.java:649)
+	at com.ljsd.jieling.core.CoreLogic.findServerArenaInfoManager(CoreLogic.java:34)
+	at com.ljsd.jieling.db.mongo.AreaManager.initParm(AreaManager.java:79)
+	at com.ljsd.jieling.db.mongo.AreaManager.init(AreaManager.java:51)
+	at com.ljsd.jieling.db.mongo.MongoUtil.init(MongoUtil.java:77)
+	at com.ljsd.GameApplication.main(GameApplication.java:57)
+Caused by: com.mongodb.MongoQueryException: Query failed with error code 13 and error message 'not authorized on x1_cn_test_login to execute command { find: "server_area_manager", filter: { _id: 1 }, limit: 1, singleBatch: true, $readPreference: { mode: "secondaryPreferred" }, $db: "x1_cn_test_login" }' on server localhost:27017
+	at com.mongodb.operation.FindOperation$1.call(FindOperation.java:521)
+	at com.mongodb.operation.FindOperation$1.call(FindOperation.java:510)
+	at com.mongodb.operation.OperationHelper.withConnectionSource(OperationHelper.java:435)
+	at com.mongodb.operation.OperationHelper.withConnection(OperationHelper.java:408)
+	at com.mongodb.operation.FindOperation.execute(FindOperation.java:510)
+	at com.mongodb.operation.FindOperation.execute(FindOperation.java:81)
+	at com.mongodb.Mongo.execute(Mongo.java:836)
+	at com.mongodb.Mongo$2.execute(Mongo.java:823)
+	at com.mongodb.DBCursor.initializeCursor(DBCursor.java:870)
+	at com.mongodb.DBCursor.hasNext(DBCursor.java:142)
+	at com.mongodb.DBCursor.one(DBCursor.java:679)
+	at com.mongodb.DBCollection.findOne(DBCollection.java:833)
+	at com.mongodb.DBCollection.findOne(DBCollection.java:796)
+	at com.mongodb.DBCollection.findOne(DBCollection.java:743)
+	at org.springframework.data.mongodb.core.MongoTemplate$FindOneCallback.doInCollection(MongoTemplate.java:2197)
+	at org.springframework.data.mongodb.core.MongoTemplate$FindOneCallback.doInCollection(MongoTemplate.java:2181)
+	at org.springframework.data.mongodb.core.MongoTemplate.executeFindOneInternal(MongoTemplate.java:1925)
+	... 8 common frames omitted
+2024-07-11 22:04:14.976 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/MapPointConfig.txt,  do not find sheet with MapPointConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.977 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/AccomplishmentConfig.txt,  do not find sheet with AccomplishmentConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.977 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/AchievementConfig.txt,  do not find sheet with AchievementConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.978 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ActivityChapterConfig.txt,  do not find sheet with ActivityChapterConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.979 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ActivityDropReward.txt,  do not find sheet with ActivityDropReward  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.979 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ActivityLevelConfig.txt,  do not find sheet with ActivityLevelConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.980 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ActivityRankingReward.txt,  do not find sheet with ActivityRankingReward  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.981 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ActivityRewardConfig.txt,  do not find sheet with ActivityRewardConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.981 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/AdjustConfig.txt,  do not find sheet with AdjustConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.982 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/AdjutantChatConfig.txt,  do not find sheet with AdjutantChatConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.983 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/AdjutantConfig.txt,  do not find sheet with AdjutantConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.984 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/AdjutantHandselConfig.txt,  do not find sheet with AdjutantHandselConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.984 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/AdjutantSkillConfig.txt,  do not find sheet with AdjutantSkillConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.985 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/AdjutantTeachConfig.txt,  do not find sheet with AdjutantTeachConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.985 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/AlameinChapter.txt,  do not find sheet with AlameinChapter  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.986 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/AlameinLevel.txt,  do not find sheet with AlameinLevel  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.987 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ArenaRobotConfig.txt,  do not find sheet with ArenaRobotConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.988 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ArenaSetting.txt,  do not find sheet with ArenaSetting  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.988 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ArroGantFly.txt,  do not find sheet with ArroGantFly  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.989 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ArtifactConfig.txt,  do not find sheet with ArtifactConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.989 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ArtifactLevelConfig.txt,  do not find sheet with ArtifactLevelConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.990 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ArtifactRefineConfig.txt,  do not find sheet with ArtifactRefineConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.990 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ArtifactSkillConfig.txt,  do not find sheet with ArtifactSkillConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.991 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/ArtifactSoulConfig.txt,  do not find sheet with ArtifactSoulConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.991 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/BattlePassReward.txt,  do not find sheet with BattlePassReward  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.992 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/BattlePassTask.txt,  do not find sheet with BattlePassTask  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.992 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/BeginnerTask.txt,  do not find sheet with BeginnerTask  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.993 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/BlessingConfig.txt,  do not find sheet with BlessingConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.993 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/BlessingConfigNew.txt,  do not find sheet with BlessingConfigNew  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.994 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/BlessingRewardPoolNew.txt,  do not find sheet with BlessingRewardPoolNew  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.995 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/BlitzBoxAwards.txt,  do not find sheet with BlitzBoxAwards  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.995 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/BlitzConfig.txt,  do not find sheet with BlitzConfig  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.996 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/BlitzType.txt,  do not find sheet with BlitzType  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:04:14.996 [main] ERROR STableManager - file not find /home/java/gameserver/conf/server/BloodyBattleSetting.txt,  do not find sheet with BloodyBattleSetting  you need rebuild all sheet by gen sheet tool!
+2024-07-11 22:05:33.924 [main] ERROR MongoUtil - the user=10001 not exists
+2024-07-11 22:05:35.117 [main] ERROR ThriftFactory - connect failed, services isRPC_CHAT host127.0.0.1 port17181 exception={}
+org.apache.thrift.transport.TTransportException: java.net.ConnectException: Connection refused (Connection refused)
+	at org.apache.thrift.transport.TSocket.open(TSocket.java:187)
+	at com.ljsd.jieling.thrift.pool.ThriftFactory.create0(ThriftFactory.java:71)
+	at com.ljsd.jieling.thrift.pool.ThriftFactory.create(ThriftFactory.java:48)
+	at com.ljsd.jieling.thrift.pool.ThriftFactory.create(ThriftFactory.java:38)
+	at org.apache.commons.pool2.BaseKeyedPooledObjectFactory.makeObject(BaseKeyedPooledObjectFactory.java:62)
+	at com.ljsd.jieling.thrift.pool.ThriftFactory.makeObject(ThriftFactory.java:114)
+	at com.ljsd.jieling.thrift.pool.ThriftFactory.makeObject(ThriftFactory.java:38)
+	at org.apache.commons.pool2.impl.GenericKeyedObjectPool.create(GenericKeyedObjectPool.java:1041)
+	at org.apache.commons.pool2.impl.GenericKeyedObjectPool.borrowObject(GenericKeyedObjectPool.java:357)
+	at org.apache.commons.pool2.impl.GenericKeyedObjectPool.borrowObject(GenericKeyedObjectPool.java:279)
+	at com.ljsd.jieling.thrift.pool.ClientAdapterPo.getClientAdapterPo(ClientAdapterPo.java:32)
+	at com.ljsd.jieling.network.server.WorldChatHelper.getWorldChatInfo(WorldChatHelper.java:48)
+	at com.ljsd.jieling.chat.logic.ChatLogic.initWorldChat(ChatLogic.java:296)
+	at com.ljsd.GameLogicService.onStart(GameLogicService.java:155)
+	at com.ljsd.GameApplication.main(GameApplication.java:63)
+Caused by: java.net.ConnectException: Connection refused (Connection refused)
+	at java.net.PlainSocketImpl.socketConnect(Native Method)
+	at java.net.AbstractPlainSocketImpl.doConnect(AbstractPlainSocketImpl.java:350)
+	at java.net.AbstractPlainSocketImpl.connectToAddress(AbstractPlainSocketImpl.java:206)
+	at java.net.AbstractPlainSocketImpl.connect(AbstractPlainSocketImpl.java:188)
+	at java.net.SocksSocketImpl.connect(SocksSocketImpl.java:392)
+	at java.net.Socket.connect(Socket.java:607)
+	at org.apache.thrift.transport.TSocket.open(TSocket.java:182)
+	... 14 common frames omitted
+2024-07-11 22:06:00.110 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:07:00.113 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:08:00.090 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:09:00.088 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:10:00.093 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:11:00.090 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:12:00.090 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:13:00.091 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:14:00.090 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:15:00.091 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:16:00.090 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:17:00.089 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:18:00.090 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:19:00.090 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:20:00.089 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:21:00.090 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:22:00.091 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:23:00.117 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:24:00.100 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:25:00.091 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:26:00.090 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:27:00.091 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:28:00.091 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:29:00.091 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:30:00.097 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:31:00.091 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:32:00.091 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:33:00.092 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:34:00.090 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:35:00.090 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:36:00.090 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:37:00.090 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:38:00.090 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:39:00.090 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:40:00.090 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:41:00.091 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:42:00.091 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:43:00.091 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:44:00.091 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:45:00.090 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:46:00.091 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:47:00.092 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:48:00.090 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:49:00.091 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:50:00.091 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:51:00.114 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:52:00.090 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:53:00.091 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:54:00.090 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:55:00.089 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:56:00.091 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:57:00.091 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:58:00.091 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 22:59:00.090 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:00:00.089 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:01:00.089 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:02:00.090 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:03:00.091 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:04:00.089 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:05:00.091 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:06:00.093 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:07:00.090 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:08:00.118 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:09:00.086 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:10:00.089 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:11:00.089 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:12:00.118 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:13:00.090 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:14:00.089 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:15:00.090 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:16:00.089 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:17:00.089 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:18:00.088 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:19:00.089 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:20:00.088 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:21:00.093 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:22:00.088 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:23:00.088 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:24:00.088 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:25:00.087 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:26:00.087 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:27:00.087 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:28:00.088 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:29:00.087 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:30:00.090 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:31:00.090 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:32:00.090 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:33:00.087 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:34:00.087 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:35:00.087 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:36:00.088 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:37:00.087 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:38:00.087 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:39:00.087 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:40:00.088 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:41:00.088 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:42:00.089 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:43:00.087 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:44:00.088 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:45:00.088 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:46:00.108 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:47:00.088 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:48:00.086 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:49:00.086 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:50:00.086 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:51:00.087 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:52:00.087 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:53:00.086 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:54:00.087 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:55:00.086 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:56:00.104 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:57:00.086 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:58:00.087 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2024-07-11 23:59:00.086 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null

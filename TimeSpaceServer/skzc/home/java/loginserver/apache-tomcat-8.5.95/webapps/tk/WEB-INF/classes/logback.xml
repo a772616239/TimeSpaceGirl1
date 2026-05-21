@@ -1,0 +1,52 @@
+<configuration scan="true" scanPeriod="60 seconds">
+    <contextName>YSJLogging</contextName>
+
+    <property name="tip" value="INFO"/>
+
+    <!-- 定义日志文件 输入位置 -->
+    <property name="log_dir" value="../logs"/>
+    <!-- 日志最大的历史 30天 -->
+    <property name="maxHistory" value="30"/>
+
+    <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder charset="UTF-8">
+            <pattern>[%level] - %d{yyyy-MM-dd HH:mm:ss.SSS} - [%thread] - %logger{0}#%line - ${tip}:%msg%n</pattern>
+        </encoder>
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>INFO</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>ACCEPT</onMismatch>
+        </filter>
+    </appender>
+
+    <appender name="file_console" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <!--<Encoding>UTF-8</Encoding>-->
+        <!-- 过滤器，只记录WARN级别的日志 -->
+        <encoder charset="UTF-8">
+            <pattern>[%level] - %d{yyyy-MM-dd HH:mm:ss.SSS} - [%thread] - %logger{0}#%line - ${tip}:%msg%n</pattern>
+        </encoder>
+        <!-- 最常用的滚动策略，它根据时间来制定滚动策略.既负责滚动也负责出发滚动 -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!--日志输出位置  可相对、和绝对路径 -->
+            <fileNamePattern>${log_dir}/%d{yyyy-MM-dd}.log</fileNamePattern>
+        </rollingPolicy>
+    </appender>
+
+    <logger name="com.ljsd" level="INFO"/>
+
+    <logger name="org.mongodb.driver" level="ERROR"/>
+
+    <logger name="org.apache.commons.httpclient" level="WARN"/>
+
+
+    <root level="INFO">
+        <!-- 控制台输出 -->
+        <appender-ref ref="console"/>
+
+        <appender-ref ref="file_console"/>
+
+        <!--<appender-ref ref="TRACE" />-->
+
+    </root>
+
+</configuration>

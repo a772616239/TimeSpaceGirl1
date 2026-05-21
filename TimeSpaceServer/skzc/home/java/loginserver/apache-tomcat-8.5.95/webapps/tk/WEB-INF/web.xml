@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd"
+         version="3.1">
+
+
+    <context-param>
+        <param-name>logbackConfigLocation</param-name>
+        <param-value>classpath:main/resources/logback.xml</param-value>
+    </context-param>
+
+    <servlet>
+        <servlet-name>index</servlet-name>
+        <servlet-class>com.ljsd.controller.IndexController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>index</servlet-name>
+        <url-pattern>/index</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>updateNotice</servlet-name>
+        <servlet-class>com.ljsd.controller.RoutePublishNoticeController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>updateNotice</servlet-name>
+        <url-pattern>/updateNotice</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>publishNotice</servlet-name>
+        <servlet-class>com.ljsd.controller.PublishNoticeController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>publishNotice</servlet-name>
+        <url-pattern>/publishNotice</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>getNotice</servlet-name>
+        <servlet-class>com.ljsd.controller.GetNoticeController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>getNotice</servlet-name>
+        <url-pattern>/getNotice</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>getServerList</servlet-name>
+        <servlet-class>com.ljsd.controller.GetServerListController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>getServerList</servlet-name>
+        <url-pattern>/getServerList</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>regist</servlet-name>
+        <servlet-class>com.ljsd.controller.RegistController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>regist</servlet-name>
+        <url-pattern>/regist</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>getUserInfo</servlet-name>
+        <servlet-class>com.ljsd.controller.GetUserController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>getUserInfo</servlet-name>
+        <url-pattern>/getUserInfo</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>registerUser</servlet-name>
+        <servlet-class>com.ljsd.controller.UserRegisterController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>registerUser</servlet-name>
+        <url-pattern>/registerUser</url-pattern>
+    </servlet-mapping>
+
+
+    <servlet>
+        <servlet-name>registerUserIDCard</servlet-name>
+        <servlet-class>com.ljsd.controller.UserRegisterIDCardController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>registerUserIDCard</servlet-name>
+        <url-pattern>/registerUserIDCard</url-pattern>
+    </servlet-mapping>
+
+    <!--<servlet>-->
+        <!--<servlet-name>test</servlet-name>-->
+        <!--<servlet-class>com.ljsd.controller.TestController</servlet-class>-->
+    <!--</servlet>-->
+
+    <!--<servlet-mapping>-->
+        <!--<servlet-name>test</servlet-name>-->
+        <!--<url-pattern>/test1</url-pattern>-->
+    <!--</servlet-mapping>-->
+
+
+
+    <servlet>
+        <servlet-name>userLogin</servlet-name>
+        <servlet-class>com.ljsd.controller.UserLoginController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>userLogin</servlet-name>
+        <url-pattern>/userLogin</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>serverList</servlet-name>
+        <servlet-class>com.ljsd.controller.ServerListController</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>serverList</servlet-name>
+        <url-pattern>/serverList</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>excelData</servlet-name>
+        <servlet-class>com.ljsd.controller.ExcelController</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>excelData</servlet-name>
+        <url-pattern>/excelData</url-pattern>
+    </servlet-mapping>
+
+
+    <listener>
+        <listener-class>com.ljsd.listener.WebContextListener</listener-class>
+    </listener>
+
+</web-app>

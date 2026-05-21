@@ -1,0 +1,139 @@
+2023-11-26 00:00:00.168 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:01:00.160 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:02:00.160 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:03:00.160 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:04:00.160 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:05:00.164 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:06:00.160 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:07:00.160 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:08:00.160 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:09:00.161 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:10:00.160 [ScheduleThreadPool-test-thread-7] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:11:00.161 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:12:00.160 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:13:00.160 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:14:00.160 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:16:16.096 [main] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:17:00.243 [ScheduleThreadPool-test-thread-1] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:18:00.235 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:19:00.238 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:20:00.235 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:21:00.236 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:22:00.237 [ScheduleThreadPool-test-thread-8] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:23:00.234 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:24:00.236 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:24:18.705 [pool-6-thread-3] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:24:18.719 [pool-6-thread-3] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:25:00.235 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:25:55.955 [pool-6-thread-4] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:25:55.962 [pool-6-thread-4] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:26:00.236 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:26:18.255 [netty-1] ERROR SessionManager - 閲嶆柊鐧诲綍 new = 98136a96-d671-4322-ada7-1dc83d7cebe4
+2023-11-26 00:26:21.695 [h-4] ERROR MongoUtil - the user=0 not exists
+2023-11-26 00:26:24.024 [h-4] ERROR MongoUtil - the user=0 not exists
+2023-11-26 00:26:25.100 [h-4] ERROR MongoUtil - the user=0 not exists
+2023-11-26 00:26:25.103 [h-4] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:26:27.876 [h-4] ERROR MongoUtil - the user=0 not exists
+2023-11-26 00:26:58.419 [h-4] ERROR BaseHandler - processWithProto Exception protoID=11208,uid=10000004,proto=>mailIds: "10000004010217009295820001"
+mailIds: "10000004010217009295820000"
+mailIds: "10000004010217009295820003"
+mailIds: "10000004010217009295820002"
+mailIds: "10000004010217009295850001"
+mailIds: "10000004010217009295850000"
+ exception=[CODE: -1][操作失败][SItem閰嶇疆涓嶅瓨鍦� id:12034][] 
+2023-11-26 00:26:58.422 [h-4] ERROR HandlerLogicThread - An unusual ErrorCodeException occurred for the user::use10000004
+2023-11-26 00:26:58.422 [h-4] ERROR HandlerLogicThread - [CODE: -1][操作失败][SItem閰嶇疆涓嶅瓨鍦� id:12034][] 
+
+    at com.ljsd.jieling.util.ItemUtil.getMapRe(ItemUtil.java:653)
+    at com.ljsd.jieling.util.ItemUtil.getMap(ItemUtil.java:640)
+    at com.ljsd.jieling.util.ItemUtil.selectItemArr(ItemUtil.java:492)
+    at com.ljsd.jieling.util.ItemUtil.drop(ItemUtil.java:86)
+    at com.ljsd.jieling.logic.mail.MailLogic.takeMail(MailLogic.java:249)
+    at com.ljsd.jieling.handler.TakeMailHandler.processWithProto(TakeMailHandler.java:32)
+    at com.ljsd.jieling.handler.TakeMailHandler.processWithProto(TakeMailHandler.java:16)
+    at com.ljsd.jieling.handler.BaseHandler.processWithProto(BaseHandler.java:61)
+    at com.ljsd.jieling.handler.BaseHandler.execute(BaseHandler.java:41)
+    at com.ljsd.jieling.core.HandlerLogicThread.doWork(HandlerLogicThread.java:167)
+    at com.ljsd.jieling.core.HandlerLogicThread.run(HandlerLogicThread.java:105)
+
+2023-11-26 00:26:58.424 [h-4] ERROR MessageUtil - send error msg,the uid=10000004,the msgId=11209,the errMsg=操作失败 
+2023-11-26 00:27:00.236 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:27:00.411 [h-4] ERROR BaseHandler - processWithProto Exception protoID=11208,uid=10000004,proto=>mailIds: "10000004010217009295820001"
+mailIds: "10000004010217009295820000"
+mailIds: "10000004010217009295820003"
+mailIds: "10000004010217009295820002"
+mailIds: "10000004010217009295850001"
+mailIds: "10000004010217009295850000"
+ exception=[CODE: 101][该邮件没有附件可以领取][][] 
+2023-11-26 00:27:00.411 [h-4] ERROR HandlerLogicThread - An unusual ErrorCodeException occurred for the user::use10000004
+2023-11-26 00:27:00.411 [h-4] ERROR HandlerLogicThread - [CODE: 101][该邮件没有附件可以领取][][] 
+
+    at com.ljsd.jieling.logic.mail.MailLogic.takeMail(MailLogic.java:222)
+    at com.ljsd.jieling.handler.TakeMailHandler.processWithProto(TakeMailHandler.java:32)
+    at com.ljsd.jieling.handler.TakeMailHandler.processWithProto(TakeMailHandler.java:16)
+    at com.ljsd.jieling.handler.BaseHandler.processWithProto(BaseHandler.java:61)
+    at com.ljsd.jieling.handler.BaseHandler.execute(BaseHandler.java:41)
+    at com.ljsd.jieling.core.HandlerLogicThread.doWork(HandlerLogicThread.java:167)
+    at com.ljsd.jieling.core.HandlerLogicThread.run(HandlerLogicThread.java:105)
+
+2023-11-26 00:27:00.411 [h-4] ERROR MessageUtil - send error msg,the uid=10000004,the msgId=11209,the errMsg=该邮件没有附件可以领取 
+2023-11-26 00:27:02.235 [h-4] ERROR BaseHandler - processWithProto Exception protoID=11208,uid=10000004,proto=>mailIds: "10000004010217009295820001"
+mailIds: "10000004010217009295820000"
+mailIds: "10000004010217009295820003"
+mailIds: "10000004010217009295820002"
+mailIds: "10000004010217009295850001"
+mailIds: "10000004010217009295850000"
+ exception=[CODE: 101][该邮件没有附件可以领取][][] 
+2023-11-26 00:27:02.235 [h-4] ERROR HandlerLogicThread - An unusual ErrorCodeException occurred for the user::use10000004
+2023-11-26 00:27:02.235 [h-4] ERROR HandlerLogicThread - [CODE: 101][该邮件没有附件可以领取][][] 
+
+    at com.ljsd.jieling.logic.mail.MailLogic.takeMail(MailLogic.java:222)
+    at com.ljsd.jieling.handler.TakeMailHandler.processWithProto(TakeMailHandler.java:32)
+    at com.ljsd.jieling.handler.TakeMailHandler.processWithProto(TakeMailHandler.java:16)
+    at com.ljsd.jieling.handler.BaseHandler.processWithProto(BaseHandler.java:61)
+    at com.ljsd.jieling.handler.BaseHandler.execute(BaseHandler.java:41)
+    at com.ljsd.jieling.core.HandlerLogicThread.doWork(HandlerLogicThread.java:167)
+    at com.ljsd.jieling.core.HandlerLogicThread.run(HandlerLogicThread.java:105)
+
+2023-11-26 00:27:02.235 [h-4] ERROR MessageUtil - send error msg,the uid=10000004,the msgId=11209,the errMsg=该邮件没有附件可以领取 
+2023-11-26 00:28:00.235 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:28:32.922 [netty-2] ERROR SessionManager - 閲嶆柊鐧诲綍 new = 2dae9a91-eb37-4a34-839c-769d490acbe2
+2023-11-26 00:28:33.420 [h-4] ERROR MongoUtil - the user=0 not exists
+2023-11-26 00:28:34.333 [h-4] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:28:36.853 [h-4] ERROR MongoUtil - the user=0 not exists
+2023-11-26 00:29:00.234 [ScheduleThreadPool-test-thread-6] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:29:05.083 [pool-6-thread-5] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:29:37.865 [netty-3] ERROR SessionManager - 閲嶆柊鐧诲綍 new = 4e7e90e4-388a-4fec-97bd-97920ebd4e92
+2023-11-26 00:29:39.134 [h-4] ERROR MongoUtil - the user=0 not exists
+2023-11-26 00:29:40.143 [h-4] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:29:40.151 [h-4] ERROR MongoUtil - the user=0 not exists
+2023-11-26 00:29:40.153 [h-4] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:29:42.678 [h-4] ERROR MongoUtil - the user=0 not exists
+2023-11-26 00:30:00.234 [ScheduleThreadPool-test-thread-5] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:31:00.245 [ScheduleThreadPool-test-thread-3] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:31:06.489 [pool-6-thread-5] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:31:06.493 [pool-6-thread-5] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:31:22.210 [h-4] ERROR MongoUtil - the user=0 not exists
+2023-11-26 00:31:22.214 [h-4] ERROR MongoUtil - the user=10001 not exists
+2023-11-26 00:31:37.579 [h-4] ERROR BaseHandler - processWithProto Exception protoID=11208,uid=10000004,proto=>mailIds: "10000004010217009297800000"
+ exception=[CODE: -1][操作失败][SItem閰嶇疆涓嶅瓨鍦� id:12034][] 
+2023-11-26 00:31:37.579 [h-4] ERROR HandlerLogicThread - An unusual ErrorCodeException occurred for the user::use10000004
+2023-11-26 00:31:37.579 [h-4] ERROR HandlerLogicThread - [CODE: -1][操作失败][SItem閰嶇疆涓嶅瓨鍦� id:12034][] 
+
+    at com.ljsd.jieling.util.ItemUtil.getMapRe(ItemUtil.java:653)
+    at com.ljsd.jieling.util.ItemUtil.getMap(ItemUtil.java:640)
+    at com.ljsd.jieling.util.ItemUtil.selectItemArr(ItemUtil.java:492)
+    at com.ljsd.jieling.util.ItemUtil.drop(ItemUtil.java:86)
+    at com.ljsd.jieling.logic.mail.MailLogic.takeMail(MailLogic.java:249)
+    at com.ljsd.jieling.handler.TakeMailHandler.processWithProto(TakeMailHandler.java:32)
+    at com.ljsd.jieling.handler.TakeMailHandler.processWithProto(TakeMailHandler.java:16)
+    at com.ljsd.jieling.handler.BaseHandler.processWithProto(BaseHandler.java:61)
+    at com.ljsd.jieling.handler.BaseHandler.execute(BaseHandler.java:41)
+    at com.ljsd.jieling.core.HandlerLogicThread.doWork(HandlerLogicThread.java:167)
+    at com.ljsd.jieling.core.HandlerLogicThread.run(HandlerLogicThread.java:105)
+
+2023-11-26 00:31:37.580 [h-4] ERROR MessageUtil - send error msg,the uid=10000004,the msgId=11209,the errMsg=操作失败 
+2023-11-26 00:32:00.234 [ScheduleThreadPool-test-thread-4] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:33:00.234 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:34:00.234 [ScheduleThreadPool-test-thread-2] ERROR MessageUtil - adventureBossRankInfo is null
+2023-11-26 00:35:32.399 [main] ERROR MongoUtil - the user=10001 not exists

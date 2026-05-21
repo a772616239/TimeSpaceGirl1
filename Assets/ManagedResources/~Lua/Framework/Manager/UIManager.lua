@@ -435,6 +435,16 @@ function UIManager.GetPanelWithSound(id, isSync, func,isWithPopSound ,...)
                     LogError("UIManager====>CreatePanel failed for id:"..id)
                     return nil
                 end
+                --> MultiLanguage
+                --this.MultiLanguageCheck(gameObject)
+            else
+                this.CreatePanelAsync(uiConfig, isStackPanel and this.uiNode or this.fixedNode, function (gameObject)
+                    if gameObject and not IsNull(gameObject) then
+                        panel:CreateUI(gameObject)
+                    else
+                        LogError("UIManager====>CreatePanelAsync failed for id:"..id)
+                        return
+                    end
                     --> MultiLanguage
                     --this.MultiLanguageCheck(gameObject)
                     SetSortingOrder(uiConfig, panel, isStackPanel,unpack(args, 1, table.maxn(args)))
@@ -448,14 +458,16 @@ function UIManager.GetPanelWithSound(id, isSync, func,isWithPopSound ,...)
             end
         end
         if isSync then
-            SetSortingOrder(uiConfig, panel, isStackPanel,unpack(args, 1, table.maxn(args)))
+            if panel.gameObject and not IsNull(panel.gameObject) then
+                SetSortingOrder(uiConfig, panel, isStackPanel,unpack(args, 1, table.maxn(args)))
+            end
             if needTrans then
                 --> MultiLanguage
                 this.MultiLanguageCheck(panel.gameObject)
             end
             return panel
         else
-            if panel.gameObject then
+            if panel.gameObject and not IsNull(panel.gameObject) then
                 SetSortingOrder(uiConfig, panel, isStackPanel,unpack(args, 1, table.maxn(args)))
             end
         end
@@ -471,7 +483,9 @@ function UIManager.GetPanelWithSound(id, isSync, func,isWithPopSound ,...)
                 this.stackList[i]:OnCloseBefore(function()
                     closeNum = closeNum + 1
                     if closeNum == closeTotal then
-                        this.eventSystem:SetActive(true)
+                        if this.eventSystem and not IsNull(this.eventSystem) then
+                            this.eventSystem:SetActive(true)
+                        end
                         return action(panel)
                     end
                 end)
@@ -480,7 +494,9 @@ function UIManager.GetPanelWithSound(id, isSync, func,isWithPopSound ,...)
         if closeTotal == 0 then
             return action(panel)
         else
-            this.eventSystem:SetActive(false)
+            if this.eventSystem and not IsNull(this.eventSystem) then
+                this.eventSystem:SetActive(false)
+            end
         end
     else
         return action(panel)

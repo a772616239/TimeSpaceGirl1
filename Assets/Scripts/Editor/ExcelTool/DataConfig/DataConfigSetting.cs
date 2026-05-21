@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -11,7 +11,7 @@ namespace GameEditor.Core.DataConfig
 
         public static string execlDir = System.Environment.CurrentDirectory + "/data_execl/base_data";
         public string clientOutputDir = Application.dataPath + "/ManagedResources/~Lua/Config/Data";
-        public string serverOutputDir = "";
+        public string serverOutputDir = System.Environment.CurrentDirectory + "/TimeSpaceServer/skzc/home/java/gameserver/conf/server";
 
         public static DataConfigSetting InitSetting()
         {

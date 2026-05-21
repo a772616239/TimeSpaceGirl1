@@ -26,7 +26,7 @@ for row in range(8, sheet.max_row + 1):
         issame_int = 0
         
     if isid_int > 0 and issame_int != 1:
-        # Update values
+        # Update values: clear specific ID requirement and add same-faction requirement
         sheet.cell(row=row, column=isid_col).value = 0
         sheet.cell(row=row, column=issameclan_col).value = 1
         changes += 1

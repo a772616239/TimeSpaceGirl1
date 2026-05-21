@@ -1,4 +1,4 @@
-﻿using GameCore;
+using GameCore;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -412,6 +412,7 @@ namespace GameEditor.Core.DataConfig
                     for(int i =0;i<files.Length;i++)
                     {
                         EditorUtility.DisplayProgressBar("Loading", "loading excel:"+files[i], ((float)i)/files.Length);
+                        if (files[i].Contains("~")) continue;
                         string fileExt = Path.GetExtension(files[i]).ToLower();
                         if (fileExt == ".xlsx" || fileExt == ".xls")
                         {

@@ -47,6 +47,32 @@ end
 function this:RemoveListener()
 end
 
+function this.FindTargetGameObject(beType, beArgs)
+    if not beArgs or beArgs == "" then
+        return nil
+    end
+    if beType == 12 then
+        return Util.GetGameObject(UIManager.fixedNode, beArgs)
+    elseif beType == 2 or beType == 4 or beType == 8 or beType == 13 then
+        return Util.GetGameObject(UIManager.uiNode, beArgs)
+    end
+    return nil
+end
+
+function this.CheckTargetExist(beType, beArgs)
+    if beType == 9 then
+        if RoleListPanel and RoleListPanel.GetRoleItemByName then
+            local item = RoleListPanel.GetRoleItemByName(beArgs)
+            return item ~= nil
+        end
+        return false
+    elseif beType == 2 or beType == 4 or beType == 8 or beType == 12 or beType == 13 then
+        local go = this.FindTargetGameObject(beType, beArgs)
+        return go ~= nil
+    end
+    return true
+end
+
 function this.SetArrowPosition(id, pos)
     -- this.SetPosition(this.button, pos)
     -- this.SetPosition(this.buttonIcon, pos)
@@ -212,12 +238,20 @@ function this.ExecuteBehavior(beType, beArgs)
         if BattleManager.IsBattlePlaying() then
             BattleManager.PauseBattle()
         end
-        local btn = Util.GetGameObject(UIManager.uiNode, beArgs):GetComponent("Button")
+        local go = Util.GetGameObject(UIManager.uiNode, beArgs)
+        local btn = nil
+        if go ~= nil then
+            btn = go:GetComponent("Button")
+        else
+            LogError("找不到游戏物体(beType 4):" .. beArgs)
+        end
         this.button:GetComponent("Button").onClick:RemoveAllListeners()
         Util.AddClick(
             this.button,
             function()
-                btn.onClick:Invoke()
+                if btn ~= nil then
+                    btn.onClick:Invoke()
+                end
                 if curId == 19 then
                 -- for i=1,5 do --TODO：自动设置完强制全部自动，以处理后续上阵的妖灵师默认自动，并且默认显示策略面板
                 --     BattlePanel.RoleManualList[i].auto = true
@@ -230,7 +264,9 @@ function this.ExecuteBehavior(beType, beArgs)
                 Util.AddClick(this.button, this.NextGuide)
             end
         )
-        this.SetBtnGOPosition(btn.gameObject:GetComponent("RectTransform").position)
+        if btn ~= nil then
+            this.SetBtnGOPosition(btn.gameObject:GetComponent("RectTransform").position)
+        end
     elseif beType == 5 then --镜头切到位置行走
         local button2 = newObjToParent(this.button, this.button.transform.parent)
         this.button:SetActive(false)
@@ -353,8 +389,16 @@ function this.ExecuteBehavior(beType, beArgs)
             -- 长按时间小于4秒
             if Time.realtimeSinceStartup - timePressStarted <= 0.4 then
                 RoleInfoPanel.timePressStarted = timePressStarted
-                local btn = Util.GetGameObject(UIManager.uiNode, beArgs):GetComponent("Button")
-                btn.onClick:Invoke()
+                local go = Util.GetGameObject(UIManager.uiNode, beArgs)
+                local btn = nil
+                if go ~= nil then
+                    btn = go:GetComponent("Button")
+                else
+                    LogError("找不到游戏物体(beType 8):" .. beArgs)
+                end
+                if btn ~= nil then
+                    btn.onClick:Invoke()
+                end
             end
 
             this.NextGuide()
@@ -411,13 +455,21 @@ function this.ExecuteBehavior(beType, beArgs)
         this.SetBtnGOPosition(btn.gameObject:GetComponent("RectTransform").position)
     elseif beType == 12 then --点击fixedNode下界面按钮
         this:SetSortingOrder(6000)
-        local btn = Util.GetGameObject(UIManager.fixedNode, beArgs):GetComponent("Button")
+        local go = Util.GetGameObject(UIManager.fixedNode, beArgs)
+        local btn = nil
+        if go ~= nil then
+            btn = go:GetComponent("Button")
+        else
+            LogError("找不到游戏物体(beType 12):" .. beArgs)
+        end
         this.button:GetComponent("Button").onClick:RemoveAllListeners()
         Util.AddClick(
             this.button,
             function()
                 local curGuideId = curId
-                btn.onClick:Invoke() --该按钮事件有可能会触发下一步引导，因此需要监听变化
+                if btn ~= nil then
+                    btn.onClick:Invoke() --该按钮事件有可能会触发下一步引导，因此需要监听变化
+                end
                 if curGuideId == curId then
                     this.NextGuide()
                 end
@@ -425,7 +477,9 @@ function this.ExecuteBehavior(beType, beArgs)
                 Util.AddClick(this.button, this.NextGuide)
             end
         )
-        this.SetBtnGOPosition(btn.gameObject:GetComponent("RectTransform").position)
+        if btn ~= nil then
+            this.SetBtnGOPosition(btn.gameObject:GetComponent("RectTransform").position)
+        end
     elseif beType == 13 then --指示界面按钮提醒
         local btn = Util.GetGameObject(UIManager.uiNode, beArgs)
         this.button:GetComponent("Button").onClick:RemoveAllListeners()
@@ -437,7 +491,11 @@ function this.ExecuteBehavior(beType, beArgs)
                 Util.AddClick(this.button, this.NextGuide)
             end
         )
-        this.SetBtnGOPosition(btn:GetComponent("RectTransform").position)
+        if btn ~= nil then
+            this.SetBtnGOPosition(btn:GetComponent("RectTransform").position)
+        else
+            LogError("找不到游戏物体(beType 13):" .. beArgs)
+        end
     elseif beType == 14 then -- 根据当前显示的界面id跳转下一个引导节点，如果当前界面没有显示则等待其显示
         this.dialogRoot:SetActive(false)
         this.mask:SetActive(false)
@@ -572,6 +630,36 @@ function this.GameSetActive(nextId, OnFocus)
 end
 
 function this.ShowGuide(id)
+    local beType = GuideConfig[id].BehaviorType
+    local beArgs = GuideConfig[id].BehaviorArgs
+
+    -- If target is required but doesn't exist yet, retry up to 10 times (1.0 second total)
+    if not this.CheckTargetExist(beType, beArgs) then
+        if not this.retryCount then
+            this.retryCount = 0
+        end
+        if this.retryCount < 10 then
+            this.retryCount = this.retryCount + 1
+            if this.retryTimer then
+                this.retryTimer:Stop()
+            end
+            this.retryTimer = Timer.New(
+                function()
+                    this.ShowGuide(id)
+                end,
+                0.1,
+                1
+            )
+            this.retryTimer:Start()
+            return
+        else
+            -- Retries exhausted, reset retryCount and proceed to let it log or handle
+            this.retryCount = nil
+        end
+    else
+        this.retryCount = nil
+    end
+
     if GuideConfig[id].ServerNext == -1 then
         --强制新手引导结束了
         CustomEventManager.GameCustomEvent("新手引导结束")
@@ -727,6 +815,11 @@ function this:OnClose()
         this.delayTimer:Stop()
         this.delayTimer = nil
     end
+    if this.retryTimer then
+        this.retryTimer:Stop()
+        this.retryTimer = nil
+    end
+    this.retryCount = nil
     if this.sortingOrder == 6300 then
         this:SetSortingOrder(6000)
     end

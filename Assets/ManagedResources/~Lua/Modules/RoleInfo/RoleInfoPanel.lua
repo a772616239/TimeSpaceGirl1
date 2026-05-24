@@ -1106,6 +1106,7 @@ function this:UpdateHeroUpStarData()
 
             if i <= #curUpStarData then -- 有数据
                 num.gameObject:SetActive(true)
+                curUpStarData[i].pos = i
                 upStarPreList[i] = go
                 upStarConsumeMaterial[i] = {}
                 upStarMaterialIsAll[i] = 2
@@ -1323,61 +1324,46 @@ function this:UpdateHeroUpStarMaterialShow()
         local ConsumeMaterial = upStarRankUpConfig.ConsumeMaterial
         this.SetActive(this.goldGrid,false)
         this.SetActive(this.goldImage,false)
-        this.SetActive(this.gold2Image,false)   
-        if ConsumeMaterial and #ConsumeMaterial[1] > 1 then
-            if ConsumeMaterial[1][2] > 0 then
-                this.SetActive(this.goldGrid,true)
-                this.SetActive(this.goldImage,true)       
-                this.goldImage:GetComponent("Image").sprite = Util.LoadSprite(GetResourcePath(itemConfig[ConsumeMaterial[1][1]].ResourceID))
-                if BagManager.GetItemCountById(ConsumeMaterial[1][1]) < ConsumeMaterial[1][2] then
-                    isUpStarMaterials = false
-                    this.goldText.color = UIColorNew.RED
-                else
-                    this.goldText.color = UIColorNew.GREEN
-                end
-                this.goldText.text = BagManager.GetItemCountById(ConsumeMaterial[1][1]) .. "/" .. ConsumeMaterial[1][2]
-                Util.AddOnceClick(this.goldBtn,function()
-                    UIManager.OpenPanel(UIName.RewardItemSingleShowPopup,ConsumeMaterial[1][1])
-                end)
+        this.SetActive(this.gold2Image,false)
+                -- first material (guard against nil)
+        if ConsumeMaterial and ConsumeMaterial[1] and ConsumeMaterial[1][2] and ConsumeMaterial[1][2] > 0 then
+            this.SetActive(this.goldGrid, true)
+            this.SetActive(this.goldImage, true)
+            this.goldImage:GetComponent("Image").sprite = Util.LoadSprite(GetResourcePath(itemConfig[ConsumeMaterial[1][1]].ResourceID))
+            local curCount = BagManager.GetItemCountById(ConsumeMaterial[1][1]) or 0
+            if curCount < ConsumeMaterial[1][2] then
+                isUpStarMaterials = false
+                this.goldText.color = UIColorNew.RED
             else
-                this.SetActive(this.goldImage,false)
+                this.goldText.color = UIColorNew.GREEN
             end
+            this.goldText.text = curCount .. "/" .. ConsumeMaterial[1][2]
+            Util.AddOnceClick(this.goldBtn, function()
+                UIManager.OpenPanel(UIName.RewardItemSingleShowPopup, ConsumeMaterial[1][1])
+            end)
+        else
+            this.SetActive(this.goldImage, false)
         end
-        if ConsumeMaterial and #ConsumeMaterial >= 2 then
-            if ConsumeMaterial[1][2] > 0 then
-                this.SetActive(this.goldGrid,true)
-                this.SetActive(this.goldImage,true)                
-                this.goldImage:GetComponent("Image").sprite = Util.LoadSprite(GetResourcePath(itemConfig[ConsumeMaterial[1][1]].ResourceID))
-                if BagManager.GetItemCountById(ConsumeMaterial[1][1]) < ConsumeMaterial[1][2] then
-                    isUpStarMaterials = false
-                    this.goldText.color = UIColorNew.RED
-                else
-                    this.goldText.color = UIColorNew.GREEN
-                end
-                this.goldText.text = BagManager.GetItemCountById(ConsumeMaterial[1][1]) .. "/" .. ConsumeMaterial[1][2]
-                Util.AddOnceClick(this.goldBtn,function()
-                    UIManager.OpenPanel(UIName.RewardItemSingleShowPopup,ConsumeMaterial[1][1])
-                end)
+
+        -- second material (optional, guard against nil)
+        if ConsumeMaterial and ConsumeMaterial[2] and ConsumeMaterial[2][2] and ConsumeMaterial[2][2] > 0 then
+            this.SetActive(this.goldGrid, true)
+            this.SetActive(this.gold2Image, true)
+            this.gold2Image:GetComponent("Image").sprite = Util.LoadSprite(GetResourcePath(itemConfig[ConsumeMaterial[2][1]].ResourceID))
+            local curCount2 = BagManager.GetItemCountById(ConsumeMaterial[2][1]) or 0
+            if curCount2 < ConsumeMaterial[2][2] then
+                isUpStarMaterials = false
+                this.gold2Text.color = UIColorNew.RED
             else
-                this.SetActive(this.goldImage,false)
+                this.gold2Text.color = UIColorNew.GREEN
             end
-            if ConsumeMaterial[2][2] > 0 then
-                this.SetActive(this.goldGrid,true)
-                this.SetActive(this.gold2Image,true)
-                this.gold2Image:GetComponent("Image").sprite = Util.LoadSprite(GetResourcePath(itemConfig[ConsumeMaterial[2][1]].ResourceID))
-                if BagManager.GetItemCountById(ConsumeMaterial[2][1]) < ConsumeMaterial[2][2] then
-                    isUpStarMaterials = false
-                    this.gold2Text.color = UIColorNew.RED
-                else
-                    this.gold2Text.color = UIColorNew.GREEN
-                end
-                this.gold2Text.text =  BagManager.GetItemCountById(ConsumeMaterial[2][1]) .. "/" .. ConsumeMaterial[2][2]
-                Util.AddOnceClick(this.gold2Btn,function()
-                    UIManager.OpenPanel(UIName.RewardItemSingleShowPopup,ConsumeMaterial[2][1])
-                end)
-            else
-                this.SetActive(this.gold2Image,false)
-            end
+            this.gold2Text.text = curCount2 .. "/" .. ConsumeMaterial[2][2]
+            Util.AddOnceClick(this.gold2Btn, function()
+                UIManager.OpenPanel(UIName.RewardItemSingleShowPopup, ConsumeMaterial[2][1])
+            end)
+        else
+            this.SetActive(this.gold2Image, false)
+-- isUpStarMaterials unchanged when second material not required
         end
     end
 end
@@ -1575,25 +1561,34 @@ end
 
 --刷新当前升星坑位英雄的信息
 function this.UpdateUpStarPosHeroData(curSelectHeroList)
+    if not curSelectUpStarData then
+        return
+    end
+
     if LengthOfTable(curSelectHeroList) < curSelectUpStarData.upStarData[4] then
-        upStarMaterialIsAll[curSelectUpStarData.upStarData[2]] = 2
-        this.SetActive(Util.GetGameObject(curSelectUpStarGo.transform,"add"),true)  
-        local upStarHeroListData = HeroManager.GetUpStarHeroListData(curSelectUpStarData.upStarMaterialsData.Id,curHeroData)
-        if upStarHeroListData.state <= 0 then
-            this.SetActive(Util.GetGameObject(curSelectUpStarGo.transform,"add"),false)
+        upStarMaterialIsAll[curSelectUpStarData.pos] = 2
+        this.SetActive(Util.GetGameObject(curSelectUpStarGo.transform, "add"), true)
+
+        local upStarHeroListData = HeroManager.GetUpStarHeroListData(curSelectUpStarData.upStarMaterialsData.Id, curHeroData)
+        if upStarHeroListData and upStarHeroListData.state <= 0 then
+            this.SetActive(Util.GetGameObject(curSelectUpStarGo.transform, "add"), false)
         end
-        Util.GetGameObject(curSelectUpStarGo.transform,"num"):GetComponent("Text").text = string.format("<color=#FF0000FF>%s/%s</color>", LengthOfTable(curSelectHeroList),curSelectUpStarData.upStarData[4])
+
+        Util.GetGameObject(curSelectUpStarGo.transform, "num"):GetComponent("Text").text = string.format("<color=#FF0000FF>%s/%s</color>", LengthOfTable(curSelectHeroList), curSelectUpStarData.upStarData[4])
     else
-        upStarMaterialIsAll[curSelectUpStarData.upStarData[2]] = 1
-        -- this.SetActive(Util.GetGameObject(curSelectUpStarGo.transform,"add"),false)
-        Util.GetGameObject(curSelectUpStarGo.transform,"num"):GetComponent("Text").text = string.format("<color=#FFFFFFFF>%s/%s</color>", LengthOfTable(curSelectHeroList),curSelectUpStarData.upStarData[4])
+        upStarMaterialIsAll[curSelectUpStarData.pos] = 1
+        -- this.SetActive(Util.GetGameObject(curSelectUpStarGo.transform, "add"), false)
+        Util.GetGameObject(curSelectUpStarGo.transform, "num"):GetComponent("Text").text = string.format("<color=#FFFFFFFF>%s/%s</color>", LengthOfTable(curSelectHeroList), curSelectUpStarData.upStarData[4])
     end
+
     local curUpStarConsumeMaterial = {}
-    for i, v in pairs(curSelectHeroList) do
-        table.insert(curUpStarConsumeMaterial,v.dynamicId)
+    for _, v in pairs(curSelectHeroList) do
+        table.insert(curUpStarConsumeMaterial, v.dynamicId)
     end
-    upStarConsumeMaterial[curSelectUpStarData.upStarData[2]] = curUpStarConsumeMaterial
+    upStarConsumeMaterial[curSelectUpStarData.pos] = curUpStarConsumeMaterial
 end
+
+
 
 --跳转直接到进阶界面
 function this.JumpOnClickBtnUpStar()
@@ -1803,6 +1798,15 @@ function this:StarUpClick()
             isUpStarMaterialsHero = false
         end
     end
+
+    -- DEBUG: 打印升星检查状态
+    print("[UpStar DEBUG] isUpStarMaterials = " .. tostring(isUpStarMaterials))
+    print("[UpStar DEBUG] isUpStarMaterialsHero = " .. tostring(isUpStarMaterialsHero))
+    print("[UpStar DEBUG] #upStarMaterialIsAll = " .. tostring(#upStarMaterialIsAll))
+    for i = 1, #upStarMaterialIsAll do
+        print("[UpStar DEBUG]   upStarMaterialIsAll[" .. i .. "] = " .. tostring(upStarMaterialIsAll[i]))
+    end
+
     if isUpStarMaterials and isUpStarMaterialsHero then
         NetManager.HeroUpStarEvent(curHeroData.dynamicId, upStarConsumeMaterial, function (msg)
             UIManager.OpenPanel(UIName.RoleUpStarSuccessPanel,curHeroData,upStarRankUpConfig.Id,upStarRankUpConfig.OpenLevel,function ()
@@ -1823,7 +1827,14 @@ function this:StarUpClick()
 
         CombatPlanManager.RequestAllPlanData(function()end)
     else
-        PopupTipPanel.ShowTipByLanguageId(11852)
+        -- 显示具体哪个条件不满足的提示
+        if not isUpStarMaterials and not isUpStarMaterialsHero then
+            PopupTipPanel.ShowTip(GetLanguageStrByStr("材料不足且英雄祭品未满"))
+        elseif not isUpStarMaterials then
+            PopupTipPanel.ShowTip(GetLanguageStrByStr("升星材料不足"))
+        elseif not isUpStarMaterialsHero then
+            PopupTipPanel.ShowTip(GetLanguageStrByStr("英雄祭品未选满"))
+        end
     end
 end
 

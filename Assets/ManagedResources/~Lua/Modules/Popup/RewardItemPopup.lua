@@ -681,16 +681,15 @@ end
 --继续挑战倒计时
 function RewardItemPopup.TimeDown()
     this.nextStageTime.gameObject:SetActive(true)
-   
 
     autoFightCurTime = autoFightCurTime - 1
 
-    this.nextStageTime.text = string.format(GetLanguageStrById(50015),autoFightCurTime)
+    this.nextStageTime.text = string.format(GetLanguageStrById(50015), autoFightCurTime)
 
-        if autoFightCurTime <= 1 then
-            RewardItemPopup.NextStageClick()
-            if autoFightCurTime <= 0 then
-                RewardItemPopup.EndTimeDown()
+    if autoFightCurTime <= 1 then
+        RewardItemPopup.NextStageClick()
+        if autoFightCurTime <= 0 then
+            RewardItemPopup.EndTimeDown()
             return
         end
         return

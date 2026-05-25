@@ -210,6 +210,7 @@ function this:RefreshTabStatus()
     for n = 1, #self.operateTabs do
         self.operateTabs[n]:SetActive(false)
     end
+    this._needRefreshRedAfterTab = true
 
     if showType == ShowType.Welfare.type then
         for i = 1, #ShowType.Welfare.body do

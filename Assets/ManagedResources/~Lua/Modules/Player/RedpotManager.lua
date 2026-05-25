@@ -777,15 +777,21 @@ end
 function this.RefreshRedObjectStatus(rpType)
     -- 检测红点状态
     local state = this.GetRedPointStatus(rpType)
+    Log("[RedPoint] RefreshRedObjectStatus type=" .. tostring(rpType or "nil") .. " state=" .. tostring(state or "nil"))
     if BindObjs[rpType] then
         table.walk(BindObjs[rpType], function(bindObj)
             if bindObj and IsNull(bindObj) then
+                Log("[RedPoint] bindObj is null for type=" .. tostring(rpType or "nil"))
             end
             if bindObj and not IsNull(bindObj) and bindObj.gameObject then
                 bindObj.gameObject:SetActive(state == RedPointStatus.Show)
+                Log("[RedPoint] SetActive=" .. tostring(state == RedPointStatus.Show) .. " for type=" .. tostring(rpType or "nil"))
             else
+                Log("[RedPoint] bindObj invalid for type=" .. tostring(rpType or "nil"))
             end
         end)
+    else
+        Log("[RedPoint] No BindObjs for type=" .. tostring(rpType or "nil"))
     end
 
     -- 向父级递归

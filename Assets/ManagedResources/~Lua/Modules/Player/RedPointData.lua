@@ -137,7 +137,9 @@ function RedPointData:CheckRedPoint(node)
             value = RedPointData:GetServerRed(node)
         -- 判断是否注册了检测方法
         elseif _checkFunc[node] and _checkFunc[node].func then
-            value = _checkFunc[node].func(node) and 1 or 0
+            local funcResult = _checkFunc[node].func(node)
+            value = funcResult and 1 or 0
+            Log("[RedPoint] CheckRedPoint node=" .. tostring(node or "nil") .. " func_result=" .. tostring(funcResult or "nil") .. " value=" .. tostring(value or "nil") .. " oldValue=" .. tostring(RedPointData:GetRedValue(node) or "nil"))
         -- 都没有提示，出错
         else
 
@@ -151,7 +153,7 @@ function RedPointData:CheckRedPoint(node)
     end
     -- 判断红点状态是否改变
     if value == RedPointData:GetRedValue(node) then
-        -- __DebugLog(GetLanguageStrById(11523).. node .. ", value = ".. value ..GetLanguageStrById(11532))
+        Log("[RedPoint] CheckRedPoint node=" .. tostring(node or "nil") .. " value unchanged=" .. tostring(value or "nil") .. " skip refresh")
         return false
     end
     -- 设置红点值

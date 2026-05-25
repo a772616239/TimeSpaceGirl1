@@ -1304,9 +1304,9 @@ function this:AutoSelectUpStarHeroList(_curUpStarData)
             if curUpStarData[i].upStarMaterialsData.Issame == 1 
             or curUpStarData[i].upStarMaterialsData.IsId > 0 then
                 if LengthOfTable(upStarHeroListData.heroList) >= curUpStarData[i].upStarData[4] then
-                    for i = 1, curUpStarData[i].upStarData[4] do
-                        if upStarHeroListData.heroList[i].lockState == 0 and upStarHeroListData.heroList[i].isFormation == "" then
-                            table.insert(curSelectHeroList,upStarHeroListData.heroList[i])
+                    for j = 1, curUpStarData[i].upStarData[4] do
+                        if upStarHeroListData.heroList[j].lockState == 0 and upStarHeroListData.heroList[j].isFormation == "" then
+                            table.insert(curSelectHeroList,upStarHeroListData.heroList[j])
                         end
                     end
                     self.UpdateUpStarPosHeroData(curSelectHeroList)
@@ -1800,12 +1800,72 @@ function this:StarUpClick()
     end
 
     -- DEBUG: 打印升星检查状态
-    print("[UpStar DEBUG] isUpStarMaterials = " .. tostring(isUpStarMaterials))
-    print("[UpStar DEBUG] isUpStarMaterialsHero = " .. tostring(isUpStarMaterialsHero))
-    print("[UpStar DEBUG] #upStarMaterialIsAll = " .. tostring(#upStarMaterialIsAll))
+    -- print("[UpStar DEBUG] isUpStarMaterials = " .. tostring(isUpStarMaterials))
+    -- print("[UpStar DEBUG] isUpStarMaterialsHero = " .. tostring(isUpStarMaterialsHero))
+    -- print("[UpStar DEBUG] #upStarMaterialIsAll = " .. tostring(#upStarMaterialIsAll))
     for i = 1, #upStarMaterialIsAll do
         print("[UpStar DEBUG]   upStarMaterialIsAll[" .. i .. "] = " .. tostring(upStarMaterialIsAll[i]))
     end
+
+    -- DEBUG: 打印发送给服务端的升星数据
+    -- print("[UpStar DEBUG] curHeroData.dynamicId = " .. tostring(curHeroData.dynamicId))
+    -- print("[UpStar DEBUG] curHeroData.id = " .. tostring(curHeroData.id))
+    -- print("[UpStar DEBUG] curHeroData.lv = " .. tostring(curHeroData.lv))
+    -- print("[UpStar DEBUG] curHeroData.star = " .. tostring(curHeroData.star))
+    -- print("[UpStar DEBUG] curHeroData.property = " .. tostring(curHeroData.property))
+    -- print("[UpStar DEBUG] curHeroData.breakId = " .. tostring(curHeroData.breakId))
+    -- print("[UpStar DEBUG] curHeroData.upStarId = " .. tostring(curHeroData.upStarId))
+    -- print("[UpStar DEBUG] curHeroData.maxStar = " .. tostring(curHeroData.maxStar))
+    -- 检查当前突破是否完成
+    if curHeroData.breakId > 0 then
+        local breakConfig = heroRankupConfig[curHeroData.breakId]
+        if breakConfig then
+            print("[UpStar DEBUG] breakConfig: Id=" .. tostring(breakConfig.Id) .. " LimitLevel=" .. tostring(breakConfig.LimitLevel) .. " OpenLevel=" .. tostring(breakConfig.OpenLevel) .. " JudgeClass=" .. tostring(breakConfig.JudgeClass))
+        end
+    end
+    -- 检查 upStarRankUpConfig 完整信息
+    if upStarRankUpConfig then
+        print("[UpStar DEBUG] upStarRankUpConfig: Id=" .. tostring(upStarRankUpConfig.Id) .. " LimitLevel=" .. tostring(upStarRankUpConfig.LimitLevel) .. " OpenLevel=" .. tostring(upStarRankUpConfig.OpenLevel) .. " OpenStar=" .. tostring(upStarRankUpConfig.OpenStar) .. " Star=" .. tostring(upStarRankUpConfig.Star) .. " LimitStar=" .. tostring(upStarRankUpConfig.LimitStar) .. " JudgeClass=" .. tostring(upStarRankUpConfig.JudgeClass))
+    end
+    print("[UpStar DEBUG] #upStarConsumeMaterial = " .. tostring(#upStarConsumeMaterial))
+    -- 打印每个坑位的条件和选中英雄的属性
+    local curUpStarData = HeroManager.GetHeroCurUpStarInfo(curHeroData.dynamicId)
+    for i = 1, #upStarConsumeMaterial do
+        local req = curUpStarData and curUpStarData[i] and curUpStarData[i].upStarMaterialsData or nil
+        if req then
+            print("[UpStar DEBUG] Slot " .. i .. " REQUIRE: Issame=" .. tostring(req.Issame) .. " IsId=" .. tostring(req.IsId) .. " StarLimit=" .. tostring(req.StarLimit) .. " IsSameClan=" .. tostring(req.IsSameClan) .. " Id=" .. tostring(req.Id) .. " needCount=" .. tostring(curUpStarData[i].upStarData[4]))
+            -- 打印 upStarData 完整内容
+            local ud = curUpStarData[i].upStarData
+            local udStr = ""
+            for k = 1, #ud do udStr = udStr .. "[" .. k .. "]=" .. tostring(ud[k]) .. " " end
+            print("[UpStar DEBUG] Slot " .. i .. " upStarData: " .. udStr)
+            -- 打印 upStarMaterialsData 全部字段
+            print("[UpStar DEBUG] Slot " .. i .. " upStarMaterialsData ALL: Issame=" .. tostring(req.Issame) .. " IsId=" .. tostring(req.IsId) .. " StarLimit=" .. tostring(req.StarLimit) .. " IsSameClan=" .. tostring(req.IsSameClan) .. " Id=" .. tostring(req.Id) .. " GroupId=" .. tostring(req.GroupId))
+        end
+        local ids = ""
+        if upStarConsumeMaterial[i] then
+            for j = 1, #upStarConsumeMaterial[i] do
+                ids = ids .. tostring(upStarConsumeMaterial[i][j]) .. ","
+                -- 查找选中英雄的实际属性
+                local heroData = HeroManager.GetSingleHeroData(upStarConsumeMaterial[i][j])
+                if heroData then
+                    print("[UpStar DEBUG]   Slot " .. i .. " hero[" .. j .. "]: dynamicId=" .. tostring(heroData.dynamicId) .. " id=" .. tostring(heroData.id) .. " star=" .. tostring(heroData.star) .. " property=" .. tostring(heroData.property) .. " lv=" .. tostring(heroData.lv) .. " lockState=" .. tostring(heroData.lockState) .. " isFormation=" .. tostring(heroData.isFormation))
+                    -- 检查英雄是否在任何阵容中
+                    local teamIds = HeroManager.GetAllFormationByHeroId(heroData.dynamicId)
+                    if teamIds and #teamIds > 0 then
+                        local teamStr = ""
+                        for ti = 1, #teamIds do teamStr = teamStr .. tostring(teamIds[ti]) .. "," end
+                        print("[UpStar DEBUG]   Slot " .. i .. " hero[" .. j .. "] IN FORMATION: teams={" .. teamStr .. "}")
+                    end
+                else
+                    print("[UpStar DEBUG]   Slot " .. i .. " hero[" .. j .. "]: dynamicId=" .. tostring(upStarConsumeMaterial[i][j]) .. " NOT FOUND in HeroManager!")
+                end
+            end
+        end
+        print("[UpStar DEBUG]   Slot " .. i .. " consume = {" .. ids .. "} count=" .. tostring(upStarConsumeMaterial[i] and #upStarConsumeMaterial[i] or 0))
+    end
+    print("[UpStar DEBUG] upStarRankUpConfig.LimitLevel = " .. tostring(upStarRankUpConfig and upStarRankUpConfig.LimitLevel))
+    print("[UpStar DEBUG] heroLvEnd = " .. tostring(HeroManager.heroLvEnd[curHeroData.heroConfig.Id]))
 
     if isUpStarMaterials and isUpStarMaterialsHero then
         NetManager.HeroUpStarEvent(curHeroData.dynamicId, upStarConsumeMaterial, function (msg)

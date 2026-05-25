@@ -250,7 +250,7 @@ function  this.RefreshPanel(eventId, isFirstOpen)
         LogError("对话内容中有未替换的字段，请检查配置表 ChapterEventPointConfig.lua 中的 ShowValues 字段"..11220)
         return
     end
-    if contexts == "" or contents==nil then
+    if contexts == nil or contexts == "" or contents==nil then
         LogError("对话内容为空，请检查配置表 ChapterEventPointConfig.lua 中的 ShowValues 字段")
         return
     end

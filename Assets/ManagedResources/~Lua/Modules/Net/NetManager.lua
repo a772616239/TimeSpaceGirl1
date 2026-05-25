@@ -2169,6 +2169,25 @@ function this.HeroLvUpEvent(heroId, upLv,oldLv, func)
 end
 --请求英雄升星
 function this.HeroUpStarEvent(heroId, consumeMaterials, func)
+    -- DEBUG: 检查 dynamicId 精度问题
+    -- print("[HeroUpStarEvent DEBUG] heroId type=" .. type(heroId) .. " value=" .. tostring(heroId))
+    -- print("[HeroUpStarEvent DEBUG] heroId string.format=%.0f" .. string.format("%.0f", heroId))
+    -- 验证精度: 比较 tostring 和 string.format 是否一致
+    if tostring(heroId) ~= string.format("%.0f", heroId) then
+        -- print("[HeroUpStarEvent DEBUG] *** PRECISION LOSS DETECTED on heroId! ***")
+        -- print("[HeroUpStarEvent DEBUG]   tostring = " .. tostring(heroId))
+        -- print("[HeroUpStarEvent DEBUG]   format   = " .. string.format("%.0f", heroId))
+    end
+    for i = 1, #consumeMaterials do
+        for j = 1, #consumeMaterials[i] do
+            local hid = consumeMaterials[i][j]
+            print("[HeroUpStarEvent DEBUG]   consume[" .. i .. "][" .. j .. "] type=" .. type(hid) .. " tostring=" .. tostring(hid) .. " format=" .. string.format("%.0f", hid))
+            if tostring(hid) ~= string.format("%.0f", hid) then
+                print("[HeroUpStarEvent DEBUG]   *** PRECISION LOSS on consumeMaterials[" .. i .. "][" .. j .. "]! ***")
+            end
+        end
+    end
+
     local data = HeroInfoProto_pb.UpHeroStarRequest()
     data.heroId = heroId
     data.type = 1
@@ -2177,6 +2196,38 @@ function this.HeroUpStarEvent(heroId, consumeMaterials, func)
         c.position = i
         for j = 1, #consumeMaterials[i] do
             c.heroIds:append(consumeMaterials[i][j])
+        end
+    end
+    -- DEBUG: 直接对比两个不同 heroId 序列化后的字节是否不同
+    local serialized1 = data:SerializeToString()
+    -- 用第二张英雄的 dynamicId 构造对比消息
+    local data2 = HeroInfoProto_pb.UpHeroStarRequest()
+    data2.heroId = consumeMaterials[1][1]  -- 不同的 ID
+    data2.type = 1
+    local serialized2 = data2:SerializeToString()
+    -- 把序列化字节转 hex 打印
+    local function toHex(str)
+        local hex = ""
+        for k = 1, #str do
+            hex = hex .. string.format("%02x", string.byte(str, k))
+        end
+        return hex
+    end
+    print("[HeroUpStarEvent DEBUG] heroId=" .. tostring(heroId) .. " hex=" .. toHex(serialized1))
+    print("[HeroUpStarEvent DEBUG] heroId=" .. tostring(consumeMaterials[1][1]) .. " hex=" .. toHex(serialized2))
+    if serialized1 == serialized2 then
+        print("[HeroUpStarEvent DEBUG] *** FATAL: Two different heroIds produce IDENTICAL serialized bytes! ***")
+    else
+        print("[HeroUpStarEvent DEBUG] Different heroIds produce different bytes (good)")
+    end
+    -- 也检查 data.heroId 赋值后的实际存储
+    print("[HeroUpStarEvent DEBUG] data.heroId after assign: type=" .. type(data.heroId) .. " val=" .. tostring(data.heroId))
+    -- 检查 consumeMaterials 的 heroIds 字段
+    for i = 1, #data.consumeMaterials do
+        local cm = data.consumeMaterials[i]
+        print("[HeroUpStarEvent DEBUG] data.consumeMaterials[" .. i .. "].position=" .. tostring(cm.position))
+        for j = 1, #cm.heroIds do
+            print("[HeroUpStarEvent DEBUG]   heroIds[" .. j .. "] type=" .. type(cm.heroIds[j]) .. " val=" .. tostring(cm.heroIds[j]))
         end
     end
     local msg = data:SerializeToString()

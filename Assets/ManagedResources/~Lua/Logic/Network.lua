@@ -185,6 +185,14 @@ function Network:ReceiveErrorInfo(buffer)
     local msg = CommonProto_pb.ErrorResponse()
     msg:ParseFromString(data)
 
+    -- DEBUG: 打印服务端错误码
+    print("[Network ERROR DEBUG] errCode = " .. tostring(msg.errCode) .. " errMsg = " .. tostring(msg.errMsg))
+    if msg.errParams then
+        for i = 1, #msg.errParams do
+            print("[Network ERROR DEBUG]   errParams[" .. i .. "] = " .. tostring(msg.errParams[i]))
+        end
+    end
+
     self.sendFlag = false
     self.resendTimes = 0
     if self.sendFuncQueue.size > 0 then

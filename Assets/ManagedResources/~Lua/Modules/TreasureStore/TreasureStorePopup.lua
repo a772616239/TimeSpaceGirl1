@@ -58,6 +58,8 @@ function TreasureStorePopup:OnClose()
         this.timer = nil
     end
     CheckRedPointStatus(RedPointType.OpenServiceShop)
+    CheckRedPointStatus(RedPointType.OpenService)
+    CheckRedPointStatus(RedPointType.MunitionsMerchant)
     PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
@@ -186,7 +188,12 @@ end
 
 function this.RechargeSuccessFunc(id)
     FirstRechargeManager.RefreshAccumRechargeValue(id)
+    local boughtNum = OperatingManager.GetGoodsBuyTime(GoodsTypeDef.DirectPurchaseGift, id) or 0
+    OperatingManager.MyRefreshGiftGoodsBuyTimes(GoodsTypeDef.DirectPurchaseGift, id, boughtNum + 1)
     this:RefreshPanel()
+    CheckRedPointStatus(RedPointType.OpenServiceShop)
+    CheckRedPointStatus(RedPointType.OpenService)
+    CheckRedPointStatus(RedPointType.MunitionsMerchant)
 end
 
 --倒计时

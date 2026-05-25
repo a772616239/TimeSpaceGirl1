@@ -275,10 +275,37 @@ end
 --- 记录神秘军火商按钮点击红点
 function this.GetRedState()
     if PlayerManager.uid==nil then
-        return
+        return false
     end
 
-    return PlayerPrefs.GetInt(PlayerManager.uid .. "MunitionsMerchant") == 0
+    -- 检查 TreasureStore 活动是否有免费可领取商品
+    local actId = ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.TreasureStore)
+    if actId then
+        local canBuyRechargeId = GlobalActivity[actId].CanBuyRechargeId
+        if canBuyRechargeId then
+            for i = 1, #canBuyRechargeId do
+                local cfg = ConfigManager.GetConfigData(ConfigName.RechargeCommodityConfig, canBuyRechargeId[i])
+                if cfg and cfg.Price == 0 and cfg.Limit > 0 then
+                    local boughtNum = OperatingManager.GetGoodsBuyTime(GoodsTypeDef.DirectPurchaseGift, cfg.Id) or 0
+                    if cfg.Limit - boughtNum > 0 then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    -- 检查开服商店是否有免费可领取商品
+    if ActivityGiftManager.OpenSeverShopRedpoint() then
+        return true
+    end
+
+    -- 检查开服礼包是否有免费可领取商品
+    if OperatingManager.RefreshOpenServiceRedpoint() then
+        return true
+    end
+
+    return false
 end
 
 function this.SetRedState(value)

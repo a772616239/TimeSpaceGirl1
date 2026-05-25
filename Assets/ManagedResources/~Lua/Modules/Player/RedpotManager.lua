@@ -754,6 +754,11 @@ function this.CheckRedPointStatus(rpType)
     -- -- 判断是否需要刷新红点显示
     if RPData:CheckRedPoint(rpType) then
         this.RefreshRedObjectStatus(rpType)
+        -- 父红点数据可能因子节点变化而更新，也刷新父节点UI
+        local parent = RPData:GetRedParent(rpType)
+        if parent then
+            this.RefreshRedObjectStatus(parent)
+        end
     end
 
     return false

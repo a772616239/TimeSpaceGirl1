@@ -348,11 +348,14 @@ end
 --红点检测方法
 function this.GetSignInRedPointStatus()
     if not _SignInData then
+        Log("[RedPoint] GetSignInRedPointStatus _SignInData is nil")
         return false
     end
     local receiveNum = PrivilegeManager.GetPrivilegeRemainValue(PRIVILEGE_TYPE.DAY_SIGN_IN)--本地标记可领取次数
     local rechargeNum = PrivilegeManager.GetPrivilegeNumber(PRIVILEGE_TYPE.DAY_SIGN_IN)--充值标记 1未充值 2已充值
-    return _SignInData.state == 0 or receiveNum > 0--(_SignInData.state==1 and ((receiveNum==0 and rechargeNum==1) or (receiveNum==1 and rechargeNum==2)))
+    local result = _SignInData.state == 0 or receiveNum > 0
+    Log("[RedPoint] GetSignInRedPointStatus state=" .. tostring(_SignInData.state) .. " receiveNum=" .. tostring(receiveNum) .. " result=" .. tostring(result))
+    return result
 end
 
 ----------------------------------  什么什么什么新鸡成长礼包 ------------------------------------------
@@ -818,6 +821,7 @@ function this.EveryWeekPreferenceRedPoint()
             if rechargeCommodityConfig[shopDatas[i].goodsId].Price == 0  then
                 boughtNum = OperatingManager.GetGoodsBuyTime(GoodsTypeDef.DirectPurchaseGift, shopDatas[i].goodsId)
                 limitNum = rechargeCommodityConfig[ shopDatas[i].goodsId].Limit
+                Log("[RedPoint] EveryWeekPreferenceRedPoint boughtNum=" .. tostring(boughtNum) .. " limitNum=" .. tostring(limitNum) .. " result=" .. tostring(limitNum - boughtNum > 0))
                 if limitNum - boughtNum > 0 then
                     if ActivityGiftManager.IsQualifiled(ActivityTypeDef.WeekGift) then
                         return true
@@ -844,8 +848,9 @@ function this.EveryMonthPreferenceRedPoint()
             if rechargeCommodityConfig[shopDatas[i].goodsId].Price == 0  then
                 boughtNum = OperatingManager.GetGoodsBuyTime(GoodsTypeDef.DirectPurchaseGift, shopDatas[i].goodsId)
                 limitNum = rechargeCommodityConfig[ shopDatas[i].goodsId].Limit
+                Log("[RedPoint] EveryMonthPreferenceRedPoint boughtNum=" .. tostring(boughtNum) .. " limitNum=" .. tostring(limitNum) .. " result=" .. tostring(limitNum - boughtNum > 0))
                 if limitNum - boughtNum > 0 then
-                    if ActivityGiftManager.IsQualifiled(ActivityTypeDef.WeekGift) then
+                    if ActivityGiftManager.IsQualifiled(ActivityTypeDef.MonthGift) then
                         return true
                     else
                         return false

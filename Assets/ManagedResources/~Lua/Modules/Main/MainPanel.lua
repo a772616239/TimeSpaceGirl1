@@ -1000,8 +1000,12 @@ function this:TabBtnAction(id, actType, data)
             local url = ConfigManager.GetConfigDataByKey(ConfigName.SpecialConfig, "Key", "Hanbok_Questionnaire_URL").Value
             UnityEngine.Application.OpenURL(url)
         elseif id == FUNCTION_OPEN_TYPE.OpenServiceGift then
+            ActivityGiftManager.SetRedState(1)
+            CheckRedPointStatus(RedPointType.MunitionsMerchant)
             UIManager.OpenPanelWithSound(UIName.OpenServiceGiftPanel)
         elseif id == 6001 then
+            ActivityGiftManager.SetRedState(1)
+            CheckRedPointStatus(RedPointType.MunitionsMerchant)
             UIManager.OpenPanelWithSound(UIName.TreasureStorePopup, ActivityTypeDef.OpenServiceShop)
         end
     elseif actType == 2 then

@@ -522,6 +522,7 @@ function VipPanel:BuyVipGift()
                 ShopManager.RequestBuyShopItem(giftData.shopType, giftData.shopItemId, 1, function ()
                     VipPanel:FreshBuyBtnState(giftData.costNum)
                     CheckRedPointStatus(RedPointType.GrowthPackage)
+                    CheckRedPointStatus(RedPointType.VipPanel)
                 end)
             else
                 PopupTipPanel.ShowTipByLanguageId(10671)
@@ -531,6 +532,7 @@ function VipPanel:BuyVipGift()
         ShopManager.RequestBuyShopItem(giftData.shopType, giftData.shopItemId, 1, function ()
             VipPanel:FreshBuyBtnState(giftData.costNum)
             CheckRedPointStatus(RedPointType.GrowthPackage)
+            CheckRedPointStatus(RedPointType.VipPanel)
         end)
     end
 end

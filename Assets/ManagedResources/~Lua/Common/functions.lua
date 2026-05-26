@@ -2084,18 +2084,24 @@ function GetLanguageStrById(zhStr)
 
     if languageDic then
         if languageDic[languageID] then
+            local result = nil
             if GetLan() == 0 then
-                return languageDic[languageID].zh
+                result = languageDic[languageID].zh
             elseif GetLan() == 1 then
-                return languageDic[languageID].en
+                result = languageDic[languageID].en
             elseif GetLan() == 2 then
-                -- LogRed("GetLanguageStrById: " .. zhStr.."--jp"..languageDic[languageID].jp)
-                return languageDic[languageID].jp
+                result = languageDic[languageID].jp
             elseif GetLan() == 3 then
-                return languageDic[languageID].kr
-            else
-                return languageDic[languageID].zh
+                result = languageDic[languageID].kr
             end
+            -- 回退：当前语言为空则降级到英文，再空降级到中文
+            if result == nil or result == "" then
+                result = languageDic[languageID].en
+            end
+            if result == nil or result == "" then
+                result = languageDic[languageID].zh
+            end
+            return result or languageDic[languageID].zh
         else
             LogRed("在language表内未找到 id："..zhStr)
             return tostring(zhStr)
@@ -2132,17 +2138,24 @@ function GetLanguageStrByStr(zhStr)
     local lang= GetLan()
     if languageDicStr then
         if languageDicStr[zhStr] then
+            local result = nil
             if lang == 0 then
-                return languageDicStr[zhStr].zh
+                result = languageDicStr[zhStr].zh
             elseif lang == 1 then
-                return languageDicStr[zhStr].en
+                result = languageDicStr[zhStr].en
             elseif lang == 2 then
-                return languageDicStr[zhStr].jp
+                result = languageDicStr[zhStr].jp
             elseif lang == 3 then
-                return languageDicStr[zhStr].kr
-            else
-                return languageDicStr[zhStr].zh
+                result = languageDicStr[zhStr].kr
             end
+            -- 回退：当前语言为空则降级到英文，再空降级到中文
+            if result == nil or result == "" then
+                result = languageDicStr[zhStr].en
+            end
+            if result == nil or result == "" then
+                result = languageDicStr[zhStr].zh
+            end
+            return result or zhStr
         else
             LogRed("languageDicStr no find Str: " .. zhStr)
             return tostring(zhStr)
@@ -2338,7 +2351,7 @@ function GetPictureFont(str)
     elseif GetLan() == 3 then
         return str .. "_kr"
     else
-        return str .. "_zh"
+        return str .. "_en"
     end
 end
 

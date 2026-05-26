@@ -1179,37 +1179,54 @@ namespace GameLogic
                 Log($"加载精灵图失败: {_spriteName}, 错误: {e.Message}");
             }
 
-            if (sprite == null && (_spriteName.EndsWith("_en") || _spriteName.EndsWith("_jp")) && _spriteName.Length > 3)
+            if (sprite == null && _spriteName.Length > 3)
             {
-                Log("加载不到多语言，使用中文：" + _spriteName);
-
-                // 修复：添加更安全的字符串操作
-                string fallbackName;
-                if (_spriteName.Contains("zhucheng"))
+                // 回退顺序：先尝试英文，再尝试中文
+                string[] fallbackSuffixes = { "_en", "_zh" };
+                // 如果当前图不是中文后缀，中文也加入回退
+                if (_spriteName.EndsWith("_zh"))
                 {
-                    fallbackName = "cn2-X1_common_zh";
+                    fallbackSuffixes = new string[] { "_en" };
                 }
-                else
+                else if (_spriteName.EndsWith("_en"))
                 {
-                    // 确保不会出现索引越界
-                    int lastUnderscoreIndex = _spriteName.LastIndexOf('_');
-                    if (lastUnderscoreIndex > 0 && lastUnderscoreIndex < _spriteName.Length - 1)
+                    fallbackSuffixes = new string[] { "_zh" };
+                }
+                // _jp / _kr 等其他语言：先英文再中文
+
+                foreach (var suffix in fallbackSuffixes)
+                {
+                    string fallbackName;
+                    if (_spriteName.Contains("zhucheng"))
                     {
-                        fallbackName = _spriteName.Substring(0, lastUnderscoreIndex) + "_zh";
+                        fallbackName = "cn2-X1_common" + suffix;
                     }
                     else
                     {
-                        fallbackName = _spriteName + "_zh";
+                        int lastUnderscoreIndex = _spriteName.LastIndexOf('_');
+                        if (lastUnderscoreIndex > 0 && lastUnderscoreIndex < _spriteName.Length - 1)
+                        {
+                            fallbackName = _spriteName.Substring(0, lastUnderscoreIndex) + suffix;
+                        }
+                        else
+                        {
+                            fallbackName = _spriteName + suffix;
+                        }
                     }
-                }
 
-                try
-                {
-                    sprite = App.ResMgr.LoadAsset<Sprite>(fallbackName);
-                }
-                catch (System.Exception e)
-                {
-                    Log($"回退加载中文精灵图失败: {fallbackName}, 错误: {e.Message}");
+                    try
+                    {
+                        sprite = App.ResMgr.LoadAsset<Sprite>(fallbackName);
+                        if (sprite != null)
+                        {
+                            Log($"回退加载精灵图: {fallbackName}");
+                            break;
+                        }
+                    }
+                    catch (System.Exception e)
+                    {
+                        Log($"回退加载精灵图失败: {fallbackName}, 错误: {e.Message}");
+                    }
                 }
             }
 

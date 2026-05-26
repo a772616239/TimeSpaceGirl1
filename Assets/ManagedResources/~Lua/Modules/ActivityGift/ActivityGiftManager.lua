@@ -278,7 +278,7 @@ function this.GetRedState()
         return false
     end
 
-    -- 首次打开已读标记，活动刷新时 CreatActivity 会 SetRedState(0) 重置
+    -- 已读标记：用户点击入口时 SetRedState(1)，活动数据刷新时 SetRedState(0)
     if PlayerPrefs.GetInt(PlayerManager.uid .. "MunitionsMerchant") == 1 then
         return false
     end
@@ -514,6 +514,8 @@ function this.CheckRedFunc(redType)
     end
 end
 function this.RefreshActivityData(respond)
+    -- 活动数据刷新时重置已读标记，让新商品红点重新亮
+    this.SetRedState(0)
     -- 初始化 mission 字段，确保不为 nil
     if not this.mission then
         this.mission = {}
@@ -636,6 +638,8 @@ function this.FiveAMRefreshActivityProgress(msg)
     end
 
     Game.GlobalEvent:DispatchEvent(GameEvent.Activity.GetRewardRefresh)
+    -- 五点刷新时重置已读标记
+    this.SetRedState(0)
     this.RefreshActivityRedPoint()
 end
 
@@ -690,6 +694,10 @@ function this.RefreshActivityRedPoint()
     CheckRedPointStatus(RedPointType.FindFairy_OneView)
     CheckRedPointStatus(RedPointType.FindFairy_ThreeView)
     CheckRedPointStatus(RedPointType.FindFairy_FourView)
+    --军需商市/开服商市/开服活动
+    CheckRedPointStatus(RedPointType.MunitionsMerchant)
+    CheckRedPointStatus(RedPointType.OpenServiceShop)
+    CheckRedPointStatus(RedPointType.OpenService)
 end
 
 function this.GetContinuityRechargeRedPoint()

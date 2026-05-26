@@ -802,7 +802,6 @@ end
 
 -- 创建活动
 function this.CreatActivity()
-    ActivityGiftManager.SetRedState(0)
     local localMiddleGrid=nil
     local localRightGrid=nil
     this.RightUpVertical.gameObject:SetActive(false)
@@ -1787,6 +1786,7 @@ end
 
 -- 检测红点
 function this.CheckRedPoint()
+    Log("[REDPOT-DEBUG] CheckRedPoint called, PlayerPrefs MunitionsMerchant="..tostring(PlayerPrefs.GetInt(PlayerManager.uid.."MunitionsMerchant")))
     CheckRedPointStatus(RedPointType.RankingSort)
     CheckRedPointStatus(RedPointType.ClimbTowerFreeTime)
     CheckRedPointStatus(RedPointType.BattlePassMission)
@@ -1821,6 +1821,7 @@ function this.CheckRedPoint()
     CheckRedPointStatus(RedPointType.Expert_UpLv)
     CheckRedPointStatus(RedPointType.ContinuityRecharge)
     CheckRedPointStatus(RedPointType.OpenServiceShop)
+    CheckRedPointStatus(RedPointType.MunitionsMerchant)
 end
 
 --收缩按钮的显隐

@@ -66,7 +66,7 @@ function this.GetNotice()
     local showCb= function  (str)
             noticeContent=str
             RequestPanel.Hide()
-            if str == nil then
+            if str == nil or str == "" then
                 return
             end
             

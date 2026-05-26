@@ -560,8 +560,9 @@ function RewardItemPopup:SetItemShow(drop)
                 -- this.SetItemData(itemDataList[i])
                 Timer.New(function ()
                     isPopGetSSR = false
-                    if callList then
-                        callList:Pop()()
+                    if callList and callList:Count() > 0 then
+                        local fn = callList:Pop()
+                        if fn then fn() end
                     end
                 end, 0.05):Start()
             end
@@ -577,7 +578,10 @@ function RewardItemPopup:SetItemShow(drop)
             end
         end)
     end
-    callList:Pop()()
+    if callList:Count() > 0 then
+        local fn = callList:Pop()
+        if fn then fn() end
+    end
 end
 
 --存储本地

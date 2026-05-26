@@ -259,6 +259,10 @@ function this.CheckEightRedPoint_2()
     local curDay = math.ceil((CalculateSecondsNowTo_N_OClock(24) +  GetTimeStamp() - rewardData.startTime)/86400)
     if isActivityOpen then
         local activityInfo = ActivityGiftManager.GetActivityTypeInfo(ActivityTypeDef.SignInDays)
+        -- 修复：必须按 missionId 排序后才能用索引 i 匹配天数
+        table.sort(activityInfo.mission, function(a, b)
+            return a.missionId < b.missionId
+        end)
         for i = 1, #activityInfo.mission do
             local isCanGet = activityInfo.mission[i].state--是否可领取
             if isCanGet == 0 then

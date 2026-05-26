@@ -353,6 +353,14 @@ function this.GetSignInRedPointStatus()
     end
     local receiveNum = PrivilegeManager.GetPrivilegeRemainValue(PRIVILEGE_TYPE.DAY_SIGN_IN)--本地标记可领取次数
     local rechargeNum = PrivilegeManager.GetPrivilegeNumber(PRIVILEGE_TYPE.DAY_SIGN_IN)--充值标记 1未充值 2已充值
+    -- 修复：没有特权配置时，默认允许签到一次，但签到后 receiveNum 应该为 0
+    local hasPrivilegeConfig = rechargeNum > 0
+    if not hasPrivilegeConfig then
+        -- 没有特权配置时，红点只看 state
+        local result = _SignInData.state == 0
+        Log("[RedPoint] GetSignInRedPointStatus (no config) state=" .. tostring(_SignInData.state) .. " result=" .. tostring(result))
+        return result
+    end
     local result = _SignInData.state == 0 or receiveNum > 0
     Log("[RedPoint] GetSignInRedPointStatus state=" .. tostring(_SignInData.state) .. " receiveNum=" .. tostring(receiveNum) .. " result=" .. tostring(result))
     return result

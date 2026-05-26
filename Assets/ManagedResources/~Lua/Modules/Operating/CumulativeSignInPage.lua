@@ -93,6 +93,16 @@ end
 function CumulativeSignInPage:RefreshSignList()
     receiveNum = PrivilegeManager.GetPrivilegeRemainValue(PRIVILEGE_TYPE.DAY_SIGN_IN)
     rechargeNum = PrivilegeManager.GetPrivilegeNumber(PRIVILEGE_TYPE.DAY_SIGN_IN)
+    -- 修复：没有特权配置时，默认允许签到一次（rechargeNum=1 表示未充值，可签到一次）
+    if rechargeNum == 0 then
+        rechargeNum = 1
+    end
+    -- 修复：没有特权配置时，根据 state 决定 receiveNum
+    -- state == 0（未签到）-> receiveNum = 1（可以签到）
+    -- state == 1（已签到）-> receiveNum = 0（不能再签到）
+    if receiveNum == 0 and rechargeNum == 1 and self.SignData.state == 0 then
+        receiveNum = 1
+    end
     CheckRedPointStatus(RedPointType.CumulativeSignIn)
 
     table.walk(self.signInList, function(signInItem)

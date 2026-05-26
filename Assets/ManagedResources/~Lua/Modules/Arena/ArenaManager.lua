@@ -416,29 +416,24 @@ function this.RefreshAlreadyLikeRedpoint()
         return false
     end
     
-    -- 获取当前日期字符串（格式YYYY-MM-DD）
-    local currentDate = os.date("%Y-%m-%d")
-    
-    -- 从PlayerPrefs读取上次打开日期
-    local lastOpenDate = PlayerPrefs.GetString("LastOpenDate_Arena", "")
-    
-    -- 判断是否是今天首次打开
-    local isFirstOpenToday = (lastOpenDate ~= currentDate)
-    
-    if isFirstOpenToday then
-        -- 更新存储的日期
-        PlayerPrefs.SetString("LastOpenDate_Arena", currentDate)
-        PlayerPrefs.Save()
-        -- 首次打开时需要执行的逻辑（例如重置计数）
-        -- this.TodayAlreadyLikeNum = 0  -- 如果需要重置计数，取消注释
-        return true  -- 今天首次打开
+    -- 竞技场点赞红点
+    local arenaData, myRankData = RankingManager.GetArenaInfo()
+    local arenaNum = #arenaData
+    Log("RefreshAlreadyLikeRedpoint arena: "..tostring(this.TodayAlreadyLikeNum).."/"..tostring(arenaNum))
+    if arenaNum > 10 then arenaNum = 10 end
+    if this.TodayAlreadyLikeNum < arenaNum then
+        return true
     end
     
-    local arenaData, myRankData = RankingManager.GetArenaInfo()
-    local num = #arenaData
-    Log("RefreshAlreadyLikeRedpoint"..num)
-    if num > 10 then num = 10 end
+    -- 巅峰赛点赞红点
+    if ArenaTopMatchManager.IsTopMatchActive() then
+        local topMatchLiked = #ArenaTopMatchManager.TodayAlreadyLikeUids_TopMatch
+        Log("RefreshAlreadyLikeRedpoint topmatch: "..tostring(topMatchLiked).."/3")
+        if topMatchLiked < 3 then
+            return true
+        end
+    end
     
-    return this.TodayAlreadyLikeNum < num
+    return false
 end
 return this

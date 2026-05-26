@@ -160,7 +160,7 @@ function this.RefreshGiftGoodsBuyTimes(goodsType, goodsId, buyTimes)
     end
     for _, giftGoodsInfo in ipairs(giftGoodsInfoList[goodsType]) do
         if giftGoodsInfo.goodsId == goodsId then
-            giftGoodsInfo.buyTimes = giftGoodsInfo.buyTimes --+ (buyTimes and buyTimes or 1)
+            giftGoodsInfo.buyTimes = giftGoodsInfo.buyTimes + (buyTimes and buyTimes or 1)
         end
     end
 end
@@ -1125,16 +1125,19 @@ end
 
 --刷新开服双倍红点
 function this.RefreshOpenServiceRedpoint()
+    -- 已读标记检查（与 MunitionsMerchant 共用）
+    if PlayerManager.uid and PlayerPrefs.GetInt(PlayerManager.uid .. "MunitionsMerchant") == 1 then
+        return false
+    end
     if not ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.OpenService) then
         return false
     end
     local canBuyRechargeId = ConfigManager.GetConfigDataByKey(ConfigName.GlobalActivity, "Type", 10020).CanBuyRechargeId
     for i = 1, #canBuyRechargeId do
         local config = ConfigManager.GetConfigData(ConfigName.RechargeCommodityConfig, canBuyRechargeId[i])
-        local boughtNum = OperatingManager.GetGoodsBuyTime(config.Type, config.Id) or 0
-        if config.Price == 0 then
-            local isCanBuy = config.Limit - boughtNum > 0
-            return isCanBuy
+        local boughtNum = OperatingManager.GetGoodsBuyTime(config.Type, config.Id)
+        if config.Price == 0 and boughtNum and config.Limit - boughtNum > 0 then
+            return true
         end
     end
     return false

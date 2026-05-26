@@ -687,6 +687,7 @@ function this.SetHeroBtnLike(root,data)
             this.SetArenaInfo()
             data.likeNums = data.likeNums + 1
             btnLikeText:GetComponent("Text").text = data.likeNums
+            CheckRedPointStatus(RedPointType.ArenaTodayAlreadyLike)
             PopupTipPanel.ShowTipByLanguageId(12579)
         end)
     end)

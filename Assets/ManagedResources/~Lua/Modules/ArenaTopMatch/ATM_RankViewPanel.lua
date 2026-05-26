@@ -484,6 +484,8 @@ function this.SetHeroBtnLike(root,data)
                         btnLikeList[alreadyLike[i]]:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[1])
                     end
                 end
+                CheckRedPointStatus(RedPointType.Championships_Rank_Link)
+                CheckRedPointStatus(RedPointType.ArenaTodayAlreadyLike)
              end)
         end)
     end)

@@ -278,6 +278,11 @@ function this.GetRedState()
         return false
     end
 
+    -- 首次打开已读标记，活动刷新时 CreatActivity 会 SetRedState(0) 重置
+    if PlayerPrefs.GetInt(PlayerManager.uid .. "MunitionsMerchant") == 1 then
+        return false
+    end
+
     -- 检查 TreasureStore 活动是否有免费可领取商品
     local actId = ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.TreasureStore)
     if actId then
@@ -286,8 +291,10 @@ function this.GetRedState()
             for i = 1, #canBuyRechargeId do
                 local cfg = ConfigManager.GetConfigData(ConfigName.RechargeCommodityConfig, canBuyRechargeId[i])
                 if cfg and cfg.Price == 0 and cfg.Limit > 0 then
-                    local boughtNum = OperatingManager.GetGoodsBuyTime(GoodsTypeDef.DirectPurchaseGift, cfg.Id) or 0
-                    if cfg.Limit - boughtNum > 0 then
+                    local boughtNum = OperatingManager.GetGoodsBuyTime(GoodsTypeDef.DirectPurchaseGift, cfg.Id)
+                    Log("[RedPoint] GetRedState TreasureStore goodsId="..tostring(cfg.Id).." boughtNum="..tostring(boughtNum).." limit="..tostring(cfg.Limit))
+                    -- boughtNum 为 nil 说明服务器没推该商品数据，视为不可购买
+                    if boughtNum and cfg.Limit - boughtNum > 0 then
                         return true
                     end
                 end
@@ -296,15 +303,20 @@ function this.GetRedState()
     end
 
     -- 检查开服商店是否有免费可领取商品
-    if ActivityGiftManager.OpenSeverShopRedpoint() then
+    local openServerShop = ActivityGiftManager.OpenSeverShopRedpoint()
+    Log("[RedPoint] GetRedState OpenSeverShopRedpoint="..tostring(openServerShop))
+    if openServerShop then
         return true
     end
 
     -- 检查开服礼包是否有免费可领取商品
-    if OperatingManager.RefreshOpenServiceRedpoint() then
+    local openService = OperatingManager.RefreshOpenServiceRedpoint()
+    Log("[RedPoint] GetRedState RefreshOpenServiceRedpoint="..tostring(openService))
+    if openService then
         return true
     end
 
+    Log("[RedPoint] GetRedState = false")
     return false
 end
 
@@ -1455,6 +1467,10 @@ end
 
 --开服热卖红点
 function this.OpenSeverShopRedpoint()
+    -- 已读标记检查（与 MunitionsMerchant 共用）
+    if PlayerManager.uid and PlayerPrefs.GetInt(PlayerManager.uid .. "MunitionsMerchant") == 1 then
+        return false
+    end
     local curActId = ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.OpenServiceShop)
     if not curActId then
         return false
@@ -1462,8 +1478,8 @@ function this.OpenSeverShopRedpoint()
     local data = GlobalActivity[curActId].CanBuyRechargeId
     for i = 1, #data do
         local data = ConfigManager.GetConfigDataByKey(ConfigName.RechargeCommodityConfig, "Id", data[i])
-        local boughtNum = OperatingManager.GetGoodsBuyTime(GoodsTypeDef.DirectPurchaseGift, data.Id) or 0
-        if data.Price == 0 and data.Limit - boughtNum > 0 then
+        local boughtNum = OperatingManager.GetGoodsBuyTime(GoodsTypeDef.DirectPurchaseGift, data.Id)
+        if data.Price == 0 and boughtNum and data.Limit - boughtNum > 0 then
             return true
         end
     end

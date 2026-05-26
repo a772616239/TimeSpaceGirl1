@@ -81,7 +81,7 @@ function GiftView:BindEvent()
                 CheckRedPointStatus(RedPointType.GrowthPackage)
                 timerList = {}
                 for i = 1, 4 do
-                    OperatingManager.MyRefreshGiftGoodsBuyTimes(GoodsTypeDef.DirectPurchaseGift, ids[id][i], 1)
+                    OperatingManager.RefreshGiftGoodsBuyTimes(GoodsTypeDef.DirectPurchaseGift, ids[id][i], 1)
                 end
                 self:RefreshGiftData()
             end)
@@ -92,7 +92,7 @@ function GiftView:BindEvent()
                 CheckRedPointStatus(RedPointType.DailyGift)
                 CheckRedPointStatus(RedPointType.GrowthPackage)
                 for i = 1, 4 do
-                    OperatingManager.MyRefreshGiftGoodsBuyTimes(GoodsTypeDef.DirectPurchaseGift, ids[id][i], 1)
+                    OperatingManager.RefreshGiftGoodsBuyTimes(GoodsTypeDef.DirectPurchaseGift, ids[id][i], 1)
                 end
                 self:RefreshGiftData()
             end)

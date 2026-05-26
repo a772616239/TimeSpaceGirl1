@@ -874,6 +874,39 @@ function this.CreatActivity()
         activityTabs[k].img:SetNativeSize()
 
         Util.AddOnceClick(activityTabs[k].go,function()
+            -- [DEBUG] 点击活动入口时打印关键信息
+            Log("[REDPOT-DEBUG] click tab k="..tostring(k).." RpType="..tostring(v.RpType).." ActiveType="..tostring(v.ActiveType).." FunType="..tostring(v.FunType).." ActId="..tostring(v.ActId).." Id="..tostring(v.Id))
+            -- 点击时立即隐藏当前入口红点（TreasureStore 相关入口）
+            -- 覆盖所有可能的判断条件，确保匹配
+            local isTreasureStoreEntry = false
+            if v.RpType == RedPointType.MunitionsMerchant
+                or v.RpType == RedPointType.OpenServiceShop
+                or v.RpType == RedPointType.OpenService then
+                isTreasureStoreEntry = true
+            end
+            if v.ActiveType == ActivityTypeDef.TreasureStore
+                or v.ActiveType == 6001 then
+                isTreasureStoreEntry = true
+            end
+            if v.FunType == FUNCTION_OPEN_TYPE.OpenServiceGift then
+                isTreasureStoreEntry = true
+            end
+            -- 也通过 TabBtnAction 的 id 来判断
+            local actionId = v.ActiveType > 0 and v.ActiveType or (v.FunType > 0 and v.FunType or v.ActId)
+            if actionId == ActivityTypeDef.TreasureStore or actionId == 6001 or actionId == FUNCTION_OPEN_TYPE.OpenServiceGift then
+                isTreasureStoreEntry = true
+            end
+            if isTreasureStoreEntry then
+                Log("[REDPOT-DEBUG] MATCHED! hiding redpot for k="..tostring(k).." redpot="..tostring(activityTabs[k].redpot ~= nil))
+                if activityTabs[k].redpot then
+                    activityTabs[k].redpot:SetActive(false)
+                    Log("[REDPOT-DEBUG] redpot SetActive(false) done")
+                else
+                    Log("[REDPOT-DEBUG] redpot is nil!")
+                end
+            else
+                Log("[REDPOT-DEBUG] NOT matched for this tab")
+            end
             if v.ActiveType > 0 then
                 this:TabBtnAction(v.ActiveType, 1, v)
             elseif v.FunType > 0 then
@@ -960,8 +993,14 @@ function this:TabBtnAction(id, actType, data)
         elseif id == ActivityTypeDef.TreasureOfSomeBody then
             UIManager.OpenPanelWithSound(UIName.GrowthManualPanel,2,1)
         elseif id == ActivityTypeDef.TreasureStore then
+            Log("[REDPOT-DEBUG] TabBtnAction TreasureStore: RpType="..tostring(data and data.RpType).." Id="..tostring(data and data.Id))
             ActivityGiftManager.SetRedState(1)
-            CheckRedPointStatus(RedPointType.MunitionsMerchant)
+            -- 强制设红点值并刷新UI，绕过CheckRedPoint值变化检测
+            ChangeRedPointStatus(RedPointType.MunitionsMerchant, RedPointStatus.Hide)
+            if data and data.RpType and data.RpType > 0 and data.RpType ~= RedPointType.MunitionsMerchant then
+                Log("[REDPOT-DEBUG] forcing redpoint off for RpType="..tostring(data.RpType))
+                ChangeRedPointStatus(data.RpType, RedPointStatus.Hide)
+            end
             UIManager.OpenPanelWithSound(UIName.TreasureStorePopup, ActivityTypeDef.TreasureStore)
         elseif id == ActivityTypeDef.DynamicAct then
             local dynamicAct = ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.DynamicAct)
@@ -1001,11 +1040,21 @@ function this:TabBtnAction(id, actType, data)
             UnityEngine.Application.OpenURL(url)
         elseif id == FUNCTION_OPEN_TYPE.OpenServiceGift then
             ActivityGiftManager.SetRedState(1)
-            CheckRedPointStatus(RedPointType.MunitionsMerchant)
+            ChangeRedPointStatus(RedPointType.MunitionsMerchant, RedPointStatus.Hide)
+            ChangeRedPointStatus(RedPointType.OpenServiceShop, RedPointStatus.Hide)
+            ChangeRedPointStatus(RedPointType.OpenService, RedPointStatus.Hide)
+            if data and data.RpType and data.RpType > 0 then
+                ChangeRedPointStatus(data.RpType, RedPointStatus.Hide)
+            end
             UIManager.OpenPanelWithSound(UIName.OpenServiceGiftPanel)
         elseif id == 6001 then
             ActivityGiftManager.SetRedState(1)
-            CheckRedPointStatus(RedPointType.MunitionsMerchant)
+            ChangeRedPointStatus(RedPointType.MunitionsMerchant, RedPointStatus.Hide)
+            ChangeRedPointStatus(RedPointType.OpenServiceShop, RedPointStatus.Hide)
+            ChangeRedPointStatus(RedPointType.OpenService, RedPointStatus.Hide)
+            if data and data.RpType and data.RpType > 0 then
+                ChangeRedPointStatus(data.RpType, RedPointStatus.Hide)
+            end
             UIManager.OpenPanelWithSound(UIName.TreasureStorePopup, ActivityTypeDef.OpenServiceShop)
         end
     elseif actType == 2 then

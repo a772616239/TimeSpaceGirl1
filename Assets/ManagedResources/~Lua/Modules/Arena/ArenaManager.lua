@@ -425,15 +425,6 @@ function this.RefreshAlreadyLikeRedpoint()
         return true
     end
     
-    -- 巅峰赛点赞红点
-    if ArenaTopMatchManager.IsTopMatchActive() then
-        local topMatchLiked = #ArenaTopMatchManager.TodayAlreadyLikeUids_TopMatch
-        Log("RefreshAlreadyLikeRedpoint topmatch: "..tostring(topMatchLiked).."/3")
-        if topMatchLiked < 3 then
-            return true
-        end
-    end
-    
     return false
 end
 return this

@@ -50,7 +50,7 @@ end
 --界面打开时调用（用于子类重写）
 function ATM_RankViewPanel:OnOpen(...)
     this.RefreshRankInfo()
-    CheckRedPointStatus(RedPointType.ArenaTodayAlreadyLike)
+    CheckRedPointStatus(RedPointType.Championships)
 end
 
 function ATM_RankViewPanel:OnSortingOrderChange(sortingOrder)
@@ -280,7 +280,7 @@ function this.SetHeroBtnLike(root,data)
             return
         end
         NetManager.ArenaTopMatchLikeRequest(data.uid,function()
-            NetManager.ArenaTopMatchGetAllSendLikeResponse(function(msg) 
+            ArenaTopMatchManager.RequestTodayAlreadyLikeUids_TopMatch(function(msg) 
                 local alreadyLike = msg.uid
                 for i = 1, #alreadyLike do
                     if btnLikeList[alreadyLike[i]] then
@@ -293,8 +293,8 @@ function this.SetHeroBtnLike(root,data)
                         btnLike:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[1])
                     end
                 end
+                CheckRedPointStatus(RedPointType.Championships_Rank_Link)
             end)
-            CheckRedPointStatus(RedPointType.Championships_Rank_Link)
         end)
     end)
 end

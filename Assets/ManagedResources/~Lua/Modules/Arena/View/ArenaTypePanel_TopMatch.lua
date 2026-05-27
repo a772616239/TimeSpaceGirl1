@@ -68,7 +68,7 @@ function this:BindEvent()
         UIManager.OpenPanel(UIName.HelpPopup,HELP_TYPE.ArenaTypePanelTopMatch,this.helpPosition.x-30, this.helpPosition.y+1300)
     end)
 
-    BindRedPointObject(RedPointType.ArenaTodayAlreadyLike, this.btnRankRedpoint)
+    BindRedPointObject(RedPointType.Championships_Rank_Link, this.btnRankRedpoint)
 end
 
 function this:AddListener()
@@ -112,7 +112,7 @@ function this:OnUpdateRankUI()
 end
 
 function this:OnClose()
-    ClearRedPointObject(RedPointType.ArenaTodayAlreadyLike, this.btnRankRedpoint)
+    ClearRedPointObject(RedPointType.Championships_Rank_Link, this.btnRankRedpoint)
     Log("OnClose ArenaTypePanel_TopMatch")
 end
 
@@ -232,7 +232,6 @@ function this.OnUpdateRankUI1()
                         PopupTipPanel.ShowTipByLanguageId(12579)
                         this.tableTopThree[i].addBtn:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[2])
                         CheckRedPointStatus(RedPointType.Championships_Rank_Link)
-                        CheckRedPointStatus(RedPointType.ArenaTodayAlreadyLike)
                     end)
                 end)
             else

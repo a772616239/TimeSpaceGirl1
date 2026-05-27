@@ -471,7 +471,7 @@ function this.SetHeroBtnLike(root,data)
             return
         end
         NetManager.ArenaTopMatchLikeRequest(data.uid,function()
-            NetManager.ArenaTopMatchGetAllSendLikeResponse(function(msg) 
+            ArenaTopMatchManager.RequestTodayAlreadyLikeUids_TopMatch(function(msg) 
                 local alreadyLike = msg.uid
                 for i = 1, #alreadyLike do
                     if btnLikeList[alreadyLike[i]] then
@@ -485,7 +485,6 @@ function this.SetHeroBtnLike(root,data)
                     end
                 end
                 CheckRedPointStatus(RedPointType.Championships_Rank_Link)
-                CheckRedPointStatus(RedPointType.ArenaTodayAlreadyLike)
              end)
         end)
     end)

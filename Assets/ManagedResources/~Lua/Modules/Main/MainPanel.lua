@@ -1843,7 +1843,8 @@ end
 local isSunDay = false --是否是白天
 --设置主界面按钮位置
 function this.SetMainIconPos()
-    local time = System.DateTime.Now.Hour
+    local currentTime = PlayerManager.serverTime > 0 and PlayerManager.serverTime or os.time()
+    local time = tonumber(os.date("%H", currentTime))
     if time >= 7 and time < 19 then
         isSunDay = true
     else

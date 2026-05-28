@@ -1,0 +1,12 @@
+﻿CidrBlock,Protocol,Port,Action,FirewallRuleDescription
+0.0.0.0/0,TCP,16081,允许,
+::/0,TCP,16081,允许,
+0.0.0.0/0,TCP,443,允许,Web服务HTTPS (443)，如 Apache、Nginx
+::/0,TCP,443,允许,Web服务HTTPS (443)，如 Apache、Nginx
+0.0.0.0/0,TCP,9091,允许,
+::/0,TCP,9091,允许,
+0.0.0.0/0,TCP,8080,允许,
+::/0,TCP,8080,允许,
+0.0.0.0/0,TCP,22,允许,Linux SSH登录
+0.0.0.0/0,TCP,80,允许,Web服务HTTP (80)，如 Apache、Nginx
+0.0.0.0/0,ICMP,ALL,允许,通过Ping测试网络连通性 (放通ALL ICMP)

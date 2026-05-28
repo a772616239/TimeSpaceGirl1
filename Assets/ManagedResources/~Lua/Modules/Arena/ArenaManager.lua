@@ -386,6 +386,9 @@ function this.RequestTodayAlreadyLikeUids_Arena(func)
         if func then
             func(msg)
         end
+        if CheckRedPointStatus then
+            CheckRedPointStatus(RedPointType.ArenaTodayAlreadyLike)
+        end
      end)
 end
 function this.AddTodayAlreadyLikeUids_Arena(uid)

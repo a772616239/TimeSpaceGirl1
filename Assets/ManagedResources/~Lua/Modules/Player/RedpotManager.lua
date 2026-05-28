@@ -598,7 +598,7 @@ function this.RegisterRedCheckFunc()
     RPData:AddCheckFunc(RedPointType.ValuePack, ShopManager.RefreshValuePackRedPoint)
 
     --竞技场点赞
-    RPData:AddCheckFunc(RedPointType.ArenaTodayAlreadyLike, ArenaManager.RefreshAlreadyLikeRedpoint)
+    RPData:AddCheckFunc(RedPointType.ArenaTodayAlreadyLike, ArenaManager.RefreshAlreadyLikeRedpoint, FUNCTION_OPEN_TYPE.ARENA)
 
     --千抽红点
     RPData:AddCheckFunc(RedPointType.ThousandDraw, RecruitManager.RefreshThousandDrawRedPoint)

@@ -831,6 +831,14 @@ function this.ExecuteLoading()
         requestList,
         function()
             this.LogTime(#requestList + 1)
+            NetManager.RequestArenaRankData(1, LoadingPanel.OnStep)
+            return "RequestArenaRankData"
+        end
+    ) -- 竞技场排行
+    table.insert(
+        requestList,
+        function()
+            this.LogTime(#requestList + 1)
             ShopManager.InitData(LoadingPanel.OnStep)
             return "ShopManager.InitData"
         end

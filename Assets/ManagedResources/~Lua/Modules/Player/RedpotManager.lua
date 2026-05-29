@@ -345,6 +345,7 @@ function this.InitRedPointAllRelate()
 
     --锦标赛
     RPData:SetParent(RedPointType.Championships_Rank_Link, RedPointType.Championships)
+    RPData:SetParent(RedPointType.Championships, RedPointType.Arena)
 
     --主角
     RPData:SetParent(RedPointType.Lead_Assembly, RedPointType.Lead)

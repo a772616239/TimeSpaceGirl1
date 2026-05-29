@@ -1129,6 +1129,10 @@ function this.ExecuteLoading()
                 )
             end
             -- 登录成功刷新红点数据
+            -- 预加载巅峰战红点所需数据
+            ArenaTopMatchManager.RequestTopMatchBaseInfo()
+            ArenaTopMatchManager.RequestRankData(1)
+            ArenaTopMatchManager.RequestTodayAlreadyLikeUids_TopMatch()
             RedpotManager.CheckAllRedPointStatus()
             -- 检查新字状态
             FunctionOpenMananger.InitCheck()

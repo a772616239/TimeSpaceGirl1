@@ -97,8 +97,12 @@ function this.RequestTopMatchBaseInfo(func)
         this.RefreshBaseInfo()
         -- 发送更新事件
         Game.GlobalEvent:DispatchEvent(GameEvent.TopMatch.OnTopMatchDataUpdate)
-        
+
         if func then func() end
+        -- 基础数据加载完成后，刷新排行榜入口红点
+        if CheckRedPointStatus then
+            CheckRedPointStatus(RedPointType.Championships_Rank_Link)
+        end
     end)
 end
 
@@ -820,6 +824,10 @@ function this.RequestRankData(page,func)
         if func then
             func()
         end
+        -- 排行榜数据加载完成后，刷新排行榜入口红点
+        if CheckRedPointStatus then
+            CheckRedPointStatus(RedPointType.Championships_Rank_Link)
+        end
         -- for i, v in pairs(this.rankData) do
         
         -- end
@@ -1101,13 +1109,23 @@ end
 
 --> 当日已点赞uids
 this.TodayAlreadyLikeUids_TopMatch = {}
+-- 是否已从服务器加载过点赞数据，避免异步时序导致红点误判
+this._HasLoadedLikeUids_TopMatch = false
 function this.RequestTodayAlreadyLikeUids_TopMatch(func)
     NetManager.ArenaTopMatchGetAllSendLikeResponse(function(msg)
         this.TodayAlreadyLikeUids_TopMatch = msg.uid
+        this._HasLoadedLikeUids_TopMatch = true
         if func then
             func(msg)
         end
+        -- 点赞数据加载完成后，刷新排行榜入口红点
+        if CheckRedPointStatus then
+            CheckRedPointStatus(RedPointType.Championships_Rank_Link)
+        end
      end)
+end
+function this.AddTodayAlreadyLikeUids_TopMatch(uid)
+    table.insert(this.TodayAlreadyLikeUids_TopMatch, uid)
 end
 function this.GetTodayAlreadyLikeUids_TopMatch()
     return this.TodayAlreadyLikeUids_TopMatch
@@ -1123,22 +1141,36 @@ function this.CheckTodayIsAlreadyLike(uid)
 end
 
 function this.RefreshRankRedpoint()
-    -- if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.ARENA) then
-    --     return false
-    -- end
     if not ArenaTopMatchManager.IsTopMatchActive() then
         Log("ArenaTopMatchManager.RefreshRankRedpoint: Not active")
         return false
     end
-    if this.baseInfo.battleStage ~= TOP_MATCH_STAGE.CLOSE 
-    -- and this.baseInfo.battleStage ~= TOP_MATCH_STAGE.OVER 
-    then
-        -- LogError("ArenaTopMatchManager.RefreshRankRedpoint: Not in close or over stage"..
-        --     "  battleStage: "..tostring(this.baseInfo.battleStage))
+
+    -- 未开始阶段（CLOSE）不显示红点
+    if this.baseInfo.battleStage == TOP_MATCH_STAGE.CLOSE then
         return false
     end
 
-    return #this.TodayAlreadyLikeUids_TopMatch < 3
+    -- 点赞数据尚未从服务器加载完成时，不显示红点，避免异步时序导致误判
+    if not this._HasLoadedLikeUids_TopMatch then
+        return false
+    end
+
+    -- 排行榜数据尚未加载时，不显示红点
+    if #this.rankData == 0 then
+        return false
+    end
+
+    -- 计算排行榜中可点赞的真实玩家数量（排除自己和NPC）
+    local likeableCount = 0
+    for i = 1, #this.rankData do
+        if this.rankData[i].uid >= 10000000 and this.rankData[i].uid ~= PlayerManager.uid then
+            likeableCount = likeableCount + 1
+        end
+    end
+
+    -- 已点赞数小于可点赞数时显示红点，全部点完则不显示
+    return #this.TodayAlreadyLikeUids_TopMatch < likeableCount
 end
 ----------------------
 return this

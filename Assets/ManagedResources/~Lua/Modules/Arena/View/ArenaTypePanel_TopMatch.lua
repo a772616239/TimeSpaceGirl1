@@ -231,6 +231,7 @@ function this.OnUpdateRankUI1()
                         this.btnText:GetComponent("Text").text = rankData[i].likeNums
                         PopupTipPanel.ShowTipByLanguageId(12579)
                         this.tableTopThree[i].addBtn:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[2])
+                        ArenaTopMatchManager.AddTodayAlreadyLikeUids_TopMatch(rankData[i].uid)
                         CheckRedPointStatus(RedPointType.Championships_Rank_Link)
                     end)
                 end)

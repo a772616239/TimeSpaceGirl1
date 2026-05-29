@@ -463,7 +463,13 @@ function this.SetHeroBtnLike(root,data)
     end
     local btnLikeText = Util.GetGameObject(root,"Button_DianZan/Text_DianZanNum")
     btnLikeText:GetComponent("Text").text = data.likeNums
-    local allLisr
+
+    -- 设置初始点赞状态（使用登录时预加载的缓存数据）
+    if ArenaTopMatchManager._HasLoadedLikeUids_TopMatch and ArenaTopMatchManager.CheckTodayIsAlreadyLike(data.uid) then
+        btnLike:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[2])
+        Util.SetGray(btnLike, true)
+    end
+
     btnLikeList[data.uid] = btnLike.gameObject
     Util.AddOnceClick(btnLike,function()
         if ArenaTopMatchManager.CheckTodayIsAlreadyLike(data.uid) then
@@ -471,37 +477,21 @@ function this.SetHeroBtnLike(root,data)
             return
         end
         NetManager.ArenaTopMatchLikeRequest(data.uid,function()
-            ArenaTopMatchManager.RequestTodayAlreadyLikeUids_TopMatch(function(msg) 
-                local alreadyLike = msg.uid
-                for i = 1, #alreadyLike do
-                    if btnLikeList[alreadyLike[i]] then
-                        -- Util.SetGray(btnLikeList[alreadyLike[i]], true)
-                        btnLikeText:GetComponent("Text").text = data.likeNums+1 --值对应改变
-                        PopupTipPanel.ShowTipByLanguageId(12579)
-                        btnLikeList[alreadyLike[i]]:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[2])
-                    else
-                        -- Util.SetGray(btnLikeList[alreadyLike[i]], false)
-                        btnLikeList[alreadyLike[i]]:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[1])
-                    end
-                end
-                CheckRedPointStatus(RedPointType.Championships_Rank_Link)
-             end)
+            -- 立即更新本地缓存，确保 CheckTodayIsAlreadyLike 守卫及时生效
+            ArenaTopMatchManager.AddTodayAlreadyLikeUids_TopMatch(data.uid)
+            btnLikeText:GetComponent("Text").text = data.likeNums + 1
+            PopupTipPanel.ShowTipByLanguageId(12579)
+            btnLike:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[2])
+            CheckRedPointStatus(RedPointType.Championships_Rank_Link)
         end)
     end)
 end
 
 function this.LikeBtnState()
-    ArenaTopMatchManager.RequestTodayAlreadyLikeUids_TopMatch(function(msg)
-        local alreadyLike = msg.uid
+    ArenaTopMatchManager.RequestTodayAlreadyLikeUids_TopMatch(function()
         for k, v in pairs(btnLikeList) do
-            local isAlreadyLike = false
-            for i = 1, #alreadyLike do
-                if alreadyLike[i] == k then
-                    isAlreadyLike = true
-                end
-            end
+            local isAlreadyLike = ArenaTopMatchManager.CheckTodayIsAlreadyLike(k)
             Util.SetGray(v, isAlreadyLike)
-
             if isAlreadyLike then
                 v:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[2])
             else
@@ -509,6 +499,5 @@ function this.LikeBtnState()
             end
         end
     end)
-
 end
 return ATM_RankViewPanel

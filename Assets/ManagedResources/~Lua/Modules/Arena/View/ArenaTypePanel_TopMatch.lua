@@ -216,6 +216,10 @@ function this.OnUpdateRankUI1()
                 else
                     this.tableTopThree[i].addBtn.gameObject:SetActive(true)
                 end
+                -- 设置初始点赞状态（使用登录时预加载的缓存数据）
+                if ArenaTopMatchManager._HasLoadedLikeUids_TopMatch and ArenaTopMatchManager.CheckTodayIsAlreadyLike(rankData[i].uid) then
+                    this.tableTopThree[i].addBtn:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[2])
+                end
                 Util.AddOnceClick(this.tableTopThree[i].heroIcon, function ()
                     UIManager.OpenPanel(UIName.PlayerInfoPopup, rankData[i].uid)
                 end)
@@ -282,17 +286,10 @@ function this.FormationAdapter(playerId,teamInfo,index)
 end
 
 function this.LikeBtnState()
-    ArenaTopMatchManager.RequestTodayAlreadyLikeUids_TopMatch(function(msg)
-        local alreadyLike = msg.uid
+    ArenaTopMatchManager.RequestTodayAlreadyLikeUids_TopMatch(function()
         for k, v in pairs(btnLikeList) do
-            local isAlreadyLike = false
-            for i = 1, #alreadyLike do
-                if alreadyLike[i] == k then
-                    isAlreadyLike = true
-                end
-            end
+            local isAlreadyLike = ArenaTopMatchManager.CheckTodayIsAlreadyLike(k)
             Util.SetGray(v, isAlreadyLike)
-
             if isAlreadyLike then
                 v:GetComponent("Image").sprite = Util.LoadSprite(Thumbsup[2])
             else
@@ -300,6 +297,5 @@ function this.LikeBtnState()
             end
         end
     end)
-
 end
 return this

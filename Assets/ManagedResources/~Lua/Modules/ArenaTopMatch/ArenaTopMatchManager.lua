@@ -1113,7 +1113,14 @@ this.TodayAlreadyLikeUids_TopMatch = {}
 this._HasLoadedLikeUids_TopMatch = false
 function this.RequestTodayAlreadyLikeUids_TopMatch(func)
     NetManager.ArenaTopMatchGetAllSendLikeResponse(function(msg)
-        this.TodayAlreadyLikeUids_TopMatch = msg.uid
+        -- 合并服务端数据到本地缓存（而非直接替换），避免本地已点赞但因网络时序被覆盖
+        if msg.uid then
+            for _, uid in ipairs(msg.uid) do
+                if not this.CheckTodayIsAlreadyLike(uid) then
+                    table.insert(this.TodayAlreadyLikeUids_TopMatch, uid)
+                end
+            end
+        end
         this._HasLoadedLikeUids_TopMatch = true
         if func then
             func(msg)

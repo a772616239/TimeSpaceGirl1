@@ -220,9 +220,9 @@ end
 
 function this.GetItemCount()
     local count = 0
-    for i = 1, #type[carbonType] do
-        if type[carbonType][i] then
-            count = count+1
+    for k, v in pairs(type[carbonType]) do
+        if _G.type(k) == "number" then
+            count = count + 1
         end
     end
     return count
@@ -248,87 +248,66 @@ function this.OnEndDrag(p,d)
 end
 
 
-local lastPos=Vector3.zero
-local isMoving = false
+local lastPos = Vector3.zero
+local noMoveFrames = 0
 function this.update()
-        -- Log("CarbonTypePanelV2 update")
+    if isDraging then
         local v2 = Input.mousePosition
-        local abX= math.abs( lastPos.x -v2.x)
-        local abY= math.abs( lastPos.y -v2.y)
+        local abX = math.abs(lastPos.x - v2.x)
+        local abY = math.abs(lastPos.y - v2.y)
+        
         if Input.GetMouseButton(0) then
-            -- Log("CarbonTypePanelV2 GetMouseButton")
-
-            if isDraging then
-              
-                  Log("CarbonTypePanelV2 isDraging abX"..abX.."abY:"..abY)
-                if abX>=1 or
-                    abY>=1
-                then
-                    isMoving=true
-                    SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission,false)
+            if abX < 1 and abY < 1 then
+                noMoveFrames = noMoveFrames + 1
+                if noMoveFrames == 5 then
+                    -- Log("CarbonTypePanelV2 isDraging StopMusic (no move)")
+                    this.StopMusic()
                 end
-
-            end
-        end
-
-        if abX<1 and
-           abY<1
-        then
-            if isDraging then
-                Log("CarbonTypePanelV2 isDraging StopMusic")
-                this.StopMusic()
+            else
+                noMoveFrames = 0
             end
         end
         
-        lastPos=v2
         if Input.GetMouseButtonUp(0) then
-            if isDraging then
-                Log("CarbonTypePanelV2 isDraging StopMusic")
-                this.StopMusic()
-            end
+            -- Log("CarbonTypePanelV2 isDraging StopMusic (mouse up)")
+            this.StopMusic()
+            isDraging = false
+            noMoveFrames = 0
         end
+        
+        lastPos = v2
+    end
 end
 function this.StopMusic()
-    Log("CarbonTypePanelV2 StopMusic")
-    SoundManager.PlayMusic("cn2-x1_NTERFACE_Mainmenu_OpenMission_Stop",false)
+    -- Log("CarbonTypePanelV2 StopMusic")
+    SoundManager.PlayMusic("cn2-x1_NTERFACE_Mainmenu_OpenMission_Stop", false)
 end
 
 
 function this.OnDrag(p,d)
-    Log("OnDrag y:".. tostring(d.delta.y))
-    isDraging=true
-    -- if d.delta.y<3 and d.delta.y>-3 then
-    --     SoundManager.StopMusic()
-    --     Log("OnDrag StopMusic:".. tostring(d.delta.y))
-    -- else
-    --     isDraging=true
-    -- end
-      SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission)
+    -- Log("OnDrag y:".. tostring(d.delta.y))
+    isDraging = true
+    noMoveFrames = 0
     if d.delta.y > 0 then--向上划
-        if RotstionAngle == (this.GetItemCount() - 2)*40 then
+        if RotstionAngle >= (this.GetItemCount() - 2)*40 then
             this.StopMusic()
             return
         end
-
+        SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission, false)
         RotstionAngle = RotstionAngle+1*speed
         this.ImageRot.transform.localEulerAngles = Vector3.New(0,0,RotstionAngle)
         this.ImageMinRot.transform.localEulerAngles = Vector3.New(0,0,-RotstionAngle)
     elseif d.delta.y < 0 then--向下划
-        if RotstionAngle == 0 then
+        if RotstionAngle <= 0 then
             this.StopMusic()
             return
         end
-        
-        -- if isDraging then
-        --         SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission)
-        -- end
-
+        SoundManager.PlayMusic(SoundConfig.Sound_INTERFACE_Mainmenu_OpenMission, false)
         RotstionAngle = RotstionAngle-1*speed
         this.ImageRot.transform.localEulerAngles = Vector3.New(0,0,RotstionAngle)
         this.ImageMinRot.transform.localEulerAngles = Vector3.New(0,0,-RotstionAngle)
     else
         this.StopMusic()
-        Log("OnDrag0")
     end
 end
 

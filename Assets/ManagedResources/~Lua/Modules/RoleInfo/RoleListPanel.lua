@@ -243,12 +243,7 @@ function this.SingleHeroDataShow(_go,_heroData)
         redPoint:SetActive(HeroManager.GetCurHeroIsShowRedPoint(heroData))
     else
         --角色右上角的红点
-        -- redPoint:SetActive(HeroManager.GetCurHeroIsShowRedPoint(heroData))
-        -- redPoint:SetActive(false)
-
-        --单个所有英雄红点判断
-        --redPoint:SetActive(HeroManager.GetIsHeroAlternativeRedPoint(heroData))
-        redPoint:SetActive(false)
+        redPoint:SetActive(HeroManager.GetCurHeroIsShowRedPoint(heroData))
         Util.GetGameObject(_go.transform, "card/sign/choosed"):SetActive(false)
     end
 

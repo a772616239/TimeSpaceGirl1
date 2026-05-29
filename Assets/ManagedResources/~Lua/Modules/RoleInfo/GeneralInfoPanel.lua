@@ -132,14 +132,18 @@ function GeneralInfoPanel:BindEvent()
     end)
     Util.AddClick(this.upLvBtn, function()
         if GeneralManager.IsCanUpLevel(this.generalID) then
+            if this.isReqLvUp then return end
+            this.isReqLvUp = true
             local oldPower = FormationManager.GetFormationPower(FormationTypeDef.FORMATION_NORMAL)
             local config = ConfigManager.TryGetConfigDataByDoubleKey(ConfigName.GeneralLevelConfig, "GeneralId", this.generalID, "Lev", GeneralManager.GetAllGeneralDatas(this.generalID).level)
             if config and config.TotalExp == 0 then
                 -- max
+                this.isReqLvUp = false
                 PopupTipPanel.ShowTipByLanguageId(11961)
                 return
             end
             NetManager.GetGeneralLevelUpRequest(this.generalID,function ()
+                this.isReqLvUp = false
                 this.SetUpdata()
                 FormationManager.FlutterPower(oldPower)
             end)
@@ -149,8 +153,11 @@ function GeneralInfoPanel:BindEvent()
     end)
     Util.AddClick(this.upRankBtn, function()
         if GeneralManager.IsCanAdvanced(this.generalID) then
+            if this.isReqRankUp then return end
+            this.isReqRankUp = true
             local oldPower = FormationManager.GetFormationPower(FormationTypeDef.FORMATION_NORMAL)
             NetManager.GetGeneralRankUpRequest(this.generalID,function ()
+                this.isReqRankUp = false
                 this.SetUpdata()
                 FormationManager.FlutterPower(oldPower)
             end)

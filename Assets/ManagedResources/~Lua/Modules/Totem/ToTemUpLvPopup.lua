@@ -118,15 +118,14 @@ function ToTemUpLvPopup:BindEvent()
     end)
     --升级or升阶
     Util.AddClick(this.upLvBtn,function()
+        if this.isReqLvUp then return end
+        this.isReqLvUp = true
 
         for i = 1, #this.totemData.Totemconfig.UpgradeCost do
             local itemConfig=ConfigManager.GetConfigData("ItemConfig",this.totemData.Totemconfig.UpgradeCost[i][1])
            
             if BagManager.GetItemCountById(this.totemData.Totemconfig.UpgradeCost[i][1])<this.totemData.Totemconfig.UpgradeCost[i][2] then
-                
-                
-                
-                
+                this.isReqLvUp = false
                 PopupTipPanel.ShowTip(string.format(GetLanguageStrById(10343),GetLanguageStrById(itemConfig.Name)))
                 return
             end
@@ -137,6 +136,7 @@ function ToTemUpLvPopup:BindEvent()
         
         
         NetManager.TotemLevelRequest(this.totemId,function()
+            this.isReqLvUp = false
             if type==1 then
                 PopupTipPanel.ShowTipByLanguageId(11907)
             else

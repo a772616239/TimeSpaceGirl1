@@ -430,6 +430,8 @@ function RoleInfoPanel:BindEvent()
         if UIManager.IsOpen(UIName.RoleRankUpConfirmPopup) then
             return
         end
+        if _isReqLvUp then return end
+        _isReqLvUp = true
         self:LvUpClick(true)
         this.isCanAdvanced = true
     end)
@@ -439,6 +441,8 @@ function RoleInfoPanel:BindEvent()
         if UIManager.IsOpen(UIName.RoleRankUpConfirmPopup) then
             return
         end
+        if _isReqLvUp then return end
+        _isReqLvUp = true
         self:LvUpClick(true)
         this.isCanAdvanced = true
     end)
@@ -1678,6 +1682,7 @@ function this:LvUpClick(isSingleLvUp)
                         end)
                     end)
                     curUpLv = curHeroData.lv
+                    _isReqLvUp = false
                 else
                     if HeroManager.heroLvEnd[curHeroData.heroConfig.Id] - curHeroData.lv <= 5 then
                         this.AddLv = HeroManager.heroLvEnd[curHeroData.heroConfig.Id] - curHeroData.lv
@@ -1755,6 +1760,7 @@ function RoleInfoPanel:LvUpClickOne(isSingleLvUp)
                     end)
                 end)
                 curUpLv = curHeroData.lv
+                _isReqLvUp = false
             else
                 curUpLv = curHeroData.lv + 1
                 NetManager.HeroLvUpEvent(curHeroData.dynamicId,curUpLv,curHeroData.lv,function (msg)

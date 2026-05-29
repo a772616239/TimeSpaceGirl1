@@ -59,6 +59,8 @@ function this:BindEvent()
    --升级
    Util.AddClick(this.upLvBtn, function()
     if Time.realtimeSinceStartup - this.timePressStarted <= 0.4 then
+        if _isReqLvUp then return end
+        _isReqLvUp = true
         this.LvUpClick(true)
     end
 end)
@@ -217,10 +219,12 @@ function this.LvUpClick(isSingleLvUp)
     --各种判断能否升级
     
     if isMaterial ~= 0 then
+        _isReqLvUp = false
         PopupTipPanel.ShowTip(string.format(GetLanguageStrById(12488), ConfigManager.GetConfigData(ConfigName.ItemConfig,isMaterial).Name))
         return
     end
     if isLvEnd then
+        _isReqLvUp = false
         if not isSingleLvUp then
             this.LongLvUpClick(oldLv)
             _isClicked = false
@@ -240,6 +244,7 @@ function this.LvUpClick(isSingleLvUp)
             local newWarPower = FormationManager.GetFormationPower(FormationTypeDef.FORMATION_NORMAL)
             PokemonManager.PiaoWarPowerChange(oldWarPower,newWarPower)
             FormationManager.CheckHeroIdExist()
+            _isReqLvUp = false
         end)
     else
         --前端先扣除材料

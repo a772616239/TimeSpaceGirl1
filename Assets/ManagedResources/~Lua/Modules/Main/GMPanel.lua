@@ -34,6 +34,7 @@ local GMType = {
     Adjutant = 1006,--所有先驱解锁
     GetAllHero = 1007,--获得所有英雄
     Fight100 = 1008,--通关100关
+    AutoReLogin = 1009,--自动重登
 }
 local GmLeft = {
     [1] = {parfab = "name", GMType = GMType.ResetPlayerName},
@@ -61,6 +62,7 @@ local GmBtn = {
     [6] = {parfab = "btnAdjutant", GMType = GMType.Adjutant},
     [7] = {parfab = "btnGetAll15StarHero", GMType = GMType.GetAllHero},
     [8] = {parfab = "btnFight100", GMType = GMType.Fight100},
+    [9] = {parfab = "btnAutoReLogin", GMType = GMType.AutoReLogin},
 }
 
 --初始化组件（用于子类重写）
@@ -187,6 +189,11 @@ function GMPanel:BindEvent()
             elseif type == GMType.Fight100 then
                 NetManager.GMEvent(string.format("%s#%s#%s", GMType.OpenMapForValue, 6011, 6011))
                 PopupTipPanel.ShowTip("通关100关")
+            elseif type == GMType.AutoReLogin then
+                SocketManager.Disconnect(SocketType.LOGIN)
+                SocketManager.AddNetwork(SocketType.LOGIN, LoginManager.SocketAddress, LoginManager.SocketPort)
+                SocketManager.TryConnect(SocketType.LOGIN)
+                PopupTipPanel.ShowTip("自动重登中...")
             end
         end)
     end

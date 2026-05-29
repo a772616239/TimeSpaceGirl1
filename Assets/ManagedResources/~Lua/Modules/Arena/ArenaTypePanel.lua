@@ -2,14 +2,16 @@ require("Base/BasePanel")
 local ArenaTypePanel = Inherit(BasePanel)
 local this = ArenaTypePanel
 local TabBox = require("Modules/Common/TabBox")
-local _TabData = { [1] = { default = "cn2-X1_tongyong_fenlan_weixuanzhong_02", 
-                    select = "cn2-X1_tongyong_fenlan_yixuanzhong_02", 
-                    name = GetLanguageStrById(12571),
-                    title = "" },
-                    [2] = { default = "cn2-X1_tongyong_fenlan_weixuanzhong_02",
-                    select = "cn2-X1_tongyong_fenlan_yixuanzhong_02", 
-                    name = GetLanguageStrById(12572)}, 
-                    title = "" }
+local _TabData = { 
+    [1] = { default = "cn2-X1_tongyong_fenlan_weixuanzhong_02", 
+            select = "cn2-X1_tongyong_fenlan_yixuanzhong_02", 
+            name = GetLanguageStrById(12571),
+            title = "" },
+    [2] = { default = "cn2-X1_tongyong_fenlan_weixuanzhong_02",
+            select = "cn2-X1_tongyong_fenlan_yixuanzhong_02", 
+            name = GetLanguageStrById(12572),
+            title = "" }
+}
 this.contents = {
     [1] = {view = require("Modules/Arena/View/ArenaTypePanel_Arena"), panelName = "ArenaTypePanel_Arena"},
     [2] = {view = require("Modules/Arena/View/ArenaTypePanel_TopMatch"), panelName = "ArenaTypePanel_TopMatch"},
@@ -119,11 +121,19 @@ function this.TabAdapter(tab, index, status)
 end
 --切换视图
 function this.SwitchView(index)
+    -- 范围检查
+    if index < 1 or index > #this.contents then
+        LogError("ArenaTypePanel SwitchView: index out of range: " .. tostring(index))
+        return
+    end
     --先执行上一面板关闭逻辑
     local oldSelect
     oldSelect, curIndex = curIndex, index
     for i = 1, #this.contents do
-        if oldSelect ~= 0 then this.contents[oldSelect].view:OnClose() break end
+        if oldSelect ~= 0 and this.contents[oldSelect] then 
+            this.contents[oldSelect].view:OnClose() 
+            break 
+        end
     end
     --切换预设显隐
     for i = 1, #this.prefabs do
@@ -134,8 +144,6 @@ function this.SwitchView(index)
     if index == 1 then
         this.UpView:OnOpen({showType = UpViewOpenType.ShowRight, panelType = PanelType.Main})
     elseif index == 2 then
-        this.UpView:OnOpen({showType = UpViewOpenType.ShowRight, panelType = PanelType.Main})
-    elseif index == 3 then
         this.UpView:OnOpen({showType = UpViewOpenType.ShowRight, panelType = PanelType.Main})
     end
     --this.RefreshHelpBtn()

@@ -3876,9 +3876,8 @@ function this.GetAllPassiveSkillIds(heroConfig, breakId, upStarId,star,curHeroDa
         for i = 1, #heroConfig.OpenPassiveSkillRules do
             if heroConfig.OpenPassiveSkillRules[i][1] == 1 then --突破
                  --for j=1,#PassiveskillId do
-                if --[[breakId >= heroConfig.OpenPassiveSkillRules[i][2]] false then
-                    -- local openPassiveSkillRules = allPassiveSkillIds,heroConfig.OpenPassiveSkillRules
-                    table.insert(allPassiveSkillIds, --[[heroConfig.OpenPassiveSkillRules[i][3]]PassiveskillId[j])
+                if false then
+                    table.insert(allPassiveSkillIds, PassiveskillId[j])
                     if allOpenPassiveSkillIdcompound[heroConfig.OpenPassiveSkillRules[i][2]] then allOpenPassiveSkillIdcompound[heroConfig.OpenPassiveSkillRules[i][2]] =
                             allOpenPassiveSkillIdcompound[heroConfig.OpenPassiveSkillRules[i][2]] + 1
                     else
@@ -3888,8 +3887,8 @@ function this.GetAllPassiveSkillIds(heroConfig, breakId, upStarId,star,curHeroDa
             else --升星
                 allUpStarOpenData[heroRankUpConfig[heroConfig.OpenPassiveSkillRules[i][1]]] = heroConfig.OpenPassiveSkillRules[i]
                          --for j=1,#PassiveskillId do
-                if --[[upStarId >= heroConfig.OpenPassiveSkillRules[i][1]] false then
-                    table.insert(allPassiveSkillIds, --[[heroConfig.OpenPassiveSkillRules[i][3]]PassiveskillId[1])
+                if false then
+                    table.insert(allPassiveSkillIds, PassiveskillId[1])
                     if allOpenPassiveSkillIdcompound[heroConfig.OpenPassiveSkillRules[i][2]] then
                         allOpenPassiveSkillIdcompound[heroConfig.OpenPassiveSkillRules[i][2]] = allOpenPassiveSkillIdcompound[heroConfig.OpenPassiveSkillRules[i][2]] + 1
                     else
@@ -4036,21 +4035,23 @@ end
 --所有英雄红点判断
 function this.GetAllHeroRedPoint()
     local allHero= HeroManager.GetAllHeroDatas(0)
-    local myHasBetterRings,myBetterRingsState=this.GetRingsIsShowRedPoin(curHeroData)
     for i, v in pairs(allHero) do
         local curHeroData = HeroManager.GetSingleHeroData(v.dynamicId)
-        local abilityRedPointState=this.GetCurHeroAbilityIsShowRedPoint(curHeroData)
-        --获得戒指是否有要显示红点的状态
-        if
-        this.GetCurHeroUpLvOrUpStarSData(curHeroData) or 
-        this.LvUpBtnRedPoint(curHeroData) or
-            this.IsShowUpStarRedPoint(curHeroData) or
-            #this.GetHeroIsUpEquip(curHeroData.dynamicId) > 0 or
-            this.GetIsShowSoulPrintRedPoint(curHeroData) or
-            this.GetIsShowTalismanRedPoint(curHeroData) or abilityRedPointState["ability1"] or abilityRedPointState["ability2"] or
-            (myBetterRingsState["Rings1"] or myBetterRingsState["Rings2"])
-            then
-                return true
+        if curHeroData and curHeroData.heroConfig and curHeroData.heroConfig.Material ~= 1 then
+            local abilityRedPointState=this.GetCurHeroAbilityIsShowRedPoint(curHeroData)
+            local myHasBetterRings, myBetterRingsState = this.GetRingsIsShowRedPoin(curHeroData)
+            --获得戒指是否有要显示红点的状态
+            if
+            this.GetCurHeroUpLvOrUpStarSData(curHeroData) or 
+            this.LvUpBtnRedPoint(curHeroData) or
+                this.IsShowUpStarRedPoint(curHeroData) or
+                #this.GetHeroIsUpEquip(curHeroData.dynamicId) > 0 or
+                this.GetIsShowSoulPrintRedPoint(curHeroData) or
+                this.GetIsShowTalismanRedPoint(curHeroData) or abilityRedPointState["ability1"] or abilityRedPointState["ability2"] or
+                (myBetterRingsState and (myBetterRingsState["Rings1"] or myBetterRingsState["Rings2"]))
+                then
+                    return true
+            end
         end
     end
     return false

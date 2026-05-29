@@ -67,7 +67,7 @@ function Network:OnDisconnect()
     self.bIsStartListenHeartBeat = false
     Game.GlobalEvent:DispatchEvent(Protocal.Disconnect, self)
 
-    RequestPanel.Show(GetLanguageStrById(23011))
+    -- RequestPanel.Show(GetLanguageStrById(23011))
     self.socket:TryReconnect()
 
     self.disconnectWaitTime = 0
@@ -85,7 +85,7 @@ end
 --重新建立socket连接，回调lua方法
 function Network:OnReconnect()
     RequestPanel.Hide()
-    RequestPanel.Show(GetLanguageStrById(23012))
+    -- RequestPanel.Show(GetLanguageStrById(23012))
     self.re_resendTimes = 0
     self.disconnectWaitTime = 0
     self.reconnectFlag = false
@@ -128,7 +128,7 @@ function Network:OnReconnectFail()
                     App.Instance:ReStart()
                 end)
             else
-                RequestPanel.Show(GetLanguageStrById(23011))
+                -- RequestPanel.Show(GetLanguageStrById(23011))
                 self.re_sendWaitTime = 0
                 self.re_resendTimes = 0
             end
@@ -256,7 +256,7 @@ function Network:Update()
     if self.reconnectFlag and self.re_resendTimes <= self.re_maxResendTimes then
         self.re_sendWaitTime = self.re_sendWaitTime + Time.fixedDeltaTime
         if self.re_sendWaitTime > self.re_maxSendWaitTime then
-            RequestPanel.Show(GetLanguageStrById(23018))
+            -- RequestPanel.Show(GetLanguageStrById(23018))
             self.socket:TryReconnect()
             self.re_sendWaitTime = 0
         end

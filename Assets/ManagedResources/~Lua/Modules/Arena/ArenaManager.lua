@@ -421,10 +421,19 @@ function this.RefreshAlreadyLikeRedpoint()
     
     -- 竞技场点赞红点
     local arenaData, myRankData = RankingManager.GetArenaInfo()
-    local arenaNum = #arenaData
-    Log("RefreshAlreadyLikeRedpoint arena: "..tostring(this.TodayAlreadyLikeNum).."/"..tostring(arenaNum))
-    if arenaNum > 10 then arenaNum = 10 end
-    if this.TodayAlreadyLikeNum < arenaNum then
+    local maxCanLike = 0
+    for i = 1, #arenaData do
+        if arenaData[i].personInfo.uid ~= PlayerManager.uid then
+            maxCanLike = maxCanLike + 1
+        end
+        if maxCanLike >= 10 then
+            break
+        end
+    end
+
+    Log("RefreshAlreadyLikeRedpoint arena: "..tostring(this.TodayAlreadyLikeNum).."/"..tostring(maxCanLike))
+    
+    if this.TodayAlreadyLikeNum < maxCanLike then
         return true
     end
     

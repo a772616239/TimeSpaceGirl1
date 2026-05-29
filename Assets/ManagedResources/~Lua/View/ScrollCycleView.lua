@@ -409,6 +409,7 @@ function this:SetData(dataList, updateFunc, extData)
             if index <= self.dataCount then
                 SetUpdate(self, index, item)
             elseif item.go then
+                item.isActive = false
                 item.go:SetActive(false)  -- Hide out-of-range items
             end
         end

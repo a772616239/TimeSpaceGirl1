@@ -190,10 +190,10 @@ function GMPanel:BindEvent()
                 NetManager.GMEvent(string.format("%s#%s#%s", GMType.OpenMapForValue, 6011, 6011))
                 PopupTipPanel.ShowTip("通关100关")
             elseif type == GMType.AutoReLogin then
+                PopupTipPanel.ShowTip("返回登录界面重新登录...")
+                Framework.Dispose()
                 SocketManager.Disconnect(SocketType.LOGIN)
-                SocketManager.AddNetwork(SocketType.LOGIN, LoginManager.SocketAddress, LoginManager.SocketPort)
-                SocketManager.TryConnect(SocketType.LOGIN)
-                PopupTipPanel.ShowTip("自动重登中...")
+                App.Instance:ReStart()
             end
         end)
     end

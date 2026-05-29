@@ -412,8 +412,6 @@ function this.UpdatePanelData()
             table.insert(timeList,{timeObj = time}) --将倒计时预设存入
         end
         time.gameObject:SetActive((not freeTime or freeTime <= 0) and i ~= rType.Friend) --若不存在数据 或没免费次数 显示倒计时
-        local free = freeTime and freeTime >= 1
-        this.freeRedPot:SetActive(free)
 
         --按钮赋值
         for n, m in ipairs(v.btn) do
@@ -554,6 +552,9 @@ function this.UpdatePanelData()
         SelfIconBg.sprite = Util.LoadSprite(preSelfIconBgConfigure[i])
         SelfIcon.sprite = Util.LoadSprite(artResourcesConfig[itemConfig[this.itemId].ResourceID].Name)
     end
+
+    local hasRedPoint = RecruitManager.CheckRecuritRedPoint() or RecruitManager.CheckRecuritNormalPoint() or RecruitManager.CheckRecuritTenRedPoint() or RecruitManager.CheckRecuritTenNormalPoint()
+    this.freeRedPot:SetActive(hasRedPoint)
 
     this.TimeCountDown()
 

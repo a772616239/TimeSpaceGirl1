@@ -4036,10 +4036,10 @@ end
 --所有英雄红点判断
 function this.GetAllHeroRedPoint()
     local allHero= HeroManager.GetAllHeroDatas(0)
-    local myHasBetterRings,myBetterRingsState=this.GetRingsIsShowRedPoin(curHeroData)
     for i, v in pairs(allHero) do
         local curHeroData = HeroManager.GetSingleHeroData(v.dynamicId)
         local abilityRedPointState=this.GetCurHeroAbilityIsShowRedPoint(curHeroData)
+        local myHasBetterRings, myBetterRingsState = this.GetRingsIsShowRedPoin(curHeroData)
         --获得戒指是否有要显示红点的状态
         if
         this.GetCurHeroUpLvOrUpStarSData(curHeroData) or 
@@ -4048,7 +4048,7 @@ function this.GetAllHeroRedPoint()
             #this.GetHeroIsUpEquip(curHeroData.dynamicId) > 0 or
             this.GetIsShowSoulPrintRedPoint(curHeroData) or
             this.GetIsShowTalismanRedPoint(curHeroData) or abilityRedPointState["ability1"] or abilityRedPointState["ability2"] or
-            (myBetterRingsState["Rings1"] or myBetterRingsState["Rings2"])
+            (myBetterRingsState and (myBetterRingsState["Rings1"] or myBetterRingsState["Rings2"]))
             then
                 return true
         end

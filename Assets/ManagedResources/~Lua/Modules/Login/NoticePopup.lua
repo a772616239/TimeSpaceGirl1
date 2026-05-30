@@ -62,7 +62,7 @@ local noticeContent = nil
 function this.GetNotice()
     local timeStamp = Time.realtimeSinceStartup
     local timeSign = Util.MD5Encrypt(string.format("%s%s", timeStamp, LoginManager.sign))
-    RequestPanel.Show(GetLanguageStrById(11128))
+    -- RequestPanel.Show(GetLanguageStrById(11128))
     local showCb= function  (str)
             noticeContent=str
             RequestPanel.Hide()

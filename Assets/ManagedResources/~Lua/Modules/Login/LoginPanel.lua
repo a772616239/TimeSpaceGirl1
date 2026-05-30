@@ -128,7 +128,7 @@ function this:BindEvent()
     Util.AddClick(
         this.btnNotice,
         function()
-            RequestPanel.Show(GetLanguageStrById(11128))
+            -- RequestPanel.Show(GetLanguageStrById(11128))
             networkMgr:SendGetHttp(
                 LoginRoot_Url .. "tk/getNotice?timestamp=" .. timeStamp .. "&sign=" .. timeSign,
                 function(str)
@@ -306,7 +306,7 @@ function this:OnLogout()
         -- this.inputField.gameObject:SetActive(false)
         -- this.UserBtnText.text = userId
 
-        RequestPanel.Show(GetLanguageStrById(11121))
+        -- RequestPanel.Show(GetLanguageStrById(11121))
         this.SetLoginPart(true)
         -- 获取服务器列表
         this.RequestServerList(userId, this.OnReceiveServerList)
@@ -371,7 +371,7 @@ function this:OnOpen(...)
         -- this.inputField.gameObject:SetActive(false)
         -- this.UserBtnText.text = userId
 
-        RequestPanel.Show(GetLanguageStrById(11121))
+        -- RequestPanel.Show(GetLanguageStrById(11121))
         this.SetLoginPart(true)
         -- 获取服务器列表
         this.RequestServerList(userId, this.OnReceiveServerList)
@@ -410,7 +410,7 @@ end
 
 -- 请求获取服务器列表
 function this.RequestServerList(userId, callback)
-    RequestPanel.Show(GetLanguageStrById(11121))
+    -- RequestPanel.Show(GetLanguageStrById(11121))
     Log("RequestServerList userId:" .. userId)
     Log(
         string.format(
@@ -475,7 +475,7 @@ end
 function this.RefreshLoginStatus(result)
     if result == SDK_RESULT.SUCCESS then
         CustomEventManager.GameCustomEvent("登录成功")
-        RequestPanel.Show(GetLanguageStrById(11121))
+        -- RequestPanel.Show(GetLanguageStrById(11121))
         this.SetLoginPart(true)
         this.RequestServerList(AppConst.OpenId, this.OnReceiveServerList)
     else
@@ -1333,7 +1333,7 @@ end
 
 -- 请求连接socket
 function this.RequestSocketLogin()
-    RequestPanel.Show(GetLanguageStrById(11124))
+    -- RequestPanel.Show(GetLanguageStrById(11124))
     SocketManager.Disconnect(SocketType.LOGIN)
     SocketManager.AddNetwork(SocketType.LOGIN, LoginManager.SocketAddress, LoginManager.SocketPort)
     SocketManager.TryConnect(SocketType.LOGIN)
@@ -1344,7 +1344,7 @@ function this.OnConnect(network)
     if network.type ~= SocketType.LOGIN then
         return
     end
-    RequestPanel.Show(GetLanguageStrById(11125))
+    -- RequestPanel.Show(GetLanguageStrById(11125))
     if IsSDKLogin then
         Log(
             LoginRoot_Url ..

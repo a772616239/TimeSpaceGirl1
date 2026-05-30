@@ -117,7 +117,7 @@ function this.RequestRegist(name, pw, call)
 
     local sign = Util.MD5Encrypt(string.format("%s%s%s", name,
             pw, this.sign))
-    RequestPanel.Show(GetLanguageStrById(11115))
+    -- RequestPanel.Show(GetLanguageStrById(11115))
     networkMgr:SendGetHttp(LoginRoot_Url .. "tk/registerUser?userName=".. name .. "&password=".. pw .."&repeat=".. pw .. "&sign=" .. sign,
             function(str)
                 RequestPanel.Hide()
@@ -153,7 +153,7 @@ function this.RequestRegist(name, pw, call)
             end,nil,nil,nil)
 end
 function this.RequestRegistSDK(uid, channel ,sdksign ,sdktoken, call)
-    RequestPanel.Show(GetLanguageStrById(11117))
+    -- RequestPanel.Show(GetLanguageStrById(11117))
    
     local LoginRoot_PackageVersion = VersionManager:GetVersionInfo("sdkLodingUrl")
     Log(LoginRoot_PackageVersion.."/verify?userId=".. uid .. "&channel=".. channel .."&sdksign="..sdksign .."&sdktoken=" .. sdktoken)
@@ -190,7 +190,7 @@ function this.RequestUser(name, pw, call)
     local sign = Util.MD5Encrypt(string.format("%s%s%s", name,
             pw, this.sign))
 
-    RequestPanel.Show(GetLanguageStrById(11117))
+    -- RequestPanel.Show(GetLanguageStrById(11117))
     networkMgr:SendGetHttp(LoginRoot_Url .. "tk/userLogin?userName=".. name .. "&password=".. pw .. "&sign=" .. sign, function(str)
         RequestPanel.Hide()
         if str == nil then

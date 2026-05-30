@@ -29,6 +29,10 @@ end
 
 --显示弹出信息
 function PopupTipPanel.ShowTip(str)
+    -- 过滤服务端"连接中"提示（语言ID 91000834）
+    if str and (str == "91000834" or string.find(str, "连接中") or string.find(str, "Connecting")) then
+        return
+    end
     UIManager.OpenPanel(UIName.PopupTipPanel)
     PopupTipPanel:SetSortingOrder(6600)
     local go = itemListPrefab:Peek()

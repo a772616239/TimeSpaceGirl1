@@ -83,6 +83,9 @@ function ArenaMainPanel:OnOpen(...)
     -- 参数保存
     local args = {...}
     this._CurTabIndex = args[1] or 1
+    -- 清除竞技场防守记录的服务器红点，避免其传播到主界面竞技场按钮造成误导性红点
+    -- 防守记录红点应仅通过页签1的记录按钮展示，不影响主界面按钮
+    ResetServerRedPointStatus(RedPointType.Arena_Record)
 end
 
 -- 打开，重新打开时回调

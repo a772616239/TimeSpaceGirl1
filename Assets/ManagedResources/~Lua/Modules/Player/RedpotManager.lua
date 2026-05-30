@@ -107,7 +107,8 @@ function this.InitRedPointAllRelate()
 
     -- 竞技场
     RPData:SetParent(RedPointType.Arena_Type_Normal, RedPointType.Arena)
-    RPData:SetParent(RedPointType.Arena_Record, RedPointType.Arena_Type_Normal)
+    -- 防守记录红点不传播到主界面按钮，仅通过页签1的记录按钮直接展示
+    -- RPData:SetParent(RedPointType.Arena_Record, RedPointType.Arena_Type_Normal)
     -- RPData:SetParent(RedPointType.Arena_Shop, RedPointType.Arena_Type_Normal)
     RPData:SetParent(RedPointType.ArenaTodayAlreadyLike, RedPointType.Arena)
 

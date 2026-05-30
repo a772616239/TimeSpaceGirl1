@@ -203,6 +203,17 @@ function Network:ReceiveErrorInfo(buffer)
     -- 登录过程中报错
     LoadingPanel.ErrorStep(msg)
 
+    -- 过滤掉服务端"连接中"消息（语言ID 91000834），不弹任何Toast
+    -- 服务端可能发送语言ID或已解析文本，使用string.find模糊匹配以防空格/编码差异
+    local errMsg = tostring(msg.errMsg)
+    if errMsg == "91000834"
+        or string.find(errMsg, "连接中")
+        or string.find(errMsg, "Connecting")
+        or string.find(errMsg, "接続中")
+        or string.find(errMsg, "연결중") then
+        return
+    end
+
     if msg.errCode == 20000 then
         if msg.errMsg == GetLanguageStrById(11590) then
             IndicationManager.canPopUpBagMaxMessage = true

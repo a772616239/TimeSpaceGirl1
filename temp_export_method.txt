@@ -1,0 +1,28 @@
+
+        /// <summary>
+        /// 直接导出 APK（不使用 Gradle 项目）
+        /// </summary>
+        public static void ExportDirectAPK(bool isRelease)
+        {
+            string dateString = DateTime.Now.ToString("yyyy-MM-dd");
+            string timeString = DateTime.Now.ToString("HHmmss");
+            string localPath = string.Format("apks/{0}/{1}/", dateString, SDKChannelConfigManager.Instance.ChannelType);
+            string locationPathName = string.Format("{0}{1}.apk", localPath, timeString);
+
+            BuildPlayerOptions buildPlayerOptions = new BuildPlayerOptions();
+            buildPlayerOptions.scenes = EditorBuildSettingsScene.GetActiveSceneList(EditorBuildSettings.scenes);
+            buildPlayerOptions.target = BuildTarget.Android;
+            
+            // 使用 Unity 直接打包 APK，不生成 Gradle 项目
+            EditorUserBuildSettings.androidBuildSystem = AndroidBuildSystem.Gradle;
+            EditorUserBuildSettings.exportAsGoogleAndroidProject = false;
+            buildPlayerOptions.locationPathName = locationPathName;
+            buildPlayerOptions.options = BuildOptions.None;
+
+            BuildPipeline.BuildPlayer(buildPlayerOptions);
+            string fullPath = EditorUtil.GetProjectPath() + buildPlayerOptions.locationPathName;
+
+            Debug.Log("包出完啦!!" + DateTime.Now);
+            EditorUtil.OpenFolderAndSelectFile(fullPath);
+        }
+

@@ -369,6 +369,12 @@ namespace GameEditor.FrameTool
                 Directory.CreateDirectory(directoryPath2);
             File.WriteAllText(VersionsFilePath2, version.ToJson(), utf8);
 
+            // 同步更新 PlayerSettings.bundleVersion，确保 APK 显示的版本号与 version.txt 一致
+            if (version.GetInfo("version") != null)
+            {
+                PlayerSettings.bundleVersion = version.GetInfo("version");
+            }
+
             AssetDatabase.Refresh();
         }
 
@@ -450,10 +456,11 @@ namespace GameEditor.FrameTool
             // 在打包前确保 Android/Resources/version.txt 是最新版本
             CopyVersionToAndroidResources();
             
-            PlayerBuilder.Export(isRelease);
-            
             // 等待一下让文件写入完成
-            System.Threading.Thread.Sleep(1000);
+            System.Threading.Thread.Sleep(2000);
+            
+            // 使用 Unity 直接打包 APK（不是 Gradle 项目）
+            PlayerBuilder.Export(isRelease);
             
             // 自动安装 APK 到手机
             InstallAPKToPhone();
@@ -488,31 +495,34 @@ namespace GameEditor.FrameTool
         }
 
         /// <summary>
-        /// 拷贝 version.txt 到 Android/Resources 目录（用于打包进 APK）
+        /// 拷贝 version.txt 到 Android gradle 项目（用于打包进 APK）
         /// </summary>
         void CopyVersionToAndroidResources()
         {
             string sourcePath = Application.dataPath + "/Resources/version.txt";
-            // Unity 的 Assets/Android/Resources 目录会被自动打包进 APK
-            string destDir = Application.dataPath + "/Android/Resources/";
-            string destPath = destDir + "version.txt";
             
             UnityEngine.Debug.LogFormat("========== CopyVersionToAndroidResources Start ==========");
             UnityEngine.Debug.LogFormat("Source path: {0}", sourcePath);
-            UnityEngine.Debug.LogFormat("Dest dir: {0}", destDir);
-            UnityEngine.Debug.LogFormat("Dest path: {0}", destPath);
             
             if (File.Exists(sourcePath))
             {
-                // 先读取源文件内容确认版本号
+                // 读取源文件内容确认版本号
                 string content = File.ReadAllText(sourcePath);
                 UnityEngine.Debug.LogFormat("Source version.txt content: {0}", content);
+                
+                // Unity 直接打包 APK 模式，需要复制到 Assets/Android/Resources/
+                string destDir = Application.dataPath + "/Android/Resources/";
+                string destPath = destDir + "version.txt";
+                
+                UnityEngine.Debug.LogFormat("Dest dir: {0}", destDir);
+                UnityEngine.Debug.LogFormat("Dest path: {0}", destPath);
                 
                 if (!Directory.Exists(destDir))
                 {
                     UnityEngine.Debug.LogFormat("Creating directory: {0}", destDir);
                     Directory.CreateDirectory(destDir);
                 }
+                
                 File.Copy(sourcePath, destPath, true);
                 
                 // 写入后立即读取目标文件验证

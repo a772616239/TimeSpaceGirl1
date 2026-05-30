@@ -78,9 +78,10 @@ namespace GameEditor.GameEditor.PlayerBuilder
             if (SDKChannelConfigManager.Instance.ChannelType != ChannelType.None.ToString())
             {
                 EditorUserBuildSettings.androidBuildSystem = AndroidBuildSystem.Gradle;
-                EditorUserBuildSettings.exportAsGoogleAndroidProject = true;
-                buildPlayerOptions.locationPathName = locationPathName;
-                //buildPlayerOptions.options = BuildOptions.AcceptExternalModificationsToPlayer;
+                // 关键修改：不导出 Gradle 项目，直接打包 APK
+                EditorUserBuildSettings.exportAsGoogleAndroidProject = false;
+                string ext = ".apk";
+                buildPlayerOptions.locationPathName = locationPathName + ext;
             }
             else
             {
@@ -88,7 +89,6 @@ namespace GameEditor.GameEditor.PlayerBuilder
                 EditorUserBuildSettings.exportAsGoogleAndroidProject = false;
                 string ext = EditorUserBuildSettings.buildAppBundle ? ".aab" : ".apk";
                 buildPlayerOptions.locationPathName = locationPathName + ext;
-                //buildPlayerOptions.options = BuildOptions.None;
             }
 
             BuildPipeline.BuildPlayer(buildPlayerOptions);

@@ -104,7 +104,11 @@ namespace GameLogic {
                     }
                 }
 
-                CrashlyticsMgr.Inst.TapEvent("sysLang:" + sysLang.ToString());
+                // 打包时 CrashlyticsMgr 可能还未初始化，需要空值检查
+                if (CrashlyticsMgr.Inst != null)
+                {
+                    CrashlyticsMgr.Inst.TapEvent("sysLang:" + sysLang.ToString());
+                }
 
                 if (!Application.isEditor)
                 {

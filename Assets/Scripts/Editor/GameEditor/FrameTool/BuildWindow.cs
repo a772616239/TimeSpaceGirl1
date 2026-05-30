@@ -1,8 +1,10 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using System.IO;
+using System.Linq;
 using GameEditor.GameEditor.PlayerBuilder;
 using GameLogic;
 using SDK;
@@ -16,7 +18,7 @@ namespace GameEditor.FrameTool
         /// </summary>
         const string VersionsFile = "version";
 
-        Version version;
+        GameLogic.Version version;
         string serverPathType;
         string serverUrl;
         string resUrl;
@@ -73,7 +75,7 @@ namespace GameEditor.FrameTool
         /// </summary>
         void InitGames()
         {
-            version = new Version(Resources.Load<TextAsset>(VersionsFile).text);
+            version = new GameLogic.Version(Resources.Load<TextAsset>(VersionsFile).text);
             serverPathType = version.GetInfo("serverPathType");
             serverUrl = version.GetInfo("serverUrl");
             resUrl = version.GetInfo("resUrl");
@@ -205,7 +207,7 @@ namespace GameEditor.FrameTool
             if (isBuildPlayer)
             {
                 var gameSet = GameObject.FindObjectOfType<GameSettings>();
-                if (gameSet.settingInfo != null)
+                if (gameSet != null && gameSet.settingInfo != null)
                 {
                     gameSet.settingInfo.bundleMode = true;
                     gameSet.settingInfo.luaBundleMode = true;
@@ -265,8 +267,6 @@ namespace GameEditor.FrameTool
                     {
                         Debug.Log("整体打包资源 isBuildPlayer:"+isBuildPlayer);
 
-                        //先拷贝 version.txt 到 Android/Resources（必须在 BuildPlayer 之前）
-                        CopyVersionToAndroidResources();
                         BuildPlayer();
 
                         //再次复制 version.txt 到 AB 包输出目录（此时版本号已更新）
@@ -275,7 +275,6 @@ namespace GameEditor.FrameTool
                         //再次拷贝 Resources 到 StreamingAssets（此时 version.txt 已更新）
                         FrameTool.CopyResourceFiles();
 
-                        //拷贝 version.txt 到 Android/Resources 目录（用于打包进 APK）
                 }
                     Close();
 
@@ -448,7 +447,16 @@ namespace GameEditor.FrameTool
                 AssetDatabase.SaveAssets();
             }
 
+            // 在打包前确保 Android/Resources/version.txt 是最新版本
+            CopyVersionToAndroidResources();
+            
             PlayerBuilder.Export(isRelease);
+            
+            // 等待一下让文件写入完成
+            System.Threading.Thread.Sleep(1000);
+            
+            // 自动安装 APK 到手机
+            InstallAPKToPhone();
         }
 
 
@@ -485,23 +493,268 @@ namespace GameEditor.FrameTool
         void CopyVersionToAndroidResources()
         {
             string sourcePath = Application.dataPath + "/Resources/version.txt";
+            // Unity 的 Assets/Android/Resources 目录会被自动打包进 APK
             string destDir = Application.dataPath + "/Android/Resources/";
             string destPath = destDir + "version.txt";
             
+            UnityEngine.Debug.LogFormat("========== CopyVersionToAndroidResources Start ==========");
+            UnityEngine.Debug.LogFormat("Source path: {0}", sourcePath);
+            UnityEngine.Debug.LogFormat("Dest dir: {0}", destDir);
+            UnityEngine.Debug.LogFormat("Dest path: {0}", destPath);
+            
             if (File.Exists(sourcePath))
             {
+                // 先读取源文件内容确认版本号
+                string content = File.ReadAllText(sourcePath);
+                UnityEngine.Debug.LogFormat("Source version.txt content: {0}", content);
+                
                 if (!Directory.Exists(destDir))
                 {
+                    UnityEngine.Debug.LogFormat("Creating directory: {0}", destDir);
                     Directory.CreateDirectory(destDir);
                 }
                 File.Copy(sourcePath, destPath, true);
-                Debug.LogFormat("已复制 version.txt 到：{0}", destPath);
+                
+                // 写入后立即读取目标文件验证
+                string destContent = File.ReadAllText(destPath);
+                UnityEngine.Debug.LogFormat("Copied to: {0}, Content: {1}", destPath, destContent);
+                
+                UnityEngine.Debug.LogFormat("✅ Successfully copied version.txt to Android project");
+                UnityEngine.Debug.LogFormat("========== CopyVersionToAndroidResources End ==========");
+                
+                AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
             }
             else
             {
-                Debug.LogError("CopyVersionToAndroidResources version.txt not found: " + sourcePath);
+                UnityEngine.Debug.LogError("CopyVersionToAndroidResources version.txt not found: " + sourcePath);
+                UnityEngine.Debug.LogFormat("========== CopyVersionToAndroidResources FAILED ==========");
             }
+        }
+
+        /// <summary>
+        /// 自动安装 APK 到手机
+        /// </summary>
+        void InstallAPKToPhone()
+        {
+            // 检查 adb 是否可用
+            string adbPath = GetADBPath();
+            if (!IsADBAvailable())
+            {
+                UnityEngine.Debug.LogWarning("adb 不可用或没有连接设备，跳过自动安装");
+                ShowNotification(new GUIContent("⚠️ adb 不可用，请检查设备连接"));
+                return;
+            }
+            
+            // 查找最新的 APK 文件
+            string apkPath = FindLatestAPK();
+            
+            if (string.IsNullOrEmpty(apkPath))
+            {
+                UnityEngine.Debug.LogWarning("未找到 APK 文件，跳过安装");
+                return;
+            }
+            
+            UnityEngine.Debug.LogFormat("准备安装 APK 到手机：{0}", apkPath);
+            
+            // 检查 adb 是否可用
+            System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = adbPath,
+                Arguments = $"install -r \"{apkPath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            
+            try
+            {
+                using (System.Diagnostics.Process process = System.Diagnostics.Process.Start(startInfo))
+                {
+                    string output = process.StandardOutput.ReadToEnd();
+                    string error = process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    if (process.ExitCode == 0)
+                    {
+                        UnityEngine.Debug.LogFormat("✅ APK 安装成功：{0}", apkPath);
+                        ShowNotification(new GUIContent("✅ APK 安装成功"));
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.LogErrorFormat("❌ APK 安装失败：{0}", error);
+                        ShowNotification(new GUIContent($"❌ APK 安装失败：{error}"));
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                UnityEngine.Debug.LogErrorFormat("adb install 错误：{0}", e.Message);
+                ShowNotification(new GUIContent($"❌ adb 安装错误：{e.Message}"));
+            }
+        }
+        
+        /// <summary>
+        /// 检查 adb 是否可用且有设备连接
+        /// </summary>
+        bool IsADBAvailable()
+        {
+            string adbPath = GetADBPath();
+            
+            try
+            {
+                System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = adbPath,
+                    Arguments = "devices",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                
+                using (System.Diagnostics.Process process = System.Diagnostics.Process.Start(startInfo))
+                {
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    // 检查输出中是否有设备（除了标题行"Devices"）
+                    string[] lines = output.Split('\n');
+                    int deviceCount = 0;
+                    for (int i = 1; i < lines.Length; i++) // 跳过第一行标题
+                    {
+                        if (lines[i].Contains("device") && !string.IsNullOrWhiteSpace(lines[i]))
+                        {
+                            deviceCount++;
+                        }
+                    }
+                    
+                    if (deviceCount > 0)
+                    {
+                        UnityEngine.Debug.LogFormat("检测到 {0} 个已连接设备", deviceCount);
+                        return true;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                UnityEngine.Debug.LogErrorFormat("检查 adb 状态错误：{0}", e.Message);
+                return false;
+            }
+        }
+        
+        /// <summary>
+        /// 获取 adb 路径（优先使用环境变量，否则尝试常见路径）
+        /// </summary>
+        string GetADBPath()
+        {
+            // 1. 先尝试直接使用 adb 命令（从 PATH）
+            if (IsCommandAvailable("adb"))
+            {
+                return "adb";
+            }
+            
+            // 2. 尝试 Android SDK 常见路径
+            string[] possiblePaths = new string[]
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "/Library/android-sdk/platform-tools/adb",
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "/android-sdk/platform-tools/adb",
+                "/Users/" + System.Environment.UserName + "/Library/android-sdk/platform-tools/adb",
+                "/Users/" + System.Environment.UserName + "/android-sdk/platform-tools/adb",
+                Application.dataPath + "/../AndroidSDK/platform-tools/adb",
+                Application.dataPath + "/../sdk/platform-tools/adb"
+            };
+            
+            foreach (string path in possiblePaths)
+            {
+                if (File.Exists(path))
+                {
+                    UnityEngine.Debug.LogFormat("找到 adb: {0}", path);
+                    return path;
+                }
+            }
+            
+            // 3. 尝试在 Unity 安装目录中查找
+            string unityPath = Application.dataPath.Replace("/Assets", "");
+            string[] unityPossiblePaths = new string[]
+            {
+                unityPath + "/AndroidSDK/platform-tools/adb",
+                unityPath + "/sdk/platform-tools/adb"
+            };
+            
+            foreach (string path in unityPossiblePaths)
+            {
+                if (File.Exists(path))
+                {
+                    UnityEngine.Debug.LogFormat("找到 adb: {0}", path);
+                    return path;
+                }
+            }
+            
+            UnityEngine.Debug.LogWarning("未找到 adb 工具，请确保已安装 Android SDK 并配置好 PATH");
+            return "adb"; // 返回默认值，让后续错误处理显示友好提示
+        }
+        
+        /// <summary>
+        /// 检查命令是否在 PATH 中可用
+        /// </summary>
+        bool IsCommandAvailable(string command)
+        {
+            try
+            {
+                System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "which",
+                    Arguments = command,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                
+                using (System.Diagnostics.Process process = System.Diagnostics.Process.Start(startInfo))
+                {
+                    process.WaitForExit();
+                    return process.ExitCode == 0;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        
+        /// <summary>
+        /// 查找最新的 APK 文件
+        /// </summary>
+        string FindLatestAPK()
+        {
+            string apksDir = Application.dataPath + "/../apks/" + System.DateTime.Now.ToString("yyyy-MM-dd") + "/None/";
+            
+            if (!Directory.Exists(apksDir))
+            {
+                UnityEngine.Debug.LogWarning("APK 目录不存在：" + apksDir);
+                return null;
+            }
+            
+            var apkFiles = System.IO.Directory.GetFiles(apksDir, "*.apk").ToList();
+            if (apkFiles.Count == 0)
+            {
+                UnityEngine.Debug.LogWarning("未找到 APK 文件");
+                return null;
+            }
+            
+            // 按修改时间排序，获取最新的 APK
+            apkFiles.Sort((a, b) => System.IO.File.GetLastWriteTime(b).CompareTo(System.IO.File.GetLastWriteTime(a)));
+            string latestApk = apkFiles[0];
+            
+            UnityEngine.Debug.LogFormat("找到最新 APK: {0}", latestApk);
+            return latestApk;
         }
 
     }

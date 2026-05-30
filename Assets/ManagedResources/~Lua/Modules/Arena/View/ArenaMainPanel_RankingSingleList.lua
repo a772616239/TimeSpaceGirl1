@@ -201,7 +201,10 @@ end
 
 ---设置竞技场排名信息
 function this.SetArenaInfo()
+    Log("[ArenaRedPoint] === SetArenaInfo called ===")
     local arenaData, myRankData = RankingManager.GetArenaInfo()
+    Log("[ArenaRedPoint] Arena data count: " .. tostring(#arenaData))
+    
     CheckRedPointStatus(RedPointType.ArenaTodayAlreadyLike)
 
     this.noneImage:SetActive(#arenaData == 0)
@@ -224,6 +227,7 @@ function this.SetArenaInfo()
     this.SetInfoShow(this.infoGo, dData, sData.rankType)
     --数据拆分
     if not arenaData or (arenaData and #arenaData <= 0) then
+        Log("[ArenaRedPoint] No arena data to display")
         return
     end
 
@@ -663,18 +667,29 @@ local btnLikeSpriteName_dianzan = GetPictureFont("cn2-X1_jingjichang_dianzan")
 local btnLikeSpriteName_yizan = GetPictureFont("cn2-X1_jingjichang_yizan")
 --排行榜人物点赞
 function this.SetHeroBtnLike(root,data)
+    Log("[ArenaRedPoint] === SetHeroBtnLike called for uid: " .. tostring(data.uid) .. " ===")
     local btnLike = Util.GetGameObject(root,"btnPraise")
     local btnLikeText = Util.GetGameObject(root,"Text_DianZan")
     local redpoint = Util.GetGameObject(btnLike , "redpoint")
     btnLikeText:GetComponent("Text").text = data.likeNums
 
     btnLikeList[data.uid] = btnLike.gameObject
-    if ArenaManager.CheckTodayIsAlreadyLike(data.uid) then
+    
+    local alreadyLiked = ArenaManager.CheckTodayIsAlreadyLike(data.uid)
+    Log("[ArenaRedPoint] CheckTodayIsAlreadyLike(uid=" .. tostring(data.uid) .. ") = " .. tostring(alreadyLiked))
+    
+    if alreadyLiked then
+        Log("[ArenaRedPoint] Setting sprite to yizan (already liked)")
         btnLike:GetComponent("Image").sprite = Util.LoadSprite(btnLikeSpriteName_yizan)
         redpoint:SetActive(false)
+        Log("[ArenaRedPoint] Red point hidden for already liked player")
     else
+        Log("[ArenaRedPoint] Setting sprite to dianzan (not liked yet)")
         btnLike:GetComponent("Image").sprite = Util.LoadSprite(btnLikeSpriteName_dianzan)
-        redpoint:SetActive(ArenaManager.RefreshAlreadyLikeRedpoint())
+        local shouldShowRedDot = ArenaManager.RefreshAlreadyLikeRedpoint()
+        Log("[ArenaRedPoint] RefreshAlreadyLikeRedpoint returned: " .. tostring(shouldShowRedDot))
+        redpoint:SetActive(shouldShowRedDot)
+        Log("[ArenaRedPoint] Red point set to: " .. tostring(shouldShowRedDot))
     end
 
     Util.AddOnceClick(btnLike,function()

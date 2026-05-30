@@ -249,6 +249,8 @@ namespace GameEditor.FrameTool
 
                     //打包游戏
                     FrameTool.BuildGameAssetBundles();
+                    //复制 version.txt 到 AB 包输出目录
+                    CopyVersionFileToBuildABs();
 
                     //拷贝AssetBundle到流媒体目录
                     if (isCopyABSToStreamingAssets)
@@ -262,8 +264,19 @@ namespace GameEditor.FrameTool
                     if (isBuildPlayer)
                     {
                         Debug.Log("整体打包资源 isBuildPlayer:"+isBuildPlayer);
+
+                        //先拷贝 version.txt 到 Android/Resources（必须在 BuildPlayer 之前）
+                        CopyVersionToAndroidResources();
                         BuildPlayer();
-                    }
+
+                        //再次复制 version.txt 到 AB 包输出目录（此时版本号已更新）
+                        CopyVersionFileToBuildABs();
+
+                        //再次拷贝 Resources 到 StreamingAssets（此时 version.txt 已更新）
+                        FrameTool.CopyResourceFiles();
+
+                        //拷贝 version.txt 到 Android/Resources 目录（用于打包进 APK）
+                }
                     Close();
 
                     System.TimeSpan span = System.DateTime.Now.Subtract(oldTime);
@@ -465,6 +478,32 @@ namespace GameEditor.FrameTool
                 CopyAndReplaceDirectory(dir, Path.Combine(dstPath, Path.GetFileName(dir)));
             }
         }
+
+        /// <summary>
+        /// 拷贝 version.txt 到 Android/Resources 目录（用于打包进 APK）
+        /// </summary>
+        void CopyVersionToAndroidResources()
+        {
+            string sourcePath = Application.dataPath + "/Resources/version.txt";
+            string destDir = Application.dataPath + "/Android/Resources/";
+            string destPath = destDir + "version.txt";
+            
+            if (File.Exists(sourcePath))
+            {
+                if (!Directory.Exists(destDir))
+                {
+                    Directory.CreateDirectory(destDir);
+                }
+                File.Copy(sourcePath, destPath, true);
+                Debug.LogFormat("已复制 version.txt 到：{0}", destPath);
+                AssetDatabase.Refresh();
+            }
+            else
+            {
+                Debug.LogError("CopyVersionToAndroidResources version.txt not found: " + sourcePath);
+            }
+        }
+
     }
 
 }

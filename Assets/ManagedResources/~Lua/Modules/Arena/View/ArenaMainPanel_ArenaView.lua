@@ -184,6 +184,8 @@ function ArenaMainPanel_ArenaView:OnOpen(...)
     -- 刷新排名数据
     ArenaManager.RequestNextPageRank(true)
     RankingManager.RequestNextArenaPageData()
+    -- 请求今日已点赞列表，确保红点状态准确
+    ArenaManager.RequestTodayAlreadyLikeUids_Arena()
     this.delayRefresh = Timer.New(function()
         this.delayRefresh = nil
     end, 1)

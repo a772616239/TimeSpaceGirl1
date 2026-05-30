@@ -267,16 +267,13 @@ namespace GameEditor.FrameTool
                 if(File.Exists(delFilePath))
                 {
                     File.Delete(delFilePath);
-                    File.Copy(copyFilePath, delFilePath);
                 }
-                else
-                {
-                    Debug.LogError("CopyAssetBundleToStreamingAssets del files Error! not found");
-                }
+                File.Copy(copyFilePath, delFilePath);
+                Debug.LogFormat("Successfully copied files.unity3d to: {0}", delFilePath);
             }
             else
             {
-                Debug.LogError("CopyAssetBundleToStreamingAssets files.unity3d not found Error!");
+                Debug.LogError("CopyAssetBundleToStreamingAssets files.unity3d not found Error! Source path: " + copyFilePath);
             }
 
 

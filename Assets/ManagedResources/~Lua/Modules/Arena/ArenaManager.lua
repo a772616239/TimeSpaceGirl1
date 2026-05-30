@@ -1,5 +1,6 @@
 ArenaManager = {};
 local this = ArenaManager
+local RPData = require("Modules.Player.RedPointData")
 local ArenaReward = ConfigManager.GetConfig(ConfigName.ArenaReward)
 local ArenaSetting = ConfigManager.GetConfig(ConfigName.ArenaSetting)
 function this.Initialize()
@@ -379,24 +380,54 @@ end
 this.TodayAlreadyLikeNum = 0
 -- 当日已点赞uids
 this.TodayAlreadyLikeUids_Arena = {}
+-- 是否已从服务器加载已点赞列表（用于判断初始化状态）
+this.IsLikeDataLoaded = false
+-- 是否已经触发过初始红点检测（避免重复检测）
+this.HasInitialRedPointCheck = false
 function this.RequestTodayAlreadyLikeUids_Arena(func)
+    Log("[ArenaRedPoint] === RequestTodayAlreadyLikeUids_Arena called ===")
     NetManager.ArenaGetAllSendLikeResponse(function(msg)
+        Log("[ArenaRedPoint] === ArenaGetAllSendLikeResponse callback ===")
+        Log("[ArenaRedPoint] Received uid list with count: " .. tostring(#msg.uid))
         this.TodayAlreadyLikeUids_Arena = msg.uid
         this.TodayAlreadyLikeNum = #this.TodayAlreadyLikeUids_Arena
+        this.IsLikeDataLoaded = true
+        
+        Log("[ArenaRedPoint] IsLikeDataLoaded set to true, TodayAlreadyLikeNum = " .. tostring(this.TodayAlreadyLikeNum))
+        
+        -- 标记已经触发过初始检测
+        this.HasInitialRedPointCheck = true
+        
+        -- 数据加载完成后，强制刷新竞技场相关红点
+        if CheckRedPointStatus then
+            Log("[ArenaRedPoint] Calling CheckRedPointStatus for ArenaTodayAlreadyLike")
+            CheckRedPointStatus(RedPointType.ArenaTodayAlreadyLike)
+            CheckRedPointStatus(RedPointType.Arena_Record)
+            -- 刷新父级红点
+            local parent = RPData:GetRedParent(RedPointType.ArenaTodayAlreadyLike)
+            if parent then
+                Log("[ArenaRedPoint] Parent red point type: " .. tostring(parent))
+                CheckRedPointStatus(parent)
+            end
+        end
+        
         if func then
             func(msg)
-        end
-        if CheckRedPointStatus then
-            CheckRedPointStatus(RedPointType.ArenaTodayAlreadyLike)
         end
      end)
 end
 function this.AddTodayAlreadyLikeUids_Arena(uid)
+    Log("[ArenaRedPoint] === AddTodayAlreadyLikeUids_Arena called for uid: " .. tostring(uid) .. " ===")
     if this.TodayAlreadyLikeUids_Arena[uid] then
         LogRed("已经点赞过了")
+        Log("[ArenaRedPoint] User already liked this player today")
     else
         table.insert(this.TodayAlreadyLikeUids_Arena,uid)
         this.TodayAlreadyLikeNum = #this.TodayAlreadyLikeUids_Arena
+        -- 手动点赞后也标记为已加载，确保红点状态一致
+        this.IsLikeDataLoaded = true
+        Log("[ArenaRedPoint] Added uid to list, TodayAlreadyLikeNum = " .. tostring(this.TodayAlreadyLikeNum))
+        Log("[ArenaRedPoint] IsLikeDataLoaded set to true after manual like")
     end
 end
 function this.GetTodayAlreadyLikeUids_Arena()
@@ -414,13 +445,31 @@ end
 local isFistOpen = true
 -- 点赞红点
 function this.RefreshAlreadyLikeRedpoint()
-    Log("RefreshAlreadyLikeRedpoint")
+    Log("[ArenaRedPoint] === Start RefreshAlreadyLikeRedpoint ===")
+    Log("[ArenaRedPoint] FUNCTION_OPEN_TYPE.ARENA = " .. tostring(ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.ARENA)))
+    
     if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.ARENA) then
+        Log("[ArenaRedPoint] Arena function not open, return false")
         return false
     end
     
     -- 竞技场点赞红点
     local arenaData, myRankData = RankingManager.GetArenaInfo()
+    Log("[ArenaRedPoint] arenaData count = " .. tostring(#arenaData))
+    
+    -- 排行数据尚未加载时，不显示红点（避免误报）
+    if #arenaData == 0 then
+        Log("[ArenaRedPoint] arenaData empty, hide red point")
+        return false
+    end
+    
+    -- 已点赞列表尚未从服务器加载时，不显示红点（避免初始化时的误报）
+    Log("[ArenaRedPoint] IsLikeDataLoaded = " .. tostring(this.IsLikeDataLoaded))
+    if not this.IsLikeDataLoaded then
+        Log("[ArenaRedPoint] IsLikeDataLoaded=false, hide red point")
+        return false
+    end
+    
     local maxCanLike = 0
     for i = 1, #arenaData do
         if arenaData[i].personInfo.uid ~= PlayerManager.uid then
@@ -431,12 +480,14 @@ function this.RefreshAlreadyLikeRedpoint()
         end
     end
 
-    Log("RefreshAlreadyLikeRedpoint arena: "..tostring(this.TodayAlreadyLikeNum).."/"..tostring(maxCanLike))
+    Log("[ArenaRedPoint] TodayAlreadyLikeNum = " .. tostring(this.TodayAlreadyLikeNum) .. ", maxCanLike = " .. tostring(maxCanLike))
     
     if this.TodayAlreadyLikeNum < maxCanLike then
+        Log("[ArenaRedPoint] Should show red point (can like more)")
         return true
     end
     
+    Log("[ArenaRedPoint] No red point needed (already liked max)")
     return false
 end
 return this

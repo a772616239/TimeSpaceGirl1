@@ -1,6 +1,6 @@
 require("Base/BasePanel")
 GMPanel = Inherit(BasePanel)
-local this = MainPanel
+local this = GMPanel
 local GMType = {
     AddItem = 1,--添加道具
     AddCard = 2,--添加卡牌
@@ -87,6 +87,16 @@ function GMPanel:InitComponent()
             btn = Util.GetGameObject(this.btnGrid, value.parfab),
             type = value.GMType
         }
+    end
+
+    --游客登录
+    local guestLogin = Util.GetGameObject(self.gameObject, "Scroll/Viewport/Content/guestLogin")
+    if guestLogin then
+        this.guestLogin = guestLogin
+        this.guestLoginAccountInput = Util.GetGameObject(guestLogin, "accountInput"):GetComponent("InputField")
+        this.guestLoginPasswordInput = Util.GetGameObject(guestLogin, "passwordInput"):GetComponent("InputField")
+        this.guestLoginBtn = Util.GetGameObject(guestLogin, "btnLogin")
+        this.guestRegisterBtn = Util.GetGameObject(guestLogin, "btnRegister")
     end
 
     --时间
@@ -197,6 +207,46 @@ function GMPanel:BindEvent()
             end
         end)
     end
+
+    --游客登录
+    if this.guestLoginBtn then
+        Util.AddOnceClick(this.guestLoginBtn, function()
+            local name = this.guestLoginAccountInput.text
+            local pw = this.guestLoginPasswordInput.text
+            if not name or name == "" or not pw or pw == "" then
+                PopupTipPanel.ShowTip("请输入账号和密码")
+                return
+            end
+            LoginManager.RequestUser(name, pw, function(code)
+                if code == 0 then
+                    AppConst.OpenId = LoginManager.openId
+                    AppConst.TokenStr = LoginManager.token
+                    PopupTipPanel.ShowTip("游客登录成功！返回登录界面重新登录...")
+                    Framework.Dispose()
+                    App.Instance:ReStart()
+                else
+                    PopupTipPanel.ShowTip("账号未注册，请先点击注册！")
+                end
+            end)
+        end)
+    end
+    if this.guestRegisterBtn then
+        Util.AddOnceClick(this.guestRegisterBtn, function()
+            local name = this.guestLoginAccountInput.text
+            local pw = this.guestLoginPasswordInput.text
+            if not name or name == "" or not pw or pw == "" then
+                PopupTipPanel.ShowTip("请输入账号和密码")
+                return
+            end
+            LoginManager.RequestRegist(name, pw, function(code)
+                if code == 0 then
+                    PopupTipPanel.ShowTip("注册成功！可以登录了")
+                elseif code == 1 then
+                    PopupTipPanel.ShowTip("该账号已被注册，请更换账号！")
+                end
+            end)
+        end)
+    end
 end
 
 --添加事件监听（用于子类重写）
@@ -209,15 +259,22 @@ end
 
 --界面打开时调用（用于子类重写）
 function GMPanel:OnOpen(...)
-    NetManager.GMEvent("10#1#0", function(msg)
-        this.serverNowTimeText.text = msg.info
+    local ok, err = pcall(function()
+        NetManager.GMEvent("10#1#0", function(msg)
+            this.serverNowTimeText.text = msg.info
+        end)
+        NetManager.GMEvent("10#2#0", function(msg)
+            this.serverOpenTimeText.text = msg.info
+        end)
+        NetManager.GMEvent("10#3#0", function(msg)
+            this.serverCreateRoleTimeText.text = msg.info
+        end)
     end)
-    NetManager.GMEvent("10#2#0", function(msg)
-        this.serverOpenTimeText.text = msg.info
-    end)
-    NetManager.GMEvent("10#3#0", function(msg)
-        this.serverCreateRoleTimeText.text = msg.info
-    end)
+    if not ok then
+        if this.serverNowTimeText then
+            this.serverNowTimeText.text = "网络未连接"
+        end
+    end
 end
 
 --界面关闭时调用（用于子类重写）

@@ -2990,6 +2990,15 @@ function RoleView:Dispose()
     -- 清空所有延迟方法
     self:ClearDelayFunc()
     self:ClearLoopFunc()
+    -- 先杀死所有活跃的 DOTween 对象，防止 Dispose 回收资源后回调访问空引用
+    if self.hpTween then self.hpTween:Kill() self.hpTween = nil end
+    if self.hpPassTween then self.hpPassTween:Kill() self.hpPassTween = nil end
+    if self.dsTween then self.dsTween:Kill() self.dsTween = nil end
+    if self.dsTween2 then self.dsTween2:Kill() self.dsTween2 = nil end
+    if self.dsTweenFightMove then self.dsTweenFightMove:Kill() self.dsTweenFightMove = nil end
+    if self.playPV_LocalMove then self.playPV_LocalMove:Kill() self.playPV_LocalMove = nil end
+    if self.fullBulletTween then self.fullBulletTween:Kill() self.fullBulletTween = nil end
+
     self.GameObject.transform.parent.localScale = Vector3.one
 
     --立即回收延迟列表上的资源

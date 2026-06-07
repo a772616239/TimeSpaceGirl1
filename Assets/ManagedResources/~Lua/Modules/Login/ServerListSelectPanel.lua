@@ -51,6 +51,9 @@ end
 --serverList,myServerList,lastServer
 function ServerListSelectPanel:OnOpen(context)
     self.context = context
+    if not self.context or not self.context.serverList then
+        return
+    end
     self:SetServerList()
     self:SetServerNew()
     self:SetServerRecent()
@@ -62,6 +65,9 @@ end
 
 function ServerListSelectPanel:SetServerList()
     if table.nums(self.serverItemList) > 0 then
+        return
+    end
+    if not self.context.serverList then
         return
     end
     for idx, serverInfo in ipairs(self.context.serverList) do

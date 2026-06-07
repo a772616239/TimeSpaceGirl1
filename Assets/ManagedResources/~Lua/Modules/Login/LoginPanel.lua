@@ -238,6 +238,9 @@ function this:BindEvent()
     )
 end
         function this.OpenSelectList()
+            if not this.serverList then
+                return
+            end
             UIManager.OpenPanel(
                 UIName.ServerListSelectPanel,
                 {
@@ -635,8 +638,10 @@ end
 
 function this.CacheLoginData(data)
     this.serverList = {}
-    for i = 1, #data.serverList do
-        this.serverList[i] = data.serverList[i]
+    if data.serverList then
+        for i = 1, #data.serverList do
+            this.serverList[i] = data.serverList[i]
+        end
     end
     table.sort(
         this.serverList,
@@ -649,8 +654,10 @@ function this.CacheLoginData(data)
         end
     )
     this.myServerList = {}
-    for i = 1, #data.myServerList do
-        this.myServerList[i] = data.myServerList[i]
+    if data.myServerList then
+        for i = 1, #data.myServerList do
+            this.myServerList[i] = data.myServerList[i]
+        end
     end
     this.lastServer = data.lastServer
     this.recommend = data.recommend

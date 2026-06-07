@@ -318,6 +318,7 @@ function this:SortHeroDatas(_heroDatas)
 end
 
 function this.OnClickEnterHeroInfo(_curhero, _heros,isUpZhen)
+    if not _curhero or not _heros or #_heros == 0 then return end
     UIManager.OpenPanel(UIName.RoleInfoPanel, _curhero, _heros, isUpZhen)--,this.upZhenNum)
 end
 

@@ -757,6 +757,7 @@ function UIManager.CloseStackPanel(uiConfig,isDestroy)
                     break
                 end
             end
+            if startIndex then
             for i = startIndex, #this.stackList do
                 local panel = this.stackList[i]
                 --> no reopen
@@ -772,6 +773,7 @@ function UIManager.CloseStackPanel(uiConfig,isDestroy)
                     panel.gameObject:SetActive(true)
                     panel:OpenUI(true)
                 end
+            end
             end
         else
             --回退的第一个打开的窗口若是全屏窗口，则被唤醒

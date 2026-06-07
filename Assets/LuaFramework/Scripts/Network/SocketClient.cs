@@ -211,8 +211,13 @@ public class SocketClient
     void OnRead(IAsyncResult asr)
     {
         int bytesRead = 0;
-        //try
+        try
         {
+            if (client == null || !client.Connected)
+            {
+                AddStateInfo(NetworkStateType.Disconnect, "client is null or not connected");
+                return;
+            }
             lock (client.GetStream())
             {
                 //读取字节流到缓冲区
@@ -226,6 +231,11 @@ public class SocketClient
                 return;
             }
             OnReceive(byteBuffer, bytesRead); //分析数据包内容，抛给逻辑层
+            if (client == null || !client.Connected)
+            {
+                AddStateInfo(NetworkStateType.Disconnect, "client lost after OnReceive");
+                return;
+            }
             lock (client.GetStream())
             {
                 //分析完，再次监听服务器发过来的新消息
@@ -233,11 +243,10 @@ public class SocketClient
                 client.GetStream().BeginRead(byteBuffer, 0, MAX_READ, new AsyncCallback(OnRead), null);
             }
         }
-        //catch (Exception ex)
-        //{
-        //    //PrintBytes();
-        //    AddStateInfo(NetworkStateType.Exception, ex.Message);
-        //}
+        catch (Exception ex)
+        {
+            AddStateInfo(NetworkStateType.Exception, ex.Message);
+        }
     }
 
     /// <summary>

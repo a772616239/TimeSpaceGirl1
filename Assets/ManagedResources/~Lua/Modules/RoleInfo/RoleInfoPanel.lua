@@ -567,12 +567,20 @@ end
 function RoleInfoPanel:OnShow()
     this.HeadFrameView:OnShow()
     this.UpView:OnOpen({ showType = UpViewOpenType.ShowRight, panelType = PanelType.RoleInfo })
- 
+
+    if not heroDatas or #heroDatas == 0 then return end
+
     isClickLeftOrRightBtn = true
+    local found = false
     for i = 1, #heroDatas do
-        if curHeroData == heroDatas[i] then
+        if curHeroData.dynamicId == heroDatas[i].dynamicId then
             index = i
+            found = true
+            break
         end
+    end
+    if not found then
+        index = 1
     end
     teamHero = FormationManager.GetWuJinFormationHeroIds(FormationTypeDef.FORMATION_NORMAL)
 
@@ -663,6 +671,7 @@ end
 
 --刷新左右立绘
 function this:UpdateLiveList()
+    if not heroDatas or #heroDatas == 0 then return end
     local leftIndex = (index - 1 > 0 and index - 1 or #heroDatas)
     leftHeroData = heroDatas[leftIndex]
 

@@ -5,7 +5,7 @@ local userLevelData = ConfigManager.GetConfig(ConfigName.PlayerLevelConfig)
 local itemConfig = ConfigManager.GetConfig(ConfigName.ItemConfig)
 local PropertyConfig = ConfigManager.GetConfig(ConfigName.PropertyConfig)
 local itemListPrefab
-local func
+local func = function() end
 local bagType = 0   --1 正常背包  2 临时背包 3 梦魇入侵显示
 --需要显示的小组件类型
 -- 1 -- 界面显示升级
@@ -341,7 +341,7 @@ function RewardItemPopup:OnOpen(...)
             UIManager.OpenPanel(UIName.FightEndLvUpPanel,FightPointPassManager.oldLevel,PlayerManager.level,function ()
                 if isHave then
                     self:ClosePanel()
-                    func()
+                    if func then func() end
                 else
                     if isAutoBegin then
                         RewardItemPopup.BeginTimeDown()

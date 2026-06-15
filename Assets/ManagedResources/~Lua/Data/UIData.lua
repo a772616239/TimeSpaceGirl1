@@ -515,6 +515,7 @@ UIName = {
     ChaosChangeStarPanel = 1006,                            -- 混乱挑战
     ChaosTaskPanel = 1007,                                  -- 混乱之治任务
     UnLockWarOrderPanel = 1008,                             -- 战令购买
+    HeroComparePanel = 1009,                                -- 英雄对比
 }
 
 SubUIConfig = {
@@ -536,6 +537,7 @@ SubUIConfig = {
     PlayerLiveView = { name = "PlayerLiveView", assetName = "PlayerLiveView", script = "View/PlayerLiveView" }, -- 玩家动态例会（小人）
     PlayerHeadFrameView = { name = "PlayerHeadFrameView", assetName = "PlayerHeadFrameView", script = "View/PlayerHeadFrameView" }, --界面上方头像
     GuideTaskView = { name = "GuideTaskView",assetName = "GuideTaskView",script = "View/GuideTaskView" },--指引任务
+    HeroCompareItem = { name = "HeroCompareItem", assetName = "HeroCompareItem", script = "Modules/HeroCompare/HeroCompareItem" }, --英雄对比单项
     FormationStartCombatView = { name = "FormationStartCombatView",assetName = "FormationStartCombatPanel",script = "Modules/FormationCenter/FormationStartCombatPanel" }, --< battle sub 战前开始
 
     [1] = {name = "EveryDayGift",assetName = "EveryDayGift",script = "Modules/Recharge/View/EveryDayGift"},

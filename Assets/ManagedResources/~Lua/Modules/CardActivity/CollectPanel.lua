@@ -48,6 +48,7 @@ function CollectPanel:OnDestroy()
 end
 
 function this.Refresh()
+    singleTaskPre = {}
     CheckRedPointStatus(RedPointType.CardActivity_Collect)
     local activityId = ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.CardActivity_Collect)
     local allData = CardActivityManager.GetTask(activityId, TaskTypeDef.CardActivity_Collect)

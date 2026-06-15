@@ -1274,6 +1274,7 @@ end
 function this:OnDamaged(livego, livenode, dmg, bCrit, combat, skill, isLeft, turnIdx, targetIndex)
     if combat == nil then
         LogError("onhook OnDamaged combat nil")
+        return
     end
     if combat and #combat.SkillDuration > 0 and combat.SkillNumber > 1 and #combat.SkillDuration == combat.SkillNumber - 1 then
         local count = combat.SkillNumber
@@ -1315,6 +1316,9 @@ function this:OnDamaged(livego, livenode, dmg, bCrit, combat, skill, isLeft, tur
     end
     local _effectFinish = function()
         if isLeft then --发出攻击的是左方,判断右方血量
+            if not turnArrayRight or not turnArrayRight[targetIndex] then
+                return
+            end
             turnArrayRight[targetIndex].deadTimes = turnArrayRight[targetIndex].deadTimes - 1
 
             if turnArrayRight[targetIndex].deadTimes <= 0 then
@@ -1340,7 +1344,11 @@ function this:OnceDamaged(livego, livenode, dmg, bCrit, combat, skill, isLeft, t
         return
     end
 
-    if not livenode or livenode==nil then
+    if not livenode or livenode==nil or IsNull(livenode) then
+        return
+    end
+
+    if not livego or livego==nil or IsNull(livego) then
         return
     end
 
@@ -1588,6 +1596,9 @@ function this.SetEffect(pos, boxState)
     end
     local effectPosTemp = effectPos
     local roleLiveGo = roleLiveGoRight
+    if not roleLiveGo[pos] then
+        return
+    end
     local tartPos = this.boxEffectParent.transform.position
 
     local localPosition = Util.WorldToLocalInRect(camera3D, roleLiveGo[pos].transform.position, cameraUI, moneyEffect.transform.parent)

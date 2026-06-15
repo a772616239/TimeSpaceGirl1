@@ -845,32 +845,42 @@ end
 
 --关闭所有面板
 function UIManager.CloseAll(isDestroy)
-    local panel = nil
-    while(#this.stackList ~= 0)
-    do
-        panel = this.stackList[1]
-        if not IsNull(panel.gameObject) then
+    -- Snapshot the list to prevent re-entrant modification crashes:
+    -- panels' OnClose callbacks may call UIManager.ClosePanel (-> CloseStackPanel)
+    -- which removes elements from this.stackList while we are iterating it.
+    local stackListCopy = {}
+    for i = 1, #this.stackList do
+        stackListCopy[i] = this.stackList[i]
+    end
+    this.stackList = {}
+
+    for i = 1, #stackListCopy do
+        local panel = stackListCopy[i]
+        if panel and not IsNull(panel.gameObject) then
             panel.gameObject:SetActive(false)
             panel:CloseUI()
             if isDestroy then
                 this.DestroyPanel(panel)
             end
         end
-
-        table.remove(this.stackList,1)
     end
 
-    while(#this.fixedList ~= 0)
-        do
-        panel = this.fixedList[1]
-        if not IsNull(panel.gameObject) then
+    -- Same snapshot approach for fixedList
+    local fixedListCopy = {}
+    for i = 1, #this.fixedList do
+        fixedListCopy[i] = this.fixedList[i]
+    end
+    this.fixedList = {}
+
+    for i = 1, #fixedListCopy do
+        local panel = fixedListCopy[i]
+        if panel and not IsNull(panel.gameObject) then
             panel.gameObject:SetActive(false)
             panel:CloseUI()
             if isDestroy then
                 this.DestroyPanel(panel)
             end
         end
-        table.remove(this.fixedList,1)
     end
 
     this.openedList = {}

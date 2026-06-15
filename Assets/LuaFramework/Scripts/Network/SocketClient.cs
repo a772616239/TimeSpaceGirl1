@@ -89,6 +89,7 @@ public class SocketClient
 
     Queue<NetMsg> mEvents = new Queue<NetMsg>();
     Stack<NetworkStateInfo> stateInfoStack = new Stack<NetworkStateInfo>();
+    readonly object stateLock = new object();
     Dictionary<int, IDispatcher> dispatchers = new Dictionary<int, IDispatcher>();
     Dictionary<int, IDispatcher> callbacks = new Dictionary<int, IDispatcher>();
 
@@ -162,10 +163,19 @@ public class SocketClient
     /// </summary>
     void OnConnect(IAsyncResult asr)
     {
-        //Debug.Log("****Socket*********************OnConnect   ---" + IpAddress);
-        outStream = client.GetStream();
-        client.GetStream().BeginRead(byteBuffer, 0, MAX_READ, new AsyncCallback(OnRead), null);
-        AddStateInfo(NetworkStateType.Connected, null);
+        try
+        {
+            client.EndConnect(asr);
+            //Debug.Log("****Socket*********************OnConnect   ---" + IpAddress);
+            outStream = client.GetStream();
+            client.GetStream().BeginRead(byteBuffer, 0, MAX_READ, new AsyncCallback(OnRead), null);
+            AddStateInfo(NetworkStateType.Connected, null);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"OnConnect failed: {ex.Message}");
+            OnConnectFail();
+        }
     }
 
     /// <summary>
@@ -218,10 +228,16 @@ public class SocketClient
                 AddStateInfo(NetworkStateType.Disconnect, "client is null or not connected");
                 return;
             }
-            lock (client.GetStream())
+            NetworkStream stream = client.GetStream();
+            if (stream == null)
+            {
+                AddStateInfo(NetworkStateType.Disconnect, "network stream is null");
+                return;
+            }
+            lock (stream)
             {
                 //读取字节流到缓冲区
-                bytesRead = client.GetStream().EndRead(asr);
+                bytesRead = stream.EndRead(asr);
             }
 
             if (bytesRead < 1)
@@ -236,12 +252,26 @@ public class SocketClient
                 AddStateInfo(NetworkStateType.Disconnect, "client lost after OnReceive");
                 return;
             }
-            lock (client.GetStream())
+            stream = client.GetStream();
+            if (stream == null)
+            {
+                AddStateInfo(NetworkStateType.Disconnect, "network stream lost after OnReceive");
+                return;
+            }
+            lock (stream)
             {
                 //分析完，再次监听服务器发过来的新消息
                 Array.Clear(byteBuffer, 0, byteBuffer.Length); //清空数组
-                client.GetStream().BeginRead(byteBuffer, 0, MAX_READ, new AsyncCallback(OnRead), null);
+                stream.BeginRead(byteBuffer, 0, MAX_READ, new AsyncCallback(OnRead), null);
             }
+        }
+        catch (ObjectDisposedException)
+        {
+            // 连接已被主动 Close() 释放，不做处理
+        }
+        catch (IOException ex) when (IsConnectionReset(ex))
+        {
+            AddStateInfo(NetworkStateType.Exception, "Connection reset by peer: " + ex.Message);
         }
         catch (Exception ex)
         {
@@ -249,15 +279,24 @@ public class SocketClient
         }
     }
 
+    private static bool IsConnectionReset(IOException ex)
+    {
+        return ex.InnerException is SocketException se
+            && se.SocketErrorCode == SocketError.ConnectionReset;
+    }
+
     /// <summary>
-    /// 丢失链接
+    /// 丢失链接（线程安全）
     /// </summary>
     public void AddStateInfo(NetworkStateType dis, string msg)
     {
         NetworkStateInfo info = new NetworkStateInfo();
         info.type = dis;
         info.msg = msg;
-        stateInfoStack.Push(info);
+        lock (stateLock)
+        {
+            stateInfoStack.Push(info);
+        }
     }
 
     /// <summary>
@@ -282,7 +321,10 @@ public class SocketClient
         try
         {
             MemoryStream stream = (MemoryStream)r.AsyncState;
-            outStream.EndWrite(r);
+            if (outStream != null)
+            {
+                outStream.EndWrite(r);
+            }
             if (stream != null)
             {
                 stream.Close();
@@ -409,7 +451,10 @@ public class SocketClient
         }
         dispatchers.Clear();
         callbacks.Clear();
-        stateInfoStack.Clear();
+        lock (stateLock)
+        {
+            stateInfoStack.Clear();
+        }
 
         if (client != null)
         {
@@ -433,9 +478,18 @@ public class SocketClient
     bool testConnect;
     public void Update()
     {
-        if (stateInfoStack.Count > 0)
+        NetworkStateInfo info = default(NetworkStateInfo);
+        bool hasState = false;
+        lock (stateLock)
         {
-            var info = stateInfoStack.Pop();
+            if (stateInfoStack.Count > 0)
+            {
+                info = stateInfoStack.Pop();
+                hasState = true;
+            }
+        }
+        if (hasState)
+        {
 
             if (info.type == NetworkStateType.Connected)
             {
@@ -630,20 +684,19 @@ public class SocketClient
     public void TryReconnect()
     {
         //Debug.Log("****Socket*********************TryReconnect   ---" + IpAddress);
-        if (IsConnected())
-        {
-            NetworkStateInfo info = new NetworkStateInfo();
-            info.type = NetworkStateType.Reconnected;
-            info.msg = null;
-            stateInfoStack.Push(info);
-            return;
-        }
         if (m_isConnecting)
             return;
+
+        if (IsConnected())
+        {
+            AddStateInfo(NetworkStateType.Reconnected, null);
+            return;
+        }
 
         if (reconnect_co != null)
         {
             netMgr.StopCoroutine(reconnect_co);
+            reconnect_co = null;
         }
         reconnect_co = netMgr.StartCoroutine(CheckReconnect_Co());
     }
@@ -717,10 +770,19 @@ public class SocketClient
 
     void OnReconnect(IAsyncResult result)
     {
-        //Debug.Log("****Socket*********************OnReconnect   ---" + IpAddress);
-        outStream = client.GetStream();
-        client.GetStream().BeginRead(byteBuffer, 0, MAX_READ, new AsyncCallback(OnRead), null);
-        AddStateInfo(NetworkStateType.Reconnected, null);
+        try
+        {
+            client.EndConnect(result);
+            //Debug.Log("****Socket*********************OnReconnect   ---" + IpAddress);
+            outStream = client.GetStream();
+            client.GetStream().BeginRead(byteBuffer, 0, MAX_READ, new AsyncCallback(OnRead), null);
+            AddStateInfo(NetworkStateType.Reconnected, null);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"OnReconnect failed: {ex.Message}");
+            OnReconnectFail();
+        }
     }
 
     /// <summary>

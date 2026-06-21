@@ -805,7 +805,7 @@ local jumpDic = {
     [JumpType.ClimbTower] = function(data)
         -- 1主界面 2布阵
         if IsOpenningTowner then
-            -- Log("ClimbTowerPanel0 IsOpenningTowner")
+            PopupTipPanel.ShowTip(GetLanguageStrById(50289) .. "...")
             return
          end
         IsOpenningTowner=true

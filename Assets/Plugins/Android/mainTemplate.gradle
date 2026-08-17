@@ -1,8 +1,26 @@
 apply plugin: 'com.android.library'
 **APPLY_PLUGINS**
 
+// Force AndroidX versions compatible with AGP 7.4.2's dexer
+// billing 9.0.0 pulls androidx.core:core:1.15.0 which breaks AGP 7.4.2 dex
+configurations.all {
+    resolutionStrategy {
+        force 'androidx.core:core:1.10.1'
+        force 'androidx.core:core-ktx:1.10.1'
+        force 'androidx.annotation:annotation:1.7.0'
+        force 'androidx.collection:collection:1.3.0'
+        force 'androidx.lifecycle:lifecycle-common:2.6.2'
+        force 'androidx.lifecycle:lifecycle-runtime:2.6.2'
+        force 'androidx.lifecycle:lifecycle-viewmodel:2.6.2'
+        force 'androidx.lifecycle:lifecycle-livedata-core:2.6.2'
+    }
+}
+
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
+    // Explicitly pin AndroidX versions to prevent billing 9.0.0 from pulling 1.15.0
+    implementation 'androidx.core:core:1.10.1'
+    implementation 'androidx.annotation:annotation:1.7.0'
 // Android Resolver Dependencies Start
     implementation 'com.google.android.gms:play-services-auth:20+' // Assets/GoogleSignIn/Editor/GoogleSignInDependencies.xml:10
     implementation 'com.google.android.gms:play-services-base:18.6.0' // Assets/Firebase/Editor/AppDependencies.xml:17

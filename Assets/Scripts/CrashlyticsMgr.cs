@@ -68,6 +68,13 @@ namespace ETModel{
                     // Set a flag here for indicating that your project is ready to use Firebase.
                     IsInitFireBase = true;
                     SystemLanguage sysLang = Application.systemLanguage;
+                    string country = "Unknown";
+                    try {
+                        country = System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName;
+                    } catch (System.Exception) { }
+
+                    FirebaseAnalytics.SetUserProperty("language", sysLang.ToString());
+                    FirebaseAnalytics.SetUserProperty("country", country);
 
                     SdkCustomEvent.CustomEvent(18, sysLang.ToString() + "-" + AppConst.originLan);
                 }

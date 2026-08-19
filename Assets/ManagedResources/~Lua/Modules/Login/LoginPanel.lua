@@ -254,7 +254,7 @@ end
                         PlayerPrefs.SetString("lastServerName", this.serverList[index].name)
                         PlayerManager.serverInfo = list
                         LoginManager.SocketAddress = list.ip
-                        LoginManager.SocketPort = list.port
+                        LoginManager.SocketPort = tonumber(list.port) or 0
                         LoginManager.ServerId = list.server_id
                         LoginManager.state = list.state
                         -- local severArea = tonumber(string.sub(list.server_id, 0, -5))
@@ -625,7 +625,7 @@ function this.SetServerList(data)
 
     PlayerManager.serverInfo = this.serverList[lastIndex]
     LoginManager.SocketAddress = this.serverList[lastIndex].ip
-    LoginManager.SocketPort = tonumber(this.serverList[lastIndex].port)
+    LoginManager.SocketPort = tonumber(this.serverList[lastIndex].port) or 0
     LoginManager.ServerId = this.serverList[lastIndex].server_id
     LoginManager.state = this.serverList[lastIndex].state
 
@@ -1340,6 +1340,18 @@ end
 
 -- 请求连接socket
 function this.RequestSocketLogin()
+    if not LoginManager.SocketAddress or LoginManager.SocketAddress == "" then
+        LogError("RequestSocketLogin failed: SocketAddress is nil or empty")
+        PopupTipPanel.ShowTipByLanguageId(11132)
+        RequestPanel.Hide()
+        return
+    end
+    if not LoginManager.SocketPort then
+        LogError("RequestSocketLogin failed: SocketPort is nil")
+        PopupTipPanel.ShowTipByLanguageId(11132)
+        RequestPanel.Hide()
+        return
+    end
     -- RequestPanel.Show(GetLanguageStrById(11124))
     SocketManager.Disconnect(SocketType.LOGIN)
     SocketManager.AddNetwork(SocketType.LOGIN, LoginManager.SocketAddress, LoginManager.SocketPort)

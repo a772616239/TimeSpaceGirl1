@@ -29,6 +29,10 @@ function SocketManager.Unload()
 end
 
 function SocketManager.AddNetwork(type, ipAddress, port)
+    if not ipAddress or not port then
+        LogError("SocketManager.AddNetwork: ipAddress or port is nil, type=" .. tostring(type))
+        return
+    end
     if SocketManager.SocketList[type] then
         SocketManager.SocketList[type].socket:SetIpAddress(ipAddress, port)
         return

@@ -67,7 +67,7 @@ function Network:OnDisconnect()
     self.bIsStartListenHeartBeat = false
     Game.GlobalEvent:DispatchEvent(Protocal.Disconnect, self)
 
-    -- RequestPanel.Show(GetLanguageStrById(23011))
+    RequestPanel.Show(GetLanguageStrById(23011)) -- "您已掉线，正在请求重连"
     self.socket:TryReconnect()
 
     self.disconnectWaitTime = 0

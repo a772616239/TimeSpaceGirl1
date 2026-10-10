@@ -704,7 +704,6 @@ function this:OnDestroy()
     SubUIManager.Close(this.UpView)
     SubUIManager.Close(this.BtView)
     SubUIManager.Close(this.PlayerHeadFrameView)
-    SubUIManager.Close(this.HorseRaceLampView)
     SubUIManager.Close(this.ChatTipView)
     SubUIManager.Close(this.GuideTaskView)
     -- 清除红点

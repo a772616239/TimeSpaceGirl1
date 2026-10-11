@@ -49,3 +49,38 @@ Assets/StreamingAssets/Android/                    ← AAB 包内资源**唯一�
 - 🔴 **BSD `find` 不支持 `-newermt`**（报 `bad date` 且静默返回空），要用 `-mmin`。
 - 🔴 **含中文标点的脚本变量必须写 `${VAR}` 花括号**。
 - 🔴 **`set -o pipefail` 下 `cmd | head -1` 必须加 `|| true`**。
+
+## 16 KB 页大小合规（Play 两层告警，2026-10-12 取证）
+Play 的 16 KB 告警**是两层、彼此独立**，别混为一谈：
+
+| 层 | 文案特征 | 判定 | 修法 |
+|---|---|---|---|
+| **门槛 1** 硬对齐 | 「应用不支持 16 KB 页大小」 | 每个 `.so` 的 `PT_LOAD` `p_align ≥ 16384` | 换 16KB 对齐的库 |
+| **门槛 2** 旧 NDK | 「**已针对 16 KB 编译，但某些库用旧版 NDK 编译…可能崩溃**」 | Play 的**已知问题库清单**（⚠️ 不是 NDK 版本阈值） | **只能替换/上游重编** |
+
+### v63 实测（`apks/2026-10-12/CLIBuild/002113.aab`）
+- **门槛 1：13 个 ELF，0 不合规** —— 全过（`verify_16k.py`，exit 0）。
+- **门槛 2 被点名 5 个**（都是第三方预编译/自编库）：
+  | .so | NDK | p_align |
+  |---|---|---|
+  | `libFirebaseCppAnalytics.so` | r21e | 16384 |
+  | `libFirebaseCppApp-12_8_0.so` | r21e | 16384 |
+  | `libFirebaseCppCrashlytics.so` | r21e | 16384 |
+  | `libnative-googlesignin.so` | **r17 / GCC** | 65536 |
+  | `libtolua.so` | 无 `.note.android.ident` | 65536 |
+- **Unity 自出库未被点名**：`libil2cpp/libunity/libmain` 全是 **r23b**（因为本项目已是 **Unity 2022.3.62f2c1**）。
+
+### 🔴 结论：升 Unity 对这条告警零收益
+- 本项目已在 `2022.3.62f2c1` —— **正是跨仓 `main_android` 那份 skill 里「路径 B 想升到的目标版本」**。Unity 侧已达标（`libmain.so` r23b 未被点名，而其 Unity 2020.3 的 r19 `libmain.so` 会被点名）。
+- 被点名的 5 个全是 **Unity 永不编译**的第三方库 ⇒ 升引擎一个都不会少，却要付整包重导 + 2740 个 AB 重打 + 全量回归的代价。
+
+### 正确修法（对齐 `main_android` 的路径 A）
+- **Firebase Unity SDK `12.8.0 → 12.10.1`**：源在 `Assets/Firebase/m2repository/com/google/firebase/*-unity/12.8.0/`。顺带修 **issue #1259**（12.8.0 在 Android 15/16KB 模式**启动即崩**，崩在 `SWIGRegisterExceptionCallbacks()`）—— 这是真崩溃，不只是告警。
+  - ⚠️ C# 与 native 必须**同版本**升级（`DllImport` 名含版本号 `FirebaseCppApp-<ver>`）；本项目**无 HybridCLR**（无 `*.dll.bytes`），故「AOT 补充元数据同步重生成」这条不适用。
+- **`libnative-googlesignin.so`**：r17/GCC，比 clang 时代还早，须换新版 Google Sign-In 插件（`Assets/GoogleSignIn/`）。
+- **`libtolua.so`**：tolua 开源、**自家可编** ⇒ 用 NDK r28 重编即符合 Play 文案第一方案。
+
+### 时限与取证工具
+- 门槛 2 在 **2027-02-01** 前**只是警告、不阻断发布**（门槛 1 已过）。
+- 取证工具在跨仓 `main_android/Release/tools/`：`verify_16k.py`（ELF 对齐，支持 APK/AAB/裸 `.so`）、`so_meta.py`（读 `.note.android.ident` 判 NDK 版本，**不认 AAB，要喂裸 `.so`**）。
+- 完整 playbook：`main_android/docs/skills/android-16kb-page-alignment/{SKILL.md,references/*}`。

@@ -80,6 +80,14 @@ Play 的 16 KB 告警**是两层、彼此独立**，别混为一谈：
 - **`libnative-googlesignin.so`**：r17/GCC，比 clang 时代还早，须换新版 Google Sign-In 插件（`Assets/GoogleSignIn/`）。
 - **`libtolua.so`**：tolua 开源、**自家可编** ⇒ 用 NDK r28 重编即符合 Play 文案第一方案。
 
+### ✅ 本次执行（2026-10-12，v64 = `apks/2026-10-12/CLIBuild/011824.aab`）
+只做路径 A 的第 1 条（升 Firebase），**不碰 Unity 版本**：
+- **实际改动**：`12.8.0 → 12.10.1`，替换 managed/iOS/Editor DLL + `m2repository`(.srcaar) + `GeneratedLocalRepo`(.aar)，三处 `Dependencies.xml` 与 `mainTemplate.gradle` 同步，12.8.0 产物全部移入备份 `~/ts-firebase-backup-20261012-011235/`。versionCode 63→64。
+- **验证**：包内 `libFirebaseCppApp-12_10_1.so` ✅、`12_8_0` 残留 0 ✅、`verify_16k.py` **13 ELF / 0 不合规** ✅。
+- **实测确认了反直觉结论**：`libFirebaseCpp*` 三库升级后 `.note.android.ident` **仍是 r21e**（`so_meta.py` 实测）⇒ **门槛 2 告警不会消失**，本次收益 = 修 issue #1259 真机崩溃。
+- ⚠️ **踩坑：`Assets/Firebase/m2repository` 必须存 `.srcaar`，`GeneratedLocalRepo` 才存 `.aar`**。两处都放 `.aar` ⇒ Unity 报 `Found plugins with same names ... Plugins colliding` 构建失败。改名后还须**重写 `.meta`**：`.srcaar` 用 `DefaultImporter`，`GeneratedLocalRepo` 的 `.aar` 用 `PluginImporter` 且 `Android.enabled: 0`（否则被判为 Android 插件再次冲突）。
+- Firebase 三个 unity aar 的 pom **无 `<dependencies>`** ⇒ 无传递依赖断链风险。
+
 ### 时限与取证工具
 - 门槛 2 在 **2027-02-01** 前**只是警告、不阻断发布**（门槛 1 已过）。
 - 取证工具在跨仓 `main_android/Release/tools/`：`verify_16k.py`（ELF 对齐，支持 APK/AAB/裸 `.so`）、`so_meta.py`（读 `.note.android.ident` 判 NDK 版本，**不认 AAB，要喂裸 `.so`**）。

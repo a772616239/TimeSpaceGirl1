@@ -45,6 +45,22 @@ scripts/aab_release.sh --no-upload          # 只打包 + 校验
    ⇒ CLI 打包出来的号会一直卡在同一个值，传 production 必被 Play 拒绝。
    `aab_release.sh` 默认已带 `--bump`（调 `scripts/bump_version.py`）补上这一步，**不要随意加 `--no-bump`**。
 
+4. **AssetBundle 必须已构建并拷贝进 StreamingAssets**
+   AAB 的包内资源只来自 `Assets/StreamingAssets/`。AB 链路是两段式：
+   `BuildABs/Android/` → `FrameTool.CopyAssetBundleToStreamingAssets()` → `StreamingAssets/Android/`。
+   **任一段没跑，构建不会报错，但包里就是旧资源或缺资源。**
+   最典型的坑是 Lua：Lua 字节码打成 `lua|lua_*` bundle，一旦 `StreamingAssets/lua/` 为空，
+   AAB 里就没有 Lua，真机启动即报 `StreamingAssets 路径资源丢失，请重新打包包内资源!`。
+   `aab_release.sh` 前置检查会检测这一点并**直接中止**；确需强行继续要显式加 `--allow-no-lua`。
+   GUI 侧重建顺序（三个方法，见 `Assets/Scripts/Editor/GameEditor/FrameTool/FrameTool.cs`）：
+   ```
+   FrameTool.BuildGameAssetBundles()            # 全量打 AB → BuildABs/Android/（会先删该目录）
+   FrameTool.BuildLuaAssetBundles()             # 单打 LuaBytes + ResConfigs
+   FrameTool.CopyAssetBundleToStreamingAssets() # 拷 CombinePack → StreamingAssets（会先删该目录）
+   ```
+   ⚠️ `Assets/Scripts/Editor/GameEditor/FrameTool/ResourcesCopy.cs` 的「Build/资源拷贝」是另一条
+   手动选目录的路径，依赖 `EditorUtility.OpenFolderPanel`，batchmode 用不了，别混淆。
+
 ## 关键事实速查
 
 | 项 | 值 |

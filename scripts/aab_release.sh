@@ -10,6 +10,10 @@
 #   scripts/aab_release.sh --no-upload              # 只打包 + 校验
 #   scripts/aab_release.sh --no-bump                # 不动 versionCode（仅调试用！）
 #
+# 前置检查里有一道 AssetBundle 闸门：若 StreamingAssets 里找不到任何 Lua bundle
+# 会直接中止（因为这样打出的 AAB 真机起不来）。确认要发不含 Lua 的包时加
+# --allow-no-lua 强制继续。
+#
 # 说明：
 #   - 默认会先把 AndroidBundleVersionCode +1（CLI 打包本身不自增，详见
 #     scripts/bump_version.py 头部注释），再打包。
@@ -35,6 +39,7 @@ SKIP_BUILD=0
 DO_UPLOAD=1
 DRY_RUN=0
 ASSUME_YES=0
+ALLOW_NO_LUA=0
 
 # --------------------------------------------------------------------------- #
 # 参数解析
@@ -52,6 +57,7 @@ while [[ $# -gt 0 ]]; do
         --skip-build)     SKIP_BUILD=1; shift ;;
         --no-upload)      DO_UPLOAD=0; shift ;;
         --dry-run)        DRY_RUN=1; shift ;;
+        --allow-no-lua)   ALLOW_NO_LUA=1; shift ;;
         --yes|-y)         ASSUME_YES=1; shift ;;
         -h|--help)        sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "未知参数：$1（用 --help 查看用法）" >&2; exit 2 ;;
@@ -100,6 +106,57 @@ ok "Gradle 模板检查通过"
 
 PURCHASING=$(grep -o '"com.unity.purchasing": *"[^"]*"' Packages/manifest.json | head -1 || true)
 ok "IAP 包版本：${PURCHASING:-未找到}"
+
+# --------------------------------------------------------------------------- #
+# 0.5 AssetBundle 就绪检查
+#
+# 背景（2026-10-11 实测踩到）：AssetBundle 构建产物与 StreamingAssets 是两套东西，
+# 而且链路是「BuildABs/Android/ → CopyAssetBundleToStreamingAssets() → StreamingAssets/Android」。
+# 只要 AB 构建或拷贝任一步没跑，AAB 就会带着陈旧/缺失的 bundle 发出去，而且
+# 构建过程不会有任何报错。最典型的是 Lua：Lua 字节码打成 lua|lua_* bundle，
+# 2026-09-17 的清理把 StreamingAssets/lua 清空后，AAB 里就再没有 Lua 了。
+# --------------------------------------------------------------------------- #
+AB_TOTAL=$(ls "${PROJECT_ROOT}/Assets/StreamingAssets/Android/"*.unity3d 2>/dev/null | wc -l | tr -d ' ')
+if [[ "${AB_TOTAL:-0}" -eq 0 ]]; then
+    fail "Assets/StreamingAssets/Android 下没有任何 .unity3d bundle。
+     AssetBundle 尚未构建或拷贝，无法出包。见 docs/ 中 AB 构建链路说明。"
+fi
+ok "StreamingAssets bundle 数：${AB_TOTAL}"
+
+# Lua bundle 检测：命名形如 lua|lua_xxx.unity3d（见 Packager.cs:156），
+# 或存在于 StreamingAssets/lua/ 目录。注意贴图名里的「乱(luan)」会误报，
+# 故按整段 path segment 精确匹配，不用宽泛 contains。
+LUA_SEG=$(ls "${PROJECT_ROOT}/Assets/StreamingAssets/Android/" 2>/dev/null | grep -cE '(^|\|)lua\|' || true)
+LUA_DIR_FILES=$(find "${PROJECT_ROOT}/Assets/StreamingAssets/lua" -type f ! -name "*.meta" 2>/dev/null | wc -l | tr -d ' ')
+if [[ "${LUA_SEG:-0}" -eq 0 && "${LUA_DIR_FILES:-0}" -eq 0 ]]; then
+    warn "🔴 未发现任何 Lua bundle！"
+    warn "   检查项：StreamingAssets/Android 下 name 含 'lua|' 段的 bundle = ${LUA_SEG:-0} 个"
+    warn "   检查项：StreamingAssets/lua/ 下非 meta 文件 = ${LUA_DIR_FILES:-0} 个"
+    warn "   ⇒ 这样打出的 AAB 不含 Lua 字节码，真机会起不来（AssetBundleLoader 会报"
+    warn "      \"StreamingAssets 路径资源丢失，请重新打包包内资源!\"）。"
+    warn "   ⇒ 先在 GUI Unity 跑：FrameTool.BuildGameAssetBundles() → BuildLuaAssetBundles()"
+    warn "      → CopyAssetBundleToStreamingAssets()，再回来打包。"
+    if [[ "$ALLOW_NO_LUA" -eq 0 ]]; then
+        fail "已中止。若你确认本次就是要发不含 Lua 的包，请加 --allow-no-lua 强制继续。"
+    else
+        warn "已按 --allow-no-lua 强制继续（风险自负）。"
+    fi
+else
+    ok "Lua bundle 就绪（bundle 段匹配 ${LUA_SEG:-0} 个 / lua 目录文件 ${LUA_DIR_FILES:-0} 个）"
+fi
+
+# AB 陈旧度：bundle 比资源配置表还旧 ⇒ bundle 与配置可能不同步
+CFG_MTIME=$(stat -f%m "${PROJECT_ROOT}/Assets/ManagedResources/ResConfigs/ResourcePathConfig.asset" 2>/dev/null || echo 0)
+NEWEST_AB=$(ls -t "${PROJECT_ROOT}/Assets/StreamingAssets/Android/"*.unity3d 2>/dev/null | head -1)
+if [[ -n "$NEWEST_AB" ]]; then
+    AB_MTIME=$(stat -f%m "$NEWEST_AB" 2>/dev/null || echo 0)
+    if [[ "${CFG_MTIME:-0}" -gt "${AB_MTIME:-0}" ]]; then
+        warn "bundle 比 ResourcePathConfig.asset 旧（$(date -r "${AB_MTIME}" '+%Y-%m-%d %H:%M') < $(date -r "${CFG_MTIME}" '+%Y-%m-%d %H:%M')）"
+        warn "   ⇒ 资源配置已更新但 AB 未重建，bundle 与配置可能不同步。"
+    else
+        ok "bundle 时间不早于资源配置表"
+    fi
+fi
 
 # --------------------------------------------------------------------------- #
 # 1. 提升 versionCode

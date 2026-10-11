@@ -231,6 +231,7 @@ scripts/aab_release.sh --notes "修复卡顿；优化新手引导"
 | HTTP 400 `App bundle was not signed` / 上传被拒 | Play 应用签名未启用，或签名不对 | Console 启用 Play 应用签名；确认 `AutoSignKeystore.cs` 生效 |
 | HTTP 400 `APK/bundle targets ... ` | targetSdk 不足 | 本项目 targetSdk 36，正常不会遇到 |
 | HTTP 404 | 包名写错 | 应为 `com.Warera.timespace` |
+| HTTP 400 `FAILED_PRECONDITION` / `This Edit has been deleted`（常在上传到 80%+ 时突然出现） | edit 会话被作废。未提交的 edit 有生命周期；**同一 App 的并发 edit 会互相作废** | 上传期间不要并发调用 Play API（如 16KB 巡检脚本 `play_16kb_watch.py` 会开新 edit）。直接重跑上传脚本即可 —— 🔴 **不要用 `aab_release.sh` 重跑**，它会再提一次 versionCode |
 | 脚本报「找不到 service account 密钥」 | 密钥没放到默认位 | 见 §1.3 |
 | 脚本报「检测到 Unity 编辑器正在运行」 | GUI Unity 锁定工程 | `osascript -e 'tell application "Unity" to quit'` |
 | 打包日志 `:launcher:mergeExtDexRelease FAILED` | AndroidX 与 AGP 7.4.2 dexer 不兼容 | 见 `docs/unity_android_build_skill.md` 第 3 节（双模板 force 降级） |
@@ -254,6 +255,7 @@ scripts/aab_release.sh --notes "修复卡顿；优化新手引导"
 |---|---|
 | `scripts/aab_release.sh` | 一键：提号 → 打包 → 校验 → 上传 |
 | `scripts/play_upload.py` | Play Developer API 上传 + 轨道发布 |
+| `scripts/play_16kb_watch.py` | Play 16KB 合规巡检（轨道现状 + ELF 对齐 + 构建 NDK，邮件汇报）⚠️ 勿与上传并发 |
 | `scripts/bump_version.py` | versionCode / versionName 提升 |
 | `docs/unity_android_build_skill.md` | Unity 打包流程与全部坑位（打包侧真源） |
 | `.workbuddy/skills/play-aab-release/SKILL.md` | 项目级 skill，供 agent 调用 |

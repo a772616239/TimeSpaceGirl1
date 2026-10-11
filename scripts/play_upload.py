@@ -152,6 +152,13 @@ def hint_for_error(text: str) -> str:
         return "versionCode 重复。用 scripts/aab_release.sh（默认 --bump）重新提号打包。"
     if "not signed" in low or "signature" in low:
         return "签名相关失败。确认 Play Console 已启用 Play 应用签名，且 AutoSignKeystore.cs 生效。"
+    if "edit has been deleted" in low or "failed_precondition" in low:
+        return (
+            "Play 的 edit 会话已被删除（未提交的 edit 有生命周期，且同一 App 的并发 edit 会互相作废）。\n"
+            "   → 2026-10-12 实测：上传到 85% 时另一个进程对该 App 开了新 edit ⇒ 本 edit 被判 deleted。\n"
+            "   → 上传期间**不要**并发调用 Play API（如 16KB 巡检脚本 play_16kb_watch.py）。\n"
+            "   → 直接重跑本脚本即可（会新建 edit 并重传）。"
+        )
     return "详见 docs/google_play_upload_setup.md §5 错误对照表。"
 
 

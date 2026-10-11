@@ -84,3 +84,15 @@ Play 的 16 KB 告警**是两层、彼此独立**，别混为一谈：
 - 门槛 2 在 **2027-02-01** 前**只是警告、不阻断发布**（门槛 1 已过）。
 - 取证工具在跨仓 `main_android/Release/tools/`：`verify_16k.py`（ELF 对齐，支持 APK/AAB/裸 `.so`）、`so_meta.py`（读 `.note.android.ident` 判 NDK 版本，**不认 AAB，要喂裸 `.so`**）。
 - 完整 playbook：`main_android/docs/skills/android-16kb-page-alignment/{SKILL.md,references/*}`。
+
+### 🔴 两条反直觉的实测结论（决定要不要动手）
+1. **升 Firebase 大概率清不掉门槛 2 告警。** `main_android` 的 commit `9dfa41bfc` 自述：*「Firebase 预编译库仍为 NDK r21e（12.8.0/12.10.1/13.16.0 实测一致），Play「旧版 NDK 编译」告警不会因此消失，但真实崩溃已修」*。⇒ 换版的价值是**修 issue #1259 真机启动崩溃**，不是清告警。
+2. **Play 的告警挂在「线上已发布版本」上，概览不会自动刷新。** `main_android` 记忆实测：Console 每条问题都标注「发布版本名称：39 (28)」= 线上旧版；新包已修的问题**概览里仍显示**。⇒ 核对版本号再决定是否处理，别把「旧版的告警」当「新包没修好」。
+
+### 本工程的 Firebase 使用面（决定改动风险）
+- **代码零引用**：C# / Lua / Java 全树 `grep -i firebase\|crashlytics`（排除 `Assets/Firebase`）**零命中**；仅 `Assets/google-services.json` 存在。⇒ Firebase 只为 **Crashlytics 自动崩溃上报 + Analytics 自动采集**而装，无 API 调用点。
+- 落点：SDK 版本 = **12.8.0**（`Assets/Firebase/m2repository/com/google/firebase/{firebase-app,firebase-analytics,firebase-crashlytics}-unity/12.8.0/`）；`Assets/Firebase/Plugins/x86_64/FirebaseCppApp-12_8_0.dll`；EDM4U 生成的依赖块在 `Assets/Plugins/Android/mainTemplate.gradle`（`Android Resolver Dependencies` 段，4 处 `12.8.0`）。
+- 本项目**无 HybridCLR**（无 `*.dll.bytes`）⇒ 升级 Firebase 时不需要重生成 AOT 补充元数据。
+- SDK 可下载：`https://dl.google.com/firebase/sdk/unity/firebase_unity_sdk_12.10.1.zip`（HTTP 200 实测可达）。
+- **`libnative-googlesignin.so`** 来自 `Assets/GoogleSignIn/Editor/m2repository/.../google-signin-support-1.0.4.aar`（插件 v1.0.4，`google-signin-unity`）——同样是**代码零引用**的死插件，可整目录移除。
+- **`libtolua.so`** 仓库内**无 tolua 源码**（无 `tolua*.c/h`），本次**无法用 NDK r28 重编**。

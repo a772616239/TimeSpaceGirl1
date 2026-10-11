@@ -20,7 +20,18 @@
 - 三层根因：① `google-auth-httplib2` 硬给 httplib2 设 `timeout=60`；② `MediaFileUpload` 默认 `chunksize=100MB`；③ 走本机代理（`HTTP_PROXY=127.0.0.1:52954`，~400KB/s）单块需 4 分钟 ⇒ 必被 `TimeoutError` 打断。
 - `play_upload.py` 已内置：`widen_http_timeout()` 提到 300s **并 clear `.connections`**（httplib2 只在建连时读 timeout，不清缓存复用旧连接仍是 60s）+ `chunksize=8MB` + 断点续传重试（8 次指数退避）+ 异常回滚 edit。
 - 可覆盖：`PLAY_UPLOAD_TIMEOUT_S` / `PLAY_UPLOAD_CHUNK_MB` / `PLAY_UPLOAD_MAX_RETRIES`。421MB 实测约 8 分钟。
-- 已发版：**production v63**（2026-10-12，421MB，含完整 bundles + Lua）；线上历史 v62（2026-08-17，421MB）。
+- 已发版：**production v64**（2026-10-12，421MB，Firebase Unity SDK 12.10.1）；历史 v63（同日，12.8.0，含完整 bundles + Lua）、v62（2026-08-17，421MB）。
+
+## 🔴 Play edit 互斥：上传期间禁止并发调用 Play API（2026-10-12 实测）
+- 现象：v64 上传跑到 **85%** 时 `HTTP 400 / FAILED_PRECONDITION / This Edit has been deleted`，整包失败（`play_upload.py` 退出码 4）。
+- 根因：**上传过程中另一个进程对该 App 调了 Play API 并 insert 了新 edit**（当时我在跑 `play_16kb_watch.py --dry-run`）⇒ 同一 App 的并发 edit 互相作废，上传绑定的 edit 被判 deleted。
+- 处置：直接重跑 `play_upload.py`（会新建 edit 重传）。🔴 **不要用 `aab_release.sh` 重跑** —— 它默认 `--bump`，会再提一次 versionCode 导致号段跳空。
+- 规则：**上传/发布进行中，不要跑巡检、dry-run 或任何会 `edits.insert` 的工具**。已写进 `play_16kb_watch.py` 文档头与 `docs/google_play_upload_setup.md §5`。
+
+## Play 16KB 合规巡检（2026-10-12 起）
+- 工具 `scripts/play_16kb_watch.py`（轨道现状 + 两层取证 + diff + 邮件）；定时任务 id `ea56e5de-abc2-45c2-abb9-401505a65a96`（每 3 天 10:00）。
+- 🔴 报告必须区分「Play 点名」与「仅 NDK 阈值偏旧」：`NDK < r28` ≠ 被点名。v64 实测 < r28 有 12 个，Play 只点名 4 个 + tolua 无法判定；Unity 自出库（il2cpp/unity/main r23b）与 crashlytics（r25b）从不被点名。
+- 🔴 Play Console 的 16KB 告警**无公开 API**，只能人工看「发布 → App Bundle 浏览器 → 选择版本 → 支持的页大小」。
 
 ## 🔴 AssetBundle 打包链路（出包必读）
 三段式，**任一段没跑 Unity 打包都不报错**，只静默把陈旧/缺失资源打进包：

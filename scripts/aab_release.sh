@@ -113,8 +113,16 @@ ok "IAP 包版本：${PURCHASING:-未找到}"
 # 背景（2026-10-11 实测踩到）：AssetBundle 构建产物与 StreamingAssets 是两套东西，
 # 而且链路是「BuildABs/Android/ → CopyAssetBundleToStreamingAssets() → StreamingAssets/Android」。
 # 只要 AB 构建或拷贝任一步没跑，AAB 就会带着陈旧/缺失的 bundle 发出去，而且
-# 构建过程不会有任何报错。最典型的是 Lua：Lua 字节码打成 lua|lua_* bundle，
-# 2026-09-17 的清理把 StreamingAssets/lua 清空后，AAB 里就再没有 Lua 了。
+# 构建过程不会有任何报错。最典型的是 Lua。
+#
+# Lua bundle 的**真实命名**（2026-10-12 从 CRC 清单与代码取证确认）：
+#   Assets/ManagedResources/LuaBytes.meta → assetBundleName: lzma/luabytes
+#                                           assetBundleVariant: unity3d
+#   落盘 BuildABs/Android/lzma/luabytes.unity3d
+#   进 CombinePack 后按 name.Replace("/","|") 变成 lzma|luabytes.unity3d
+#   （见 AssetBundleBuilder.BuildSelectAssetBundles:348）
+# ⇒ 它**不带 lua 前缀、也不在 lua/ 子目录**，所以旧的「按 lua| 段匹配」规则是错的。
+# 判定改为：存在文件名含 luabytes 的 bundle。
 # --------------------------------------------------------------------------- #
 AB_TOTAL=$(ls "${PROJECT_ROOT}/Assets/StreamingAssets/Android/"*.unity3d 2>/dev/null | wc -l | tr -d ' ')
 if [[ "${AB_TOTAL:-0}" -eq 0 ]]; then
@@ -123,26 +131,29 @@ if [[ "${AB_TOTAL:-0}" -eq 0 ]]; then
 fi
 ok "StreamingAssets bundle 数：${AB_TOTAL}"
 
-# Lua bundle 检测：命名形如 lua|lua_xxx.unity3d（见 Packager.cs:156），
-# 或存在于 StreamingAssets/lua/ 目录。注意贴图名里的「乱(luan)」会误报，
-# 故按整段 path segment 精确匹配，不用宽泛 contains。
-LUA_SEG=$(ls "${PROJECT_ROOT}/Assets/StreamingAssets/Android/" 2>/dev/null | grep -cE '(^|\|)lua\|' || true)
+# Lua bundle 检测：真实名字是 lzma|luabytes.unity3d（见上方说明）。
+# 用 contains "luabytes" 而非段匹配 —— 该名字里既没有 lua| 段也不在 lua/ 目录，
+# 而「乱(luan)」这类贴图名不会命中 luabytes，故不会误报。
+LUA_HITS=$(ls "${PROJECT_ROOT}/Assets/StreamingAssets/Android/" 2>/dev/null | grep -c "luabytes" || true)
 LUA_DIR_FILES=$(find "${PROJECT_ROOT}/Assets/StreamingAssets/lua" -type f ! -name "*.meta" 2>/dev/null | wc -l | tr -d ' ')
-if [[ "${LUA_SEG:-0}" -eq 0 && "${LUA_DIR_FILES:-0}" -eq 0 ]]; then
-    warn "🔴 未发现任何 Lua bundle！"
-    warn "   检查项：StreamingAssets/Android 下 name 含 'lua|' 段的 bundle = ${LUA_SEG:-0} 个"
-    warn "   检查项：StreamingAssets/lua/ 下非 meta 文件 = ${LUA_DIR_FILES:-0} 个"
+if [[ "${LUA_HITS:-0}" -eq 0 ]]; then
+    warn "🔴 未发现 Lua bundle（期望 lzma|luabytes.unity3d）！"
+    warn "   检查项1：StreamingAssets/Android 下文件名含 luabytes 的 bundle = ${LUA_HITS:-0} 个"
+    warn "   检查项2：StreamingAssets/lua/ 下非 meta 文件 = ${LUA_DIR_FILES:-0} 个"
+    warn "   检查项3：LuaBytes.meta 的 assetBundleName、BuildConfigs.asset 登记（可运行"
+    warn "           scripts/check_ab_ready.sh 一键体检）"
     warn "   ⇒ 这样打出的 AAB 不含 Lua 字节码，真机会起不来（AssetBundleLoader 会报"
     warn "      \"StreamingAssets 路径资源丢失，请重新打包包内资源!\"）。"
-    warn "   ⇒ 先在 GUI Unity 跑：FrameTool.BuildGameAssetBundles() → BuildLuaAssetBundles()"
-    warn "      → CopyAssetBundleToStreamingAssets()，再回来打包。"
+    warn "   ⇒ 先在 GUI Unity（BuildWindow「整体打包资源」）依次跑："
+    warn "      FrameTool.BuildGameAssetBundles() → CopyAssetBundleToStreamingAssets()"
+    warn "      （若只改了 Lua，用「单打lua资源」BuildLuaAssetBundles()）"
     if [[ "$ALLOW_NO_LUA" -eq 0 ]]; then
         fail "已中止。若你确认本次就是要发不含 Lua 的包，请加 --allow-no-lua 强制继续。"
     else
         warn "已按 --allow-no-lua 强制继续（风险自负）。"
     fi
 else
-    ok "Lua bundle 就绪（bundle 段匹配 ${LUA_SEG:-0} 个 / lua 目录文件 ${LUA_DIR_FILES:-0} 个）"
+    ok "Lua bundle 就绪（luabytes bundle ${LUA_HITS:-0} 个）"
 fi
 
 # AB 陈旧度：bundle 比资源配置表还旧 ⇒ bundle 与配置可能不同步

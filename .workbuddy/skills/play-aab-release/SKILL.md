@@ -21,6 +21,7 @@ scripts/aab_release.sh                      # production 全量（默认）
 scripts/aab_release.sh --track internal     # 内部测试
 scripts/aab_release.sh --dry-run --skip-build   # 只验通路，不打包不上传
 scripts/aab_release.sh --no-upload          # 只打包 + 校验
+scripts/check_ab_ready.sh                   # 只读体检：包内资源（尤其 Lua）是否就绪
 ```
 
 ## 🔴 动手前必查三条
@@ -46,18 +47,36 @@ scripts/aab_release.sh --no-upload          # 只打包 + 校验
    `aab_release.sh` 默认已带 `--bump`（调 `scripts/bump_version.py`）补上这一步，**不要随意加 `--no-bump`**。
 
 4. **AssetBundle 必须已构建并拷贝进 StreamingAssets**
-   AAB 的包内资源只来自 `Assets/StreamingAssets/`。AB 链路是两段式：
+   AAB 的包内资源只来自 `Assets/StreamingAssets/Android/`。AB 链路是两段式：
    `BuildABs/Android/` → `FrameTool.CopyAssetBundleToStreamingAssets()` → `StreamingAssets/Android/`。
    **任一段没跑，构建不会报错，但包里就是旧资源或缺资源。**
-   最典型的坑是 Lua：Lua 字节码打成 `lua|lua_*` bundle，一旦 `StreamingAssets/lua/` 为空，
-   AAB 里就没有 Lua，真机启动即报 `StreamingAssets 路径资源丢失，请重新打包包内资源!`。
-   `aab_release.sh` 前置检查会检测这一点并**直接中止**；确需强行继续要显式加 `--allow-no-lua`。
-   GUI 侧重建顺序（三个方法，见 `Assets/Scripts/Editor/GameEditor/FrameTool/FrameTool.cs`）：
+
+   最典型的坑是 **Lua**。Lua bundle 的**真实命名**（2026-10-12 取证确认，别被名字误导）：
    ```
-   FrameTool.BuildGameAssetBundles()            # 全量打 AB → BuildABs/Android/（会先删该目录）
-   FrameTool.BuildLuaAssetBundles()             # 单打 LuaBytes + ResConfigs
-   FrameTool.CopyAssetBundleToStreamingAssets() # 拷 CombinePack → StreamingAssets（会先删该目录）
+   Assets/ManagedResources/LuaBytes.meta  → assetBundleName: lzma/luabytes
+                                            assetBundleVariant: unity3d
+   ⇒ BuildABs/Android/lzma/luabytes.unity3d
+   ⇒ CombinePack 里按 name.Replace("/","|") 变 lzma|luabytes.unity3d
    ```
+   ⚠️ **它不带 `lua` 前缀、也不在 `lua/` 子目录**（`Assets/StreamingAssets/lua/` 是遗留空目录，
+   与 Lua 字节码无关，别拿它当判据）。判定是否就绪只认**文件名含 `luabytes` 的 bundle**。
+
+   一旦缺失，真机启动即报 `StreamingAssets 路径资源丢失，请重新打包包内资源!`（`AssetBundleLoader`）。
+   先跑只读体检，再决定是否重建：
+   ```bash
+   scripts/check_ab_ready.sh          # 只读；逐项报 LuaBytes.meta / BuildConfigs 登记 / BuildABs / StreamingAssets / 最新 AAB
+   ```
+   `aab_release.sh` 前置检查也会检测并**直接中止**；确需强行继续要显式加 `--allow-no-lua`。
+
+   GUI 侧重建（`BuildWindow` 的按钮，方法定义见 `Assets/Scripts/Editor/GameEditor/FrameTool/FrameTool.cs`）：
+   ```
+   「整体打包资源」   FrameTool.BuildGameAssetBundles()            # 全量 AB → BuildABs/Android/（先删该目录）
+   「复制资源到流媒体目录」 FrameTool.CopyAssetBundleToStreamingAssets()  # 拷 CombinePack → StreamingAssets/Android（先删该目录）
+   「单打lua资源」    FrameTool.BuildLuaAssetBundles()             # 只重建 LuaBytes + ResConfigs（用于只改了 Lua 的场合）
+   ```
+   顺序：**先「整体打包资源」→ 再「复制资源到流媒体目录」**；只有 Lua 变动时补「单打lua资源」。
+   注意「复制资源到流媒体目录」会**整目录删除** `StreamingAssets/Android`，所以它必须在 AB 构建之后跑。
+
    ⚠️ `Assets/Scripts/Editor/GameEditor/FrameTool/ResourcesCopy.cs` 的「Build/资源拷贝」是另一条
    手动选目录的路径，依赖 `EditorUtility.OpenFolderPanel`，batchmode 用不了，别混淆。
 
@@ -68,7 +87,7 @@ scripts/aab_release.sh --no-upload          # 只打包 + 校验
 | 包名 | `com.Warera.timespace` |
 | Unity | `/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity` |
 | 打包方法 | `CLIBuilder.BuildAndroidAAB` |
-| 产物目录 | `apks/{yyyy-MM-dd}/CLIBuild/{HHmmss}.aab`（约 420 MB） |
+| 产物目录 | `apks/{yyyy-MM-dd}/CLIBuild/{HHmmss}.aab`（体积随 bundles 变，2026-10-11 实测 139 MB，8 月记录曾 421 MB） |
 | 耗时 | 约 10-15 分钟 |
 | 签名 | `Assets/Scripts/Editor/AutoSignKeystore.cs` 打包前自动注入 `beauty.keystore`，无需手动配 |
 | Python 解释器 | `/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python`（已装 google-api-python-client / google-auth） |
@@ -103,6 +122,8 @@ scripts/aab_release.sh --no-upload          # 只打包 + 校验
 | 退出码 5 | 上传前 versionCode 预检撞车，脚本主动拦截 | 提号后重打包 |
 | 日志 `:launcher:mergeExtDexRelease FAILED` | AndroidX 与 AGP 7.4.2 dexer 不兼容 | `docs/unity_android_build_skill.md` §3 双模板 force 降级 |
 | 打包报 `Multiple Unity instances cannot open the same project` | GUI Unity 占锁 | 关 GUI / 删陈旧 `Library/SourceAssetDB-lock` |
+| 前置检查报「未发现 Lua bundle」 | AB 链路断开：`StreamingAssets/Android` 里没有 `lzma\|luabytes.unity3d` | 跑 `scripts/check_ab_ready.sh` 定位在源侧/构建/拷贝哪一段；GUI 里「整体打包资源」→「复制资源到流媒体目录」 |
+| 真机启动报 `StreamingAssets 路径资源丢失，请重新打包包内资源!` | 同上 —— 发出的 AAB 里没有 Lua | 重建 AB 后重打包，别用旧 AAB |
 
 ## 边界
 

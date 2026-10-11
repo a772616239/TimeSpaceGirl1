@@ -124,6 +124,8 @@ scripts/check_ab_ready.sh                   # 只读体检：包内资源（尤�
 | 打包报 `Multiple Unity instances cannot open the same project` | GUI Unity 占锁 | 关 GUI / 删陈旧 `Library/SourceAssetDB-lock` |
 | 前置检查报「未发现 Lua bundle」 | AB 链路断开：`StreamingAssets/Android` 里没有 `lzma\|luabytes.unity3d` | 跑 `scripts/check_ab_ready.sh` 定位在源侧/构建/拷贝哪一段；GUI 里「整体打包资源」→「复制资源到流媒体目录」 |
 | 真机启动报 `StreamingAssets 路径资源丢失，请重新打包包内资源!` | 同上 —— 发出的 AAB 里没有 Lua | 重建 AB 后重打包，别用旧 AAB |
+| 上传报 `TimeoutError: The read operation timed out` | `google-auth-httplib2` 给 httplib2 设了 60s 超时，而默认分块 100MB，421MB 走代理单块需 4 分钟 | 已内置修复（超时 300s + 8MB 分块 + 断点续传重试）。若仍需调：`PLAY_UPLOAD_TIMEOUT_S` / `PLAY_UPLOAD_CHUNK_MB` / `PLAY_UPLOAD_MAX_RETRIES` |
+| AAB 只有约 139MB（正常 421MB） | **AB 构建本身残包**：只产出了约 3/4 的 bundle（缺 prefabs/texture/spine/audio/atlas） | 重建 AB（`BuildGameAssetBundles` → `CopyAssetBundleToStreamingAssets`），再打包 |
 
 ## 边界
 

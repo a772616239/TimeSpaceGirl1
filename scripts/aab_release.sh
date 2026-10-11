@@ -212,7 +212,7 @@ if [[ "$DO_UPLOAD" -eq 0 ]]; then
     exit 0
 fi
 
-step "上传 Google Play（track=$TRACK, status=$STATUS）"
+step "上传 Google Play（track=${TRACK}, status=${STATUS}）"
 UPLOAD_ARGS=(--aab "$AAB" --package "$PACKAGE_NAME" --track "$TRACK" --status "$STATUS")
 [[ -n "$USER_FRACTION" ]] && UPLOAD_ARGS+=(--user-fraction "$USER_FRACTION")
 [[ -n "$NOTES" ]]         && UPLOAD_ARGS+=(--release-notes "$NOTES")
@@ -236,4 +236,4 @@ fi
 
 step "全流程完成"
 ok "AAB: $AAB"
-ok "已发布到轨道：$TRACK（$STATUS）"
+ok "已发布到轨道：${TRACK}（${STATUS}）"

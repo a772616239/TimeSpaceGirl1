@@ -158,7 +158,10 @@ fi
 
 # AB 陈旧度：bundle 比资源配置表还旧 ⇒ bundle 与配置可能不同步
 CFG_MTIME=$(stat -f%m "${PROJECT_ROOT}/Assets/ManagedResources/ResConfigs/ResourcePathConfig.asset" 2>/dev/null || echo 0)
-NEWEST_AB=$(ls -t "${PROJECT_ROOT}/Assets/StreamingAssets/Android/"*.unity3d 2>/dev/null | head -1)
+# ⚠️ 必须带 `|| true`：set -o pipefail 下 `ls -t ... | head -1` 会让 head 提前退出、
+# ls 收到 SIGPIPE 返回 141，pipefail 将其视为失败，set -e 随即中止整个脚本。
+# bundle 数越多越容易触发（实测 2112 个时侥幸通过，2740 个时必现）。
+NEWEST_AB=$(ls -t "${PROJECT_ROOT}/Assets/StreamingAssets/Android/"*.unity3d 2>/dev/null | head -1 || true)
 if [[ -n "$NEWEST_AB" ]]; then
     AB_MTIME=$(stat -f%m "$NEWEST_AB" 2>/dev/null || echo 0)
     if [[ "${CFG_MTIME:-0}" -gt "${AB_MTIME:-0}" ]]; then

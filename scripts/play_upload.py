@@ -35,9 +35,11 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 try:
+    import httplib2
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
@@ -58,6 +60,27 @@ DEFAULT_SA_CANDIDATES = [
 ]
 # 允许的 release status
 VALID_STATUS = {"draft", "inProgress", "halted", "completed"}
+
+# --------------------------------------------------------------------------- #
+# 大包上传健壮性参数（2026-10-12 实测踩坑后加入）
+#
+# 根因链：
+#   1. google-auth-httplib2 构造 AuthorizedHttp 时，会给底层 httplib2.Http
+#      设 timeout=60（已实测确认 service._http.http.timeout == 60）。
+#   2. googleapiclient 的 MediaFileUpload 默认 chunksize = 100 MB。
+#   3. 421 MB 的 AAB 走本地代理（实测 ~400 KB/s）时，单块需 4 分钟以上，
+#      60 秒读超时必然先触发，抛 "TimeoutError: The read operation timed out"。
+#   4. 当时只捕获 HttpError，超时异常直接冒泡成 traceback，退出码 1，
+#      且未回滚 edit —— 留下脏状态。
+#
+# ⇒ 三处一起改：放大读超时、缩小分块、断点续传重试；并补异常回滚。
+#   可用环境变量覆盖：PLAY_UPLOAD_TIMEOUT_S / PLAY_UPLOAD_CHUNK_MB / PLAY_UPLOAD_MAX_RETRIES
+# --------------------------------------------------------------------------- #
+UPLOAD_HTTP_TIMEOUT_S = int(os.environ.get("PLAY_UPLOAD_TIMEOUT_S", "300"))
+UPLOAD_CHUNK_BYTES = int(os.environ.get("PLAY_UPLOAD_CHUNK_MB", "8")) * 1024 * 1024
+UPLOAD_MAX_RETRIES = int(os.environ.get("PLAY_UPLOAD_MAX_RETRIES", "8"))
+# 断点续传失败后值得重试的状态码（4xx 中只有 408/429 值得）
+RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
 # 这些轨道支持 changesNotSentForReview
 NON_PROD_TRACKS = {"internal", "alpha", "beta"}
 
@@ -167,6 +190,53 @@ def resolve_service_account(explicit: str | None) -> Path:
     raise SystemExit(2)  # 不可达，仅为类型收敛
 
 
+def widen_http_timeout(service, timeout_s: int) -> None:
+    """放大底层 httplib2 的读超时，并清掉已缓存连接。
+
+    google-auth-httplib2 在构造 AuthorizedHttp 时给 httplib2.Http 设了
+    timeout=60（实测 service._http.http.timeout == 60），对 100 MB 级分块
+    来说太短。httplib2 只在**建立连接时**读取 self.timeout 并把连接缓存进
+    .connections，所以必须同时清空缓存，否则复用的旧连接仍带 60s 超时。
+    """
+    targets = []
+    outer = getattr(service, "_http", None)
+    if outer is not None:
+        targets.append(outer)
+        inner = getattr(outer, "http", None)
+        if inner is not None:
+            targets.append(inner)
+    for obj in targets:
+        try:
+            obj.timeout = timeout_s
+        except Exception:  # noqa: BLE001
+            pass
+        conns = getattr(obj, "connections", None)
+        if conns is not None:
+            try:
+                conns.clear()
+            except Exception:  # noqa: BLE001
+                try:
+                    obj.connections = {}
+                except Exception:  # noqa: BLE001
+                    pass
+
+
+def is_retryable_upload_error(exc: BaseException) -> bool:
+    """判断上传中断是否值得重试（断点续传语义下重试是安全的）。"""
+    if isinstance(exc, HttpError):
+        try:
+            return int(getattr(exc.resp, "status", 0)) in RETRYABLE_HTTP_STATUS
+        except (TypeError, ValueError):
+            return False
+    # 网络层：读超时、连接重置、代理断流等（TimeoutError 是 OSError 子类）
+    if isinstance(exc, OSError):
+        return True
+    try:
+        return isinstance(exc, httplib2.HttpLib2Error)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def build_service(sa_path: Path):
     """构造 androidpublisher v3 客户端。"""
     try:
@@ -191,6 +261,11 @@ def build_service(sa_path: Path):
         service = build("androidpublisher", "v3", credentials=creds, cache_discovery=False)
     except Exception as exc:  # noqa: BLE001
         die(f"初始化 Play API 客户端失败：{exc}", 3)
+    widen_http_timeout(service, UPLOAD_HTTP_TIMEOUT_S)
+    log(
+        f"[auth] 上传参数：分块 {UPLOAD_CHUNK_BYTES // 1048576} MB / "
+        f"读超时 {UPLOAD_HTTP_TIMEOUT_S}s / 最多重试 {UPLOAD_MAX_RETRIES} 次"
+    )
     return service
 
 
@@ -388,15 +463,39 @@ def main() -> int:
 
         # ---------------- 上传 bundle ----------------
         log("")
-        log(f"[upload] 开始上传 {aab.name}（{size_mb:.2f} MB），可断点续传，请勿中断…")
-        media = MediaFileUpload(str(aab), mimetype="application/octet-stream", resumable=True)
+        log(
+            f"[upload] 开始上传 {aab.name}（{size_mb:.2f} MB），"
+            f"分块 {UPLOAD_CHUNK_BYTES // 1048576} MB，可断点续传，请勿中断…"
+        )
+        media = MediaFileUpload(
+            str(aab),
+            mimetype="application/octet-stream",
+            resumable=True,
+            chunksize=UPLOAD_CHUNK_BYTES,
+        )
         request = service.edits().bundles().upload(
             packageName=args.package, editId=edit_id, media_body=media
         )
         response = None
         last_pct = -1
+        attempt = 0
         while response is None:
-            status, response = request.next_chunk()
+            try:
+                status, response = request.next_chunk()
+            except Exception as exc:  # noqa: BLE001
+                # 断点续传语义：服务端已确认的字节保留，再次调用 next_chunk()
+                # 会从最后一个已提交偏移继续，无需重传整个文件。
+                if not is_retryable_upload_error(exc) or attempt >= UPLOAD_MAX_RETRIES:
+                    raise
+                attempt += 1
+                wait = min(2 ** attempt, 30)
+                log(
+                    f"[upload] 第 {attempt}/{UPLOAD_MAX_RETRIES} 次中断"
+                    f"（{type(exc).__name__}: {exc}），{wait}s 后从断点续传…"
+                )
+                time.sleep(wait)
+                continue
+            attempt = 0
             if status:
                 pct = int(status.progress() * 100)
                 if pct != last_pct and pct % 5 == 0:
@@ -461,6 +560,18 @@ def main() -> int:
         except HttpError:
             pass
         return 130
+    except Exception as exc:  # noqa: BLE001
+        # 网络层异常（读超时/连接断）此前不在这里，会直接冒泡成 traceback
+        # 并留下未回滚的 edit —— 2026-10-12 实测踩到，故补上兜底。
+        log("")
+        log(f"🔴 上传过程异常终止：{type(exc).__name__}: {exc}")
+        log("   若为网络超时，重跑本脚本即可（会重新发起上传，Play 侧 edit 会自动过期）。")
+        try:
+            service.edits().delete(packageName=args.package, editId=edit_id).execute()
+            log("[cleanup] 已回滚未提交的 edit。")
+        except Exception:  # noqa: BLE001
+            log("[cleanup] edit 回滚失败（大概率已过期），不影响下次重跑。")
+        return 4
 
 
 if __name__ == "__main__":

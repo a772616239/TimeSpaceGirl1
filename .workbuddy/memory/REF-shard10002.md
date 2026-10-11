@@ -1,4 +1,4 @@
-# REF：本地新区服 10002「霓虹都市」（内网穿透，2026-10-10 上线）
+# REF：本地新区服 10002「庇护所九号」（内网穿透，2026-10-10 上线）
 
 主入口记忆见 `MEMORY.md`。本文件是该新服的全部运维细节。
 
@@ -147,7 +147,43 @@ TCP 连接 `129.226.213.65:16181`（新区服唯一入口 = frps）的往返：
 - ⚠️ **`iKuuu_V2.yaml` 是订阅文件**，「更新配置」会整份覆盖 ⇒ 规则丢失。幂等补救脚本 `~/ts-shard10002/clash-direct-fix.sh {apply [--reconnect]|verify|watch}`（自动从偏好识别生效配置 + API 端口，写入前备份，热加载，verify 还会查云服来源 IP 属于 CN 还是 IKUUU）。
 - ⚠️ 两个会失效的场景：① 换成别的配置；② ClashX Pro 切到 **Global（全局）模式**（规则被绕过）。
 
+## 区服改名 霓虹都市 → 庇护所九号 + 英文翻译（2026-10-11）
+
+改的是**服务端数据**（客户端零改包即可显示新名），外加一条**客户端 i18n 登记**（英文语言包才需要）：
+
+| # | 位置 | 改动 |
+|---|---|---|
+| 1 | 生产登录库 `x1_cn_test_login.server_info._id:2.name` | `霓虹都市` → `庇护所九号`（**只 `$set{name}`**，`open_time` 等原样保留；不要用 `add-shard-10002.sh apply`，它会把 `open_time` 刷成 now） |
+| 2 | `~Lua/Common/LanguageManager.lua` | 末尾加 `AddManualTranslation("庇护所九号", "Shelter No. 9")` |
+| 3 | `LuaBytes/Common_LanguageManager_64.bytes` | 重编（1174 → 1220 B），**必须与源码成对提交** |
+| 4 | `~/ts-shard10002/*.sh` | `add-shard-10002.sh` 的 `NAME` 默认值 + 各脚本注释；`clash-direct-fix.sh` 的规则注释改成**不含区服名**（IP 永久，名字会变） |
+
+- 🔴 **区服名的 i18n 机制**：`server_info.name` 只有中文字段，客户端 `Common/functions.lua GetLanguageStrByStr(zhStr)` 拿中文串去 `languageDicStr[zhStr]` 取 `.zh/.en/.jp/.kr`（依 `GetLan()` 选），**查不到就 `LogRed("languageDicStr no find Str: …")` 并回落原文**。`languageDicStr` 由 `Language.xlsx`（17626 行，列 `id/Chinese/English/Japanese`，**无 Korean 列**）→ `~Lua/Config/Data/Language.lua` → `LanguageManager.lua InitLanguageData()` 构建；**该表里从来没有区服名条目**（`霓虹序曲`/`霓虹都市`/`庇护所` 均 0 命中）。
+  - ⇒ 加翻译**不必改 17626 行的 xlsx**（改 xlsx 要连带 `DataConfigMD5Record.asset` 的 CRC32 且会重导出覆盖手改 lua）。`LanguageManager.lua` 第 31–44 行有现成的 **`AddManualTranslation(zh, en)` 手动补充通道**（前人留的，commit `35ac53807 英语翻译`），前后各一个 entry 一行，`jp/kr` 自动回落中文。**这是新增区服名翻译的正规入口。**
+- ✅ **字节码验证方法论**（可复用）：① 先用 `git show HEAD:<bytes>` 取基线，用**未改动源码**复编一次比对 md5 —— 一致（`727fa523…`）才证明工具链可信；② 改源码后重编，把新旧字节码各 `luajit -bl` 反汇编再 diff，**唯一语义差异应为新增的 `KSTR "庇护所九号"` + `KSTR "Shelter No. 9"` + `CALL`**；③ 最后用 `loadfile("<新bytes>")()` 真机同款路径跑一遍，确认 `languageDicStr["庇护所九号"].en == "Shelter No. 9"`。
+- ⚠️ **到达真机需要客户端更新**：Editor 直接吃 `~Lua` 源码（立即生效）；真机（如 `com.Warera.timespace` 1.2.45/62）跑字节码，要么重打 APK（`docs/unity_android_build_skill.md` + `Assets/Editor/CLIBuilder.cs`），要么走热更（`BuildABs/files.unity3d` → `/www/wwwroot/rg/1/Android/version.txt`）。**未主动推热更**（会影响到该热更地址上的所有客户端）。
+- 已提交：客户端 `d9059467d`（只 add 这两个路径，未用 `git add -A`）。全库扫过——生产 Mongo、工程、服务端仓库均无 `霓虹都市` 残留。
+- ⚠️ 顺手发现（未处理）：10001「霓虹序曲」同样不在 `Language` 表里 ⇒ 英文语言包下它会显示中文，与「Shelter No. 9」并列会割裂。
+
+## 区服列表「显示 / 隐藏」开关（2026-10-11 定案，当前状态 = 已隐藏）
+
+**机制**（反汇编 `webapps/tk/WEB-INF/classes/com/ljsd/controller/GetServerListController.class` 逐条核实）：
+- 登录服按 `{channel, sub_channel, plat}` 查 `server_info`，再在 **Java 主循环里逐条判定**：
+  - `state == -1` 或 `state == 0` → `continue`（**不下发 ⇒ 客户端列表里整条消失**）★
+  - `state == 5` → `getState(serverId, onlineNum)` 动态算成 2/3/4
+  - `state == 2` → 参与「新服推荐位」竞选（取在线人数最多的那个，`recommend`）
+  - 白名单 uid / 黑名单 IP 命中 → 强制 `state=2`；黑名单 uid 命中 → 强制 `state=1`
+  - 之后还有 `server_version` 门控（见主 `MEMORY.md`）
+- **客户端 `ServerListSelectPanel` 逐条渲染、不按 state 过滤**（`Maintenance` 只让点击弹 `11132`）⇒ 想让一条记录"消失"，**只能让服务端不下发**，改 state 图标之类没用。
+- 「新服推荐位（`SetServerNew`）/ 最近登录（`SetServerRecent`）」都从 `serverList` 里反查 `GetServerInfo`，查不到就 `SetActive(false)` ⇒ **不下发即整条消失，客户端零改包**。
+
+**操作**：`~/ts-shard10002/add-shard-10002.sh hide | show`（=`state:"0"` ↔ `state:"2"`，只 `$set{state}`，保留 `name/open_time`）。
+- 实测：`hide` 后接口 `serverList` 只剩 `[{10001 霓虹序曲}]`、`recommend=null`；`show` 后回到两条。**登录服无缓存（每请求 `clear()` + 重查库）⇒ 立即生效，不用重启登录服。**
+- 隐藏**不影响服务本体**：四件套照常跑、隧道照常、`JL_TOKEN` 镜像照常、`m5_x1_game_10002` 数据与已建号不动；**已在线玩家不掉线**（登录后不再查 `server_info`）。
+- 备份：隐藏前文档存 `~/ts-shard10002/server_info_id2.hidden-backup.json`。
+- ⚠️ 别用 `apply` 来"恢复显示"——它会把 `state` 写回 `"2"`（这点对）**但也会把 `open_time` 刷成 now**（这点不对）。恢复显示请用 `show`。
+
 ## 上线状态与遗留
-隧道端到端 ESTABLISHED、406 张表加载（`file not find`=0）、区服列表返回两服（10001 霓虹序曲 / 10002 霓虹都市）、四件套已由 launchd 托管、**隧道已改直连**（frpc 出口 = 家宽 113.83.112.247）。
+隧道端到端 ESTABLISHED、406 张表加载（`file not find`=0）、四件套已由 launchd 托管、**隧道已改直连**（frpc 出口 = 家宽 113.83.112.247）。**区服列表当前只下发 10001 霓虹序曲；10002 庇护所九号已 `state="0"` 隐藏**（服务本体仍在跑，`show` 一键恢复）。
 
 遗留：① 上游 `tokenK==null` NPE；② 跨服/世界聊天在新服不可用（`ChatLogic.initWorldChat → ThriftFactory.activateObject` NPE，本地无 worldserver/chatserver）；③ 家宽断电/动态 IP 无兜底 → **适合内测，不适合公测**；④ 订阅更新会冲掉 clash DIRECT 规则（用 `clash-direct-fix.sh` 兜）。

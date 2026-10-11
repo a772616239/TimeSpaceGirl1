@@ -104,6 +104,20 @@ python3 -c "import json,os;d=json.load(open(os.path.expanduser('~/.gplay/service
 2. 环境变量 `GOOGLE_PLAY_SERVICE_ACCOUNT`
 3. `~/.gplay/service-account.json` ← 建议用这个
 
+### 1.4 本项目的实际配置（2026-10-11 落地）
+
+| 项 | 值 |
+|---|---|
+| Cloud project_id | `platinum-loop-468100-k5` |
+| service account 邮箱 | `play-publisher@platinum-loop-468100-k5.iam.gserviceaccount.com` |
+| 密钥落盘位置 | `~/.gplay/service-account.json`（`600`，仓库外） |
+| 源密钥文件 | `~/Downloads/platinum-loop-468100-k5-29f09eaebc62.json`（**验证通过后应删除**） |
+
+当前状态：**密钥有效、认证通过**，但 Play Console 侧尚未授权，接口返回
+`HTTP 403 / PERMISSION_DENIED / The caller does not have permission`。
+`PERMISSION_DENIED` 这个 status 说明 Google Play Android Developer API **已在
+Cloud 项目启用**（否则会是 `accessNotConfigured`），⇒ 只差 §1.2 的授权动作。
+
 ---
 
 ## 2. 验证管线是否通
@@ -200,6 +214,13 @@ scripts/aab_release.sh --notes "修复卡顿；优化新手引导"
 ---
 
 ## 5. 错误对照表
+
+上传脚本会解析 Play 的响应体，输出形如
+`HTTP 403 / PERMISSION_DENIED / reason=-` + `message: ...`，并直接给出诊断建议。
+**两种 403 靠 `status` 区分**：
+
+- `PERMISSION_DENIED` → API 已启用，缺的是 Play Console 授权（走 §1.2）
+- `accessNotConfigured` / `has not been used in project` → API 未启用（走 §1.1 第 2 步）
 
 | 现象 | 根因 | 解决 |
 |---|---|---|

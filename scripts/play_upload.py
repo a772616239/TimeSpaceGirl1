@@ -69,6 +69,69 @@ def log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def format_http_error(exc) -> str:
+    """把 HttpError 拆成人话：HTTP 状态 + API status + reason + message。
+
+    只取 exc.reason / str(exc) 会丢掉真正的诊断字段，403 的两种成因
+    （API 未启用 vs Play Console 未授权）在 reason 上完全不同，必须区分。
+    """
+    status = getattr(getattr(exc, "resp", None), "status", "?")
+    reason_field = ""
+    api_status = ""
+    message = ""
+    reasons: list[str] = []
+
+    content = getattr(exc, "content", None)
+    if content:
+        try:
+            body = json.loads(content.decode("utf-8", "replace"))
+            err = body.get("error", {})
+            message = err.get("message", "") or ""
+            api_status = err.get("status", "") or ""
+            for e in err.get("errors", []) or []:
+                if e.get("reason"):
+                    reasons.append(e["reason"])
+            if not reasons and err.get("details"):
+                for d in err["details"]:
+                    if d.get("reason"):
+                        reasons.append(d["reason"])
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not message:
+        message = getattr(exc, "reason", "") or str(exc)
+    reason_field = ", ".join(dict.fromkeys(reasons)) if reasons else "-"
+
+    return (
+        f"HTTP {status}"
+        + (f" / {api_status}" if api_status else "")
+        + f" / reason={reason_field}\n     message: {message}"
+    )
+
+
+def hint_for_error(text: str) -> str:
+    """按 API reason / message 给出准确的下一步动作。"""
+    low = text.lower()
+    if "accessnotconfigured" in low or "has not been used in project" in low or "is disabled" in low:
+        return (
+            "Google Play Android Developer API 在该 Cloud 项目里尚未启用。\n"
+            "   → 打开 https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com 点「启用」"
+        )
+    if "permission" in low or "forbidden" in low or "permission_denied" in low:
+        return (
+            "service account 未在 Play Console 获得发布权限（Cloud 侧建号 ≠ 能发布）。\n"
+            "   → Play Console →「用户和权限」→ 邀请新用户，填该 service account 邮箱，\n"
+            "     勾选「发布到正式版、排除设备并使用 Google Play 应用签名」\n"
+            "   → 授权后权限传播需几分钟～数小时，稍后重试\n"
+            "   详见 docs/google_play_upload_setup.md §1.2"
+        )
+    if "versioncode" in low or "already been used" in low:
+        return "versionCode 重复。用 scripts/aab_release.sh（默认 --bump）重新提号打包。"
+    if "not signed" in low or "signature" in low:
+        return "签名相关失败。确认 Play Console 已启用 Play 应用签名，且 AutoSignKeystore.cs 生效。"
+    return "详见 docs/google_play_upload_setup.md §5 错误对照表。"
+
+
 def die(msg: str, code: int = 2) -> None:
     sys.stderr.write(f"[ERROR] {msg}\n")
     sys.exit(code)
@@ -255,12 +318,11 @@ def main() -> int:
     try:
         edit = service.edits().insert(body={}, packageName=args.package).execute()
     except HttpError as exc:
-        detail = getattr(exc, "reason", "") or str(exc)
-        die(
-            "创建 edit 失败，最常见原因是 service account 未在 Play Console 授权，"
-            f"或未启用 Google Play Android Developer API。\n  原始错误：{detail}",
-            3,
-        )
+        detail = format_http_error(exc)
+        log("")
+        log(f"🔴 创建 edit 失败：{detail}")
+        log(f"   诊断：{hint_for_error(detail)}")
+        sys.exit(3)
     edit_id = edit["id"]
     log(f"[edit] editId = {edit_id}")
 
@@ -380,15 +442,10 @@ def main() -> int:
         return 0
 
     except HttpError as exc:
-        status = getattr(exc.resp, "status", "?")
-        detail = getattr(exc, "reason", "") or str(exc)
+        detail = format_http_error(exc)
         log("")
-        log(f"🔴 API 调用失败（HTTP {status}）：{detail}")
-        if str(status) == "403":
-            log("   403 通常是权限问题：确认 service account 邮箱已在 Play Console")
-            log("   → 用户和权限 中被授予「发布到正式版 / 管理测试轨道」权限。")
-        elif str(status) == "400":
-            log("   400 常见原因：versionCode 已被使用 / versionName 非法 / 应用未启用 Play App Signing。")
+        log(f"🔴 API 调用失败：{detail}")
+        log(f"   诊断：{hint_for_error(detail)}")
         try:
             service.edits().delete(packageName=args.package, editId=edit_id).execute()
             log("[cleanup] 已回滚未提交的 edit。")

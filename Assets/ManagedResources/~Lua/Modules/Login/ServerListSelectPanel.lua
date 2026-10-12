@@ -99,7 +99,7 @@ function ServerListSelectPanel:SetServerNew()
     self.newServerPart.serverItem:SetActive(not not self.context.recommend)
     if self.serverInfoNew then
         -- self.newServerPart.areaBelong.text = tonumber(string.sub(self.serverInfoNew.server_id, 0, -5)) .. GetLanguageStrById(11120)
-        self.newServerPart.serverName.text = self.serverInfoNew.name
+        self.newServerPart.serverName.text = GetServerName(self.serverInfoNew)
         self.newServerPart.serverState.sprite = Util.LoadSprite(ServerStateIconDef[self.serverInfoNew.state])
         self.newServerPart.newServerFlag:SetActive(self.serverInfoNew.isnew == 1)
         self:QuickSeverClicked(self.newServerPart.serverItem, self.serverInfoNew.server_id)
@@ -112,7 +112,7 @@ function ServerListSelectPanel:SetServerRecent()
         local serverInfo = self:GetServerInfo(self.context.lastServer.serverid)
         if serverInfo then
             -- self.recentLoginPart.areaBelong.text = tonumber(string.sub(self.context.lastServer.serverid, 0, -5)) .. GetLanguageStrById(11120)
-            self.recentLoginPart.serverName.text = GetLanguageStrByStr(serverInfo.name)
+            self.recentLoginPart.serverName.text = GetServerName(serverInfo)
             self.recentLoginPart.serverState.sprite = Util.LoadSprite(ServerStateIconDef[serverInfo.state])
             self.recentLoginPart.playerName.text = self.context.lastServer.name --.. "\t" .. self.context.lastServer.level .. GetLanguageStrById(10072)
             self.recentLoginPart.playerLv.text = "Lv" .. self.context.lastServer.level

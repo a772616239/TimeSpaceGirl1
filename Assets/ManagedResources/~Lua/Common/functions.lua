@@ -2164,6 +2164,50 @@ function GetLanguageStrByStr(zhStr)
     return zhStr
 end
 
+--[[
+ 区服名多语言取值（新增区服不再需要改客户端）
+
+ 取值优先级：
+   1) 服务端下发的分语言字段（tk/getServerList 响应里的 name_en / name_jp / name_kr）
+   2) 本地翻译表 languageDicStr（Language.xlsx + AddManualTranslation 的手动补充）
+   3) 中文原名
+
+ 服务端只需在 server_info 里写好 name / name_en / name_jp，客户端即按当前语言显示；
+ 1) 命中时不走 2)，因此不会再有 "languageDicStr no find Str" 的红字告警。
+ serverInfo 为选服接口返回的单条记录（也可传 PlayerManager.serverInfo）。
+]]--
+function GetServerName(serverInfo)
+    if serverInfo == nil then
+        return ""
+    end
+    local zhName = serverInfo.name
+    if zhName == nil or zhName == "" then
+        return ""
+    end
+    local lang = GetLan()
+    if lang == 0 then
+        -- 中文直接返回原名：避免 GetLanguageStrByStr 在中文语言下也刷红字告警
+        return zhName
+    end
+    local key
+    if lang == 1 then
+        key = "name_en"
+    elseif lang == 2 then
+        key = "name_jp"
+    elseif lang == 3 then
+        key = "name_kr"
+    end
+    if key ~= nil then
+        local value = serverInfo[key]
+        -- 只接受非空字符串：字段缺失/空串/类型异常都视为「没配」，一律回落
+        if type(value) == "string" and value ~= "" then
+            return value
+        end
+    end
+    -- 老区服没有分语言字段：退回既有翻译表（未登记会红字告警并回落中文）
+    return GetLanguageStrByStr(zhName)
+end
+
 function HasLanguageStrKey(zhStr)
     if languageDicStr then
         if languageDicStr[zhStr] then

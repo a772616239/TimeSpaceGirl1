@@ -134,16 +134,33 @@ cd TimeSpaceServer/skzc/home/java/loginserver/src
 ### 6.3 部署（🔴 需明确同意）
 
 ```bash
-./deploy-login-server.sh check                  # 只读体检：比对 md5、取接口基线
-./deploy-login-server.sh deploy --confirm       # 备份 → 上传 → 重载 → 轮询验证（失败自动回滚）
+./deploy-login-server.sh check                  # 只读体检：比对 md5、取接口基线、看 WAR mtime/重载次数
+./deploy-login-server.sh deploy --confirm       # 备份 → 上传 → touch web.xml → 等重载日志 → 验证
 ./deploy-login-server.sh rollback --confirm     # 还原
 ```
 
-- 换 class **必须重载 tk 应用**：手段是 `touch webapps/tk/WEB-INF/web.xml`（HostConfig 检测到
-  web.xml 变化 → 只重载该 context）。⚠️ **约 1~3 秒内登录请求会失败**（玩家表现为登录失败一次，重试即可）。
+#### 重载机制（本机 Tomcat 8.5.95 离线沙箱**实测**，不是推测）
+
+| 动作 | 结果 |
+|---|---|
+| 只上传新的 `.class` | ❌ **不触发重载**（`WEB-INF/classes/**` 不是被监视资源）⇒ 补丁不生效 |
+| `touch webapps/tk/WEB-INF/web.xml` | ✅ 被 `ContainerBackgroundProcessor` 发现 → `HostConfig.reload` → `context.reload()`（**只重载该应用**，不重启 Tomcat） |
+| `touch webapps/tk.war` | 🔴 `undeploy` + **从 WAR 重新解包** ⇒ **把补丁 class 覆盖回原版**。**绝对不要动** |
+
+- 所以标准动作是**两步：上传 class（必需）+ `touch web.xml`（必需）**。
+- 触发**有延迟**：后台线程按周期扫描，本机实测 `touch` 后约 **20~40s** 才打印重载日志。
+  ⇒ 🔴 **不能**拿「打接口是否 200」当重载完成判据 —— 重载发生前旧 class 照样返回 200，
+  会**假报成功**。`deploy` 已改为轮询 `catalina.out` 里的 `HostConfig.reload … [/tk]` 行
+  （只匹配 logger/方法名与 `[/tk]`，都是非本地化字串，中英文 Tomcat 通吃）。
+- 真机重载耗时：同应用**冷部署**实测 `3,809 ms`（TLD/JAR 扫描 ~2.87s + `WebContextListener`
+  /Mongo 连接池 ~0.56s）；`reload` 省掉 WAR 解包但**省不掉**这两项 ⇒ 窗口按**秒级**估计。
 - Manager 应用**没有可用账号**（`tomcat-users.xml` 全是注释样例），所以走 touch。
 - 基线 md5 `87104ceebb8898be15d3a1398354a3e4` / 补丁 md5 `d2a576bb00d5e42a6e896af93bd9d312`；
   线上既不是这两个值就说明被改过，先查清楚。
+- 沙箱实测参考：`touch web.xml` 触发的重载耗时 **17ms**（空应用）、期间持续请求
+  **1110 次全部 200**；真实 `tk` 应用因为有 JAR 扫描 + 连接池重建，窗口会明显更长。
+- ⚠️ 线上 `catalina.out` 里 `/tk` 重载次数基线为 **0** —— 这个登录服**从未热重载过**，
+  历史上都是整机重启。本次是首次使用该机制。
 
 ---
 
@@ -175,5 +192,24 @@ LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_getservername.lua 
 | 服务端已上、客户端没升 | 老逻辑读 `name` 中文（新字段被忽略），与现状一致 |
 | 客户端已升、服务端没上 | `GetServerName` 取不到分语言字段 → 回落翻译表（现状） |
 | 两边都上齐 | ✅ **新增区服只需写数据，客户端零改动** |
+
+### 8.1 为什么服务端多下发字段不会影响线上玩家
+
+1. **响应内容是超集，老记录逐字节不变。** 新字段按需下发（缺失/空串不下发），
+   `server_info` 里只有中文 `name` 的老记录，其响应体与改动前**完全一致** —— 已对**生产库**
+   只读 dry-run 验证（原版 class vs 补丁版，10001/10002 两条真实记录逐字节等价）。
+2. **客户端解析对未知字段天然免疫。** 响应经 `cjson.decode` 变成普通 Lua table，
+   之后全程**按名取值**（`server_id`/`name`/`ip`/`port`/`state`/`isnew`），
+   **没有任何 schema 校验、也没有 `pairs()` 全量遍历**（选服面板与列表项都已核对）。
+   ⇒ 多出来的 `name_en/jp/kr` 只是躺在那里的死键，不会被渲染、不会被误用。
+3. **服务端补丁对数据只读。** `putIfNotEmpty` 从 Mongo 文档读字段写进新建的响应对象，
+   **不回写 DB**；其余 Redis 调用全是读（`hgetAll`/`get`）。
+4. **没有别的消费方。** 线上访问日志里 `tk/*` 只有 5 个端点
+   （`getNotice`/`getServerList`/`userLogin`/`getUserInfo`/`registerUser`），
+   全部来自游戏客户端，没有 Web 端/第三方在解析这个接口。
+
+⇒ **唯一会给玩家带来可感知影响的是「部署那一刻重载 tk 应用」的秒级窗口**
+（见 6.3）。近 7 日实测流量峰值仅 14 次 `getServerList`/小时（最闲时段 ~8 次/小时），
+撞上秒级窗口的概率 < 1%，且失败表现为登录请求失败一次、重试即可。
 
 ⚠️ 客户端**需要升级一次**（要走新的 `GetServerName`），此后新增区服不用再出包。

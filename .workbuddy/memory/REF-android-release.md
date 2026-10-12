@@ -9,7 +9,8 @@
 - 产物落 `apks/{日期}/CLIBuild/{时间}.aab` + 同名 `.json` sidecar 记 versionCode；`apks/` 已 gitignore。`AutoSignKeystore.cs` 打包前自动注入 keystore，无需手动配。
 - **APK 打包入口**：`Assets/Editor/CLIBuilder.cs:81 BuildAndroidAPK()`（`EditorUserBuildSettings.buildAppBundle = false` ⇒ **universal APK**，本工程仅 arm64）。CLI：
   `Unity -projectpath <root> -batchmode -nographics -executeMethod CLIBuilder.BuildAndroidAPK -logFile build_log_apk_main.txt -quit`
-  产物与 AAB 同目录（`apks/<date>/CLIBuild/<HHmmss>.apk`）；v65 实测 **454MB / 2m9s / `UNITY_EXIT=0`**。
+  产物与 AAB 同目录（`apks/<date>/CLIBuild/<HHmmss>.apk`）；v66 实测 **454MB / 1m44s / `UNITY_EXIT=0`**（v65 为 2m9s）。
+  - 🔍 版本核对：`aapt dump badging <apk> | head -1` → `package: name='com.Warera.timespace' versionCode='66' versionName='1.2.47'`。
   - ⚠️ **APK 用 upload key 签名**（`beauty.keystore` / alias `xing`，证书 DN `O=EMI`，SHA-256 `8ed07291…94b0`）—— 与 Play 的 **app signing key 不是同一个**（Play App Signing 会重签 AAB）⇒ 侧载到已装 Play 版的机器上会签名冲突，**须先卸载**。
   - 签名 scheme：**仅 v2**（`v1=false` 属正常 —— AGP 在 minSdk ≥ 24 时默认关闭 v1/JAR 签名）。
   - `apks/` 在 `.gitignore:38`；APK 打包日志 `build_log_apk_main.txt` 已由通配规则 `build_log_*_main.txt` 覆盖（`6fd42bd93`）。
@@ -31,8 +32,22 @@
 - 三层根因：① `google-auth-httplib2` 硬给 httplib2 设 `timeout=60`；② `MediaFileUpload` 默认 `chunksize=100MB`；③ 走本机代理（`HTTP_PROXY=127.0.0.1:52954`，~400KB/s）单块需 4 分钟 ⇒ 必被 `TimeoutError` 打断。
 - `play_upload.py` 已内置：`widen_http_timeout()` 提到 300s **并 clear `.connections`**（httplib2 只在建连时读 timeout，不清缓存复用旧连接仍是 60s）+ `chunksize=8MB` + 断点续传重试（8 次指数退避）+ 异常回滚 edit。
 - 可覆盖：`PLAY_UPLOAD_TIMEOUT_S` / `PLAY_UPLOAD_CHUNK_MB` / `PLAY_UPLOAD_MAX_RETRIES`。421MB 实测约 8 分钟。
-- 已发版：**production v64**（2026-10-12，421MB，Firebase Unity SDK 12.10.1）；历史 v63（同日，12.8.0，含完整 bundles + Lua）、v62（2026-08-17，421MB）。
-- **v65（2026-10-12 09:00）**：421MB，含 googlesignin 依赖移除 + `libtolua.so` r28 重编。已按用户指令上传到 **production 轨道但 `status=draft`（不送审）**，Play API 实测 `production: draft v65; completed v64` ⇒ 线上正式版仍是 v64，v65 待人在 Console 手动发布。APK 同内容已另出（见上）。
+- 已发版：**production `completed v64`**（2026-10-12，421MB，Firebase Unity SDK 12.10.1）；历史 v63（同日，12.8.0，含完整 bundles + Lua）、v62（2026-08-17，421MB）。
+- **v65（2026-10-12 09:00）**：421MB，含 googlesignin 依赖移除 + `libtolua.so` r28 重编。已按用户指令上传到 **production 轨道但 `status=draft`（不送审）**。🔴 **但它有致命缺陷**：`libtolua.so` 用了 `alex4814` 的 LuaJIT 2.1.ROLLING，与字节码编码器 2.1.0-beta3 错配 ⇒ **真机启动即卡死**（详见 `2026-10-12.md` 事故节）。**已被 v66 顶掉**，不要再发布它。
+- **v66（2026-10-12 09:45）—— 当前 production 轨道上的 draft**：421MB，`versionCode 66` / `versionName 1.2.47`。
+  - 内容：`libtolua.so` 回归 **LuaJIT 2.1.0-beta3**（topameng 树）重编（`c0c9388a2`）+ `androidx.fragment 1.6.2 / activity 1.7.2`（`7cc5a3afd`）。
+  - 校验全过：门槛1 **12/12**；门槛2 `libtolua.so` = **r28**、googlesignin 不在包内；`libtolua.so` sha256 = 工程版 `b3460bf8…165c`；包内 `androidx.fragment_fragment.version = 1.6.2`、`androidx.activity_activity.version = 1.7.2`。
+  - **Play API 实测**：`production draft v66; completed v64`（`beta/alpha` 空，`internal completed v61`）⇒ 线上正式版仍是 **v64**，**v66 未送审**。
+  - 🔴 **首次上传失败于 Play 侧 HTTP 503 打在 `edits().commit()` 上**（421MB 白传）⇒ 已修 `play_upload.py`（`b1876534b`，见下节），重试即成功。
+  - APK 同内容已另出：`apks/2026-10-12/CLIBuild/093010.apk`（454MB / 1m44s，`apksigner verify` Verifies / v2、`aapt dump badging` 确认 `66 / 1.2.47`）。
+
+## 🔴 `play_upload.py` 的重试盲区：commit 一次 503 就白传整包（2026-10-12 实测踩坑 → 已修 `b1876534b`）
+- 现象：v66 上传到 production/draft，421MB 传完、Play 返回 `versionCode=66`、`tracks().update()` 也成功，但**最后 `edits().commit()` 撞上 `HTTP 503 UNAVAILABLE`** ⇒ 脚本走 except 分支回滚了未提交的 edit，轨道状态毫无变化。
+- 根因：**只有「上传分块」那一段有断点续传重试**，`tracks().update()` 与 `edits().commit()` 都是裸调用。
+- 修复：新增 `execute_with_retry(factory, label, max_retries)` —— 对 `RETRYABLE_HTTP_STATUS = {408,429,500,502,503,504}` 与网络层异常做指数退避（上限 `UPLOAD_MAX_RETRIES`）。请求对象由 factory **每次新建**（googleapiclient 的请求是一次性的，不能复用）。
+- 兜底：新增 `track_has_version(service, pkg, track, vc)` —— 503 有可能发生在服务端**已受理**之后，此时 edit 已被消费、重试 commit 会报「edit 不存在」，**不能据此判失败**；回查轨道确认版本确实挂上即判成功，避免再白传 421MB。
+- 附带订正：commit 成功后的提示语原本无条件说「会进入审核」，现改为只在 `status=completed` 时提示，`draft` 明确说明「只保存草稿，需人工在 Console 发布」。
+
 
 ## 🔴 Play edit 互斥：上传期间禁止并发调用 Play API（2026-10-12 实测）
 - 现象：v64 上传跑到 **85%** 时 `HTTP 400 / FAILED_PRECONDITION / This Edit has been deleted`，整包失败（`play_upload.py` 退出码 4）。
@@ -45,12 +60,12 @@
 - 🔑 **production 轨道上唯一的不送审姿势 = `--status draft`**：上传后只是「草稿」，**不进 Google 审核**，要人工在 Play Console 点发布才生效。
 - ⛔ `--changes-not-sent-for-review`（即 `changesNotSentForReview=true`）**只对 internal/alpha/beta 有效**，传 production 会被脚本 `die`（`play_upload.py` 内有硬校验）。
 - 🔴 `aab_release.sh` 末尾输出「Play Console 会进入审核」是 `play_upload.py` 里 `if args.track == "production"` 的**固定文案**，`status=draft` 时它**是错的**，别被误导。
-- 复核现状（只读内容，但会 `edits.insert`）：`play_upload.py --dry-run`，看 `[tracks]` 段 —— draft 与 completed 并存时形如 `production  draft v65; completed v64`。⚠️ **上传/发布进行中不要跑**（见上节 edit 互斥）。
+- 复核现状（只读内容，但会 `edits.insert`）：`play_upload.py --dry-run`，看 `[tracks]` 段 —— draft 与 completed 并存时形如 `production  draft v66; completed v64`。⚠️ **上传/发布进行中不要跑**（见上节 edit 互斥）。⚠️ 若目标是**已在轨道上**的 versionCode，dry-run 会以「版本号撞车」失败退出（预期行为，说明号确实上去了）。
 - 完整命令：`scripts/aab_release.sh --skip-build --aab <path>.aab --track production --status draft --yes`
 
 ## Play 16KB 合规巡检（2026-10-12 起）
 - 工具 `scripts/play_16kb_watch.py`（轨道现状 + 两层取证 + diff + 邮件）；定时任务 id `ea56e5de-abc2-45c2-abb9-401505a65a96`（每 3 天 10:00）。
-- 🔴 报告必须区分「Play 点名」与「仅 NDK 阈值偏旧」：`NDK < r28` ≠ 被点名。v65 实测 < r28 有 11 个，Play 一个都没点名；Unity 自出库（il2cpp/unity/main r23b）与 crashlytics（r25b）从不被点名。
+- 🔴 报告必须区分「Play 点名」与「仅 NDK 阈值偏旧」：`NDK < r28` ≠ 被点名。v66 实测 < r28 有 **11 个**，Play 一个都没点名；Unity 自出库（il2cpp/unity/main r23b）与 crashlytics（r25b）从不被点名。
 - 🔴 **点名是按【库文件名】、不看 NDK 版本阈值**。文件名含版本号的库换版本 = 换名字 ⇒ Firebase `12.8.0 → 12.10.1` 就是把告警从 5 个降到 2 个的原因（这些库实测仍 r21e）。⚠️ 所以 `PLAY_FLAGGED_PREFIXES` 只能匹配**被点名过的那个版本名**（`libFirebaseCppApp-12_8_0`），不能用 `libFirebaseCppApp` 前缀，否则 12_10_1 会被误报成「仍待上游」（已在 `6bc70fbec` 修正）。
 - 🔴 Play Console 的 16KB 告警**无公开 API**，只能人工看「发布 → App Bundle 浏览器 → 选择版本 → 支持的页大小」。
 
@@ -146,13 +161,13 @@ base/lib/arm64-v8a/libtolua.so
 - 本项目**无 HybridCLR**（无 `*.dll.bytes`）⇒ 升级 Firebase 时不需要重生成 AOT 补充元数据。
 - SDK 可下载：`https://dl.google.com/firebase/sdk/unity/firebase_unity_sdk_12.10.1.zip`（HTTP 200 实测可达）。
 - 🔴 **`libnative-googlesignin.so` = 活代码，不是死插件**（⚠️ 2026-10-12 曾误判为「零引用可整目录删」，已更正）：
-  - 来源 `Assets/GoogleSignIn/Editor/m2repository/com/google/signin/google-signin-support/1.0.4/google-signin-support-1.0.4.aar` → `jni/arm64-v8a/libnative-googlesignin.so`（284752B，r17/GCC）。该 aar 的 `.meta` 虽写 `Android.enabled: 0`，但包里确实有该 so（待查 Unity 实际提取路径）。
+  - 来源 `Assets/GoogleSignIn/Editor/m2repository/com/google/signin/google-signin-support/1.0.4/google-signin-support-1.0.4.aar` → `jni/arm64-v8a/libnative-googlesignin.so`（284752B，r17/GCC）。🔑 **它进包的真实通道 = gradle `implementation` 依赖**（EDM4U 生成的 `mainTemplate.gradle` 那一行），**不是**插件 `.meta` 的 `Android.enabled: 0`（那个不生效）—— 该 aar 的 `.meta` 写了 `Android.enabled: 0` 也照样进包。
   - 调用链（活）：`~Lua/Modules/Login/LoginPanel.lua:109` `Util.AddClick(this.googlebtn, this.OnGoogleLogin)` → `OnGoogleLogin` 置 `LoginPlatform=1`（:1166）→ `ggSignMgr:LoginByPlatformType(1,…)`（:1243）→ `GoogleSignMgr.cs:30` `new SigninSampleScript()` → `Assets/GoogleSignIn/` 插件。
   - ⇒ **不能只删目录**：`Assets/Scripts/Google/SigninSampleScript.cs` 与 `GoogleSignMgr.cs` 依赖 plugin 类型，删插件会**编译失败**；且会**移除 Google 账号登录**（另一条 `platformId==2` 走 `GooglePlayGamesLogin`，按钮是主登录键 `btnLogin`）。要清此库须同时改 Lua（**重编 LuaBytes**）+ C# + 删 `Assets/GoogleSignIn/` + `Assets/Plugins/iOS/GoogleSignIn/`。
   - ✅ **2026-10-12 实际解法（比上面这条轻得多，commit `72502790b`）**：不用动 Lua、也不用删插件目录 —— 只要**断掉 gradle 那条 `implementation`**（`mainTemplate.gradle` + `GoogleSignInSupportDependencies.xml` + `AndroidResolverDependencies.xml`），该 so 就不进包了。再把 `GoogleSignMgr.cs` 的 Android 分支改走 `GooglePlayGamesLogin`（**保留 `LoginPlatform=1` 与 `"go"` 前缀** ⇒ Lua 与老玩家凭据零影响）。`Assets/GoogleSignIn/` 目录保留（iOS 路径与编辑器内 `SigninSampleScript` 仍在用）。
-- **`libtolua.so`** 来源 = `Assets/Plugins/Android/libs/arm64-v8a/libtolua.so`（裸 so，ToLua# 框架 native 侧，`4d1210554 cathe` 引入）。C# 侧在 `Assets/ToLua/Core/{ToLua.cs,LuaDLL.cs}`。❗**仓库内无 tolua C 源码**（无 `tolua*.c/h`）⇒ 要靠上游 `alex4814/tolua_runtime` 重编，工具链已固化在 `scripts/libtolua16k/`。
+- **`libtolua.so`** 来源 = `Assets/Plugins/Android/libs/arm64-v8a/libtolua.so`（裸 so，ToLua# 框架 native 侧，`4d1210554 cathe` 引入）。C# 侧在 `Assets/ToLua/Core/{ToLua.cs,LuaDLL.cs}`。❗**仓库内无 tolua C 源码** ⇒ 要靠上游 **`topameng/tolua_runtime`**（**不是** alex4814！）重编，工具链已固化在 `scripts/libtolua16k/`。🔴 原库就是 topameng 仓库的预编译产物（sha256 完全一致），**LuaJIT 必须是 2.1.0-beta3**，换版本会导致真机卡死。
 
-## 🔴 v65 修复：清掉最后 2 个被点名的库（2026-10-12）
+## 🔴 清掉最后 2 个被点名的库（2026-10-12，最终落在 v66）
 
 被 Play 点名的最后 2 个库都处理完了。**核心认知**：`libtolua.so` 这条不只是一个告警，
 `LJ_PAGESIZE` 不改在 16KB 设备上是**真崩溃**。
@@ -169,43 +184,48 @@ base/lib/arm64-v8a/libtolua.so
   `PlayerPrefs.lastLoginPlatform` 语义不变、老玩家已存凭据照常走 `RequestUser`。
 - ⚠️ 更正旧结论：该 so **不是**「零引用死插件」（见下节调用链），直接删目录会编译失败。
 
-### `libtolua.so`（commit `2f4e7310f` + `291ee8644`）
+### `libtolua.so` —— ⚠️ 第一版方案已作废，见下方「v66 重编」
 `libtolua.so` = 一整个 ToLua# 运行时（LuaJIT + tolua + cjson + lpeg + pb(protobuf)
 + luasocket + struct + bit 打成一个 .so），仓库无源码。
-- 🔴 **真因是 LuaJIT 的 `LJ_PAGESIZE`**：`luajit-2.1/src/lj_arch.h:647` 默认 `4096`。
+- 🔴 **真因是 LuaJIT 的 `LJ_PAGESIZE`**：`luajit-2.1/src/lj_arch.h` 默认 `4096`。
   JIT 的 mcode 分配器按该值对齐后调 `mprotect`，在 16KB 页设备上地址/长度不满足内核
-  要求 ⇒ **JIT 代码页无法生效 → 崩溃**。必须 `-DLJ_PAGESIZE=16384`（在 4KB 设备上同样
-  满足，只多占一点 mcode 内存）。
-- 上游 `alex4814/tolua_runtime@71eec6d` 自身有疏漏：`PROTOBUF_SRC` 定义了却没进
-  `add_library` 的源列表、`LUASOCKET_SRC` 漏了 `mime.c` ⇒ 不补会少 `luaopen_pb` /
-  `luaopen_mime_core`，Lua 侧 `require` 直接失败。
-- 工具链 `scripts/libtolua16k/`：`build.sh`（克隆→打补丁→编译→校验→可选安装，只在
-  全部校验通过后才 `--install` 并自动备份旧库）、`verify.py`（6 项校验）、
-  `apply-16k.patch`（相对上游的全部改动）、`README.md`。
-- NDK 固定 `ANDROID_PLATFORM=24`（= `AndroidMinSdkVersion`）；上游默认 21 也能过，
-  但两者产物会不同（21 用 legacy `__sF`，24 用 `stdin/stdout/stderr/__register_atfork`）
-  ⇒ 统一取 24，保证「跑一遍复现脚本 = 得到线上那个二进制」。
-- 新旧库**导出符号**比对：`luaopen_*` 18/18 全在（另多一个 `luaopen_string_buffer`）、
-  `tolua_*` 101/101、`lua_/luaL_` 除 `lua_getexdata`/`lua_setexdata` 全在。LuaJIT 版本
-  符号由 `luaJIT_version_2_1_0_beta3` 变 `luaJIT_version_2_1_1736781742`（= 2.1.ROLLING
-  2025-01），C# 不引用该符号。未定义符号只来自 libc/libm/libdl（NEEDED 原生多一个
-  `libstdc++.so`，新版已去掉）。
-- ⚠️ **非问题**：旧库导出而新库不再导出的 **110 个 `T` 符号**全是 luasocket / LuaJIT
-  内部实现（`socket_*` / `opt_*` / `auxiliar_*` / `timeout_*` / `buffer_*` / `inet_*` …）。
-  它们仍以 **`t`（local）**链入本库，通过 `luaL_Reg` 函数指针表注册给 Lua、不走动态符号
-  查找；已 grep 确认 C#(`*.cs`) 与 Lua(`~Lua/`) 全仓零引用 —— 属正常可见性收紧，不是功能缺失。
-- 体积 667,968 → 788,440 字节（stripped）；`sha256 9d4ebef7…451d`。**只替换 arm64-v8a**
-  （`AndroidTargetArchitectures: 2` ⇒ 只出 arm64；`armeabi-v7a` / `x86` 目录仍在仓库里但不会进包）。
-- 备份 `~/ts-tolua-backup-20261012/`（`libtolua.arm64-v8a.old.so` = 原始 r17 时代产物、
-  `libtolua.arm64-v8a.api21.so` = 中间产物）。
+  要求 ⇒ **JIT 代码页无法生效 → 崩溃**。必须改成 `16384`（在 4KB 设备上同样满足，
+  只多占一点 mcode 内存）。
+- 🔴 **另一条重要更正**：原库 `PT_LOAD Align = 0x10000`（**64KB**），**本来就远超 16KB**
+  ⇒ **门槛1（硬对齐）从来不是 `libtolua.so` 的问题**。要修的只有 ①Play 点名 ②`LJ_PAGESIZE`
+  的 JIT 运行时隐患 —— **这两件事都不需要动 LuaJIT 版本**。
+- ❌ **已作废的第一版**（`2f4e7310f` / `291ee8644`）：用了 `alex4814/tolua_runtime`
+  （LuaJIT **2.1.ROLLING**）⇒ **运行时版本与字节码编码器错配，真机启动即卡死**。
+  详见 `2026-10-12.md` 的事故节与 `scripts/libtolua16k/README.md` 的「血泪教训」。
+- ⚠️ alex4814 那棵树自身也有疏漏（`PROTOBUF_SRC` 没进 `add_library`、`LUASOCKET_SRC`
+  漏 `mime.c` ⇒ 少 `luaopen_pb` / `luaopen_mime_core`）—— 但 topameng 树**没有这个问题**，
+  其 `Android.mk` 源文件清单本来就是齐的，所以换回 topameng 后补丁缩为「改 1 文件 1 行」。
 
-### v65 产物与复核
-- AAB：`apks/2026-10-12/CLIBuild/085541.aab`（421.2 MB，`versionCode 65` / `versionName 1.2.46`）。
-- versionName 顺手从 `1.2.45` 提到 `1.2.46` —— 它自 `b2a0037a9`（2026-08-17）起没动过，
+### ✅ v66 的 `libtolua.so` 重编（commit `c0c9388a2`，正确方案）
+- **上游 = `topameng/tolua_runtime`（pin `654e0da6`）**，LuaJIT **2.1.0-beta3**。
+  🔑 **判定依据**：该仓库预编译的 `Plugins/Android/libs/arm64-v8a/libtolua.so` 与本工程
+  原库 **sha256 完全相同** = `176274e75a380e97c209deacc63e372a3c9adc066d6ff59c671e62ebeb376a2f`
+  （667,968 字节）⇒ 原库就是它出的，**不是** alex4814。
+- 改动仅 1 处：`luajit-2.1/src/lj_arch.h` 的 `LJ_PAGESIZE` 4096 → 16384。
+- 构建：NDK r28 / API 24（`aarch64-linux-android24-clang`）+ `-Wl,-z,max-page-size=16384`；
+  源文件清单严格照抄上游 `android/jni/Android.mk`（不含 `bit.c`/`serial.c`/`unix.c`）。
+- 校验**与旧库逐项对齐**：LuaJIT 版本 = `2.1.0-beta3`；动态导出 **T 符号旧 380 / 新 380，
+  缺失 0、新增 0**；`luaopen_*` 18/18 完全一致；门槛1 4 个 `PT_LOAD p_align` 全 = 16384；
+  门槛2 `.note.android.ident` = r28。
+- 体积 667,968 → **736,544 字节**（stripped）；`sha256 b3460bf8424bded12eceb3efb887f8adad8bde6e88b9dea54e483a78ed12165c`。
+- 工具链 `scripts/libtolua16k/` 已推倒重写（`759542803`）：`build.sh` / `verify.py`
+  （**4 项硬性**：①`p_align≥16384` ②NDK≥r28 ③导出符号对 `ref/original-symbols.txt` 380 个
+  零缺失 ④**.so 内 LuaJIT 版本 == `LuaEncoder` 版本**）/ `apply-16k.patch` / `ref/` / `README.md`。
+  🔑 **③④ 两道闸门正是为防本次事故**；用事故版（ROLLING）回测 → **2/4，被 ③④ 精确拦下**。
+- **LuaJIT Makefile 两个坑**：① `STATIC_CC`/`TARGET_LD` 是 `$(CROSS)$(CC)` 拼接 ⇒ `CROSS`
+  必须留空、`CC` 给完整路径并逐项覆盖 `TARGET_LD`/`TARGET_AR`/`TARGET_STRIP`；
+  ② `HOST_CC = $(CC)` ⇒ 必须显式设本机 clang，否则 `buildvm` 被 Android clang 编、跑不了。
+- 备份 `~/ts-tolua-backup-20261012/`：`libtolua.arm64-v8a.old.so`（原始 beta3 产物）、
+  `libtolua.arm64-v8a.api21.so`、`libtolua.arm64-v8a.rolling.so`（**事故版，勿用**）。
+
+### v65 产物（🔴 已作废，仅存历史）
+- AAB `apks/2026-10-12/CLIBuild/085541.aab`（421.2 MB，`versionCode 65` / `versionName 1.2.46`）。
+  versionName 从 `1.2.45` 提到 `1.2.46` —— 它自 `b2a0037a9`（2026-08-17）起没动过，
   导致 v62/v63/v64 在 Play 告警里都显示「1.2.45」、无法区分。
-- 复核结果：门槛1 = **12/12 全 `p_align=16384`、0 不合规**；门槛2 = `libtolua.so` 已 **r28**、
-  `libnative-googlesignin.so` **已从包内消失**（arm64 库由 13 降到 12）；AAB 内 `libtolua.so`
-  的 sha256 与工程内一致。
-- 剩下 `libcrashlytics ×4 = r25b`、`libdatastore_shared_counter = r25c`、
-  `libunity/libil2cpp/libmain = r23b`、Firebase ×3 = `r21e` —— 这些**从未被 Play 点名**。
-- 🔴 **未上传**。上传 production + `status=completed` = 提交审核，必须用户确认。
+- googlesignin 部分**有效**（该修复保留）；`libtolua.so` 部分**因版本错配作废**。
+- 🔴 **这个包是真机卡死的，不要再发布**；其 Play `draft` 已被 v66 顶掉。

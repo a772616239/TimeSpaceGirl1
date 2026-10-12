@@ -73,7 +73,7 @@ while [[ $# -gt 0 ]]; do
         --allow-no-lua)   ALLOW_NO_LUA=1; shift ;;
         --yes|-y)         ASSUME_YES=1; shift ;;
         -h|--help)        sed -n '2,31p' "$0"; exit 0 ;;
-        *) echo "未知参数：$1（用 --help 查看用法）" >&2; exit 2 ;;
+        *) echo "未知参数：${1}（用 --help 查看用法）" >&2; exit 2 ;;
     esac
 done
 

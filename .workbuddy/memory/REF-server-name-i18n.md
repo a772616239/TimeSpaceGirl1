@@ -24,6 +24,29 @@
 
 三个新字段**可缺省**：缺失或空串 ⇒ 登录服不下发 ⇒ 客户端回落翻译表 ⇒ 再回落中文原名。
 
+## 已登记数据（2026-10-12 写入生产 `x1_cn_test_login`）
+
+| `_id` | `server_id` | `name` | `name_en` | `name_jp` | `name_kr` | `state` |
+|---|---|---|---|---|---|---|
+| 1 | 10001 | 霓虹序曲 | `Neon Overture` | `ネオン序曲` | — | 2 |
+| 2 | 10002 | 庇护所九号 | `Shelter No. 9` | `シェルター9号` | — | 2 |
+
+- 命名口径：`Neon` 对齐游戏英文品牌 *Neon Valkyries*；「序曲」= *overture* / 日文 `序曲`（保留汉字）。
+  10002 英文沿用早前客户端 `AddManualTranslation` 已登记的 `Shelter No. 9`，两处一致。
+- `name_kr` 未填（用户本次只要英/日）⇒ 韩文包回落。补丁已支持该字段，需要时补一条 `$set` 即可。
+- 写入方式：只 `$set` 这两个键，其它字段不动；备份
+  `~/server-info-backups/server_info_id1_id2-before-i18n-20261012.json`（云服）+ `src/dry-run/backup/`（工程）；
+  回滚 = `$unset{name_en:"",name_jp:""}`。
+- ⚠️ **`x1_cn_test_login.server_info` 共 17 条**：`_id:1/2` 是真区服，`_id:3~17` 是 15 条
+  `server_version:1` 的**全 null 占位**（不匹配 `{channel:"pc",sub_channel:"1",plat:"android"}` ⇒ 永不参与下发）。
+  ⇒ 用 `find()` 核对时别被条数吓到，也别去"清理"它们（它们是 `shenheNum` 门控的既有形状）。
+- 🔴 **只有登录服读这个集合**：生产游戏服 core 库是 `m5_x1_login`，**没有** `server_info`
+  （REF-shard10002 记过：core 指向带 `server_info` 的库会让 `MongoUtil.init()` 遍历 NPE）
+  ⇒ 往 `x1_cn_test_login.server_info` 加字段**碰不到游戏服**。
+- ✅ **数据先写是安全的**：补丁未部署时线上 controller **不读**这两个字段，线上响应逐字节不变（实测）。
+- **端到端验证**：写完后跑 `dry-run/run-dry-run.sh prod` ⇒ 补丁版响应里 10001/10002 各新增
+  `name_en`/`name_jp`，原版无变化，`compare.py` 判定「除 name_* 外无任何差异」。
+
 ## 服务端：登录服 `tk/getServerList`
 
 - 类：`webapps/tk/WEB-INF/classes/com/ljsd/controller/GetServerListController.class`
@@ -133,7 +156,8 @@
 本次涉及 4 个：`Common_functions`、`Modules_Login_{LoginPanel,ServerListItem,ServerListSelectPanel}`。
 
 行为验证：`scripts/lua-tests/test_getservername.lua`（`loadfile` 直接吃字节码，真机同路径，
-20 个断言；桩必须提供 `PlayerPrefs`，因为 `GetCurLanguage` 用 upvalue 缓存语言，换个语言要重新 load）。
+**28 个断言**：含「真实生产数据」一节，逐条抄生产响应体验证 zh/en/jp/kr 四种语言；桩必须提供
+`PlayerPrefs`，因为 `GetCurLanguage` 用 upvalue 缓存语言，换个语言要重新 load）。
 
 ## 时序 / 兼容性
 

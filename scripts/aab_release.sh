@@ -82,11 +82,21 @@ ok "Unity 编辑器就位 (2022.3.62f2c1)"
 [[ -f "${PROJECT_ROOT}/Assets/Editor/CLIBuilder.cs" ]] || fail "缺少 Assets/Editor/CLIBuilder.cs"
 ok "CLIBuilder.cs 就位"
 
-if pgrep -f "Unity.app/Contents/MacOS/Unity" >/dev/null 2>&1; then
-    fail "检测到 Unity 编辑器正在运行，会锁定工程导致 batchmode 失败。
-     请先关闭 GUI Unity：osascript -e 'tell application \"Unity\" to quit'"
+# ⚠️ 必须限定到**本工程**：本机常年有其它项目（如 ~/Documents/main_android/Unity）在跑
+# Unity batchmode，旧版无条件 pgrep 会把它误判成「本工程被 GUI Unity 占用」而中止发版。
+# 只认命令行里带 `-projectpath <本工程>` 的 Unity 进程。
+UNITY_LIST=$(pgrep -fl "Unity.app/Contents/MacOS/Unity" 2>/dev/null || true)
+if printf '%s\n' "$UNITY_LIST" | grep -qF -- "-projectpath ${PROJECT_ROOT}"; then
+    fail "检测到 Unity 编辑器正在运行（且锁定了本工程），会导致 batchmode 失败。
+     请先关闭 GUI Unity：osascript -e 'tell application \"Unity\" to quit'
+     命中进程：
+$(printf '%s\n' "$UNITY_LIST" | grep -F -- "-projectpath ${PROJECT_ROOT}")"
 fi
-ok "无 Unity 编辑器占用工程"
+if [[ -n "$UNITY_LIST" ]]; then
+    ok "无本工程 Unity 占用（其它项目 ${UNITY_LIST%%$'\n'*}… 的 Unity 已忽略）"
+else
+    ok "无 Unity 编辑器占用工程"
+fi
 
 # GUI Unity 可能重置这些模板，打包前必须确认
 for f in mainTemplate.gradle launcherTemplate.gradle gradleTemplate.properties; do
@@ -288,6 +298,20 @@ if ! "$VENV_PY" scripts/verify_aab_release_config.py "$AAB" --expect minimal; th
     fail "包内配置不是期望口径（isOpenGM 仍为 1？）—— 拒绝上传。构建日志：$BUILD_LOG"
 fi
 ok "包内 isOpenGM=0，出包配置核验通过"
+
+# --------------------------------------------------------------------------- #
+# 4.6 包内 native 库 16KB / NDK 体检
+#
+# 背景（2026-10-12）：回退 Google Sign-In 时带回了 google-signin-support:1.0.4 里的
+# libnative-googlesignin.so —— 它是 NDK r17 编的，被 Play 报「某些库使用旧版 Android NDK」。
+# 该库 p_align=0x10000 本来满足硬门槛，所以旧检查（只看对齐）拦不住 ⇒ 增设本步。
+# 已用 NDK r28c 重编该库（scripts/ 外的复现脚本见记忆），此处只做**产物侧**复核。
+# --------------------------------------------------------------------------- #
+step "包内 native 库 16KB / NDK 体检"
+if ! "$VENV_PY" scripts/verify_aab_native_16kb.py "$AAB"; then
+    fail "包内存在未达 16KB 对齐的 64 位 native 库（Play 硬门槛不过）—— 拒绝上传"
+fi
+ok "16KB 硬门槛通过（上面 ⚠️ 列表为 Play 软告警候选，需人工确认）"
 
 # --------------------------------------------------------------------------- #
 # 5. 上传

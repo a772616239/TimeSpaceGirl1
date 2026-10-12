@@ -2253,6 +2253,21 @@ function SecTorPlayAnimByScroll(scroll,_scale)
     end)
 end
 
+-- 立绘资源名：Load / UnLoad 必须取到同一个名字，否则对象池对不上（baiqi 改名特例只写在 Load 里过）
+function GetHeroliveName(_heroConfig)
+    if _heroConfig == nil then
+        return nil
+    end
+    local artResourcesConfig = ConfigManager.GetConfig(ConfigName.ArtResourcesConfig)
+    local liveConfig = artResourcesConfig[_heroConfig.RoleImage]
+    if liveConfig == nil or liveConfig.Name == nil then
+        return nil
+    end
+    local liveName = liveConfig.Name
+    if liveName == "lihui_baiqi" then liveName = "lihui_baiqi_01" end
+    return liveName
+end
+
 -- 加载立绘
 function LoadHerolive(_heroConfig, _objPoint)
     local artResourcesConfig = ConfigManager.GetConfig(ConfigName.ArtResourcesConfig)
@@ -2261,8 +2276,10 @@ function LoadHerolive(_heroConfig, _objPoint)
     end
     if _heroConfig.RoleImage ~= 0 then
         --动态加载立绘
-        local liveName = artResourcesConfig[_heroConfig.RoleImage].Name
-        if liveName == "lihui_baiqi" then liveName = "lihui_baiqi_01" end
+        local liveName = GetHeroliveName(_heroConfig)
+        if liveName == nil then
+            return nil
+        end
         local testLive = poolManager:LoadLive(liveName, _objPoint.transform, Vector3.one * _heroConfig.Scale, Vector3.New(_heroConfig.Position[1], _heroConfig.Position[2], 0))
         local SkeletonGraphic = testLive:GetComponent("SkeletonGraphic")
         return testLive
@@ -2280,11 +2297,19 @@ function LoadHerolive(_heroConfig, _objPoint)
 end
 --卸载立绘
 function UnLoadHerolive(_heroConfig,_obj)
-    local artResourcesConfig = ConfigManager.GetConfig(ConfigName.ArtResourcesConfig)
-    if _heroConfig~=nil and _heroConfig.RoleImage ~= 0 then
-        poolManager:UnLoadLive(artResourcesConfig[_heroConfig.RoleImage].Name, _obj)
+    -- _obj 可能已被 Destroy，此时 Lua 里非 nil 但 Unity 侧是 fake-null，必须挡掉
+    if _heroConfig == nil or _obj == nil or IsNull(_obj) then
+        return
+    end
+    if _heroConfig.RoleImage ~= 0 then
+        local liveName = GetHeroliveName(_heroConfig)
+        if liveName ~= nil then
+            poolManager:UnLoadLive(liveName, _obj)
+        end
     else 
-        poolManager:UnLoadAsset("TestImg", _obj, PoolManager.AssetType.gameObject)
+        -- 原为 PoolManager.AssetType.gameObject（小写 g）→ 值为 nil，
+        -- 导致静态立绘永远走不到回池分支，随后被 Util.ClearChild 直接 DestroyImmediate
+        poolManager:UnLoadAsset("TestImg", _obj, PoolManager.AssetType.GameObject)
     end
 end
 

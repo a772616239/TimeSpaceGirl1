@@ -21,3 +21,27 @@
 - 🔴 **`conf/` 绝不能整目录覆盖**（混着 hotfix.json / lua-hotfix.json / c_database_version.json / plat-configure.json + `checkout_db|mem*.txt` 玩家结算落盘）。`package.sh` 默认排除，需 `--include-conf`。
 - `assets/` 会进包：线上 913MB 中 889MB 是运行期日志（`assets/log/*`），打包已剔；真实差异仅 `assets/conf/server/HeroRankupGroup.txt`。
 - 部署五步（不可逆序）：备份 → 停服（`pkill -f gameSrv-1.0.0.jar`，等 30s 确认 16081 释放）→ 上传 → 解压 → `RESTART-GAMESERVER.sh`。
+
+## 登录服（Tomcat 8.5.95）热重载 —— 与 gameserver 完全不同
+
+> 上面的「必须停服重启」只适用于 gameserver。**登录服是 Tomcat，可以单应用热重载**。
+> 2026-10-12 用本机完整 Tomcat 8.5.95 沙箱实测确认（沙箱 = 复制 `apache-tomcat-8.5.95` 到
+> `/tmp`，改端口 18080，放一个 dummy.war，然后观察 `HostConfig` 行为）。
+
+| 动作 | 结果 |
+|---|---|
+| 只改/上传 `webapps/<app>/WEB-INF/classes/**` | ❌ **不触发重载** |
+| `touch webapps/<app>/WEB-INF/web.xml` | ✅ `HostConfig.reload` → `context.reload()`，**只重载该应用**，不重新解包 WAR ⇒ 手工放进去的 class 保留。空应用耗时 17ms |
+| `touch webapps/<app>.war` | 🔴 `undeploy` + **重新解包** ⇒ 覆盖 `WEB-INF/` 下的手工改动 |
+
+- 🔴 **重载有延迟**：后台线程按周期扫描，实测 `touch` 后约 **20~40s** 才落日志。
+  ⇒ 「打接口返回 200」**不能**用来判断重载是否完成（旧 class 期间也是 200）。正确判据 =
+  轮询 `logs/catalina.out` 里的 `org.apache.catalina.startup.HostConfig.reload` + `[/<app>]`
+  （这串**不是本地化字符串**，中文 Tomcat 同样匹配）。
+- 代码依据：`lib/catalina.jar` 的 `HostConfig.checkResources()` 分两条通路 ——
+  `redeployResources`（`.war`/`context.xml`/`conf/context.xml` ⇒ 触发 undeploy+重新部署）与
+  `reloadResources`（`context.findWatchedResources()` ⇒ 只 `context.reload()`）。web.xml 落在后者。
+- 🔴 线上该登录服 `catalina.out` 里 `/tk` 重载次数基线 = **0**：历史上都是整机重启，从未热重载。
+- 登录服整机重启代价参考：`tk` 冷部署实测 3.5~6.2s（TLD/JAR 扫描 ~2.9s + Mongo 连接池 ~0.6s），
+  全站 `Server startup in 7605 ms`。
+- 具体到区服名补丁的用法见 **`REF-server-name-i18n.md`** 的「部署」节。

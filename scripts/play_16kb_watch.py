@@ -54,21 +54,33 @@ STATE_FILE = os.path.join(BASE_DIR, ".play16kb_state.json")
 
 # 已知需上游修复的库（供报告做上下文解释，不参与判定）
 KNOWN_FIX_NOTES = {
-    "libnative-googlesignin.so": "Google Sign-In 插件 v1.0.4（r17/GCC）；本工程代码零引用，可整目录移除",
-    "libtolua.so": "tolua 开源，仓库内无源码；需用 NDK r28 自行重编",
-    "libFirebaseCppApp": "Firebase 官方预编译仍 r21e（12.8.0/12.10.1 实测一致），只能等上游",
+    "libnative-googlesignin.so": "✅ 2026-10-12 已修复：移除 com.google.signin:google-signin-support:1.0.4 依赖，库已不再进包（commit 72502790b）",
+    "libtolua.so": "✅ 2026-10-12 已修复：NDK r28 重编 + LJ_PAGESIZE=16384（commit 2f4e7310f，见 scripts/libtolua16k/）",
+    "libFirebaseCppApp-12_8_0": "Firebase 官方预编译 r21e；已升到 12.10.1 换掉文件名，Play 不再点名（仍 r21e 但不在清单内）",
 }
 
 # 🔴 Play 的「旧版 NDK 编译」告警按【已知问题库清单】点名，**不是**按 NDK 版本阈值。
 #    因此 NDK < r28 ≠ 一定被点名：Unity 自出库（il2cpp/unity/main, r23b）与 crashlytics（r25b）
 #    虽 < r28 却从未被点名；而被点名的 5 个全是第三方预编译/自编库。
+#
+# 2026-10-12 v64 实测修正（重要）：
+#   Play 是按【库文件名】点名，文件名含版本号的库**换版本就等于换名字**。
+#   - Firebase 12.8.0 → 12.10.1 后，`libFirebaseCppApp-12_8_0.so` 不再存在，
+#     Play 告警从 5 个降到 2 个（Firebase ×3 全部消失，尽管实测仍 r21e）。
+#   ⇒ 所以这里只盯 **12_8_0** 这个旧名字，不能按 `libFirebaseCppApp` 前缀匹配，
+#     否则 12_10_1 会被误判成「仍待上游」。
+#
+# 保留下方集合 = 「历史被 Play 点名过、需盯回归」的库。
+# 报告里 verdict == "ok" 的会显示「✅ 已达标」：
+#   - libnative-googlesignin.so  已随 signin-support 1.0.4 依赖移除而彻底消失（commit 72502790b）
+#   - libtolua.so                已用 NDK r28 重编（commit 2f4e7310f，见 scripts/libtolua16k/）
 PLAY_FLAGGED = {
     "libFirebaseCppAnalytics.so",
     "libFirebaseCppCrashlytics.so",
     "libnative-googlesignin.so",
     "libtolua.so",
 }
-PLAY_FLAGGED_PREFIXES = ("libFirebaseCppApp",)  # 名称含版本号（12_8_0 / 12_10_1 …）
+PLAY_FLAGGED_PREFIXES = ("libFirebaseCppApp-12_8_0",)  # 只匹配被点名过的那个版本名
 
 
 def is_play_flagged(name: str) -> bool:
@@ -348,10 +360,10 @@ def build_report(aab, sidecar, vc, tracks, tracks_err, elf_summary, elf_ok, elf_
 
     L.append("五、⚠️ 需人工核对（Play Console 无公开 API）")
     L.append("    路径: Play Console → 发布 → App Bundle 浏览器 → 选择版本 → 「支持的页大小」")
-    L.append("    说明: 该告警按 Google【已知问题库清单】点名，不随 NDK 版本阈值变化。")
-    L.append("          本次把 Firebase 升到 12.10.1 修的是 issue #1259 真机启动崩溃，")
-    L.append("          **不会**让这条告警消失（Firebase 预编译库实测仍 r21e）。")
-    L.append("    时限: 门槛2 在 2027-02-01 前只是警告、不阻断发布；门槛1 已达标。")
+    L.append("    说明: 该告警按 Google【已知问题库清单】点名，**按库文件名**，不随 NDK 版本阈值变化。")
+    L.append("          v64 实测: Firebase 12.8.0 → 12.10.1 后文件名变了，告警 5 个 → 2 个；")
+    L.append("          剩下的 2 个（libnative-googlesignin / libtolua）已在 2026-10-12 修复。")
+    L.append("    时限: 门槛2 在 2027-02-01 前只是警告、不阻断发布；门槛1 为硬性要求且已达标。")
     return "\n".join(L)
 
 

@@ -5,27 +5,46 @@
 # 为什么需要这个脚本
 # ------------------
 # `Assets/Plugins/Android/libs/arm64-v8a/libtolua.so` 是 ToLua# 运行时，把
-# LuaJIT + tolua + cjson + lpeg + pb(protobuf) + luasocket + struct + bit
-# 全部打包进一个 .so。仓库里只有编译产物、没有源码。
+# LuaJIT + tolua + cjson + lpeg + pb(protobuf) + luasocket + struct 打包成
+# 一个 .so。仓库里只有编译产物、没有源码。
 #
-# Google Play 自 2025-11 起要求新包支持 16KB 页大小，Play 的「旧版 NDK」告警
-# 按【已知问题库清单】点名，libtolua.so 在列。原库由 NDK r17 era 工具链编译，
-# 且 LuaJIT 的 lj_arch.h 默认 LJ_PAGESIZE=4096 —— JIT 的 mcode 分配器按该值
-# 对齐后调 mprotect，在 16KB 页设备上会被内核拒绝，属于会真崩的隐患。
+# 两个动因：
+#   1. Google Play 自 2025-11 起要求新包支持 16KB 页大小，Play 的「旧版 NDK」
+#      告警按【已知问题库清单】点名，libtolua.so 在列。
+#   2. LuaJIT 的 lj_arch.h 默认 LJ_PAGESIZE=4096，而 JIT 的 mcode 分配器
+#      （lj_mcode.c）按该值对齐后调 mprotect，在 16KB 页设备上页粒度不匹配
+#      会被内核拒绝 —— 这是会真崩的隐患，不只是告警。
 #
-# 上游：https://github.com/alex4814/tolua_runtime
-# 补丁：同目录 apply-16k.patch（改动仅 2 个文件、共 3 行 + 注释）
+# 🔴 血泪教训（2026-10-12，真机实测踩到）
+# 第一版修复误用了 alex4814/tolua_runtime（其 LuaJIT 是 2.1.ROLLING 2025-01）。
+# 而真机跑的是由 LuaEncoder/luajit_mac/64/luajit 编译的**预编译字节码**
+# （Assets/ManagedResources/LuaBytes/*.bytes），那个编码器是 LuaJIT **2.1.0-beta3**。
+#
+# 两个版本同属 2.1 线、BCDUMP_VERSION 都是 2，所以字节码头 (1b 4c 4a 02) 不会被
+# 拒绝 —— 但 **opcode 表在 beta3 与 ROLLING 之间有增删**，加载后执行错指令／
+# JIT 出错，表现为**启动即卡死、进不去登录界面**。
+#
+# ⇒ **运行时 LuaJIT 必须与字节码编码器严格同版本**。
+#   本脚本固定 topameng/tolua_runtime（LuaJIT 2.1.0-beta3），并由 verify.py
+#   强制双重校验：① 版本串一致 ② 导出符号对原始库零缺失。
+#
+# 取证：topameng/tolua_runtime 的预编译 Plugins/Android/libs/arm64-v8a/libtolua.so
+#       与本工程原库 sha256 完全相同（176274e7…76a2f，667968 字节）
+#       ⇒ 原库就是它出的，这是同源重建。
+#
+# 上游：https://github.com/topameng/tolua_runtime
+# 补丁：apply-16k.patch（仅 1 个文件 1 行 + 注释：luajit-2.1/src/lj_arch.h 的 LJ_PAGESIZE）
 #
 # 用法
 # ----
 #   scripts/libtolua16k/build.sh                 # 克隆 → 打补丁 → 编译 → 校验
-#   scripts/libtolua16k/build.sh --install       # 校验通过后替换进工程
+#   scripts/libtolua16k/build.sh --install       # 校验通过后替换进工程（先备份）
 #   scripts/libtolua16k/build.sh --src <dir>     # 用已有的 tolua_runtime 检出
 #
 # 环境变量
 # --------
 #   ANDROID_NDK_HOME  必需，NDK r28+（首个默认处理 16KB 的 NDK）
-#   TOLUA_RT_COMMIT   可选，覆盖上游 commit（默认见下方 PINNED_COMMIT）
+#   TOLUA_RT_COMMIT   可选，覆盖上游 pin 住的 commit
 #
 # 退出码：0 成功 / 1 失败（任一校验不通过即中止，不会覆盖工程内库）
 # =============================================================================
@@ -34,19 +53,49 @@ set -euo pipefail
 # --------------------------------------------------------------------------- #
 # 常量
 # --------------------------------------------------------------------------- #
-PINNED_COMMIT="${TOLUA_RT_COMMIT:-71eec6d24f416f943948c5c6d2a04d598a348563}"
-REPO_URL="https://github.com/alex4814/tolua_runtime"
+PINNED_COMMIT="${TOLUA_RT_COMMIT:-654e0da626328a6c4cf9824c4e50f31109ddae4e}"
+REPO_URL="https://github.com/topameng/tolua_runtime"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 PATCH_FILE="${SCRIPT_DIR}/apply-16k.patch"
 
 TARGET_SO="${PROJECT_ROOT}/Assets/Plugins/Android/libs/arm64-v8a/libtolua.so"
-WORK_SRC="/tmp/tolua_rt_build"
-NDK_ABI="arm64-v8a"
-# 与 ProjectSettings.asset 的 AndroidMinSdkVersion(24) 保持一致。
-# 注意：NDK r28 起 libc 桩按 API 聚合，21 也能链过，但显式对齐 minSdk 更诚实。
+WORK_SRC="/tmp/tolua_rt_beta3_build"
+# 与 ProjectSettings.asset 的 AndroidMinSdkVersion(24) 保持一致
 NDK_API_LEVEL="24"
+NDK_ABI="arm64-v8a"
+
+# LuaJIT 编成静态库时的目标宏（照抄 topameng 的 build_arm64.sh）
+LUAJIT_TARGET_FLAGS="-DLJ_ABI_SOFTFP=0 -DLJ_ARCH_HASFPU=1 -DLUAJIT_ENABLE_GC64=1"
+
+# 🔴 源文件清单：严格照抄上游 android/jni/Android.mk 的 LOCAL_SRC_FILES。
+# 注意**不含** bit.c（LuaJIT 自带 lib_bit）、serial.c、unix.c、wsocket.c。
+# 少编或多编都会改变导出符号集合，verify.py 会拦住。
+TOLUA_SRCS=(
+    tolua.c
+    int64.c
+    uint64.c
+    pb.c
+    lpeg.c
+    struct.c
+    cjson/strbuf.c
+    cjson/lua_cjson.c
+    cjson/fpconv.c
+    luasocket/auxiliar.c
+    luasocket/buffer.c
+    luasocket/except.c
+    luasocket/inet.c
+    luasocket/io.c
+    luasocket/luasocket.c
+    luasocket/mime.c
+    luasocket/options.c
+    luasocket/select.c
+    luasocket/tcp.c
+    luasocket/timeout.c
+    luasocket/udp.c
+    luasocket/usocket.c
+)
 
 DO_INSTALL=0
 SRC_DIR=""
@@ -58,7 +107,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --install) DO_INSTALL=1; shift ;;
         --src)     SRC_DIR="$2"; shift 2 ;;
-        -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
         *) echo "未知参数：$1" >&2; exit 2 ;;
     esac
 done
@@ -86,16 +135,32 @@ if [[ "${NDK_MAJOR}" -lt 28 ]]; then
 fi
 ok "NDK r${NDK_MAJOR}（${NDK_VER}）"
 
-command -v cmake >/dev/null 2>&1 || fail "缺少 cmake"
-command -v ninja >/dev/null 2>&1 || fail "缺少 ninja（可 pip install ninja）"
-ok "cmake / ninja 就位"
+# host tag：优先 darwin-*，其次 linux-*
+PREBUILT="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt"
+if   [[ -d "${PREBUILT}/darwin-x86_64" ]]; then HOST_TAG="darwin-x86_64"
+elif [[ -d "${PREBUILT}/darwin-arm64"  ]]; then HOST_TAG="darwin-arm64"
+elif [[ -d "${PREBUILT}/linux-x86_64"  ]]; then HOST_TAG="linux-x86_64"
+else
+    # ⚠️ pipefail 下 `ls | head -1` 会让 ls 吃到 SIGPIPE(141)，必须 `|| true`
+    HOST_TAG="$(ls "${PREBUILT}" 2>/dev/null | head -1 || true)"
+fi
+[[ -n "${HOST_TAG}" ]] || fail "无法确定 NDK host tag（${PREBUILT} 下无可用目录）"
+
+TOOLCHAIN_BIN="${PREBUILT}/${HOST_TAG}/bin"
+NDK_CC="${TOOLCHAIN_BIN}/aarch64-linux-android${NDK_API_LEVEL}-clang"
+for t in "${NDK_CC}" "${TOOLCHAIN_BIN}/llvm-ar" "${TOOLCHAIN_BIN}/llvm-strip" "${TOOLCHAIN_BIN}/llvm-nm"; do
+    [[ -x "${t}" ]] || fail "缺少工具链组件：${t}"
+done
+ok "LLVM 工具链就位（${HOST_TAG}）"
+
+command -v git  >/dev/null 2>&1 || fail "缺少 git"
+command -v make >/dev/null 2>&1 || fail "缺少 make（LuaJIT 用 GNU make 构建）"
+command -v clang >/dev/null 2>&1 || fail "缺少本机 clang（用于构建 buildvm 宿主工具）"
+ok "git / make / clang 就位"
 
 [[ -f "${PATCH_FILE}" ]] || fail "缺少补丁文件：${PATCH_FILE}"
 [[ -f "${SCRIPT_DIR}/verify.py" ]] || fail "缺少校验脚本：${SCRIPT_DIR}/verify.py"
-
-TOOLCHAIN_BIN="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/darwin-x86_64/bin"
-[[ -x "${TOOLCHAIN_BIN}/llvm-strip" ]] || fail "缺少 ${TOOLCHAIN_BIN}/llvm-strip"
-ok "LLVM 工具链就位"
+[[ -f "${SCRIPT_DIR}/ref/original-symbols.txt" ]] || fail "缺少符号基准：ref/original-symbols.txt"
 
 # 优先用工程既有 venv 的 python，回落系统 python3
 PYTHON_BIN="${PYTHON:-}"
@@ -118,7 +183,6 @@ else
         ok "复用已有检出：${WORK_SRC}"
     else
         rm -rf "${WORK_SRC}"
-        # --depth 1 只取主仓尖端；子模块仍需单独初始化
         git clone --depth 1 "${REPO_URL}" "${WORK_SRC}"
         ok "已克隆"
     fi
@@ -137,19 +201,14 @@ if [[ -d ".git" ]]; then
     fi
 fi
 
-# 子模块是必需的：luajit-2.1 / cjson / lpeg / luasocket
-if [[ ! -f "luajit-2.1/src/lj_arch.h" ]]; then
-    step "初始化子模块"
-    git submodule update --init --recursive --depth 1
-fi
-[[ -f "luajit-2.1/src/lj_arch.h" ]] || fail "子模块不完整：缺 luajit-2.1/src/lj_arch.h"
-ok "子模块就位"
+[[ -f "luajit-2.1/src/lj_arch.h" ]] || fail "源码不完整：缺 luajit-2.1/src/lj_arch.h"
+ok "LuaJIT 源码就位"
 
 # --------------------------------------------------------------------------- #
 # 2. 打补丁（幂等）
 # --------------------------------------------------------------------------- #
 step "应用 16KB 补丁"
-if grep -q 'LJ_PAGESIZE=16384' cmake/luajit2.cmake 2>/dev/null; then
+if grep -q 'LJ_PAGESIZE.*16384' luajit-2.1/src/lj_arch.h 2>/dev/null; then
     ok "补丁已在（LJ_PAGESIZE=16384）"
 else
     git apply --check "${PATCH_FILE}" 2>/dev/null \
@@ -157,54 +216,77 @@ else
     git apply "${PATCH_FILE}"
     ok "已应用 ${PATCH_FILE##*/}"
 fi
-
-# 三重确认：三条关键改动都在
-grep -q 'LJ_PAGESIZE=16384'            cmake/luajit2.cmake || fail "LJ_PAGESIZE 注入缺失"
-grep -q 'luasocket/src/mime.c'          CMakeLists.txt      || fail "mime.c 缺失"
-grep -q '\${PROTOBUF_SRC}'              CMakeLists.txt      || fail "pb.c (PROTOBUF_SRC) 缺失"
-ok "三条关键改动全部确认"
+grep -q 'LJ_PAGESIZE.*16384' luajit-2.1/src/lj_arch.h || fail "LJ_PAGESIZE=16384 未生效"
 
 # --------------------------------------------------------------------------- #
-# 3. 编译
+# 3. 编译 libluajit.a
+#
+# ⚠️ LuaJIT 的 Makefile 有个坑：STATIC_CC / TARGET_LD 都是 `$(CROSS)$(CC)`
+#    拼接，而 AR/STRIP 是 `$(CROSS)ar`。若同时给 CROSS 和带路径的 CC，
+#    会拼成 llvm-/path/to/clang 而报 "Command not found"。
+#    ⇒ CROSS 留空、CC 给完整路径，并逐项覆盖 TARGET_LD / TARGET_AR / TARGET_STRIP。
+#    另外 HOST_CC 默认继承 CC，必须显式设为**本机** clang，否则 buildvm 会用
+#    Android clang 编、无法在本机执行。
 # --------------------------------------------------------------------------- #
-step "CMake 配置 + 编译（${NDK_ABI}, API ${NDK_API_LEVEL}）"
-BUILD_DIR="./Build/android/${NDK_ABI}"
-INSTALL_DIR="./Plugins/Android/${NDK_ABI}"
-
-cmake \
-    -B "${BUILD_DIR}" \
-    -G Ninja \
-    -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DANDROID_ABI="${NDK_ABI}" \
-    -DANDROID_PLATFORM="${NDK_API_LEVEL}" \
+step "编译 libluajit.a（LuaJIT 2.1.0-beta3, ${NDK_ABI}, API ${NDK_API_LEVEL}）"
+cd "${SRC_DIR}/luajit-2.1/src"
+make clean >/dev/null 2>&1 || true
+make \
+    HOST_CC="clang -m64" \
+    CC="${NDK_CC}" \
+    TARGET_LD="${NDK_CC}" \
+    TARGET_AR="${TOOLCHAIN_BIN}/llvm-ar rcus" \
+    TARGET_STRIP="${TOOLCHAIN_BIN}/llvm-strip" \
+    TARGET_SYS=Linux \
+    TARGET_FLAGS="${LUAJIT_TARGET_FLAGS}" \
     >/dev/null
-
-cmake --build "${BUILD_DIR}" --config Release
-
-mkdir -p "${INSTALL_DIR}"
-cp -f "${BUILD_DIR}/libtolua.so" "${INSTALL_DIR}/libtolua.so"
-NEW_SO="${INSTALL_DIR}/libtolua.so"
-ok "编译产出：$(basename "${NEW_SO}") $(stat -f%z "${NEW_SO}") 字节"
+[[ -f libluajit.a ]] || fail "libluajit.a 未生成"
+ok "libluajit.a $(stat -f%z libluajit.a) 字节"
 
 # --------------------------------------------------------------------------- #
-# 4. 校验
+# 4. 链接 libtolua.so
+# --------------------------------------------------------------------------- #
+step "链接 libtolua.so"
+cd "${SRC_DIR}"
+OUT_DIR="${SRC_DIR}/build_out"
+mkdir -p "${OUT_DIR}"
+
+"${NDK_CC}" -shared -O2 -std=gnu99 -fPIC \
+    -I luajit-2.1/src -I . \
+    "${TOLUA_SRCS[@]}" \
+    -Wl,--whole-archive luajit-2.1/src/libluajit.a -Wl,--no-whole-archive \
+    -Wl,-z,max-page-size=16384 \
+    -lm -ldl \
+    -o "${OUT_DIR}/libtolua.so"
+
+NEW_SO="${OUT_DIR}/libtolua.so"
+[[ -f "${NEW_SO}" ]] || fail "libtolua.so 未生成"
+ok "libtolua.so $(stat -f%z "${NEW_SO}") 字节（未 strip）"
+
+# --------------------------------------------------------------------------- #
+# 5. 校验（未 strip 时先验一次，早失败早停）
 # --------------------------------------------------------------------------- #
 step "校验"
-"${PYTHON_BIN}" "${SCRIPT_DIR}/verify.py" "${NEW_SO}" "${TARGET_SO}" \
+"${PYTHON_BIN}" "${SCRIPT_DIR}/verify.py" "${NEW_SO}" \
     || fail "校验未通过，工程内库未被改动"
 
 # --------------------------------------------------------------------------- #
-# 5. strip + 安装（可选）
+# 6. strip
 # --------------------------------------------------------------------------- #
 step "剥离调试符号"
+cp -f "${NEW_SO}" "${OUT_DIR}/libtolua.unstripped.so"
 "${TOOLCHAIN_BIN}/llvm-strip" --strip-unneeded "${NEW_SO}"
 ok "strip 后 $(stat -f%z "${NEW_SO}") 字节"
 
+# strip 理论上不改 p_align / 不改动态符号表，但影响面太大不赌，重验一遍
+"${PYTHON_BIN}" "${SCRIPT_DIR}/verify.py" "${NEW_SO}" >/dev/null \
+    || fail "strip 后校验失败"
+ok "strip 后复验通过"
+
+# --------------------------------------------------------------------------- #
+# 7. 安装（可选）
+# --------------------------------------------------------------------------- #
 if [[ "${DO_INSTALL}" -eq 1 ]]; then
-    # 再加一道：strip 后重新验门槛1（strip 理论上不改 p_align，但不赌）
-    "${PYTHON_BIN}" "${SCRIPT_DIR}/verify.py" "${NEW_SO}" "${TARGET_SO}" >/dev/null \
-        || fail "strip 后校验失败，未安装"
     BK="$HOME/ts-tolua-backup-$(date +%Y%m%d-%H%M%S)"
     mkdir -p "${BK}"
     if [[ -f "${TARGET_SO}" ]]; then
@@ -213,6 +295,7 @@ if [[ "${DO_INSTALL}" -eq 1 ]]; then
     fi
     cp -f "${NEW_SO}" "${TARGET_SO}"
     ok "已安装到 ${TARGET_SO}"
+    printf '\n  sha256 = %s\n' "$(shasum -a 256 "${TARGET_SO}" | awk '{print $1}')"
     printf '\n  下一步：重建 AAB 并校验，例如\n'
     printf '    scripts/aab_release.sh --no-upload --no-bump\n'
     printf '  🔴 上传与提交审核必须经用户确认，脚本不会自动做。\n'

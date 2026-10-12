@@ -44,10 +44,12 @@ dependencies {
     implementation 'com.google.firebase:firebase-crashlytics-ndk:19.4.2' // Assets/Firebase/Editor/CrashlyticsDependencies.xml:13
     implementation 'com.google.firebase:firebase-crashlytics-unity:12.10.1' // Assets/Firebase/Editor/CrashlyticsDependencies.xml:20
     implementation 'com.google.games:gpgs-plugin-support:0.11.01' // Assets/GooglePlayGames/com.google.play.games/Editor/GooglePlayGamesPluginDependencies.xml:11
-    // 2026-10-12: 移除 com.google.signin:google-signin-support:1.0.4
-    // 原因: 该 aar 内的 jni/arm64-v8a/libnative-googlesignin.so 由 NDK r17 编译，
-    //       触发 Play「16KB 设备上可能崩溃」告警。Android 侧的 Google 登录改走 Play Games
-    //       （见 GoogleSignMgr.cs），故不再引入该库。
+    // 2026-10-12 回滚说明: 72502790b 曾为消除 Play「16KB 设备上可能崩溃」告警而移除本依赖，
+    // 代价是 Android 侧 Google 登录从 Google Sign-In 改走 Play Games —— 两者对同一 Google
+    // 账号返回**不同的 id**，导致账号名(account = f(login sdk id))变化、老号被判为新号。
+    // 实测本 aar 内 libnative-googlesignin.so 的 PT_LOAD p_align = 0x10000(64KB)，
+    // 远高于 16KB 硬门槛，只是 Play 的「旧版 NDK」软告警 ⇒ 可安全回滚。
+    implementation 'com.google.signin:google-signin-support:1.0.4' // Assets/GoogleSignIn/Editor/GoogleSignInSupportDependencies.xml:9
 // Android Resolver Dependencies End
 **DEPS**}
 

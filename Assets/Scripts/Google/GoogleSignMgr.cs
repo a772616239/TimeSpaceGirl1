@@ -27,28 +27,14 @@ public class GoogleSignMgr : MonoBehaviour
     {
         this.CrtPlatformId = platformId;
         if (platformId==1){
-            // 2026-10-12: Android 真机改用 Play Games 实现。
-            // 原因: 原 Google Sign-In 插件依赖 com.google.signin:google-signin-support:1.0.4,
-            //       其 jni/arm64-v8a/libnative-googlesignin.so 由 NDK r17 编译 -> 触发
-            //       Play「16KB 设备上可能崩溃」告警；该依赖已从 mainTemplate.gradle 移除。
-            // 关键: 保持 LoginPlatform=1 与 "go" 账号前缀不变, 因此 Lua 侧 LoginPanel、
-            //       PlayerPrefs 的 lastLoginPlatform 语义与老玩家已保存凭据全部不受影响
-            //       (lastPlt==1==LoginPlatform -> 走 RequestUser 用旧凭据, 账号不变)。
-#if UNITY_ANDROID && !UNITY_EDITOR
-            GooglePlayGamesLogin signin = new GooglePlayGamesLogin();
-            signin.LoginAuth((isSucc, id) => {
-                XDebug.Log.l("GoogleSignMgr 1(PlayGames):id:" + id);
-
-                string name = null;
-                string pw = null;
-                GetAcc("go" + id, out name, out pw);
-
-                if (callback != null)
-                {
-                    callback(new LoginData(isSucc, name, pw));
-                }
-            });
-#else
+            // 🔴 2026-10-12 事故与回滚（勿再改回去）：
+            // 72502790b 曾把 Android 真机 platformId==1 改成走 GooglePlayGamesLogin（Play Games），
+            // 目的是移除 com.google.signin:google-signin-support 以消除 Play 的 16KB 告警。
+            // 但 Play Games 的 Social.localUser.id 与 Google Sign-In 的 task.Result.UserId 是**两套
+            // 身份体系**，同一个 Google 账号返回不同 id（实测 21 位数字 vs 20 字符），而账号名
+            // 由该 id 派生（GetAcc("go"+id)）⇒ 老玩家在清数据/重装/换机后会被判成新号。
+            // 实测 libnative-googlesignin.so 的 PT_LOAD p_align = 0x10000(64KB)，远高于 16KB 硬门槛，
+            // 移除它只为消一条软告警，得不偿失 ⇒ 回滚为 Google Sign-In，保持 id 口径不变。
             SigninSampleScript signin = new SigninSampleScript();
             signin.OnSignIn((isSucc,id)=> {
                 XDebug.Log.l("GoogleSignMgr 1:id:" + id);
@@ -63,7 +49,6 @@ public class GoogleSignMgr : MonoBehaviour
                     callback(new LoginData(isSucc, name, pw));
                 }
             });
-#endif
         }
         else if (platformId==2)
         {

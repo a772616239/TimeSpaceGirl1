@@ -12,6 +12,11 @@
 - **CLI 打包不自增 versionCode**：`Assets/Editor/CLIBuilder.cs` 只读，自增只在 GUI 的 `BuildWindow.cs:449` ⇒ CLI 反复打包复用同一个号（实测日志 `VersionCode: 62`），传 production 必被拒。
 - `aab_release.sh` 默认调 `bump_version.py --bump` 补上；`play_upload.py` 上传前查轨道现有 versionCode，撞车以退出码 5 拦截。
 
+## 🔴 versionName（`bundleVersion`）长期未推进 —— Play 告警定位的坑
+- `bundleVersion` 自 `b2a0037a9`（2026-08-17，`1.2.44 → 1.2.45`）起**再没改过** ⇒ **v62 / v63 / v64 三个包共用同一个 versionName `1.2.45`**（`b2a0037a9`=62、`e07c23190`=63、`2eaecca00`=64）。
+- ⇒ **Play Console 的「发布版本名称：1.2.45」不能区分这三个包**，只有括号里的 versionCode（如 `1.2.45 (64)`）能。核对告警所属版本时**必须以 versionCode 为准**。
+- 发版时应同时推进 versionName：`bump_version.py --bump-name`（本次未执行，属待改流程缺陷）。
+
 ## 认证 / 授权
 - 认证 = Google Cloud service account JSON。🔴 **Cloud 建完账号 ≠ 能发布**：必须在 Play Console「用户和权限」把该邮箱加为发布用户并勾「发布到正式版」，否则 API 一律 403。密钥放 `~/.gplay/service-account.json`（仓库外），Cloud 项目 `platinum-loop-468100-k5`。
 - 依赖 `google-api-python-client` + `google-auth`（⚠️ PyPI 直连超时，**用清华镜像** `-i https://pypi.tuna.tsinghua.edu.cn/simple`）。本机无 fastlane/Ruby，故走 API 直连。
@@ -108,6 +113,7 @@ base/lib/arm64-v8a/libtolua.so
 - ✅ **Firebase 三库（Analytics / App-12_8_0 / Crashlytics）已从名单消失** ⇒ **升 Firebase 确实清掉了 3 个**。
 - ⚠️ 但 `so_meta.py` 实测 12.10.1 的 `.note.android.ident` **仍是 r21e** ⇒ 说明 **Play 清单按「库名+版本」判定，不是按 NDK 版本阈值**。（旧结论「升 Firebase 清不掉告警」据此**作废**。）
 - 新包（v64）里这 5 个库**全都在**（`zipfile` 精确列举确认）⇒ 告警确实挂在 v64 这一代；**Firebase 三库是被 12.10.1 替换后不再被点名的**。
+- **告警所属版本判定**：Console 标注「发布版本名称：**1.2.45**」。但 v62/v63/v64 共用该 versionName（见上节）⇒ 单看名字定不了。**据「Firebase 三库不在名单」反推**：v62 与 v63 里都是 `libFirebaseCppApp-12_8_0.so`，若告警挂它们则三库必被点名；既然不点名 ⇒ **告警挂在 v64**（12_10_1）。✅
 
 ### 🔴 两条反直觉的实测结论（决定要不要动手）
 1. **清告警 = 换掉被点名的那个库文件本身**（不是升 NDK、不是升 Unity）。`_64.aab` 中 `libFirebaseCppApp-12_10_1.so` 不在清单，而 `12_8_0` 在 ⇒ 换版即清。剩余 2 个同理：要清 `googlesignin` 只能换/删该库，要清 `tolua` 只能重编该库。

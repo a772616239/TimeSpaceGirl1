@@ -229,3 +229,172 @@ base/lib/arm64-v8a/libtolua.so
   导致 v62/v63/v64 在 Play 告警里都显示「1.2.45」、无法区分。
 - googlesignin 部分**有效**（该修复保留）；`libtolua.so` 部分**因版本错配作废**。
 - 🔴 **这个包是真机卡死的，不要再发布**；其 Play `draft` 已被 v66 顶掉。
+
+---
+
+## 出包配置（GM 面板）修复 —— 2026-10-12（`297b9ba9f` / `f74ffb436` / `a08c02d38`）
+
+### 根因
+编辑器「是否正式包」那段配置**只写在 `BuildWindow.OnGUI`（`BuildWindow.cs:204-234`）**里，
+且只改**内存中已打开场景**的对象；命令行入口 `CLIBuilder` 完全没有这一步
+⇒ 命令行产物一律沿用工程当下的**开发态**设置（`isOpenGM=1`）。
+
+### 关键事实（已取证）
+- `versionCode 64`（线上 completed）＝ `apks/2026-10-12/CLIBuild/011824.aab`，**是 `CLIBuilder` 打的**
+  ⇒ 线上包一直带 GM 面板。
+- 渠道 `SDKChannelConfig.txt` = `None` 是**线上实际值、是正常的**：本作 Google 登录走
+  `not IsSDKLogin` 的账号密码分支（`LoginPanel.lua:7`）。**渠道为 None 时强行 `isSDK=true` 会把登录打挂。**
+- 口径由用户拍板选 **最小改动（只关 GM）**，不动 `isGuide/isUpdate`（会改现有玩家行为）。
+
+### 实现
+- `Assets/Editor/ReleaseBuildSettings.cs`（新）＝出包配置**唯一真源**
+  `ReleaseProfile{Dev, MinimalGmOff, FullTemplate}` + `ApplyProfile / FindGameSettings(includeInactive) /
+  Validate / Describe / PrepareSceneForBuild / RestoreScene`。
+- `CLIBuilder.BuildAndroid(bool)`：`kProfile = MinimalGmOff`；
+  **`OpenScene(Logo.unity, Single)` → 套配置 → `MarkSceneDirty`+`SaveScene`（必须落盘，
+  batchmode 下 BuildPlayer 读磁盘、改内存无效）→ `BuildPlayer` → `finally` 还原场景**；
+  自检不过 `Exit(1)` 且**不产包**；写 `<aab>.release.json` sidecar。
+  ⚠️ 故意**不调 `AssetDatabase.Refresh()`**（可能触发域重载，会丢静态快照并打断 BuildPlayer）。
+- `BuildWindow.cs` 的内联块 → 调用同一份逻辑（编辑器行为不变）。
+
+### 🔑 包内自检法（`scripts/verify_aab_release_config.py`，可复用）
+- 场景 `base/assets/bin/Data/level0` 是 TypeTree 被裁剪的 SerializedFile ⇒ **搜不到字段名，但能按值搜**。
+- `SettingInfo` 12 字段**按声明顺序内联**，**每个 bool 占 4 字节**（与 int 同对齐），全小端：
+  `logLevel, isDebug, bundleMode, luaBundleMode, isUpdate, isSDK, isSDKLogin, isGuide,
+   isOpenGM, isOpenTLog, isOpenBLog, originLan` ⇒ 48 字节特征。
+- 口径向量（`originLan=10001`）：
+  - `dev`     = `[0,0,1,1,0,0,1,0,1,0,0,10001]`（v64 实测）
+  - `minimal` = `[0,0,1,1,0,0,1,0,0,0,0,10001]`（只关 GM；与 dev **只差 1 字节**）
+  - `full`    = `[0,0,1,1,1,0,0,1,0,0,0,10001]`
+- 命中位置 **offset 3792，全文件唯一**。`--expect dev|minimal|full`，返回码 0/1/2。
+- `aab_release.sh` 已加**第 4.5 步**：`--expect minimal`，不过就拒绝上传。
+
+### 实测结果（`apks/2026-10-12/CLIBuild/110317.aab`）
+- `versionCode 67` / `versionName 1.2.48` / 421.4 MB / 构建 132 秒。
+- 构建日志实证「套用前 isOpenGM=1 → 套用后(MinimalGmOff) isOpenGM=0，其余 11 位逐位不变」，
+  且打完**场景已还原**（`git status` 干净）。
+- 包内自检：命中 `minimal` @ 3792 → 通过。
+- **与线上 v64 的 `level0` 逐字节对比：3840 B 全等，仅 offset 3824 差 1 字节（`01`→`00`）。**
+- 16KB：门槛1 **13 ELF / 0 non-compliant ✅**；门槛2 软告警回到 4 个（含回退带回的 `libnative-googlesignin.so` r17）。
+- 上传：`production / draft / versionCode 67`（**未送审**）。
+
+## 🔴 16KB「旧版 NDK」软告警 —— 根因、修法与可复用闸门（2026-10-12 闭环）
+
+### Play 的 16KB 检查是**两层**，别只看对齐
+- **门槛1（硬性）**：每个 64 位 `.so` 的 `PT_LOAD p_align ≥ 16384`。
+- **门槛2（软告警）**：Play 报「您的应用已针对 16 KB 设备进行编译，但其中某些库是使用**旧版 Android NDK**编译的」并**点名具体库**。
+- 🔴 **`p_align = 0x10000`（64KB）也算达标**，所以只看对齐的旧工具（`play_16kb_watch.py`）**拦不住门槛2** —— 这正是 2026-10-12 漏网的原因。
+
+### 判定依据（实测反推，13 个 .so 全量比对）
+`.so` 的 **`.note.android.ident`** 段（`NT_ANDROID_IDENT`，desc 首 4 字节是版本串长度，随后是 `rNN` + 构建号）：
+| 库 | `.note.android.ident` | `p_align` | `.comment` | Play 点名 |
+|---|---|---|---|---|
+| `libnative-googlesignin.so`（旧） | **r17** | **0x10000** | 含 `GCC: (GNU) 4.9.x` | ✅ 点名 |
+| libFirebaseCppAnalytics/App/Crashlytics | r21e | 0x4000 | clang 9（App 那条也含 GCC） | ❌ |
+| libcrashlytics* / datastore | r25b / r25c | 0x4000 | clang 14 | ❌ |
+| libil2cpp / libmain / libunity | r23b | 0x4000 | clang 12 | ❌ |
+| libtolua | r28 | 0x4000 | LLD 19 | ❌ |
+⇒ **Play 不是简单按「版本 < r28」判定**（r21e/r23b 都没被点名）。实测能**唯一**区分点名/未点名的是
+「`p_align == 0x10000`」与「note < r19」；单独的 `.comment` 含 GCC **会误伤**（libFirebaseCppApp r21e）。
+
+### 修法：用 NDK r28+ 重编该 `.so`（不是删库、不是改登录方式）
+- 该 `.so` 来自 `com.google.signin:google-signin-support:1.0.4` 的 aar（`jni/<abi>/libnative-googlesignin.so`），
+  **是 C# `GoogleSignInImpl` P/Invoke 的唯一实现**（`DllImport("native-googlesignin")`），不能删。
+  真正的 Google 身份（21 位数字 `sub`）来自 Java 侧 `GoogleSignInAccount.getId()`，**重编不影响账号派生**。
+- 源码：`googlesamples/google-signin-unity` @ master 的 **`native-googlesignin/`**（CMake 工程，恰好就是 1.0.4；
+  Java 侧 6 个方法签名已用 `javap` 与 aar 内 `classes.jar` 逐一比对一致）。
+- NDK：`https://dl.google.com/android/repository/android-ndk-r28c-darwin.zip`（908 MB；本机 `sdkmanager` 要 JDK 17，**直接下 zip 更快**）。
+- 🔴 **本机 `/usr/local/bin/cmake` 是 4.x，会拒绝 `cmake_minimum_required(VERSION 3.4.1)` ⇒ 别走 CMake，直调 clang++**：
+  ```bash
+  TC=<ndk>/toolchains/llvm/prebuilt/darwin-x86_64/bin
+  $TC/aarch64-linux-android21-clang++ -shared -fPIC -O2 -std=c++11 -DNDEBUG \
+     -o libnative-googlesignin.so src/main/cpp/{google_signin,google_signin_bridge,google_signin_user,jni}.cc \
+     -static-libstdc++ -llog -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 \
+     -Wl,-soname,libnative-googlesignin.so
+  $TC/llvm-strip libnative-googlesignin.so
+  ```
+  （32 位 ABI 不要加 max-page-size 那两个 flag；本工程只发 arm64-v8a。）
+- **验收基线（必须逐项过）**：20 个导出全等（19 个 `GoogleSignIn_*` + `JNI_OnLoad`）、
+  `DT_NEEDED` 全等（`liblog/libm/libdl/libc`，**仍静态 libc++、不引入 `libc++_shared.so`**）、SONAME 全等、
+  `.note.android.ident` = r28c、`p_align = 0x4000`。
+- 回填 aar：只替换 `jni/<abi>/libnative-googlesignin.so` 三条目，其余（`AndroidManifest.xml`/`classes.jar`/`R.txt`）
+  逐字节不动；**必须同步更新同目录 `.aar.md5` / `.aar.sha1` 侧车**（该 aar 走**本地 maven repo**，
+  声明在 `Assets/GoogleSignIn/Editor/GoogleSignInSupportDependencies.xml`，改完不更新侧车可能被 EDM4U 判为不一致）。
+- 复核：**把重打后 AAB 里的该 `.so` 抠出来与本地产物比 md5** —— 相同即证明 Gradle 用的确实是打完补丁的 aar
+  （2026-10-12 实测 `9f681d525c5533c9bae45ac2b73931ee`，逐字节一致）。
+
+### 🔑 新增闸门 `scripts/verify_aab_native_16kb.py`（离线、不走 Play API）
+- **FAIL**：任何 64 位 `.so` 的 LOAD 对齐 < 16384。
+- **WARN**：命中「note < r19」或「64 位库 `p_align == 0x10000`」（`.comment` 含 GCC 只作附注，避免误伤）。
+- 已接入 `aab_release.sh` **第 4.6 步**。回放旧包 `110317.aab` 时**恰好只报出 `libnative-googlesignin` 一个**。
+
+## 遗留
+- ✅ `aab_release.sh:85` 的 Unity 占用检查过宽 —— **已修**（2026-10-12）：改为只在命令行含
+  `-projectpath ${PROJECT_ROOT}` 时命中，其它项目（如 `~/Documents/main_android/Unity`）在跑 batchmode 不再误中止。
+- ⚠️ 上传并发纪律：**上传期间不要调任何 Play API**，否则 edit 互删（`This Edit has been deleted.`）。
+- ⚠️ Firebase/il2cpp/unity 厂商库长期是 r21e/r23b（Play 不点名，也**无法由我们重编**）；若将来被点名，只能等厂商升级。
+- ⚠️ 换 NDK 版本会**同时改 note 与对齐**，重编后务必用上面「验收基线」逐项比对，别只看 r28 字样。
+
+
+## 🔴 发布闸门：默认拒绝，三旗标显式放行（2026-10-12 起，`2479709ae`）
+背景：用户红线「不要帮我送审，我要自己看一下」。真因是**默认值就是发布**，不是纪律问题。
+
+| 动作 | 命令 | 必须显式给出的旗标 |
+|---|---|---|
+| 只出包（默认） | `scripts/aab_release.sh` | 无（`DO_UPLOAD=0`） |
+| 上传到 production 草稿 | `scripts/aab_release.sh --skip-build --upload --production --status draft --yes` | `--upload` + `--production` |
+| **提交审核 / 上线** | `scripts/aab_release.sh --upload --production --publish` | 再加 `--publish`（需事先获批准！） |
+| 只读看现状 | `scripts/aab_release.sh --dry-run` | 无（`--dry-run` 不受闸门限制） |
+
+- `play_upload.py`：`--status` 默认 `draft`；新增 `--allow-production-write` / `--allow-publish`。
+  **两层各自独立校验，脚本之间不传递旗标**（shell 会透传，但 python 自己也会再拒一次 = 双保险）。
+- 拒绝对 production 写入（无 `--allow-production-write`）与拒绝 `completed/inProgress`（无 `--allow-publish`）都是退出码 **2**。
+
+## ⚠️ Unity 的 `libtolua.so is not 16KB-aligned` 是**误报**，不要去"修"
+`Unity 2022.3.62` 每次 Android 打包都会打印这条。**实测该库完全达标**：
+- 4 个 `PT_LOAD` 全 `p_align = 0x4000`（自写 ELF 解析 + `/usr/bin/objdump -p` 双向确认，`align 2**14`）。
+- **产物侧**（直接解 `092806.aab` / `113650.aab` / `093010.apk` 的 zip）里 `libtolua.so` md5 与源文件一致
+  （`868a74d9b757…`），align 同样 `0x4000`；AGP 的 `stripped_native_libs` 也没改对齐。
+- 旁证：Play 两轮 16KB 报障**从未点名 libtolua**（只点过 `libnative-googlesignin.so`）。
+⇒ Unity 自检口径有 bug（`0x4000` 恰等于阈值却被判未对齐）。**16KB 是否合规格一律以包内 zip 的 .so 为准**，
+   用 `scripts/verify_aab_native_16kb.py`，不要被 Unity 日志牵着走。
+
+## ⚠️ CLI 打包崩溃会残留场景改动（已知缺陷）
+`CLIBuilder` 用 `try/finally` 还原 `Assets/LuaFramework/Scenes/Logo.unity`；**若进程被硬杀**
+（2026-10-12 11:57 那次停在 `Building Gradle project` 后 `Application is shutting down...`），
+`finally` 跑不到 ⇒ 场景残留 `isOpenGM: 1→0`，工作区变脏。
+**起包前先 `git status` 看该文件**，脏了就 `git checkout -- Assets/LuaFramework/Scenes/Logo.unity` 清回基线。
+（不改也只会让下次 build 的"快照基线"变成 GM-off，功能无害，但仓库会一直脏。）
+
+## ⚠️ 测试用 APK 的坑
+`090414.apk` / `093010.apk` 是 `versionCode 66` + `buildAppBundle=false`，且 sidecar 标了
+`"googlesigninRemoved": true`（当时为绕 Play 报障把这个 .so 从包内摘掉）
+⇒ **Google 登录必挂**，拿它测账号派生只会得到假结论。测登录/账号必须用**含 r28c 版
+`libnative-googlesignin.so`** 的新包（`versionCode 68` 起）。
+
+## 🔑 APK 交付自检 `scripts/verify_apk_delivery.py`（2026-10-12，`68313d686`）
+一条命令回答「这个包能不能拿去测」。校验项：版本号 / SettingInfo 口径 / native 16KB /
+**`libnative-googlesignin.so` 必须存在且有 64 位版本** / 签名；结果落盘为
+`<artifact>.delivery.json`。
+- ⚠️ 历史 `090414.apk`、`093010.apk` 为绕 Play 报障**把该 .so 从包内摘掉**
+  （sidecar `"googlesigninRemoved": true`）⇒ Google 登录必挂，拿它测账号只会得到假结论。
+- **最新可测包：`apks/2026-10-12/CLIBuild/121249.apk`**
+  （v68 / 1.2.49 / 454MB / arm64-v8a / isOpenGM=0 / googlesignin r28c，已过 `verify_apk_delivery.py`）。
+
+## 🔴 账号体系：账号名 = f(登录 SDK 给的 id)，换 SDK 就等于换号
+- 派生链：`LoginPanel.lua:1243` → `GoogleSignMgr.cs` 按 `platformId` 取 id →
+  `GetAcc("go"|"pl"|"gt"|"r2gt" + id)`：**`name = acc[0..12)`、`pw = acc[12..24)`**
+  → `tk/registerUser` + `tk/userLogin`。**服务端以 name 为账号主键**
+  （`user_register_info._id = name`）；`openId` 是服务端生成的 32hex，1:1 绑定 name。
+  - 前缀：`go`=Google(1)、`pl`=Play(2)、`gt`=游客(3)、**`r2gt`=Editor 游客**。登录库约 290 条。
+- 🔴 **事故与修复**：`72502790b` 把 Android `platformId==1` 从 `SigninSampleScript`
+  （返回 Google Sign-In `UserId`＝**21 位数字**）换成 `GooglePlayGamesLogin`
+  （返回 `Social.localUser.id`＝**20 字符**）⇒ 同账号 id 变了 ⇒ 自动建新号。
+  **已于 `f74ffb436` 回退为 Google Sign-In**（该库 `p_align=0x10000`，不破 16KB 硬门槛；
+  它带回的「旧版 NDK」软告警已由 `ca46e0e49` 用 NDK r28c 重编该 .so 修掉）。**勿再改回去。**
+  - 判别法（不用跑客户端）：查 `go` 账号的 **pw 长度**：`11 ⇒ 21 位旧 Sign-In`，`10 ⇒ 20 字符 PlayGames`。
+- **影响面**：`LoginPanel.lua:1226` 判定 `lastPlt == LoginPlatform && user ~= defaultOpenIdkey`
+  才走 `RequestUser` 用旧凭据 ⇒ **PlayerPrefs 完好的老玩家不受影响**；
+  **清数据/重装/换设备/新装 ⇒ 走注册分支 ⇒ 100% 变新号**。
+- 两区老号别搞混：**10002 的 lv24 老号账号名是 `r2gtB27C2057`（Editor 游客号）**，
+  与真机 Google 号是两套体系；10001 库里没有它。

@@ -51,6 +51,34 @@ GetLanguageStrByStr(serverInfo.name)   -- languageDicStr[name].en / .jp / .kr
 **缺失/空串都安全**：三个字段留空则服务端**不下发**，客户端回落翻译表、再回落中文原名。
 老区服不动也不会坏。
 
+### 2.1 当前已登记数据（2026-10-12）
+
+| `_id` | `server_id` | `name` | `name_en` | `name_jp` | `name_kr` | `state` |
+|---|---|---|---|---|---|---|
+| 1 | 10001 | 霓虹序曲 | `Neon Overture` | `ネオン序曲` | —（未填） | 2 |
+| 2 | 10002 | 庇护所九号 | `Shelter No. 9` | `シェルター9号` | —（未填） | 2 |
+
+命名口径：
+
+- `Neon Overture`：「序曲」直译为 *overture*；「霓虹」用 `Neon`，与游戏英文品牌 *Neon Valkyries* 一致。
+- `ネオン序曲`：保留日文常用汉字「序曲」，外来语「霓虹」作片假名 `ネオン`。
+- 10002 英文沿用早前客户端 i18n 已登记的 `Shelter No. 9`，两处保持一致。
+- `name_kr` 暂不填 ⇒ 韩文包走「翻译表 → 中文原名」回落。需要时补 `name_kr` 即可，**同一套机制，服务端补丁已支持**。
+
+写入（只 `$set` 新字段，其它字段一字不动）：
+
+```js
+db.server_info.updateOne({_id:1}, {$set:{name_en:"Neon Overture", name_jp:"ネオン序曲"}});
+db.server_info.updateOne({_id:2}, {$set:{name_en:"Shelter No. 9", name_jp:"シェルター9号"}});
+```
+
+- 备份：云服 `~/server-info-backups/server_info_id1_id2-before-i18n-20261012.json`；
+  工程内副本 `src/dry-run/backup/`。
+- 回滚（等价于撤销本次写入，无副作用）：
+  `db.server_info.updateOne({_id:1}, {$unset:{name_en:"", name_jp:""}})`（`_id:2` 同理）。
+- ⚠️ **数据先写是安全的**：补丁未部署时线上 controller **根本不读**这两个字段，
+  线上响应逐字节不变（已实测）。两边可分别上，互不冲突。
+
 ---
 
 ## 🚀 三、新增一个区服的标准动作（**客户端零改动**）
@@ -213,3 +241,14 @@ LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_getservername.lua 
 撞上秒级窗口的概率 < 1%，且失败表现为登录请求失败一次、重试即可。
 
 ⚠️ 客户端**需要升级一次**（要走新的 `GetServerName`），此后新增区服不用再出包。
+
+### 8.2 当前上线状态（2026-10-12）
+
+| 项 | 状态 |
+|---|---|
+| `server_info` 分语言数据（10001 / 10002） | ✅ **已写入生产库**（补丁未上线 ⇒ 线上无感知） |
+| 登录服补丁 class | ⬜ **未部署**（线上接口实测仍无新字段） |
+| 客户端 `GetServerName` | ✅ 已提交，**待随下次出包 / 热更到达真机** |
+
+⇒ 剩余两步：① 部署服务端补丁（见 §6.3，需明确同意）；② 客户端出一次包（或走热更）。
+两步都完成前，现有玩家看到的行为与改动前**完全一致**。

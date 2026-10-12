@@ -120,9 +120,30 @@ def main():
     args = ap.parse_args()
 
     z = zipfile.ZipFile(args.aab)
-    names = sorted(n for n in z.namelist()
-                   if n.endswith('.so') and '/lib/' in n)
+    all_so = [n for n in z.namelist() if n.endswith('.so')]
+
+    def lib_abi(n):
+        """返回 .so 所在 ABI 目录名，不是 native 库布局则返回 None。
+
+        AAB: base/lib/<abi>/x.so   （`/lib/` 前有东西）
+        APK:        lib/<abi>/x.so （整个路径以 `lib/` 开头）
+        2026-10-12 修正：原实现只认 `'/lib/' in n`，对 **APK** 布局（`lib/<abi>/…`，开头没有斜杠）
+        全部漏配 ⇒ 一个 .so 都数不到，直接打印「包内没有 .so」**假通过**。APK 也要能查。
+        """
+        p = n.split('/')
+        for i, seg in enumerate(p[:-1]):
+            if seg == 'lib' and i + 1 < len(p) - 1:
+                return p[i + 1]
+        return None
+
+    # 只保留 <...>/lib/<abi>/*.so（含 32 位），其余（如 assets 里的 .so）不算包内 native 库
+    names = sorted(n for n in all_so if lib_abi(n) is not None)
     if not names:
+        if all_so:
+            # 有 .so 但一个都没匹配上 = 路径解析有问题，绝不能当作"合规"放过去
+            print(f"  ✗ 归档里有 {len(all_so)} 个 .so，但没有一个匹配 <…>/lib/<abi>/ 布局，"
+                  f"无法体检（请检查本脚本的路径解析）")
+            return 1
         print('  ! 包内没有 .so（纯 Java 应用则天然合规）')
         return 0
 
@@ -130,8 +151,7 @@ def main():
     soft_bad = []
     print(f"  {'库':52s} {'ABI':12s} {'对齐':>8s} {'NDK':>6s}  备注")
     for n in names:
-        parts = n.split('/')
-        abi = parts[2] if len(parts) > 3 else '?'
+        abi = lib_abi(n) or '?'
         d = z.read(n)
         r = _parse_elf(d)
         if not r:
@@ -162,7 +182,7 @@ def main():
             notes.append('附注：.comment 含 GCC')
         if soft:
             soft_bad.append(n)
-        print(f"  {n.split('base/lib/')[-1]:52s} {abi:12s} {align_s:>8s} "
+        print(f"  {'/'.join(n.split('/')[-2:]):52s} {abi:12s} {align_s:>8s} "
               f"{(r['ndk'] or '-'):>6s}  {' / '.join(notes)}")
 
     print()
@@ -176,7 +196,7 @@ def main():
     if soft_bad:
         print(f"  ⚠️ {len(soft_bad)} 个库命中「旧工具链」特征（Play 软告警候选）：")
         for n in soft_bad:
-            print(f"      {n.split('base/lib/')[-1]}")
+            print(f"      {'/'.join(n.split('/')[-2:])}")
         print("     注意：Firebase/il2cpp/unity 等厂商库长期处于此列，Play 并未点名；"
               "点名与否以 Play Console 实际提示为准。")
     else:

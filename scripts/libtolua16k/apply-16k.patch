@@ -1,0 +1,38 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 5c4b226..2793613 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -51,6 +51,7 @@ set(LUASOCKET_SRC
+     luasocket/src/inet.c
+     luasocket/src/io.c
+     luasocket/src/luasocket.c
++    luasocket/src/mime.c
+     luasocket/src/options.c
+     luasocket/src/select.c
+     luasocket/src/tcp.c
+@@ -68,6 +69,7 @@ set(LIB_SRC
+     ${LPEG_SRC}
+     ${STRUCT_SRC}
+     ${CJSON_SRC}
++    ${PROTOBUF_SRC}
+     ${LUASOCKET_SRC}
+ )
+ set_property(SOURCE ${LIB_SRC} PROPERTY COMPILE_DEFINITIONS LUA_LIB)
+diff --git a/cmake/luajit2.cmake b/cmake/luajit2.cmake
+index 2f49d54..1ff6ff3 100644
+--- a/cmake/luajit2.cmake
++++ b/cmake/luajit2.cmake
+@@ -21,6 +21,13 @@ set(LUAJIT_LIB_PATH ${LUAJIT_INSTALL_ROOT}/${LUAJIT_LIB_NAME})
+ 
+ # Setup LuaJIT compile flags `XCFLAGS` according to options
+ set(LUAJIT_XCFLAGS )
++if (ANDROID)
++    # Google Play 自 2025-11 起要求所有新包支持 16KB 页大小。
++    # LuaJIT 默认 LJ_PAGESIZE=4096，其 mcode 分配按该值对齐后调用 mprotect，
++    # 在 16KB 页设备上地址/长度不满足内核要求会导致 JIT 代码页无法生效（崩溃）。
++    # 16384 对齐在 4KB 设备上同样满足（仅略微多占 mcode 内存），故统一取 16384。
++    set(LUAJIT_XCFLAGS "${LUAJIT_XCFLAGS} -DLJ_PAGESIZE=16384")
++endif ()
+ if (NOT LJ_GC64)
+     set(LUAJIT_XCFLAGS "${LUAJIT_XCFLAGS} -DLUAJIT_DISABLE_GC64")
+ endif ()

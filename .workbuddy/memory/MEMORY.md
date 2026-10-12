@@ -6,6 +6,7 @@
 > - **`REF-android-release.md`** —— Android AAB 打包上传管线 + AssetBundle + 16KB + 账号体系 + 发版 shell 坑
 > - **`REF-config-tables.md`** —— 客户端配置表 xlsx→lua→TSV 链路与 CRC32 门控
 > - **`REF-server-name-i18n.md`** —— 区服名多语言（server_info 的 name_en/jp/kr + 登录服 class 补丁与部署）
+> - **`REF-jenkins-ci.md`** —— 本机 Jenkins 全流程 CI（`.jenkins/` 7 个 job + **7 个只有真跑才暴露的坑** + REST 触发姿势）
 > - 当日细节一律进 `YYYY-MM-DD.md`（append-only）。
 
 ## 项目 / 生产环境
@@ -21,7 +22,7 @@
 - 隐藏区服：Java 主循环 `state == -1 || state == 0 → continue`；`state == 5` 才动态算 2/3/4（**永不返回 1**）。客户端逐条渲染不过滤 ⇒ 只能靠服务端不下发。`add-shard-10002.sh {hide|show}` 幂等。
 - 客户端硬编码 `channel=pc / plat=android / sub_channel=1`，记录必须对齐；登录/热更地址**硬编码在二进制**。
 - 登录服 `isTestLan=1` ⇒ `GetUserController.vertify` 只比对 `JL_LOGIN_TOKEN`、**完全不校验 sign** ⇒ 可取生产 Redis 的 `JL_LOGIN_TOKEN:<openId>` 调 `tk/getUserInfo` 造真实登录做端到端自测。
-- 🔴 **区服名多语言（2026-10-12 起机制已换）**：`server_info` 现在支持 `name_en / name_jp / name_kr`，由登录服 `tk/getServerList` 一并下发，客户端 `GetServerName()` 按 `GetLan()` 选用 ⇒ **新增区服只需写数据，客户端零改动**。旧路径（`server_info.name` 只有中文 + `~Lua/Common/LanguageManager.lua` 的 `AddManualTranslation`）**已降级为回落链**，只对没填分语言字段的老记录生效。已登记（2026-10-12 写入生产 `x1_cn_test_login`，登录服补丁**尚未部署**故线上无感知）：10001 霓虹序曲 → `Neon Overture` / `ネオン序曲`；10002 庇护所九号 → `Shelter No. 9` / `シェルター9号`（`name_kr` 未填，韩文包回落）。→ 细节见 **`REF-server-name-i18n.md`**。
+- 🔴 **区服名多语言（2026-10-12 起机制已换）**：`server_info` 现在支持 `name_en / name_jp / name_kr`，由登录服 `tk/getServerList` 一并下发，客户端 `GetServerName()` 按 `GetLan()` 选用 ⇒ **新增区服只需写数据，客户端零改动**。旧路径（`server_info.name` 只有中文 + `~Lua/Common/LanguageManager.lua` 的 `AddManualTranslation`）**已降级为回落链**，只对没填分语言字段的老记录生效。已登记（2026-10-12 写入生产 `x1_cn_test_login`；**登录服补丁已于当日 13:31 部署上线**，接口已实测下发分语言字段；客户端仍需出一次包才真机生效）：10001 霓虹序曲 → `Neon Overture` / `ネオン序曲`；10002 庇护所九号 → `Shelter No. 9` / `シェルター9号`（`name_kr` 未填，韩文包回落）。→ 细节见 **`REF-server-name-i18n.md`**。
 - 🔴 **语言 id 权威表**（`conf/server/MultiLanguage.txt`，解析式 `lanid=floor(id/100)%100`）：**10001=中文CNY / 10101=English USD / 10002=中文USD / 10201=日文 / 10301=韩文** ⇒ 英文**不是** 10002。Editor 切语言测试 = 改 `Logo.unity` GameSettings`originLan`（Editor 分支已尊重 Inspector）+ 确认 PlayerPrefs `multi_language` 键**不存在**（存在则优先，`defaults delete "unity.Warera.Neon Valkyries" multi_language`）。详见 2026-10-12 日志。
 - 骨架搭建原文档 `docs/serverbuild.md`。
 
@@ -53,6 +54,21 @@
 - 🔴 **账号名 = f(登录 SDK 给的 id)**，换 SDK 就等于换号；Android `platformId==1` **必须走 Google Sign-In（`f74ffb436`），勿改回 PlayGames**。
 - 出包配置真源 `Assets/Editor/ReleaseBuildSettings.cs`（`297b9ba9f`）；线上渠道值就是 `None`、`isSDK=false` 是**正常**的。
 
+## 全流程 CI（Jenkins）→ 细节见 `REF-jenkins-ci.md`
+- 三条链已收口成 **7 个 Jenkins job**（本机 2.568，`http://127.0.0.1:8080/`，视图「时空美少女 · 全流程」）：
+  `TS-Pipeline-Overview`（只读总览）/ `TS-Android-Release` / `TS-Android-TestPackage` / `TS-Client-Resources` /
+  `TS-Server-Health`(H 10) / `TS-Server-Ops` / `TS-Play-Watch`(H 9)。
+- 🔴 **单一真源在仓库**：job 定义 `.jenkins/jobs/*.groovy`，改 job **不用点界面、不用重启**
+  ⇒ 改完跑 `.jenkins/lint.sh`（四道静态检查）→ `.jenkins/apply-jobs.sh` 同步。权威文档 `docs/jenkins_ci.md`。
+- 🔴 **`.jenkins/run/` 是运行态产物，不入库**（`.gitignore`）。
+- **可视化四件套**：stage 图（嵌套分组）/ JUnit 表格+趋势（warn→`<skipped message="[WARN] …">`）/
+  `currentBuild.description` 单行结论 / `evidence/**` 归档。**有 warn 无 fail ⇒ UNSTABLE（黄球）**，这是有信息量的。
+- 🔴 **静态检查挡不住的三类坑**（真跑才炸）：`config.xml` 的 Content-Type **必须带 `charset=UTF-8`**（否则中文→500，
+  且 `createItem` 正常 ⇒「首次成功、二次全 500」的假象会骗人）；`<sandbox>` **必须 `true`**（写 false 要逐份批准脚本文本，
+  改一个字就 `UnapprovedUsageException`）；`junit testResults` **必须相对 workspace**（绝对路径 ⇒ 表格静默空白）；
+  ANSI 码进 XML ⇒ 整份报告 `[failed-to-read]`（`ESC` 是 XML 1.0 非法字符）。
+- 🔴 **`POST /job/<n>/build` 在 2.568 上恒 400**；正确姿势 `POST /buildWithParameters` + `--data-urlencode 'json={"parameter":[]}'` → 201。
+
 ## 🔴 约定（红线）
 - 巡检默认**只读**：不重启服务、不改服务器配置。报告要有量化证据（错误数/阈值），区分「严重🔴 / 关注⚠️」。
 - 🔴 **发版 / 上线前必须先给用户看过并取得明确同意，绝不自行提交审核。** 打包、构建、校验、提交 git 可以做；**「上传到 production 轨道 + status=completed」= 提交审核，必须先问**。
@@ -62,4 +78,5 @@
 - 🔴 **shell 脚本含中文标点时变量必须写 `${VAR}` 花括号**：`set -u` 下 `"…$STATUS）"` 会因全角括号字节并入变量名而报 `unbound variable`。
 - 🔴 **`set -o pipefail` 下 `cmd | head -1` 必须加 `|| true`**：head 早退 → cmd 收 SIGPIPE(141) → pipefail 视为失败 → `set -e` 中止。
 - 本机 `find` 是 BSD 版：**不支持 `-newermt`**，要用 `-mmin`；本机 `ps` 在沙箱里 operation not permitted，用 `pgrep -fl` 代替。
+- 🔴 **本机 grep 是 BSD 版：BRE 下不认 `\|`**（那是 GNU 扩展）⇒ `grep -o 'a\|b'` 被当**字面量**、匹配不到、退出 1；叠上 `set -o pipefail` 会让整条管道失败，把「有值」误报成「无值」。**一律用 `grep -E` / `-oE` / `-qE`**（BSD/GNU 通用），无匹配可能的地方再补 `|| true`。同理 `sed` 的 BRE 也别用 `\|`。（云服是 GNU grep，所以这个坑只在本地脚本上出现 —— 更容易漏。）
 - 🔴 **凡改动系统级状态（`/home`、挂载点、`synthetic.conf`、launchd 域、`/etc/*`），记忆里必须显式标注「重启后是否仍有效」**，并当场验证一次。

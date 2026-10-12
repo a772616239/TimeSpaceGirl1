@@ -86,7 +86,7 @@
    ② 补丁版 vs 纯重建版 **必须只有预期新增**。实测本补丁 ② = 31 行新增 / 0 行删除。
 6. ⚠️ `javap -bl`/`-c` 的文件名会进输出，比对时两侧**文件名必须相同**。
 
-### 部署（🔴 重载机制已用**本机 Tomcat 8.5.95 离线沙箱实测**，2026-10-12）
+### 部署 ✅ **2026-10-12 13:31 已实际部署到线上**（机制用本机 Tomcat 8.5.95 离线沙箱实测过）
 
 🔴 **三步事实**（不是推测，沙箱复现过）：
 
@@ -103,11 +103,18 @@
   正确判据：轮询 `catalina.out` 里的 `HostConfig.reload` + `[/tk]` 行
   （只匹配 logger/方法名与上下文名，**非本地化字串**，中英文 Tomcat 通吃）。
   `deploy-login-server.sh` 已按此改写，并加了「WAR mtime 变化告警」+「重载后复核磁盘 class md5」两道护栏。
-- 真机窗口估计（**秒级**）：同应用冷部署实测 `3,809 ms` = TLD/JAR 扫描 ~2.87s +
-  `WebContextListener`/Mongo 连接池 ~0.56s；`reload` 省掉解包但省不掉这两项。
-  沙箱空应用 reload 仅 **17ms**、期间持续请求 1110 次全 200 —— 但真实 `tk` 明显更慢。
-- ⚠️ 线上 `catalina.out` 里 `/tk` 重载次数基线 = **0**：该登录服**从未热重载过**，
-  历史都是整机重启（最近一次进程启动 10-Oct 17:22:56）。本次是首次用这个机制。
+- 真机窗口**实测 1.24s**（13:31:36.434 `HostConfig.reload` → 13:31:37.674
+  `StandardContext.reload ... is completed`）。沙箱空应用仅 17ms、期间持续请求 1110 次全 200
+  —— 真实 `tk` 因为有 TLD/JAR 扫描 + Mongo 连接池重建而更慢。
+- ⚠️ 重载会**重建 `WebContextListener` 的 Mongo/Redis 连接池**：完成后约 2s 会出现一条
+  **INFO 级**的
+  `WebappClassLoaderBase.checkStateForResourceLoading Illegal access: this web application instance has been stopped already. Could not load [ch.qos.logback...ThrowableProxy]`
+  + 紧跟一条 `NoClassDefFoundError`，线程名 `cluster-…-localhost:27017`。
+  ⇒ 这是 **Tomcat 主动终止 Mongo 驱动遗留后台线程**的标准自清理（消息里明写
+  "to attempt to terminate the thread which caused the illegal access"），**只出现一次**、
+  非故障 —— 别当异常处理，以后每次热重载都会看到。
+- 线上 `catalina.out` 里 `/tk` 重载次数基线曾 = **0**（该登录服历史上从未热重载过，都是整机重启）
+  ⇒ 2026-10-12 13:31 这次是**首次**用此机制，重载次数 **0 → 1**。
 - Manager 应用**没有可用账号**（`tomcat-users.xml` 里全是注释样例），所以走 touch 这条路。
 - `deploy-login-server.sh deploy --confirm`：备份（云服 `$TC/backup-gsl-i18n/` + 本地 `src/backup-gsl-i18n/`）
   → 上传 → `touch web.xml` → **等重载日志（≤120s）** → 复核 class 未被 WAR 覆盖 → 轮询接口 90s。
@@ -116,6 +123,19 @@
   （`check` 会比对；线上既不是这两者就要先查清楚）。
 - 自测接口（云服本机）：
   `curl -s 'http://127.0.0.1:8080/tk/getServerList?openId=x&channel=pc&plat=android&sub_channel=1&server_version=1.26001'`
+- ✅ **实际部署记录（2026-10-12 13:31）**：线上 class `87104cee…` → `d2a576bb…`；
+  `/tk` 重载 0 → 1；接口随即下发 `name_en`/`name_jp`
+  （10001 `Neon Overture`/`ネオン序曲`、10002 `Shelter No. 9`/`シェルター9号`）；
+  重载窗口内 6 个 `/tk` 请求**全部 200**，含一条真实老客户端 `server_version=1.2.45`。
+  备份：云服 `$TC/backup-gsl-i18n/GetServerListController.class.orig-20261012.bak`（md5 `87104cee…`）
+  + 本地 `src/backup-gsl-i18n/GetServerListController.orig.class`。
+- 🔴 **首次部署时脚本崩过一次**（已修，commit `8e94e981d`）：`say "...重载次数 = $N_BEFORE，tk.war..."`
+  里**全角逗号的字节被并进变量名** ⇒ `set -u` 报 `unbound variable`。崩点在 `touch web.xml`
+  **之前** ⇒ 应用没重载、线上零变化，但磁盘留下「class 已是补丁版、JVM 仍跑旧类」的中间态
+  （此时脚本自身的 md5 护栏会拦住重跑 ⇒ 需从 `$TC/backup-gsl-i18n/` 还原原版再重跑）。
+  同批还修了 **BSD grep 不认 BRE `\|`**（本地 macOS grep 把 `'a\|b'` 当字面量 ⇒ 匹配不到、
+  退出 1 ⇒ 叠上 `pipefail` 把「已下发字段」误报成「没写字段」；`run-dry-run.sh` 里的
+  `grep -q 'Exception\|NullPointer'` 同样静默失灵 ⇒ 异常检测形同虚设）。
 
 #### 兼容性论证（为什么不会影响线上玩家）
 

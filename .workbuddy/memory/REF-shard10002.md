@@ -30,7 +30,12 @@
 
 ## 启动踩坑（按重要性）
 - 🔴 **lib 硬编码 `/home/java/gameserver/`**：真凶 = `lib/fightmanager.jar` 的 `com/ljsd/fight/CheckFight.class` + `lib/gamecommon-1.0.0-SNAPSHOT.jar` 的 `util.SysUtil.getRootPath()`。缺此路径 → 全部配置表加载失败 → `NullPointerException: clazz.nullconfig.SXxxConfig` → 主线程崩溃。**别搞混**：gameSrv jar 内的 `com.ljsd.jieling.util.SysUtil.getRootPath()` 非 Windows 下返回 `"../"`，不是它。
-- 🔴 **macOS `/home` 是 autofs 挂载点**（`/home`→`/System/Volumes/Data/home`，被 `map auto_home` 接管）：`ln -s` 报 `Operation not supported`（root 也一样）。解法 = 注释 `/etc/auto_master` 的 `/home auto_home` 行 → `automount -vc` → 再建链。改的是数据卷，重启仍有效（备份 `/etc/auto_master.bak.ts-shard10002`）。
+- 🔴 **macOS `/home` 是「合成实体(synthetic)」，重启后不会自动出现** —— **2026-10-12 更正：旧结论「注释 auto_master 后建链、重启仍有效」是错的**。事实：macOS 默认 `/etc/auto_master` 里 `/home auto_home` **本来就是注释状态**，`/home` **默认根本不存在**；它只有被 `/etc/synthetic.conf` 声明后才会由 apfs 生成 → 重启后没有它，`/System/Volumes/Data/home/java` 就成**孤儿软链**。
+  - **真实症状**（2026-10-12 首次踩到）：Mac 重启 → `/home` 消失 → 游戏服启动 `file not find /home/java/gameserver/conf/server/*.txt`（68 行）→ `Exception in thread "main" … NullPointerException at config.SBloodyBattleSetting.init` → **主线程崩、进程退出**；launchd `KeepAlive` 每 30s 拉起又崩，**日志里只有一串 START 横幅、极易误判为"在跑"**（`launchctl print` 仍显示 running，但 `:16081` 无监听）。表现层 = 玩家登录不上、或进不去老角色。
+  - ✅ **正解（持久）**：`/etc/synthetic.conf` 写一行 **`home<TAB>/System/Volumes/Data/home`**（**必须真 tab**）→ `sudo /System/Library/Filesystems/apfs.fs/Contents/Resources/apfs.util -t` → **立即生成 `/home`，无需重启**，且下次开机自动生成。
+  - 落地：`~/ts-shard10002/fix-home-synthetic.sh`（幂等，可反复跑、是日常修复入口）；`setup-rootlink.sh` 已补 4b 步并订正注释。
+  - **排查口诀**：`ls /home` 报 `No such file` = 就是它；`ls /home/java/gameserver/conf/server | wc -l` 应 = **406**。
+  - 另一坑：`ln -s … /home/java` 在 `/home` 是 autofs 挂载点时确实报 `Operation not supported`（root 也一样）——但**别再把"注释 auto_master"当成解法**，真正缺的是 `synthetic.conf`。
 - 🔴 **macOS 上 `nohup cmd &` 会被父会话进程组清理杀掉**（现象＝进程静默消失、日志无错，极易误判为崩溃）→ 必须用 `detach.sh`。
 - 🔴 **配置加载层级**：生效的是 `file:./config/application.properties`（最高优先级）> jar **根目录**内置 `application.properties`（含 server.id / netty.tcpPort / redis / mongo 全默认值）⇒ **定义新服只需写这一个文件**，无需重编译。线上 `config/logicSrv.properties` 内容相同但**不被加载＝死文件**（本地已改名 `.disabled-10001`）。
 - 🔴 **core 库必须指向【不存在】的空库**（`spring.data.mongodbcore.uri`）：指向真带 `server_info` 的库会让 `MongoUtil.init()` 遍历 NPE 崩溃。生产 `m5_x1_login`，本地 `m5_x1_login_10002`。（`the user=N not exists` 是常态噪音，生产出现 1139 次，非故障。）

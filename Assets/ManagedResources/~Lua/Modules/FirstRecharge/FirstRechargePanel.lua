@@ -127,8 +127,10 @@ function FirstRechargePanel:OnShow()
     Util.GetGameObject(self.oneLihuiInfo,"name"):GetComponent("Text").text = GetLanguageStrById(this.oneHeroData.ReadingName)
     Util.GetGameObject(self.oneLihuiInfo,"pro"):GetComponent("Image").sprite = Util.LoadSprite(GetProStrImageByProNum(this.oneHeroData.PropertyName))
 
+    -- 原写法 "for i = 1, 10, 0" 步长为 0：LuaJIT 2.1 不报错但会死循环（i 恒为 1），
+    -- 每轮都 Load/UnLoad 一次立绘，是 UnLoadAsset 崩溃的高频触发源。这里显式写成轮播。
     thread = coroutine.start(function ()
-        for i = 1, 10, 0 do
+        while true do
             SetHeroData(GetHeroId())
         end
     end)

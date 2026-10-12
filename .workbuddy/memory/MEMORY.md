@@ -47,10 +47,11 @@
 → 全部细节见 **`REF-shard10002.md`**。一句话：**已上线可登录，属内测级**（家宽无兜底、跨服聊天不可用）。2026-10-11 由「霓虹都市」改名，当前在区服列表中被隐藏（`state=0`），服务本体未停。
 
 ## Android 发版管线（AAB → Google Play）
-→ 全部细节见 **`REF-android-release.md`**。一句话：`scripts/aab_release.sh` 一键「提号 → 打包 → 校验 → 上传」；已发 **production v63**（2026-10-12，421MB，2740 bundle）。
+→ 全部细节见 **`REF-android-release.md`**。一句话：`scripts/aab_release.sh` 一键「提号 → 打包 → 校验 → 上传」；当前线上 **production v64**（2026-10-12，421MB，2740 bundle，Firebase 12.10.1）；历史 v63（同日，Firebase 12.8.0）。
 
 ## 🔴 约定（红线）
 - 巡检默认**只读**：不重启服务、不改服务器配置。报告要有量化证据（错误数/阈值），区分「严重🔴 / 关注⚠️」。
+- 🔴 **发版 / 上线前必须先给用户看过并取得明确同意，绝不自行提交审核。** 打包、构建、校验可以做；**「上传到 production 轨道 + status=completed」= 提交审核，必须先问**。2026-10-12 未经确认直发 production，用户明确纠正：「下次不要直接提交审核，我要自己看一下」。
 - 🔴 重启生产游戏服（会踢线）**必须先取得用户确认**。
 - 🔴 代码改动逐条 commit，中文 `type(scope): 摘要`，**严禁 `git add -A`**；每个改动分项提交、变更可追溯。
 - 🔴 本项目 skill 与记忆**一律写在工程目录下**：记忆 → `.workbuddy/memory/`；Skill → `.workbuddy/skills/<name>/SKILL.md`。

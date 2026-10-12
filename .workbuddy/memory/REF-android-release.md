@@ -99,19 +99,32 @@ Play 的 16 KB 告警**是两层、彼此独立**，别混为一谈：
 - ⚠️ **踩坑：`Assets/Firebase/m2repository` 必须存 `.srcaar`，`GeneratedLocalRepo` 才存 `.aar`**。两处都放 `.aar` ⇒ Unity 报 `Found plugins with same names ... Plugins colliding` 构建失败。改名后还须**重写 `.meta`**：`.srcaar` 用 `DefaultImporter`，`GeneratedLocalRepo` 的 `.aar` 用 `PluginImporter` 且 `Android.enabled: 0`（否则被判为 Android 插件再次冲突）。
 - Firebase 三个 unity aar 的 pom **无 `<dependencies>`** ⇒ 无传递依赖断链风险。
 
+### 🔴 v64 上线后 Play 实测：告警 **5 → 2**（2026-10-12，推翻旧结论）
+用户从 Play Console 收到的告警点名**只剩 2 个库**：
+```
+base/lib/arm64-v8a/libnative-googlesignin.so
+base/lib/arm64-v8a/libtolua.so
+```
+- ✅ **Firebase 三库（Analytics / App-12_8_0 / Crashlytics）已从名单消失** ⇒ **升 Firebase 确实清掉了 3 个**。
+- ⚠️ 但 `so_meta.py` 实测 12.10.1 的 `.note.android.ident` **仍是 r21e** ⇒ 说明 **Play 清单按「库名+版本」判定，不是按 NDK 版本阈值**。（旧结论「升 Firebase 清不掉告警」据此**作废**。）
+- 新包（v64）里这 5 个库**全都在**（`zipfile` 精确列举确认）⇒ 告警确实挂在 v64 这一代；**Firebase 三库是被 12.10.1 替换后不再被点名的**。
+
+### 🔴 两条反直觉的实测结论（决定要不要动手）
+1. **清告警 = 换掉被点名的那个库文件本身**（不是升 NDK、不是升 Unity）。`_64.aab` 中 `libFirebaseCppApp-12_10_1.so` 不在清单，而 `12_8_0` 在 ⇒ 换版即清。剩余 2 个同理：要清 `googlesignin` 只能换/删该库，要清 `tolua` 只能重编该库。
+2. **Play 的告警挂在「已发布版本」上，概览不会自动刷新。** `main_android` 记忆实测：Console 每条问题都标注「发布版本名称：N」= 线上旧版；新包已修的问题**概览里仍可能显示**。⇒ 核对版本号再决定是否处理。
+
 ### 时限与取证工具
 - 门槛 2 在 **2027-02-01** 前**只是警告、不阻断发布**（门槛 1 已过）。
 - 取证工具在跨仓 `main_android/Release/tools/`：`verify_16k.py`（ELF 对齐，支持 APK/AAB/裸 `.so`）、`so_meta.py`（读 `.note.android.ident` 判 NDK 版本，**不认 AAB，要喂裸 `.so`**）。
 - 完整 playbook：`main_android/docs/skills/android-16kb-page-alignment/{SKILL.md,references/*}`。
-
-### 🔴 两条反直觉的实测结论（决定要不要动手）
-1. **升 Firebase 大概率清不掉门槛 2 告警。** `main_android` 的 commit `9dfa41bfc` 自述：*「Firebase 预编译库仍为 NDK r21e（12.8.0/12.10.1/13.16.0 实测一致），Play「旧版 NDK 编译」告警不会因此消失，但真实崩溃已修」*。⇒ 换版的价值是**修 issue #1259 真机启动崩溃**，不是清告警。
-2. **Play 的告警挂在「线上已发布版本」上，概览不会自动刷新。** `main_android` 记忆实测：Console 每条问题都标注「发布版本名称：39 (28)」= 线上旧版；新包已修的问题**概览里仍显示**。⇒ 核对版本号再决定是否处理，别把「旧版的告警」当「新包没修好」。
 
 ### 本工程的 Firebase 使用面（决定改动风险）
 - **代码零引用**：C# / Lua / Java 全树 `grep -i firebase\|crashlytics`（排除 `Assets/Firebase`）**零命中**；仅 `Assets/google-services.json` 存在。⇒ Firebase 只为 **Crashlytics 自动崩溃上报 + Analytics 自动采集**而装，无 API 调用点。
 - 落点：SDK 版本 = **12.8.0**（`Assets/Firebase/m2repository/com/google/firebase/{firebase-app,firebase-analytics,firebase-crashlytics}-unity/12.8.0/`）；`Assets/Firebase/Plugins/x86_64/FirebaseCppApp-12_8_0.dll`；EDM4U 生成的依赖块在 `Assets/Plugins/Android/mainTemplate.gradle`（`Android Resolver Dependencies` 段，4 处 `12.8.0`）。
 - 本项目**无 HybridCLR**（无 `*.dll.bytes`）⇒ 升级 Firebase 时不需要重生成 AOT 补充元数据。
 - SDK 可下载：`https://dl.google.com/firebase/sdk/unity/firebase_unity_sdk_12.10.1.zip`（HTTP 200 实测可达）。
-- **`libnative-googlesignin.so`** 来自 `Assets/GoogleSignIn/Editor/m2repository/.../google-signin-support-1.0.4.aar`（插件 v1.0.4，`google-signin-unity`）——同样是**代码零引用**的死插件，可整目录移除。
-- **`libtolua.so`** 仓库内**无 tolua 源码**（无 `tolua*.c/h`），本次**无法用 NDK r28 重编**。
+- 🔴 **`libnative-googlesignin.so` = 活代码，不是死插件**（⚠️ 2026-10-12 曾误判为「零引用可整目录删」，已更正）：
+  - 来源 `Assets/GoogleSignIn/Editor/m2repository/com/google/signin/google-signin-support/1.0.4/google-signin-support-1.0.4.aar` → `jni/arm64-v8a/libnative-googlesignin.so`（284752B，r17/GCC）。该 aar 的 `.meta` 虽写 `Android.enabled: 0`，但包里确实有该 so（待查 Unity 实际提取路径）。
+  - 调用链（活）：`~Lua/Modules/Login/LoginPanel.lua:109` `Util.AddClick(this.googlebtn, this.OnGoogleLogin)` → `OnGoogleLogin` 置 `LoginPlatform=1`（:1166）→ `ggSignMgr:LoginByPlatformType(1,…)`（:1243）→ `GoogleSignMgr.cs:30` `new SigninSampleScript()` → `Assets/GoogleSignIn/` 插件。
+  - ⇒ **不能只删目录**：`Assets/Scripts/Google/SigninSampleScript.cs` 与 `GoogleSignMgr.cs` 依赖 plugin 类型，删插件会**编译失败**；且会**移除 Google 账号登录**（另一条 `platformId==2` 走 `GooglePlayGamesLogin`，按钮是主登录键 `btnLogin`）。要清此库须同时改 Lua（**重编 LuaBytes**）+ C# + 删 `Assets/GoogleSignIn/` + `Assets/Plugins/iOS/GoogleSignIn/`。
+- **`libtolua.so`** 来源 = `Assets/Plugins/Android/libs/arm64-v8a/libtolua.so`（裸 so，ToLua# 框架 native 侧，`4d1210554 cathe` 引入，stripped、**无 `.note.android.ident`** ⇒ `so_meta.py` 判「无法判定」）。C# 侧在 `Assets/ToLua/Core/{ToLua.cs,LuaDLL.cs}`。❗**仓库内无 tolua C 源码**（无 `tolua*.c/h`）⇒ 本次**无法用 NDK r28 重编**；且它是 Lua 运行时核心，换版接口不匹配会整机崩，风险最高。

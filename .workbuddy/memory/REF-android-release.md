@@ -7,6 +7,12 @@
 - 一键入口 `scripts/aab_release.sh`（提号 → Unity batchmode 打包 → 校验 → 上传）；配套 `scripts/play_upload.py`（Play Developer API v3）、`scripts/bump_version.py`（提号）、`scripts/check_ab_ready.sh`（AB 只读体检，退出码 0/1）。
 - 文档 `docs/google_play_upload_setup.md`；项目 skill `.workbuddy/skills/play-aab-release/`。打包侧坑位真源 = `docs/unity_android_build_skill.md`。
 - 产物落 `apks/{日期}/CLIBuild/{时间}.aab` + 同名 `.json` sidecar 记 versionCode；`apks/` 已 gitignore。`AutoSignKeystore.cs` 打包前自动注入 keystore，无需手动配。
+- **APK 打包入口**：`Assets/Editor/CLIBuilder.cs:81 BuildAndroidAPK()`（`EditorUserBuildSettings.buildAppBundle = false` ⇒ **universal APK**，本工程仅 arm64）。CLI：
+  `Unity -projectpath <root> -batchmode -nographics -executeMethod CLIBuilder.BuildAndroidAPK -logFile build_log_apk_main.txt -quit`
+  产物与 AAB 同目录（`apks/<date>/CLIBuild/<HHmmss>.apk`）；v65 实测 **454MB / 2m9s / `UNITY_EXIT=0`**。
+  - ⚠️ **APK 用 upload key 签名**（`beauty.keystore` / alias `xing`，证书 DN `O=EMI`，SHA-256 `8ed07291…94b0`）—— 与 Play 的 **app signing key 不是同一个**（Play App Signing 会重签 AAB）⇒ 侧载到已装 Play 版的机器上会签名冲突，**须先卸载**。
+  - 签名 scheme：**仅 v2**（`v1=false` 属正常 —— AGP 在 minSdk ≥ 24 时默认关闭 v1/JAR 签名）。
+  - `apks/` 在 `.gitignore:38`；APK 打包日志 `build_log_apk_main.txt` 已由通配规则 `build_log_*_main.txt` 覆盖（`6fd42bd93`）。
 
 ## 🔴 versionCode
 - **CLI 打包不自增 versionCode**：`Assets/Editor/CLIBuilder.cs` 只读，自增只在 GUI 的 `BuildWindow.cs:449` ⇒ CLI 反复打包复用同一个号（实测日志 `VersionCode: 62`），传 production 必被拒。
@@ -26,12 +32,21 @@
 - `play_upload.py` 已内置：`widen_http_timeout()` 提到 300s **并 clear `.connections`**（httplib2 只在建连时读 timeout，不清缓存复用旧连接仍是 60s）+ `chunksize=8MB` + 断点续传重试（8 次指数退避）+ 异常回滚 edit。
 - 可覆盖：`PLAY_UPLOAD_TIMEOUT_S` / `PLAY_UPLOAD_CHUNK_MB` / `PLAY_UPLOAD_MAX_RETRIES`。421MB 实测约 8 分钟。
 - 已发版：**production v64**（2026-10-12，421MB，Firebase Unity SDK 12.10.1）；历史 v63（同日，12.8.0，含完整 bundles + Lua）、v62（2026-08-17，421MB）。
+- **v65（2026-10-12 09:00）**：421MB，含 googlesignin 依赖移除 + `libtolua.so` r28 重编。已按用户指令上传到 **production 轨道但 `status=draft`（不送审）**，Play API 实测 `production: draft v65; completed v64` ⇒ 线上正式版仍是 v64，v65 待人在 Console 手动发布。APK 同内容已另出（见上）。
 
 ## 🔴 Play edit 互斥：上传期间禁止并发调用 Play API（2026-10-12 实测）
 - 现象：v64 上传跑到 **85%** 时 `HTTP 400 / FAILED_PRECONDITION / This Edit has been deleted`，整包失败（`play_upload.py` 退出码 4）。
 - 根因：**上传过程中另一个进程对该 App 调了 Play API 并 insert 了新 edit**（当时我在跑 `play_16kb_watch.py --dry-run`）⇒ 同一 App 的并发 edit 互相作废，上传绑定的 edit 被判 deleted。
 - 处置：直接重跑 `play_upload.py`（会新建 edit 重传）。🔴 **不要用 `aab_release.sh` 重跑** —— 它默认 `--bump`，会再提一次 versionCode 导致号段跳空。
 - 规则：**上传/发布进行中，不要跑巡检、dry-run 或任何会 `edits.insert` 的工具**。已写进 `play_16kb_watch.py` 文档头与 `docs/google_play_upload_setup.md §5`。
+
+## 轨道与发布状态：如何「上传但不送审」（2026-10-12）
+- Play Developer API 的 `release.status` 合法值 = `{draft, inProgress, halted, completed}`（= `play_upload.py` 的 `VALID_STATUS`）。默认 `completed`。
+- 🔑 **production 轨道上唯一的不送审姿势 = `--status draft`**：上传后只是「草稿」，**不进 Google 审核**，要人工在 Play Console 点发布才生效。
+- ⛔ `--changes-not-sent-for-review`（即 `changesNotSentForReview=true`）**只对 internal/alpha/beta 有效**，传 production 会被脚本 `die`（`play_upload.py` 内有硬校验）。
+- 🔴 `aab_release.sh` 末尾输出「Play Console 会进入审核」是 `play_upload.py` 里 `if args.track == "production"` 的**固定文案**，`status=draft` 时它**是错的**，别被误导。
+- 复核现状（只读内容，但会 `edits.insert`）：`play_upload.py --dry-run`，看 `[tracks]` 段 —— draft 与 completed 并存时形如 `production  draft v65; completed v64`。⚠️ **上传/发布进行中不要跑**（见上节 edit 互斥）。
+- 完整命令：`scripts/aab_release.sh --skip-build --aab <path>.aab --track production --status draft --yes`
 
 ## Play 16KB 合规巡检（2026-10-12 起）
 - 工具 `scripts/play_16kb_watch.py`（轨道现状 + 两层取证 + diff + 邮件）；定时任务 id `ea56e5de-abc2-45c2-abb9-401505a65a96`（每 3 天 10:00）。

@@ -41,5 +41,6 @@ TimeSpaceServer/Server_x1tag1.2.2/
 __pycache__/
 *.pyc
 # 发布/AB 构建日志（每次跑都会新增；历史 build_log*.txt 已跟踪，不受影响）
-build_log_aab_main.txt
+# 2026-10-12 改为通配：原来只写了 aab_main，新加的 build_log_apk_main.txt 漏网
+build_log_*_main.txt
 build_log_ab_*.txt

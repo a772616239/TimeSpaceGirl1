@@ -16,17 +16,24 @@ Google Play AAB 上传器 —— 走 Play Developer API v3（androidpublisher）
     申请与授权步骤见 docs/google_play_upload_setup.md
 
 用法示例：
-    # 先干跑：只认证 + 列出各轨道现状，不上传
+    # 先干跑：只认证 + 列出各轨道现状，不上传（只读，不受闸门限制）
     python3 scripts/play_upload.py --aab apks/2026-10-11/CLIBuild/120000.aab --dry-run
 
-    # 正式上传并发布到 production（全量）
-    python3 scripts/play_upload.py --aab <path>.aab --track production --status completed --yes
+    # 上传成 production 草稿（不送审）
+    python3 scripts/play_upload.py --aab <path>.aab --track production --status draft \
+        --allow-production-write --yes
 
-    # 分阶段放量 10%
-    python3 scripts/play_upload.py --aab <path>.aab --track production --status inProgress --user-fraction 0.1 --yes
+    # 🔴 正式发布（会提交 Google 审核并面向全部用户）—— 必须两个旗标都显式给出，
+    #    且事先已取得用户明确同意
+    python3 scripts/play_upload.py --aab <path>.aab --track production --status completed \
+        --allow-production-write --allow-publish --yes
+
+    # 🔴 分阶段放量 10%（同上，属发布动作）
+    python3 scripts/play_upload.py --aab <path>.aab --track production --status inProgress \
+        --user-fraction 0.1 --allow-production-write --allow-publish --yes
 
 退出码：
-    0 成功 / 2 参数或环境错误 / 3 认证失败 / 4 API 业务错误 / 5 版本号校验失败
+    0 成功 / 2 参数或环境错误（含被发布闸门拒绝）/ 3 认证失败 / 4 API 业务错误 / 5 版本号校验失败
 """
 
 from __future__ import annotations
@@ -425,8 +432,12 @@ def main() -> int:
     ap.add_argument("--package", default=DEFAULT_PACKAGE, help=f"应用包名（默认 {DEFAULT_PACKAGE}）")
     ap.add_argument("--track", default="production",
                     help="目标轨道：production / beta / alpha / internal（默认 production）")
-    ap.add_argument("--status", default="completed", choices=sorted(VALID_STATUS),
-                    help="发布状态（默认 completed=全量）")
+    ap.add_argument("--status", default="draft", choices=sorted(VALID_STATUS),
+                    help="发布状态（默认 draft=草稿，不送审）。要 completed/inProgress 必须另加 --allow-publish")
+    ap.add_argument("--allow-production-write", action="store_true",
+                    help="🔴 显式放行对 production 轨道的写操作。不传则一律拒绝（2026-10-12 起）")
+    ap.add_argument("--allow-publish", action="store_true",
+                    help="🔴 显式放行 status=completed/inProgress（= 提交 Google 审核 / 上线）。不传则一律拒绝")
     ap.add_argument("--user-fraction", type=float, default=None,
                     help="分阶段放量比例 0~1，仅 status=inProgress 时有效")
     ap.add_argument("--release-notes", default=None,
@@ -452,6 +463,32 @@ def main() -> int:
         die("status=inProgress 必须同时指定 --user-fraction（如 0.1）", 2)
     if args.user_fraction is not None and not (0.0 < args.user_fraction <= 1.0):
         die("--user-fraction 必须在 (0, 1] 区间", 2)
+
+    # ----------------------------------------------------------------------- #
+    # 🔴 发布闸门（2026-10-12 加）
+    #
+    # 背景：用户明确要求「不要帮我送审，我要自己看一下」。此前只能靠"记得别写 completed"
+    # 这种口头纪律，事实证明不可靠 —— 仓库里有 3 处会写 Play 的入口，任一处漏传 --status
+    # 就会走默认 completed（= 直接送审 + 上线）。
+    # ⇒ 改成默认拒绝：production 写入要 --allow-production-write，非 draft 状态要 --allow-publish。
+    #   两个旗标都只能由人显式敲出来，脚本之间不会互相传递。
+    #   --dry-run 是只读，不受限。
+    # ----------------------------------------------------------------------- #
+    if not args.dry_run:
+        if args.track == "production" and not args.allow_production_write:
+            die(
+                "拒绝对 production 轨道做写操作。\n"
+                "   本脚本默认拒绝任何 production 写入。若确实要上传（且已取得用户明确同意），\n"
+                "   请显式加 --allow-production-write；只想看现状请用 --dry-run。",
+                2,
+            )
+        if args.status in ("completed", "inProgress") and not args.allow_publish:
+            die(
+                f"拒绝把包置为 status={args.status}（= 提交 Google 审核 / 上线）。\n"
+                "   这属于「对外生效、不可轻易撤回」的动作，必须先取得用户明确同意，\n"
+                "   再显式加 --allow-publish。只上传成草稿请用 --status draft。",
+                2,
+            )
 
     sa_path = resolve_service_account(args.service_account)
     log(f"[env] package      : {args.package}")

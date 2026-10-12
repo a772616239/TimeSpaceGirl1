@@ -3,12 +3,19 @@
 # aab_release.sh —— 一键：提版本号 → Unity 打 AAB → 校验 → 上传 Google Play
 #
 # 用法：
-#   scripts/aab_release.sh                          # 全流程，目标 production 全量
-#   scripts/aab_release.sh --track internal         # 传内部测试轨道
-#   scripts/aab_release.sh --dry-run                # 打包 + 只认证列现状，不上传
+#   scripts/aab_release.sh                          # 默认：只打包 + 校验，**不上传**
+#   scripts/aab_release.sh --dry-run                # 打包 + 只认证列现状（只读）
 #   scripts/aab_release.sh --skip-build             # 复用最近一个 AAB，跳过 Unity 打包
-#   scripts/aab_release.sh --no-upload              # 只打包 + 校验
 #   scripts/aab_release.sh --no-bump                # 不动 versionCode（仅调试用！）
+#
+# 🔴 上传是显式动作（2026-10-12 起，用户要求「不要帮我送审，我要自己看一下」）：
+#     --upload      才会上传；不加则只在本地出包
+#     --production  才允许写 production 轨道
+#     --publish     才允许 status=completed/inProgress（= 送审 + 上线）
+#   默认 --status draft（草稿）。三个旗标必须由人显式敲出来，脚本之间不会互相传递。
+#
+#   例：scripts/aab_release.sh --upload --production --status draft   # 传 production 草稿
+#       scripts/aab_release.sh --upload --production --publish        # 正式发布（需先获批准！）
 #
 # 前置检查里有一道 AssetBundle 闸门：若 StreamingAssets 里找不到任何 Lua bundle
 # 会直接中止（因为这样打出的 AAB 真机起不来）。确认要发不含 Lua 的包时加
@@ -30,13 +37,15 @@ BUILD_LOG="${PROJECT_ROOT}/build_log_aab_main.txt"
 PACKAGE_NAME="com.Warera.timespace"
 
 TRACK="production"
-STATUS="completed"
+STATUS="draft"          # 🔴 默认草稿（不送审）；completed/inProgress 需 --publish
 USER_FRACTION=""
 NOTES=""
 KEY=""
 DO_BUMP=1
 SKIP_BUILD=0
-DO_UPLOAD=1
+DO_UPLOAD=0             # 🔴 默认不上传（2026-10-12 起）；上传需显式 --upload
+ALLOW_PROD=0            # production 写入放行（--production）
+ALLOW_PUBLISH=0         # 送审/上线放行（--publish）
 DRY_RUN=0
 ASSUME_YES=0
 ALLOW_NO_LUA=0
@@ -55,11 +64,15 @@ while [[ $# -gt 0 ]]; do
         --aab)            EXPLICIT_AAB="$2"; SKIP_BUILD=1; shift 2 ;;
         --no-bump)        DO_BUMP=0; shift ;;
         --skip-build)     SKIP_BUILD=1; shift ;;
-        --no-upload)      DO_UPLOAD=0; shift ;;
+        # 🔴 闸门旗标（2026-10-12）：必须由人显式敲出来，脚本之间不互相传递
+        --upload)         DO_UPLOAD=1; shift ;;
+        --production)     ALLOW_PROD=1; TRACK="production"; shift ;;
+        --publish)        ALLOW_PUBLISH=1; shift ;;
+        --no-upload)      DO_UPLOAD=0; shift ;;   # 保留兼容；现已是默认
         --dry-run)        DRY_RUN=1; shift ;;
         --allow-no-lua)   ALLOW_NO_LUA=1; shift ;;
         --yes|-y)         ASSUME_YES=1; shift ;;
-        -h|--help)        sed -n '2,20p' "$0"; exit 0 ;;
+        -h|--help)        sed -n '2,31p' "$0"; exit 0 ;;
         *) echo "未知参数：$1（用 --help 查看用法）" >&2; exit 2 ;;
     esac
 done
@@ -68,6 +81,24 @@ step()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()    { printf '\033[1;32m  ✓ %s\033[0m\n' "$*"; }
 warn()  { printf '\033[1;33m  ! %s\033[0m\n' "$*"; }
 fail()  { printf '\033[1;31m  ✗ %s\033[0m\n' "$*" >&2; exit 1; }
+
+# --------------------------------------------------------------------------- #
+# 🔴 发布闸门自检（fail fast，把拒绝理由直接讲清楚）
+#
+# 背景：2026-10-12 用户明确要求「不要帮我送审，我要自己看一下」。此前默认值就是
+# completed（= 直接送审 + 上线），任何一次漏传参数都会造成误送审。
+# ⇒ 现在改成默认拒绝：要上传加 --upload，要写 production 加 --production，
+#   要送审/上线（completed / inProgress）加 --publish。三者缺一即拒。
+# --------------------------------------------------------------------------- #
+if [[ "$DRY_RUN" -eq 0 && "$DO_UPLOAD" -eq 1 ]]; then
+    if [[ "$TRACK" == "production" && "$ALLOW_PROD" -eq 0 ]]; then
+        fail "拒绝写 production 轨道：请显式加 --production（只想看现状请用 --dry-run）"
+    fi
+    if [[ "$STATUS" == "completed" || "$STATUS" == "inProgress" ]] && [[ "$ALLOW_PUBLISH" -eq 0 ]]; then
+        fail "拒绝把包置为 status=${STATUS}（= 提交审核 / 上线）：请显式加 --publish。
+    只上传成草稿请用默认的 --status draft（或显式 --status draft）。"
+    fi
+fi
 
 cd "$PROJECT_ROOT"
 
@@ -317,8 +348,9 @@ ok "16KB 硬门槛通过（上面 ⚠️ 列表为 Play 软告警候选，需人
 # 5. 上传
 # --------------------------------------------------------------------------- #
 if [[ "$DO_UPLOAD" -eq 0 ]]; then
-    step "跳过上传（--no-upload）"
+    step "跳过上传（默认行为；要上传请显式加 --upload）"
     ok "产物就绪：$AAB"
+    ok "下一步（上传成 production 草稿）：scripts/aab_release.sh --skip-build --upload --production --status draft --yes"
     exit 0
 fi
 
@@ -329,6 +361,9 @@ UPLOAD_ARGS=(--aab "$AAB" --package "$PACKAGE_NAME" --track "$TRACK" --status "$
 [[ -n "$KEY" ]]           && UPLOAD_ARGS+=(--service-account "$KEY")
 [[ "$DRY_RUN" -eq 1 ]]    && UPLOAD_ARGS+=(--dry-run)
 [[ "$ASSUME_YES" -eq 1 ]] && UPLOAD_ARGS+=(--yes)
+# 闸门旗标一路透传给 play_upload.py（它自己也会再拒一次，双保险）
+[[ "$ALLOW_PROD" -eq 1 ]]    && UPLOAD_ARGS+=(--allow-production-write)
+[[ "$ALLOW_PUBLISH" -eq 1 ]] && UPLOAD_ARGS+=(--allow-publish)
 
 set +e
 "$VENV_PY" scripts/play_upload.py "${UPLOAD_ARGS[@]}"
@@ -346,4 +381,8 @@ fi
 
 step "全流程完成"
 ok "AAB: $AAB"
-ok "已发布到轨道：${TRACK}（${STATUS}）"
+if [[ "$STATUS" == "draft" ]]; then
+    ok "已上传到轨道：${TRACK}（草稿，**未送审**，可在 Play Console 自行检查后手动发布）"
+else
+    ok "已提交到轨道：${TRACK}（${STATUS}）"
+fi

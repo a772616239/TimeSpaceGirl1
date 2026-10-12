@@ -102,6 +102,22 @@ assert(GetLanguageStrByStr("庇护所九号") == "庇护所九号", "zh 下应�
 print("  ✅ GetLanguageStrByStr / HasLanguageStrKey / GetLan 行为正常")
 pass = pass + 6
 
+print("== 5) 真实生产数据（2026-10-12 生产库 x1_cn_test_login.server_info 实际下发）==")
+-- 取自 dry-run prod 的真实响应体，逐字段抄录，不做加工
+local PROD = {
+    { name = "霓虹序曲",   name_en = "Neon Overture", name_jp = "ネオン序曲",     server_id = "10001" },
+    { name = "庇护所九号", name_en = "Shelter No. 9", name_jp = "シェルター9号", server_id = "10002" },
+}
+local NEON, SHELTER = PROD[1], PROD[2]
+check("10001 霓虹序曲 zh", "zh", NEON, "霓虹序曲")
+check("10001 霓虹序曲 en", "en", NEON, "Neon Overture")
+check("10001 霓虹序曲 jp", "jp", NEON, "ネオン序曲")
+check("10001 霓虹序曲 kr（name_kr 未配 且 翻译表也无此服）", "kr", NEON, "霓虹序曲", true)
+check("10002 庇护所九号 zh", "zh", SHELTER, "庇护所九号")
+check("10002 庇护所九号 en", "en", SHELTER, "Shelter No. 9")
+check("10002 庇护所九号 jp", "jp", SHELTER, "シェルター9号")
+check("10002 庇护所九号 kr（name_kr 未配，翻译表命中故无红字）", "kr", SHELTER, "庇护所九号")
+
 print()
 print(string.format("结果：%d 通过 / %d 失败", pass, fail))
 os.exit(fail == 0 and 0 or 1)

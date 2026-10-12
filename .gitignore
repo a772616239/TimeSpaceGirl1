@@ -44,3 +44,8 @@ __pycache__/
 # 2026-10-12 改为通配：原来只写了 aab_main，新加的 build_log_apk_main.txt 漏网
 build_log_*_main.txt
 build_log_ab_*.txt
+
+# Jenkins 本地 CI：job 定义 / 库 / lint 全部入库（单一真源，改 job 不用点界面、可 review）；
+# 只有 run/ 是运行态产物（渲染出的 config.xml + 每次构建的证据目录），不入库。
+# 证据已经由 job 归档到 Jenkins 构建里（evidence/**），仓库里不需要第二份。
+.jenkins/run/

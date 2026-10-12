@@ -10,6 +10,7 @@
 
 | 我想…… | 看这篇 |
 |---|---|
+| **把全流程跑起来 / 各环节看结论（CI）** | **`jenkins_ci.md`** |
 | 打包 / 发版 / 传 Google Play | **`android_release_runbook.md`** |
 | 知道有哪些脚本、怎么调、退出码是什么 | **`scripts_reference.md`** |
 | 改 Lua / 配置表 / 资源，改完不生效 | **`client_build_chain.md`** |
@@ -17,7 +18,8 @@
 | Unity 构建侧深坑（Gradle / AGP / billing / AndroidX） | `unity_android_build_skill.md` |
 | service account 申请与 Play 后台授权 | `google_play_upload_setup.md` |
 | 原始服务端架设文档（厂商版） | `serverbuild.md` |
-| 客户端功能设计（英雄对比 / 时间线 / 多语言公告） | `HeroCompare_FeatureDesign.md`、`HeroTimeline_FeatureDesign.md`、`notice_multi_lang_guide.md` |
+| 客户端功能设计（英雄对比 / 时间线 / 多语言公告） | `HeroCompare_FeatureDesign.md`、`HeroTimeline_FeatureDesign.md` |
+| **多语言：公告 / 区服名** | `notice_multi_lang_guide.md`、`server_name_multi_lang_guide.md` |
 
 ---
 
@@ -68,6 +70,23 @@
 ```
 
 每个脚本的参数、退出码、内部步骤与产物 → **`scripts_reference.md`**。
+
+---
+
+## 全流程 CI（`.jenkins/` → 本机 Jenkins）
+
+A/B/C 三条链已经收口成 **7 个 Jenkins job**，跑在 `http://127.0.0.1:8080/`
+（视图「时空美少女 · 全流程」），并且每个环节的结论都以
+**stage 图 / 测试结果表格+趋势图 / 构建描述 / 归档证据**四种形式呈现，不用翻控制台。
+
+```bash
+.jenkins/lint.sh              # 改完 .jenkins/** 必跑（四道静态检查）
+.jenkins/apply-jobs.sh        # 同步 job 定义（单一真源在仓库，改 job 不用点界面）
+.jenkins/apply-jobs.sh --list # 看每个 job 的参数与触发器
+```
+
+> 细节（job 拓扑 / 参数 / 送审三层闸门 / REST 触发姿势 / 本机踩过的 7 个坑 / 排障清单 / 验收清单）
+> → **`jenkins_ci.md`**。**`.jenkins/run/` 是运行态产物，不入库。**
 
 ---
 

@@ -136,7 +136,8 @@ case "$MODE" in
     ensure_artifact
     # 防并发：确认没有 unity 打包、其它 agent 正在跑
     say "1/5 备份线上 class"
-    remote "mkdir -p '$BACKUP_DIR' && cp -p '$CLASS_PATH' '$BACKUP_DIR/GetServerListController.class.\$(date +%Y%m%d-%H%M%S).bak' && ls -la '$BACKUP_DIR' | tail -3"
+    TS="$(date +%Y%m%d-%H%M%S)"
+    remote "mkdir -p '$BACKUP_DIR' && cp -p '$CLASS_PATH' '$BACKUP_DIR/GetServerListController.class.${TS}.bak' && ls -la '$BACKUP_DIR' | tail -3"
     CUR="$(remote "md5sum '$CLASS_PATH' | awk '{print \$1}'" | tr -d '\r')"
     [ "$CUR" = "$MD5_NEW" ] && die "线上已经是补丁版，中止（避免重复重载）"
     mkdir -p "$LOCAL_BACKUP"
@@ -151,7 +152,7 @@ case "$MODE" in
     say "   注：只上传 class 不会触发重载，必须 touch web.xml（本机沙箱实测）"
     N_BEFORE="$(reload_count)"; N_BEFORE="${N_BEFORE:-0}"
     WAR_BEFORE="$(war_mtime)"
-    say "   基线：catalina.out 里 /tk 重载次数 = $N_BEFORE，tk.war mtime = $WAR_BEFORE"
+    say "   基线：catalina.out 里 /tk 重载次数 = ${N_BEFORE}，tk.war mtime = $WAR_BEFORE"
     remote "touch '$WEBXML_PATH'"
 
     say "4/5 等 HostConfig 真正重载 /tk（最多 120s；后台线程按周期扫描，会有几十秒延迟）"
@@ -160,7 +161,7 @@ case "$MODE" in
       sleep 3; waited=$((waited + 3))
       N_AFTER="$(reload_count)"; N_AFTER="${N_AFTER:-0}"
       if [ "$N_AFTER" -gt "$N_BEFORE" ]; then
-        say "   ✅ 已重载（次数 $N_BEFORE → $N_AFTER，约 ${waited}s 后触发）"
+        say "   ✅ 已重载（次数 $N_BEFORE → ${N_AFTER}，约 ${waited}s 后触发）"
         break
       fi
     done
@@ -175,10 +176,10 @@ case "$MODE" in
     WAR_AFTER="$(war_mtime)"
     CUR_MD5="$(class_md5)"
     if [ "$WAR_AFTER" != "$WAR_BEFORE" ]; then
-      say "   ⚠️ tk.war mtime 变了（$WAR_BEFORE → $WAR_AFTER）—— 可能被重新解包过，正在复核 class"
+      say "   ⚠️ tk.war mtime 变了（$WAR_BEFORE → ${WAR_AFTER}）—— 可能被重新解包过，正在复核 class"
     fi
     if [ "$CUR_MD5" != "$MD5_NEW" ]; then
-      die "🔴 class 已被覆盖（期望 $MD5_NEW，实际 $CUR_MD5）——多半是 tk.war 被触碰触发重新解包。
+      die "🔴 class 已被覆盖（期望 ${MD5_NEW}，实际 ${CUR_MD5}）——多半是 tk.war 被触碰触发重新解包。
    补丁未生效；磁盘状态已回退到原版。请重跑本脚本，并确保过程中无人 touch tk.war。"
     fi
     say "   ✅ 磁盘 class md5 仍为补丁版，未被 WAR 覆盖"
@@ -189,10 +190,17 @@ case "$MODE" in
       echo "$BODY"
     else
       die "🔴 接口在 90s 内未恢复。补丁 class 已在磁盘上且 /tk 已重载，
-   请立刻检查 $CATALINA_OUT（不要盲目再次 touch web.xml）。"
+   请立刻检查 ${CATALINA_OUT}（不要盲目再次 touch web.xml）。"
     fi
-    echo "$BODY" | grep -o 'name_en\|name_jp\|name_kr' | sort -u | sed 's/^/   发现字段：/' || \
-      say "   （当前 server_info 里还没写分语言字段，所以不下发 —— 属正常）"
+    # 🔴 必须用 -E：BSD grep（macOS）在 BRE 下不认反斜杠竖线这个 alternation（GNU 扩展），
+    #    会把它当字面量 ⇒ 匹配不到、退出 1 ⇒ 在 pipefail 下整条管道失败，
+    #    于是把「有字段」误报成「没写字段」。|| true 再兜一层。
+    FOUND="$(printf '%s' "$BODY" | grep -oE 'name_en|name_jp|name_kr' | sort -u | tr '\n' ' ' || true)"
+    if [ -n "${FOUND// /}" ]; then
+      say "   ✅ 已下发分语言字段：$FOUND"
+    else
+      say "   ⚠️ 响应里没有 name_en/name_jp/name_kr —— 请确认 server_info 里这几个字段是否已写"
+    fi
     say "部署完成"
     ;;
 
@@ -203,7 +211,7 @@ case "$MODE" in
     [ -n "$BODY" ] || die "接口无响应"
     echo "$BODY" | python3 -m json.tool --no-ensure-ascii 2>/dev/null || echo "$BODY"
     echo
-    FOUND="$(echo "$BODY" | grep -o 'name_en\|name_jp\|name_kr' | sort -u | tr '\n' ' ' || true)"
+    FOUND="$(printf '%s' "$BODY" | grep -oE 'name_en|name_jp|name_kr' | sort -u | tr '\n' ' ' || true)"
     if [ -n "$FOUND" ]; then
       say "✅ 已下发分语言字段：$FOUND"
     else

@@ -68,7 +68,7 @@ run_pair() { # $1=描述 $2=properties 文件 $3=输出前缀，其后为 GslPro
   if [ "$lo" = "$lp" ]; then
     die "两次运行加载的是同一个 class，classpath 顺序有问题"
   fi
-  if grep -q 'Exception\|NullPointer' "$out.orig.err"; then
+  if grep -qE 'Exception|NullPointer' "$out.orig.err"; then
     echo "  ⚠️ 原版运行有异常输出（前 5 行）："
     head -5 "$out.orig.err"
   fi
@@ -79,7 +79,7 @@ run_pair() { # $1=描述 $2=properties 文件 $3=输出前缀，其后为 GslPro
 # ---------- 模式一：本地隔离库 ----------
 mode_local() {
   prepare
-  [ -x "$MONGO" ] || die "找不到 mongo 客户端：$MONGO（可用 MONGO= 指定）"
+  [ -x "$MONGO" ] || die "找不到 mongo 客户端：${MONGO}（可用 MONGO= 指定）"
 
   echo "=== 1) 建本地隔离库 gsl_dryrun.server_info（只动这个新库） ==="
   "$MONGO" --quiet "127.0.0.1:27017/gsl_dryrun" --eval '
@@ -180,7 +180,7 @@ echo "--- 加载到的 class ---"
 grep 'GetServerListController <=' orig.err | head -1
 grep 'GetServerListController <=' patch.err | head -1
 echo "--- 异常计数（原版 / 补丁版）---"
-echo "orig=\$(grep -c 'Exception\|NullPointer' orig.err || true) patch=\$(grep -c 'Exception\|NullPointer' patch.err || true)"
+echo "orig=\$(grep -cE 'Exception|NullPointer' orig.err || true) patch=\$(grep -cE 'Exception|NullPointer' patch.err || true)"
 ls -la orig.json patch.json
 EOF
 

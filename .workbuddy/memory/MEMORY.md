@@ -47,7 +47,8 @@
 → 全部细节见 **`REF-shard10002.md`**。一句话：**已上线可登录，属内测级**（家宽无兜底、跨服聊天不可用）。2026-10-11 由「霓虹都市」改名，当前在区服列表中被隐藏（`state=0`），服务本体未停。
 
 ## Android 发版管线（AAB → Google Play）
-→ 全部细节见 **`REF-android-release.md`**。一句话：`scripts/aab_release.sh` 一键「提号 → 打包 → 校验 → 上传」；当前线上 **production v64**（2026-10-12，421MB，2740 bundle，Firebase 12.10.1）；历史 v63（同日，Firebase 12.8.0）。
+→ 全部细节见 **`REF-android-release.md`**。一句话：`scripts/aab_release.sh` 一键「提号 → 打包 → 校验 → 上传」；线上 **production v64**（2026-10-12，Firebase 12.10.1）；**v65（2026-10-12）已打包待审、未上传**（`apks/2026-10-12/CLIBuild/085541.aab`，421MB，`versionCode 65` / `versionName 1.2.46`）。🔴 versionName 长期没动过会让 Play 告警的「发布版本名称」无法区分包，发版时记得同步提。
+- **16KB 两层门槛**（`scripts/play_16kb_watch.py`）：门槛1 = 每个 .so `PT_LOAD p_align ≥ 16384`（硬性，本工程**已全绿 12/12**）；门槛2 = Play「旧版 NDK 编译」告警。🔴 **点名是按【库文件名】、不看 NDK 版本阈值** ⇒ 文件名含版本号的库换版本就等于换名字（Firebase 12.8.0→12.10.1 就是这么把 5 个告警降到 2 个的，实测仍 r21e）。原被点名的 2 个已于 2026-10-12 修复：`libnative-googlesignin.so` 移除依赖（`72502790b`）、`libtolua.so` 用 NDK r28 重编（`2f4e7310f`/`291ee8644`，工具链 `scripts/libtolua16k/`）。🔴 **升 Unity 引擎解决不了 16KB**（引擎只管 libunity/libil2cpp/libmain/burst，这些已合规）；`2023.2.22f1` **不在**官方 16KB 清单（`2021.3.48f1+ / 2022.3.56f1+ / 6000.0.38f1+ / 6000.1+`），本工程 2022.3.62f2c1 已在支持线内。取证工具在跨仓 `main_android/Release/tools/{verify_16k,so_meta}.py`。
 
 ## 🔴 约定（红线）
 - 巡检默认**只读**：不重启服务、不改服务器配置。报告要有量化证据（错误数/阈值），区分「严重🔴 / 关注⚠️」。

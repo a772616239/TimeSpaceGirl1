@@ -35,7 +35,8 @@
 
 ## Play 16KB 合规巡检（2026-10-12 起）
 - 工具 `scripts/play_16kb_watch.py`（轨道现状 + 两层取证 + diff + 邮件）；定时任务 id `ea56e5de-abc2-45c2-abb9-401505a65a96`（每 3 天 10:00）。
-- 🔴 报告必须区分「Play 点名」与「仅 NDK 阈值偏旧」：`NDK < r28` ≠ 被点名。v64 实测 < r28 有 12 个，Play 只点名 4 个 + tolua 无法判定；Unity 自出库（il2cpp/unity/main r23b）与 crashlytics（r25b）从不被点名。
+- 🔴 报告必须区分「Play 点名」与「仅 NDK 阈值偏旧」：`NDK < r28` ≠ 被点名。v65 实测 < r28 有 11 个，Play 一个都没点名；Unity 自出库（il2cpp/unity/main r23b）与 crashlytics（r25b）从不被点名。
+- 🔴 **点名是按【库文件名】、不看 NDK 版本阈值**。文件名含版本号的库换版本 = 换名字 ⇒ Firebase `12.8.0 → 12.10.1` 就是把告警从 5 个降到 2 个的原因（这些库实测仍 r21e）。⚠️ 所以 `PLAY_FLAGGED_PREFIXES` 只能匹配**被点名过的那个版本名**（`libFirebaseCppApp-12_8_0`），不能用 `libFirebaseCppApp` 前缀，否则 12_10_1 会被误报成「仍待上游」（已在 `6bc70fbec` 修正）。
 - 🔴 Play Console 的 16KB 告警**无公开 API**，只能人工看「发布 → App Bundle 浏览器 → 选择版本 → 支持的页大小」。
 
 ## 🔴 AssetBundle 打包链路（出包必读）
@@ -93,8 +94,8 @@ Play 的 16 KB 告警**是两层、彼此独立**，别混为一谈：
 ### 正确修法（对齐 `main_android` 的路径 A）
 - **Firebase Unity SDK `12.8.0 → 12.10.1`**：源在 `Assets/Firebase/m2repository/com/google/firebase/*-unity/12.8.0/`。顺带修 **issue #1259**（12.8.0 在 Android 15/16KB 模式**启动即崩**，崩在 `SWIGRegisterExceptionCallbacks()`）—— 这是真崩溃，不只是告警。
   - ⚠️ C# 与 native 必须**同版本**升级（`DllImport` 名含版本号 `FirebaseCppApp-<ver>`）；本项目**无 HybridCLR**（无 `*.dll.bytes`），故「AOT 补充元数据同步重生成」这条不适用。
-- **`libnative-googlesignin.so`**：r17/GCC，比 clang 时代还早，须换新版 Google Sign-In 插件（`Assets/GoogleSignIn/`）。
-- **`libtolua.so`**：tolua 开源、**自家可编** ⇒ 用 NDK r28 重编即符合 Play 文案第一方案。
+- **`libnative-googlesignin.so`**：✅ **2026-10-12 已修**（commit `72502790b`）—— 不必换插件：根因在 gradle 的 `implementation 'com.google.signin:google-signin-support:1.0.4'`，删掉该依赖 + `GoogleSignInSupportDependencies.xml` 即可（插件自身的 `.meta` 写 `Android.enabled: 0` **不是**阻止它的原因）。
+- **`libtolua.so`**：✅ **2026-10-12 已修**（commit `2f4e7310f` + `291ee8644`）—— 用 NDK r28 重编即符合 Play 文案第一方案，工具链见 `scripts/libtolua16k/`。
 
 ### ✅ 本次执行（2026-10-12，v64 = `apks/2026-10-12/CLIBuild/011824.aab`）
 只做路径 A 的第 1 条（升 Firebase），**不碰 Unity 版本**：
@@ -133,4 +134,63 @@ base/lib/arm64-v8a/libtolua.so
   - 来源 `Assets/GoogleSignIn/Editor/m2repository/com/google/signin/google-signin-support/1.0.4/google-signin-support-1.0.4.aar` → `jni/arm64-v8a/libnative-googlesignin.so`（284752B，r17/GCC）。该 aar 的 `.meta` 虽写 `Android.enabled: 0`，但包里确实有该 so（待查 Unity 实际提取路径）。
   - 调用链（活）：`~Lua/Modules/Login/LoginPanel.lua:109` `Util.AddClick(this.googlebtn, this.OnGoogleLogin)` → `OnGoogleLogin` 置 `LoginPlatform=1`（:1166）→ `ggSignMgr:LoginByPlatformType(1,…)`（:1243）→ `GoogleSignMgr.cs:30` `new SigninSampleScript()` → `Assets/GoogleSignIn/` 插件。
   - ⇒ **不能只删目录**：`Assets/Scripts/Google/SigninSampleScript.cs` 与 `GoogleSignMgr.cs` 依赖 plugin 类型，删插件会**编译失败**；且会**移除 Google 账号登录**（另一条 `platformId==2` 走 `GooglePlayGamesLogin`，按钮是主登录键 `btnLogin`）。要清此库须同时改 Lua（**重编 LuaBytes**）+ C# + 删 `Assets/GoogleSignIn/` + `Assets/Plugins/iOS/GoogleSignIn/`。
-- **`libtolua.so`** 来源 = `Assets/Plugins/Android/libs/arm64-v8a/libtolua.so`（裸 so，ToLua# 框架 native 侧，`4d1210554 cathe` 引入，stripped、**无 `.note.android.ident`** ⇒ `so_meta.py` 判「无法判定」）。C# 侧在 `Assets/ToLua/Core/{ToLua.cs,LuaDLL.cs}`。❗**仓库内无 tolua C 源码**（无 `tolua*.c/h`）⇒ 本次**无法用 NDK r28 重编**；且它是 Lua 运行时核心，换版接口不匹配会整机崩，风险最高。
+  - ✅ **2026-10-12 实际解法（比上面这条轻得多，commit `72502790b`）**：不用动 Lua、也不用删插件目录 —— 只要**断掉 gradle 那条 `implementation`**（`mainTemplate.gradle` + `GoogleSignInSupportDependencies.xml` + `AndroidResolverDependencies.xml`），该 so 就不进包了。再把 `GoogleSignMgr.cs` 的 Android 分支改走 `GooglePlayGamesLogin`（**保留 `LoginPlatform=1` 与 `"go"` 前缀** ⇒ Lua 与老玩家凭据零影响）。`Assets/GoogleSignIn/` 目录保留（iOS 路径与编辑器内 `SigninSampleScript` 仍在用）。
+- **`libtolua.so`** 来源 = `Assets/Plugins/Android/libs/arm64-v8a/libtolua.so`（裸 so，ToLua# 框架 native 侧，`4d1210554 cathe` 引入）。C# 侧在 `Assets/ToLua/Core/{ToLua.cs,LuaDLL.cs}`。❗**仓库内无 tolua C 源码**（无 `tolua*.c/h`）⇒ 要靠上游 `alex4814/tolua_runtime` 重编，工具链已固化在 `scripts/libtolua16k/`。
+
+## 🔴 v65 修复：清掉最后 2 个被点名的库（2026-10-12）
+
+被 Play 点名的最后 2 个库都处理完了。**核心认知**：`libtolua.so` 这条不只是一个告警，
+`LJ_PAGESIZE` 不改在 16KB 设备上是**真崩溃**。
+
+### `libnative-googlesignin.so`（commit `72502790b`）
+- 真因：`Assets/Plugins/Android/mainTemplate.gradle` 里 EDM4U 生成的
+  `implementation 'com.google.signin:google-signin-support:1.0.4'` —— 该 aar 的
+  `jni/arm64-v8a/libnative-googlesignin.so` 由 NDK r17 编译。**不是**插件 `.meta` 的
+  `Android.enabled: 0` 挡住的（那个不生效）。
+- 改法：删该 implementation 行 + 删 `Assets/GoogleSignIn/Editor/GoogleSignInSupportDependencies.xml`
+  （声明源头）+ `ProjectSettings/AndroidResolverDependencies.xml` 里的同名 package；
+  `GoogleSignMgr.cs` 的 Android 分支改走 `GooglePlayGamesLogin`。
+- 🔑 **保持 `LoginPlatform=1` 与 `"go"` 账号前缀不变** ⇒ `LoginPanel.lua` 一行没改、
+  `PlayerPrefs.lastLoginPlatform` 语义不变、老玩家已存凭据照常走 `RequestUser`。
+- ⚠️ 更正旧结论：该 so **不是**「零引用死插件」（见下节调用链），直接删目录会编译失败。
+
+### `libtolua.so`（commit `2f4e7310f` + `291ee8644`）
+`libtolua.so` = 一整个 ToLua# 运行时（LuaJIT + tolua + cjson + lpeg + pb(protobuf)
++ luasocket + struct + bit 打成一个 .so），仓库无源码。
+- 🔴 **真因是 LuaJIT 的 `LJ_PAGESIZE`**：`luajit-2.1/src/lj_arch.h:647` 默认 `4096`。
+  JIT 的 mcode 分配器按该值对齐后调 `mprotect`，在 16KB 页设备上地址/长度不满足内核
+  要求 ⇒ **JIT 代码页无法生效 → 崩溃**。必须 `-DLJ_PAGESIZE=16384`（在 4KB 设备上同样
+  满足，只多占一点 mcode 内存）。
+- 上游 `alex4814/tolua_runtime@71eec6d` 自身有疏漏：`PROTOBUF_SRC` 定义了却没进
+  `add_library` 的源列表、`LUASOCKET_SRC` 漏了 `mime.c` ⇒ 不补会少 `luaopen_pb` /
+  `luaopen_mime_core`，Lua 侧 `require` 直接失败。
+- 工具链 `scripts/libtolua16k/`：`build.sh`（克隆→打补丁→编译→校验→可选安装，只在
+  全部校验通过后才 `--install` 并自动备份旧库）、`verify.py`（6 项校验）、
+  `apply-16k.patch`（相对上游的全部改动）、`README.md`。
+- NDK 固定 `ANDROID_PLATFORM=24`（= `AndroidMinSdkVersion`）；上游默认 21 也能过，
+  但两者产物会不同（21 用 legacy `__sF`，24 用 `stdin/stdout/stderr/__register_atfork`）
+  ⇒ 统一取 24，保证「跑一遍复现脚本 = 得到线上那个二进制」。
+- 新旧库**导出符号**比对：`luaopen_*` 18/18 全在（另多一个 `luaopen_string_buffer`）、
+  `tolua_*` 101/101、`lua_/luaL_` 除 `lua_getexdata`/`lua_setexdata` 全在。LuaJIT 版本
+  符号由 `luaJIT_version_2_1_0_beta3` 变 `luaJIT_version_2_1_1736781742`（= 2.1.ROLLING
+  2025-01），C# 不引用该符号。未定义符号只来自 libc/libm/libdl（NEEDED 原生多一个
+  `libstdc++.so`，新版已去掉）。
+- ⚠️ **非问题**：旧库导出而新库不再导出的 **110 个 `T` 符号**全是 luasocket / LuaJIT
+  内部实现（`socket_*` / `opt_*` / `auxiliar_*` / `timeout_*` / `buffer_*` / `inet_*` …）。
+  它们仍以 **`t`（local）**链入本库，通过 `luaL_Reg` 函数指针表注册给 Lua、不走动态符号
+  查找；已 grep 确认 C#(`*.cs`) 与 Lua(`~Lua/`) 全仓零引用 —— 属正常可见性收紧，不是功能缺失。
+- 体积 667,968 → 788,440 字节（stripped）；`sha256 9d4ebef7…451d`。**只替换 arm64-v8a**
+  （`AndroidTargetArchitectures: 2` ⇒ 只出 arm64；`armeabi-v7a` / `x86` 目录仍在仓库里但不会进包）。
+- 备份 `~/ts-tolua-backup-20261012/`（`libtolua.arm64-v8a.old.so` = 原始 r17 时代产物、
+  `libtolua.arm64-v8a.api21.so` = 中间产物）。
+
+### v65 产物与复核
+- AAB：`apks/2026-10-12/CLIBuild/085541.aab`（421.2 MB，`versionCode 65` / `versionName 1.2.46`）。
+- versionName 顺手从 `1.2.45` 提到 `1.2.46` —— 它自 `b2a0037a9`（2026-08-17）起没动过，
+  导致 v62/v63/v64 在 Play 告警里都显示「1.2.45」、无法区分。
+- 复核结果：门槛1 = **12/12 全 `p_align=16384`、0 不合规**；门槛2 = `libtolua.so` 已 **r28**、
+  `libnative-googlesignin.so` **已从包内消失**（arm64 库由 13 降到 12）；AAB 内 `libtolua.so`
+  的 sha256 与工程内一致。
+- 剩下 `libcrashlytics ×4 = r25b`、`libdatastore_shared_counter = r25c`、
+  `libunity/libil2cpp/libmain = r23b`、Firebase ×3 = `r21e` —— 这些**从未被 Play 点名**。
+- 🔴 **未上传**。上传 production + `status=completed` = 提交审核，必须用户确认。

@@ -1,7 +1,11 @@
 # Unity Android 打包流程（IAP Billing 8+ 升级 + CLI 打包）
 
 > 适用范围：TimeSpaceGirl1 项目（Unity 2022.3.62f2c1）
-> 更新时间：2026-08-17（已验证成功：APK 454MB + AAB 421MB，billing 9.0.0）
+> 更新时间：2026-10-12（原版 2026-08-17；当时 APK 454MB / AAB 421MB，billing 9.0.0）
+>
+> 🔴 **本文只讲"构建侧"的深坑（Gradle / AGP / billing / AndroidX / CLI 入口）。**
+> 端到端发版步骤、出包口径、16KB、送审闸门、交付自检 → 看 **`android_release_runbook.md`**。
+> 脚本清单与参数/退出码 → 看 **`scripts_reference.md`**。
 
 ---
 
@@ -12,12 +16,12 @@
 | 项目路径 | `/Users/wangxufeng/Documents/TimeSpaceGirl1/` |
 | Unity 版本 | 2022.3.62f2c1（ProjectSettings/ProjectVersion.txt） |
 | 应用 ID | `com.Warera.timespace` |
-| versionName / versionCode | 1.2.45 / 62（打包时自动自增） |
+| versionName / versionCode | 1.2.49 / 68（**CLI 不自增**，需 `scripts/bump_version.py`） |
 | minSdk / targetSdk | 24 / 36 |
 | ABI | 仅 arm64-v8a |
 | 脚本后端 | IL2CPP |
-| keystore | `beauty.keystore`（alias `xing`） |
-| 输出目录 | `apks/{yyyy-MM-dd}/CLIBuild/{HHmmss}.apk|.aab` |
+| keystore | `beauty.keystore`（alias `xing`，DN `O=EMI`；= upload key，与 Play app signing key 不同） |
+| 输出目录 | `apks/{yyyy-MM-dd}/CLIBuild/{HHmmss}.apk\|.aab` |
 | IAP 版本 | com.unity.purchasing 5.4.2（注入 billing 9.0.0） |
 
 ---
@@ -129,7 +133,32 @@ android.enableJetifier=true
 
 ## 5. CLI 打包脚本
 
-### 5.1 `Assets/Editor/CLIBuilder.cs`（完整源码）
+### 5.0 当前入口（2026-10 起，**先看这段**）
+
+CLI 打包已不再是"裸 `BuildPlayer`"，而是**先套一份出包配置**再打：
+
+| 文件 | 角色 |
+|---|---|
+| `Assets/Editor/ReleaseBuildSettings.cs` | **出包配置唯一真源**。口径 `Dev` / `MinimalGmOff` / `FullTemplate`；`Apply()` + `Validate()` + `PrepareSceneForBuild()`（开场景→快照→套配置→校验→**落盘**）+ `RestoreScene()` |
+| `Assets/Editor/CLIBuilder.cs` | `BuildAndroidAAB()` / `BuildAndroidAPK()`：`PrepareSceneForBuild(kProfile=true)` → 失败即 `EditorApplication.Exit(1)` 且**不产包**；成功写 `<aab>.release.json` sidecar；`finally` 还原场景 |
+| `Assets/Scripts/Editor/GameEditor/FrameTool/BuildWindow.cs` | GUI 打包；**versionCode 自增只在这里** |
+
+**CLI 固定口径 `MinimalGmOff`**（只把 `isOpenGM` 置 0，其余与线上逐位一致），写在
+`CLIBuilder.cs` 的 `kProfile` 常量里。
+
+🔴 **batchmode 下必须落盘**：`BuildPlayer` 读磁盘上的场景文件，只改内存对象无效
+（`EditorSceneManager.SaveScene` 是必须的）。
+🔴 **崩溃残留**：靠 `try/finally` 还原 `Assets/LuaFramework/Scenes/Logo.unity`；
+**进程被硬杀则 `finally` 不执行**，场景会残留 `isOpenGM: 1→0`，工作区变脏。
+起包前先 `git status` 看它，脏了 `git checkout -- Assets/LuaFramework/Scenes/Logo.unity`。
+
+**首选入口不是裸 Unity 命令，而是 `scripts/aab_release.sh`**（自带前置检查、三道包内校验、发布闸门）。
+裸命令只在需要单独出 APK 自测时用（见 §5.2）。详见 `android_release_runbook.md`。
+
+### 5.1 ⚠️ 历史源码存档（**2026-08 版本，已过时**）
+
+> 下面是 2026-08 的 `CLIBuilder.cs`，**不含出包配置（`isOpenGM` 面板问题就是它造成的）**。
+> 保留仅为理解演进；**当前源码以 `Assets/Editor/CLIBuilder.cs` 为准**，不要照抄这一段。
 ```csharp
 using UnityEditor;
 using UnityEngine;
@@ -294,12 +323,22 @@ public class CLIBuilder
 ```
 
 ### 5.3 前置检查（打包前必做）
+
+> ⚠️ 下面这套是**手工**检查。用 `scripts/aab_release.sh` 时这些已全部自动执行
+> （且额外多了 AB 就绪闸门、包内出包开关自检、native 16KB 体检）。
+> 只在裸命令打包时才需要逐条自查。
+
 1. **关闭 GUI Unity**（AppleScript：`osascript -e 'tell application "Unity" to quit'`）
    - GUI 实例占用工程锁（`Library/SourceAssetDB-lock`），batchmode 无法并行
    - 报错：`Multiple Unity instances cannot open the same project`
+   - ⚠️ 只要判定**本工程**被占用；本机其它项目（如 `~/Documents/main_android/Unity`）在跑
+     batchmode **不算占用**（`aab_release.sh` 已按 `-projectpath` 精确判定）
 2. 确认 `launcherTemplate.gradle` / `mainTemplate.gradle` / `gradleTemplate.properties` 三个文件内容完整（GUI 可能重置）
-3. 确认 `Assets/Editor/CLIBuilder.cs` 存在
+3. 确认 `Assets/Editor/CLIBuilder.cs` 存在，且 `ReleaseBuildSettings.cs` 也在
 4. 确认 `Packages/manifest.json` 中 `com.unity.purchasing` 为 `5.4.2`
+5. 确认 `Assets/StreamingAssets/Android/` 下有文件名含 `luabytes` 的 bundle
+   （跑 `scripts/check_ab_ready.sh` 一键体检）
+6. 确认 `Assets/LuaFramework/Scenes/Logo.unity` 未被上次崩溃留下 `isOpenGM: 0`
 
 ---
 
@@ -315,6 +354,17 @@ public class CLIBuilder
 ---
 
 ## 7. 产物验证清单
+
+> 🔴 **首选用仓库里的脚本，不要手搓命令**（下面 7.1～7.4 是历史手工做法，仅作参考）：
+>
+> ```bash
+> scripts/verify_apk_delivery.py <apk|aab> --expect minimal   # 一站式：版本/口径/16KB/googlesignin/签名
+> scripts/verify_aab_release_config.py <apk|aab> --expect minimal
+> scripts/verify_aab_native_16kb.py <apk|aab> [--strict]
+> scripts/check_ab_ready.sh                                   # 包内资源（尤其 Lua）是否就绪
+> ```
+>
+> 本机 Android build-tools 在 `~/Library/Android/sdk/build-tools/36.0.0`（`aapt2` / `apksigner`）。
 
 ### 7.1 APK 验证
 ```bash
@@ -365,6 +415,11 @@ ls ~/.gradle/caches/modules-2/files-2.1/androidx.core/core/
 | `verifyReleaseResources` missing app_icon/app_name | AGP 8.x 方案 | 放弃 AGP 8.x，回到 7.4.2 |
 | gradleTemplate.properties 被重置 | GUI Unity 打开工程时覆盖 | 打包前检查 useAndroidX/Jetifier |
 | 构建日志只有 `BUILD FAILED in 6s` 无详情 | 缺少 `--stacktrace` | 用 `-logFile` 全量日志排查 |
+| Unity 打印 `libtolua.so is not 16KB-aligned`（每次都有） | **Unity 自检误报** | 忽略。实测 4 个 `PT_LOAD` 全 `p_align=0x4000`（= 16384 正好达标），包内产物一致，Play 从未点名 |
+| 包打出来带 GM 面板 | 出包配置未套用（CLI 曾一律沿用开发态） | 确认走了 `ReleaseBuildSettings.PrepareSceneForBuild`；用 `verify_aab_release_config.py --expect minimal` 验证 |
+| 日志有 `Application is shutting down...` 且没产包 | 进程被外部杀掉，`finally` 未执行 | 重跑（增量很快）；先 `git checkout -- Assets/LuaFramework/Scenes/Logo.unity` 清残留 |
+| `**DEPS** could not be found` | `launcherTemplate.gradle` 含 `**DEPS**` 占位符 | 移除，只留 `implementation project(':unityLibrary')` |
+| 打包前置检查报「未发现 Lua bundle」 | AB 链路断开 | `scripts/check_ab_ready.sh` 定位；GUI「整体打包资源」→「复制资源到流媒体目录」 |
 
 ---
 

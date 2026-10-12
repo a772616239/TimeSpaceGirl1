@@ -1,140 +1,191 @@
 ---
 name: play-aab-release
-description: 为 TimeSpaceGirl1 打包 Android AAB 并上传到 Google Play 后台。当用户提到"打包 AAB""上传 Google Play""发版""传正式版/测试轨道""Play Console""aab_release"等意图时使用。覆盖 versionCode 自增、Unity batchmode 打包、产物校验、Play Developer API 上传与轨道发布。
+description: 为 TimeSpaceGirl1 打包 Android AAB/APK 并上传到 Google Play 后台。当用户提到"打包 AAB""打 APK""上传 Google Play""发版""传正式版/测试轨道""Play Console""aab_release""16KB 合规""Google 登录变新号"等意图时使用。覆盖 versionCode 自增、Unity batchmode 打包、包内出包配置校验、native 16KB/NDK 体检、Play Developer API 上传与轨道发布、APK 交付自检。
 ---
 
-# Play AAB 发版
+# Play AAB / APK 发版
 
-把 Unity 工程打成 AAB 并发布到 Google Play。**一键入口是 `scripts/aab_release.sh`。**
+把 Unity 工程打成 AAB（发版）或 APK（自测）并（可选）上传 Google Play。
+**一键入口是 `scripts/aab_release.sh`。**
+
+> 详细流程／全部踩坑记录：`docs/README.md`、`docs/android_release_runbook.md`、
+> `docs/scripts_reference.md`。本文件只给"怎么做 + 别踩什么"。
 
 ## 什么时候用
 
-- 用户要「打包」「出包」「打个 aab」「上传 Google Play」「发版」「传正式版 / 内测」
-- 用户要排查 Play 上传报错（403 / 400 version code 已使用 / 签名被拒）
+- 用户要「打包」「出包」「打个 aab / apk」「上传 Google Play」「发版」「传正式版 / 内测」
+- 用户要排查 Play 上传报错（401 / 403 / 400 version code 已使用 / edit deleted）
+- 用户问「为什么登录变成新号了」「16KB 告警怎么回事」
+
+## 🔴 三条红线（先内化，再动手）
+
+1. **绝不自行送审。** 打包、构建、校验、提交 git 都可以；
+   **「上传到 production 轨道 + `status=completed`」= 提交审核，必须先问用户同意。**
+   已用代码锁死：默认不上传、默认 `draft`，必须显式给 `--upload` / `--production` / `--publish`。
+2. **上传期间绝不并发调用任何 Play API**（含 `play_16kb_watch.py`、其它脚本/其它 agent）——
+   多进程对同一 App 开 edit 会互删，实测「传 85% 报 `This Edit has been deleted.`」，421MB 白传。
+3. **本工程 Unity GUI 不能开着**。但本机其它项目（如 `~/Documents/main_android/Unity`）在跑
+   batchmode **不算占用**；`aab_release.sh` 已按 `-projectpath` 精确判定。
 
 ## 一键执行
 
 ```bash
 cd /Users/wangxufeng/Documents/TimeSpaceGirl1
 
-scripts/aab_release.sh                      # production 全量（默认）
-scripts/aab_release.sh --track internal     # 内部测试
-scripts/aab_release.sh --dry-run --skip-build   # 只验通路，不打包不上传
-scripts/aab_release.sh --no-upload          # 只打包 + 校验
-scripts/check_ab_ready.sh                   # 只读体检：包内资源（尤其 Lua）是否就绪
+scripts/check_ab_ready.sh                       # 先只读体检包内资源（尤其 Lua）
+scripts/aab_release.sh                          # 出包 + 三道包内校验（默认不上传）
+scripts/aab_release.sh --dry-run                # 打包 + 只认证列轨道现状（只读）
+scripts/aab_release.sh --skip-build             # 复用最近 AAB，跳过 Unity 打包
+
+# 上传成 production 草稿（不送审）—— 看过产物后
+scripts/aab_release.sh --skip-build --upload --production --status draft --yes
+
+# 🔴 送审 / 上线 —— 必须先取得用户明确同意
+scripts/aab_release.sh --skip-build --upload --production --publish --yes
 ```
-
-## 🔴 动手前必查三条
-
-1. **Unity GUI 必须关闭**
-   ```bash
-   pgrep -f "Unity.app/Contents/MacOS/Unity"     # 有输出＝被占用，必须先退出
-   osascript -e 'tell application "Unity" to quit'
-   ```
-   注意 Unity **Hub** 在跑是正常的，不算占用。若 `Library/SourceAssetDB-lock` 存在但无 Editor 进程，是陈旧锁，删掉即可。
-
-2. **service account 密钥就位**
-   ```bash
-   ls -la ~/.gplay/service-account.json
-   ```
-   没有就别急着跑 —— 先按 `docs/google_play_upload_setup.md` §1 申请（Cloud 建账号 → Play Console 授权 → 落盘）。
-   **Cloud 建完账号 ≠ 能发布**，必须在 Play Console「用户和权限」里把 service account 邮箱加为发布用户并勾「发布到正式版」，否则一律 403。
-
-3. **versionCode 必须严格递增**
-   `Assets/Editor/CLIBuilder.cs` **只读不自增** versionCode；自增逻辑只在 GUI 的
-   `Assets/Scripts/Editor/GameEditor/FrameTool/BuildWindow.cs:449`。
-   ⇒ CLI 打包出来的号会一直卡在同一个值，传 production 必被 Play 拒绝。
-   `aab_release.sh` 默认已带 `--bump`（调 `scripts/bump_version.py`）补上这一步，**不要随意加 `--no-bump`**。
-
-4. **AssetBundle 必须已构建并拷贝进 StreamingAssets**
-   AAB 的包内资源只来自 `Assets/StreamingAssets/Android/`。AB 链路是两段式：
-   `BuildABs/Android/` → `FrameTool.CopyAssetBundleToStreamingAssets()` → `StreamingAssets/Android/`。
-   **任一段没跑，构建不会报错，但包里就是旧资源或缺资源。**
-
-   最典型的坑是 **Lua**。Lua bundle 的**真实命名**（2026-10-12 取证确认，别被名字误导）：
-   ```
-   Assets/ManagedResources/LuaBytes.meta  → assetBundleName: lzma/luabytes
-                                            assetBundleVariant: unity3d
-   ⇒ BuildABs/Android/lzma/luabytes.unity3d
-   ⇒ CombinePack 里按 name.Replace("/","|") 变 lzma|luabytes.unity3d
-   ```
-   ⚠️ **它不带 `lua` 前缀、也不在 `lua/` 子目录**（`Assets/StreamingAssets/lua/` 是遗留空目录，
-   与 Lua 字节码无关，别拿它当判据）。判定是否就绪只认**文件名含 `luabytes` 的 bundle**。
-
-   一旦缺失，真机启动即报 `StreamingAssets 路径资源丢失，请重新打包包内资源!`（`AssetBundleLoader`）。
-   先跑只读体检，再决定是否重建：
-   ```bash
-   scripts/check_ab_ready.sh          # 只读；逐项报 LuaBytes.meta / BuildConfigs 登记 / BuildABs / StreamingAssets / 最新 AAB
-   ```
-   `aab_release.sh` 前置检查也会检测并**直接中止**；确需强行继续要显式加 `--allow-no-lua`。
-
-   GUI 侧重建（`BuildWindow` 的按钮，方法定义见 `Assets/Scripts/Editor/GameEditor/FrameTool/FrameTool.cs`）：
-   ```
-   「整体打包资源」   FrameTool.BuildGameAssetBundles()            # 全量 AB → BuildABs/Android/（先删该目录）
-   「复制资源到流媒体目录」 FrameTool.CopyAssetBundleToStreamingAssets()  # 拷 CombinePack → StreamingAssets/Android（先删该目录）
-   「单打lua资源」    FrameTool.BuildLuaAssetBundles()             # 只重建 LuaBytes + ResConfigs（用于只改了 Lua 的场合）
-   ```
-   顺序：**先「整体打包资源」→ 再「复制资源到流媒体目录」**；只有 Lua 变动时补「单打lua资源」。
-   注意「复制资源到流媒体目录」会**整目录删除** `StreamingAssets/Android`，所以它必须在 AB 构建之后跑。
-
-   ⚠️ `Assets/Scripts/Editor/GameEditor/FrameTool/ResourcesCopy.cs` 的「Build/资源拷贝」是另一条
-   手动选目录的路径，依赖 `EditorUtility.OpenFolderPanel`，batchmode 用不了，别混淆。
-
-## 关键事实速查
-
-| 项 | 值 |
-|---|---|
-| 包名 | `com.Warera.timespace` |
-| Unity | `/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity` |
-| 打包方法 | `CLIBuilder.BuildAndroidAAB` |
-| 产物目录 | `apks/{yyyy-MM-dd}/CLIBuild/{HHmmss}.aab`（体积随 bundles 变，2026-10-11 实测 139 MB，8 月记录曾 421 MB） |
-| 耗时 | 约 10-15 分钟 |
-| 签名 | `Assets/Scripts/Editor/AutoSignKeystore.cs` 打包前自动注入 `beauty.keystore`，无需手动配 |
-| Python 解释器 | `/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python`（已装 google-api-python-client / google-auth） |
 
 ## 参数
 
 | 参数 | 说明 |
 |---|---|
+| `--upload` | 🔴 才会上传；不加则只在本地出包（**默认**） |
+| `--production` | 🔴 才允许写 production 轨道 |
+| `--publish` | 🔴 才允许 `status=completed/inProgress`（= 送审 / 上线） |
 | `--track` | `production`(默认) / `beta` / `alpha` / `internal` |
-| `--status` | `completed`(默认) / `inProgress`(灰度) / `draft` / `halted` |
-| `--user-fraction` | 灰度比例，仅 `inProgress` 有效（如 `0.1`） |
+| `--status` | **`draft`(默认)** / `completed` / `inProgress` / `halted` |
+| `--user-fraction` | 灰度比例，仅 `inProgress` 有效 |
 | `--notes` | 更新说明 |
-| `--skip-build` | 复用最近 AAB，跳过打包 |
-| `--no-upload` | 只打包 + 校验 |
-| `--dry-run` | 认证 + 列轨道现状，不上传 |
-| `--yes` | 跳过交互确认（自动化） |
-| `--key` | 指定 service account JSON |
-| `--no-bump` | ⚠️ 不动 versionCode |
+| `--key` | 指定 service account JSON（默认 `~/.gplay/service-account.json`） |
+| `--aab <path>` | 直接指定 AAB，隐含 `--skip-build` |
+| `--skip-build` | 跳过 Unity 打包 |
+| `--no-bump` | ⚠️ 不动 versionCode（仅调试；production 要求严格递增） |
+| `--allow-no-lua` | 强行跳过「未发现 Lua bundle」闸门（风险自负） |
+| `--yes` / `-y` | 跳过交互确认 |
+| `--dry-run` | 只读认证 + 列轨道，不受发布闸门限制 |
 
-## 退出码
+退出码：`0` 成功 / `1` 有阻断项 / `2` 参数或环境错误（含被发布闸门拒绝）/ `3` 认证失败 /
+`4` API 业务错误 / `5` versionCode 撞车。
 
-`play_upload.py`：`0` 成功 / `2` 参数或环境错误 / `3` 认证失败 / `4` API 业务错误 / `5` versionCode 撞车
+## 打 APK 自测（不经过 aab_release.sh）
+
+```bash
+/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity \
+  -projectpath /Users/wangxufeng/Documents/TimeSpaceGirl1 \
+  -batchmode -nographics -executeMethod CLIBuilder.BuildAndroidAPK \
+  -logFile /Users/wangxufeng/Documents/TimeSpaceGirl1/build_log_apk_main.txt -quit
+
+scripts/verify_apk_delivery.py apks/<date>/CLIBuild/<HHmmss>.apk --expect minimal
+```
+
+⚠️ APK 用 **upload key**（`beauty.keystore` / alias `xing` / DN `O=EMI`）签名，与 Play 的
+app signing key 不同 ⇒ **侧载前必须先卸载 Play 版**。只出 `arm64-v8a`。
+
+## 🔴 动手前必查
+
+1. **界面 Unity 关掉**
+   ```bash
+   pgrep -fl "Unity.app/Contents/MacOS/Unity"    # 只看有没有锁定**本工程**
+   ```
+   有 `Library/SourceAssetDB-lock` 但无 Editor 进程 = 陈旧锁，删掉即可。
+
+2. **service account 密钥就位**
+   ```bash
+   ls -la ~/.gplay/service-account.json
+   ```
+   没有先按 `docs/google_play_upload_setup.md` §1 走（Cloud 建账号 → Play Console 授权 → 落盘）。
+   **建完账号 ≠ 能发布**，必须在 Play Console「用户和权限」里把该邮箱加为发布用户并勾
+   「发布到正式版」，否则一律 403。
+
+3. **versionCode 严格递增**
+   GUI（`BuildWindow.cs`）会自增，**CLI 的 `CLIBuilder.cs` 只读不自增** ⇒
+   `aab_release.sh` 默认调 `scripts/bump_version.py` 补这一步。**别随手加 `--no-bump`**。
+
+4. **AssetBundle 已构建并拷进 StreamingAssets**
+   AAB 包内资源**只来自** `Assets/StreamingAssets/Android/`。链路两段式：
+   `BuildABs/Android/` → `FrameTool.CopyAssetBundleToStreamingAssets()` → `StreamingAssets/Android/`。
+   **任一段没跑，构建不报错，但包里就是旧资源或缺资源。**
+   最典型的是 **Lua**，其真实 bundle 名是 **`lzma|luabytes.unity3d`**
+   （不带 `lua` 前缀、不在 `lua/` 目录 —— `Assets/StreamingAssets/lua/` 是遗留空目录，别当判据）。
+   缺了真机启动即报 `StreamingAssets 路径资源丢失，请重新打包包内资源!`。
+
+   ```bash
+   scripts/check_ab_ready.sh      # 只读，逐项报 LuaBytes.meta / BuildConfigs / BuildABs / StreamingAssets / 最新 AAB
+   ```
+   GUI 侧重建顺序：**先「整体打包资源」→ 再「复制资源到流媒体目录」**；
+   只有 Lua 变动时补「单打lua资源」（`FrameTool.BuildLuaAssetBundles()`）。
+
+5. **出包配置会套用（GM 面板）**
+   CLI 固定口径 `MinimalGmOff`（`isOpenGM=0`），真源在 `Assets/Editor/ReleaseBuildSettings.cs`。
+   套用流程会**落盘场景**，用完 `finally` 还原。
+
+## 关键事实
+
+| 项 | 值 |
+|---|---|
+| 包名 | `com.Warera.timespace` |
+| UnityEngine | `/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity` |
+| 打包方法 | `CLIBuilder.BuildAndroidAAB` / `CLIBuilder.BuildAndroidAPK` |
+| 产物目录 | `apks/{yyyy-MM-dd}/CLIBuild/{HHmmss}.{aab\|apk}`（`apks/` 已 gitignore） |
+| 耗时 | 全量 ~10-15 min；增量（缓存完好）APK ~1 min |
+| Python | `/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python` |
+| Android build-tools | `~/Library/Android/sdk/build-tools/36.0.0`（`aapt2` / `apksigner`） |
+
+## 包内自检三件套（都在 `aab_release.sh` 里自动跑）
+
+| 脚本 | 查什么 |
+|---|---|
+| `verify_aab_release_config.py <apk\|aab> --expect minimal` | 包内 `SettingInfo` 12 个 int32 特征 ⇒ 有没有带 GM 面板 |
+| `verify_aab_native_16kb.py <apk\|aab>` | FAIL：64 位 `.so` 对齐 < 16384；WARN：note < r19 或 `p_align == 0x10000` |
+| `verify_apk_delivery.py <apk\|aab> --expect minimal` | 一站式交付自检：版本 / 口径 / 16KB / **`libnative-googlesignin.so` 必须存在** / 签名，并写 `.delivery.json` |
 
 ## 报错怎么查
 
 | 现象 | 根因 | 处理 |
 |---|---|---|
-| `edits.insert` 就失败 / 401 | Cloud 未启用 Google Play Android Developer API | 见 setup 文档 §1.1 |
-| 403 `caller does not have permission` | Play Console 未授权该邮箱 / 漏勾「发布到正式版」 | 见 setup 文档 §1.2；授权后等几分钟~几小时传播 |
+| `edits.insert` 失败 / 401 | Cloud 未启用 Google Play Android Developer API | `docs/google_play_upload_setup.md` §1.1 |
+| 403 `caller does not have permission` | Play Console 未授权该邮箱 / 漏勾「发布到正式版」 | 同上 §1.2；授权后传播要几分钟~几小时 |
 | 400 `version code has already been used` | 号重复 | 检查是否误用 `--no-bump` |
-| 400 `App bundle was not signed` | Play 应用签名未启用 | Console 启用 Play 应用签名 |
-| 退出码 5 | 上传前 versionCode 预检撞车，脚本主动拦截 | 提号后重打包 |
-| 日志 `:launcher:mergeExtDexRelease FAILED` | AndroidX 与 AGP 7.4.2 dexer 不兼容 | `docs/unity_android_build_skill.md` §3 双模板 force 降级 |
-| 打包报 `Multiple Unity instances cannot open the same project` | GUI Unity 占锁 | 关 GUI / 删陈旧 `Library/SourceAssetDB-lock` |
-| 前置检查报「未发现 Lua bundle」 | AB 链路断开：`StreamingAssets/Android` 里没有 `lzma\|luabytes.unity3d` | 跑 `scripts/check_ab_ready.sh` 定位在源侧/构建/拷贝哪一段；GUI 里「整体打包资源」→「复制资源到流媒体目录」 |
-| 真机启动报 `StreamingAssets 路径资源丢失，请重新打包包内资源!` | 同上 —— 发出的 AAB 里没有 Lua | 重建 AB 后重打包，别用旧 AAB |
-| 上传报 `TimeoutError: The read operation timed out` | `google-auth-httplib2` 给 httplib2 设了 60s 超时，而默认分块 100MB，421MB 走代理单块需 4 分钟 | 已内置修复（超时 300s + 8MB 分块 + 断点续传重试）。若仍需调：`PLAY_UPLOAD_TIMEOUT_S` / `PLAY_UPLOAD_CHUNK_MB` / `PLAY_UPLOAD_MAX_RETRIES` |
-| AAB 只有约 139MB（正常 421MB） | **AB 构建本身残包**：只产出了约 3/4 的 bundle（缺 prefabs/texture/spine/audio/atlas） | 重建 AB（`BuildGameAssetBundles` → `CopyAssetBundleToStreamingAssets`），再打包 |
+| 400 `App bundle was not signed` | Play 应用签名未启用 | Console 启用 Play App Signing |
+| 400 `FAILED_PRECONDITION / This Edit has been deleted.` | **并发**调了 Play API | 重跑（会新建 edit）；上传期间别跑巡检脚本 |
+| 退出码 5 | versionCode 预检撞车，脚本主动拦截 | 提号后重打包 |
+| 退出码 2 且提示「拒绝对 production 轨道做写操作」 | 没给 `--production` | 这是闸门在正常工作；要传就显式加 |
+| 退出码 2 且提示「拒绝把包置为 status=completed」 | 没给 `--publish` | 同上；只传草稿用 `--status draft` |
+| `:launcher:mergeExtDexRelease FAILED` | AndroidX 与 AGP 7.4.2 dexer 不兼容 | `docs/unity_android_build_skill.md` §3 双模板 force |
+| `Multiple Unity instances cannot open the same project` | 本工程 GUI Unity 占锁 | 关 GUI / 删陈旧 `Library/SourceAssetDB-lock` |
+| 前置检查报「未发现 Lua bundle」 | AB 链路断开 | `scripts/check_ab_ready.sh` 定位；GUI 重建 AB |
+| 真机报 `StreamingAssets 路径资源丢失…` | 发出的包不含 Lua | 重建 AB 后重打包，别用旧 AAB |
+| `TimeoutError: The read operation timed out` | httplib2 60s 超时 vs 100MB 分块 | 已内置修复（300s + 8MB 分块 + 重传）；可用 `PLAY_UPLOAD_TIMEOUT_S` / `PLAY_UPLOAD_CHUNK_MB` / `PLAY_UPLOAD_MAX_RETRIES` 调 |
+| AAB 只有约 139MB（正常 421MB） | AB 构建残包 | 重建 AB 再打包 |
+| Unity 打印 `libtolua.so is not 16KB-aligned` | **误报**（实测 `p_align=0x4000` 达标，包内一致，Play 未点名） | 忽略，别去"修" |
+| 日志有 `Application is shutting down...` 且没产包 | 进程被外部杀掉，`finally` 未执行 | 重跑；先 `git checkout -- Assets/LuaFramework/Scenes/Logo.unity` 清残留 |
+
+## ⚠️ 易误判（别被带偏）
+
+- **线上渠道值 `None`、`isSDK=false` 是正常的**。本作 Google 登录走的是 `not IsSDKLogin` 的
+  **账号密码分支**（`LoginPanel.lua:7`）。**渠道为 None 时强行 `isSDK=true`，登录会走不存在的
+  渠道 SDK 而全挂**（`ReleaseBuildSettings.Validate()` 已把它写成硬校验）。
+- **「上传到 production 就是送审」对 `status=draft` 不成立**；`--changes-not-sent-for-review`
+  只对 internal/alpha/beta 有效。
+- **账号名 = f(登录 SDK 给的 id)**：`GetAcc("go"+id)`，`name = acc[0..12)`、`pw = acc[12..24)`，
+  服务端以 `name` 为主键。历史上把 Google Sign-In（21 位数字 `UserId`）换成 Play Games
+  （20 字符 `Social.localUser.id`）导致**同一个人变新号**，已回退（`f74ffb436`，**勿再改回去**）。
+  判别法：查 `go` 账号的 `pw` 长度，`11` ⇒ 21 位旧 Sign-In，`10` ⇒ 20 字符 PlayGames。
 
 ## 边界
 
-- **不要**修改 `Assets/Editor/CLIBuilder.cs`、`Packages/manifest.json`、三个 Gradle 模板 —— 那些是打包侧真源，改动会牵动构建可行性。
-- `aab_release.sh` 会改 `ProjectSettings/ProjectSettings.asset` 的 `AndroidBundleVersionCode`（提号），这是**预期行为**，提交时连同一起提交。
-- 上传 production 是**外部不可逆动作**，脚本默认要求交互输入 `yes` 确认；只有自动化场景才加 `--yes`。
+- **不要**改 `Packages/manifest.json`、三个 Gradle 模板、`Assets/Editor/CLIBuilder.cs` 的
+  `PrepareAndroid()` —— 那些是构建可行性真源，改动会牵动整个打包链。
+- 改**出包口径**只改 `ReleaseBuildSettings.cs` 的 `kProfile` / profile 定义。
+- `aab_release.sh` 默认会改 `ProjectSettings/ProjectSettings.asset` 的 `AndroidBundleVersionCode`
+  （提号），这是**预期行为**，提交时连它一起提交。
 - 打包本身**不需要**密钥；密钥只在最后上传阶段用。
+- `apks/` 已 gitignore，不要提交产物。
 
 ## 相关文档
 
-- `docs/unity_android_build_skill.md` —— 打包流程与全部坑位（打包侧真源）
+- `docs/README.md` —— 文档索引 + 全流程脚本地图
+- `docs/android_release_runbook.md` —— 端到端发版 runbook + 全部经验（16KB / 账号体系 / 交付自检）
+- `docs/scripts_reference.md` —— 每个脚本的用途、参数、退出码
+- `docs/unity_android_build_skill.md` —— 构建侧深坑（Gradle / AGP / billing / AndroidX）
 - `docs/google_play_upload_setup.md` —— service account 申请、Play 后台授权、错误对照表
+- `docs/client_build_chain.md` —— 改 Lua / 配置表 / AB 的正确姿势

@@ -76,7 +76,7 @@ db.server_info.updateOne({_id:2}, {$set:{name_en:"Shelter No. 9", name_jp:"シ�
   工程内副本 `src/dry-run/backup/`。
 - 回滚（等价于撤销本次写入，无副作用）：
   `db.server_info.updateOne({_id:1}, {$unset:{name_en:"", name_jp:""}})`（`_id:2` 同理）。
-- ⚠️ **数据先写是安全的**：补丁未部署时线上 controller **根本不读**这两个字段，
+- ⚠️ **数据先写是安全的**：补丁**部署前**线上 controller **根本不读**这两个字段，
   线上响应逐字节不变（已实测）。两边可分别上，互不冲突。
 
 ---
@@ -159,7 +159,7 @@ cd TimeSpaceServer/skzc/home/java/loginserver/src
 
 判定标准：两级 diff 中，① 指令流完全一致；② **纯新增 31 行 / 0 行删除**。
 
-### 6.3 部署（🔴 需明确同意）
+### 6.3 部署 ✅ 已执行（2026-10-12 13:31；命令留档可复现）
 
 ```bash
 ./deploy-login-server.sh check                  # 只读体检：比对 md5、取接口基线、看 WAR mtime/重载次数
@@ -246,9 +246,19 @@ LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_getservername.lua 
 
 | 项 | 状态 |
 |---|---|
-| `server_info` 分语言数据（10001 / 10002） | ✅ **已写入生产库**（补丁未上线 ⇒ 线上无感知） |
-| 登录服补丁 class | ⬜ **未部署**（线上接口实测仍无新字段） |
+| `server_info` 分语言数据（10001 / 10002） | ✅ **已写入生产库** |
+| 登录服补丁 class | ✅ **已于 2026-10-12 13:31 部署上线**（接口实测已下发 `name_en` / `name_jp`） |
 | 客户端 `GetServerName` | ✅ 已提交，**待随下次出包 / 热更到达真机** |
 
-⇒ 剩余两步：① 部署服务端补丁（见 §6.3，需明确同意）；② 客户端出一次包（或走热更）。
-两步都完成前，现有玩家看到的行为与改动前**完全一致**。
+⇒ 只剩一步：**客户端出一次包（或走热更）**，之后新增区服才是真正的零出包。
+在此之前真机仍跑老逻辑（只读中文 `name`），服务端多下发的字段对老客户端是死键 ⇒
+玩家看到的行为与改动前**完全一致**。
+
+**部署实测（2026-10-12 13:31）**：class `87104cee…` → `d2a576bb…`；`/tk` 重载 0 → 1，
+耗时 **1.24s**；窗口内 6 个 `/tk` 请求**全部 200**（含一条真实老客户端 `server_version=1.2.45`）；
+备份在 `$TC/backup-gsl-i18n/…orig-20261012.bak` + 本地 `src/backup-gsl-i18n/`。
+
+⚠️ 重载后约 2s 会出现一条 **INFO 级** `WebappClassLoaderBase.checkStateForResourceLoading
+… Could not load [ch.qos.logback…ThrowableProxy]` + 紧跟 `NoClassDefFoundError`
+（线程 `cluster-…-localhost:27017`）—— 这是 **Tomcat 主动终止 Mongo 驱动遗留后台线程**的标准
+自清理，只出现一次、非故障，别当异常处理。

@@ -244,6 +244,73 @@ def is_retryable_upload_error(exc: BaseException) -> bool:
         return False
 
 
+def http_status_of(exc: BaseException) -> int:
+    """取 HttpError 的 HTTP 状态码，取不到返回 0。"""
+    try:
+        return int(getattr(getattr(exc, "resp", None), "status", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def execute_with_retry(request_factory, label: str, max_retries: int = UPLOAD_MAX_RETRIES):
+    """对 Play 编辑类 API（tracks.update / edits.commit）加可重试。
+
+    背景：原先只给「上传分块」加了断点续传重试，`tracks().update()` 与
+    `edits().commit()` 都是裸调用。2026-10-12 一次 HTTP 503 恰好打在 commit 上，
+    整个 edit 按设计被回滚 —— 421 MB 白传一遍。
+
+    这类调用在失败（未被子受理）的前提下重发是安全的；`request_factory` 每次
+    重试都新建请求对象（googleapiclient 的请求是一次性的，不能复用）。
+    """
+    attempt = 0
+    while True:
+        try:
+            return request_factory().execute()
+        except Exception as exc:  # noqa: BLE001
+            status = http_status_of(exc)
+            retryable = isinstance(exc, HttpError) and status in RETRYABLE_HTTP_STATUS
+            retryable = retryable or isinstance(exc, OSError)
+            if not retryable or attempt >= max_retries:
+                raise
+            attempt += 1
+            wait = min(2 ** attempt, 30)
+            log(
+                f"[{label}] 第 {attempt}/{max_retries} 次失败"
+                f"（HTTP {status or '网络'} {type(exc).__name__}），{wait}s 后重试…"
+            )
+            time.sleep(wait)
+
+
+def track_has_version(service, package: str, track: str, version_code: str) -> bool:
+    """回查轨道，确认某个 versionCode 是否已挂上。
+
+    用于 commit 结果不确定时兜底：503 有可能发生在服务端**已受理**之后，此时
+    edit 已被消费，重试 commit 会报「edit 不存在」—— 不能据此判定失败。
+    """
+    try:
+        edit_id = service.edits().insert(packageName=package, body={}).execute()["id"]
+    except Exception:  # noqa: BLE001
+        return False
+    try:
+        resp = service.edits().tracks().list(
+            packageName=package, editId=edit_id
+        ).execute()
+        for t in resp.get("tracks", []):
+            if t.get("track") != track:
+                continue
+            for rel in t.get("releases", []):
+                if version_code in [str(v) for v in rel.get("versionCodes", [])]:
+                    return True
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+    finally:
+        try:
+            service.edits().delete(packageName=package, editId=edit_id).execute()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def build_service(sa_path: Path):
     """构造 androidpublisher v3 客户端。"""
     try:
@@ -530,9 +597,12 @@ def main() -> int:
 
         track_body = {"track": args.track, "releases": [release]}
         log(f"[track] 写入轨道 {args.track}：status={args.status} versionCodes={release['versionCodes']}")
-        service.edits().tracks().update(
-            packageName=args.package, editId=edit_id, track=args.track, body=track_body
-        ).execute()
+        execute_with_retry(
+            lambda: service.edits().tracks().update(
+                packageName=args.package, editId=edit_id, track=args.track, body=track_body
+            ),
+            "track",
+        )
 
         # ---------------- 提交 ----------------
         commit_kwargs = {"packageName": args.package, "editId": edit_id}
@@ -540,11 +610,21 @@ def main() -> int:
             if args.track not in NON_PROD_TRACKS:
                 die("--changes-not-sent-for-review 仅对 internal/alpha/beta 轨道有效", 2)
             commit_kwargs["changesNotSentForReview"] = True
-        service.edits().commit(**commit_kwargs).execute()
+        try:
+            execute_with_retry(
+                lambda: service.edits().commit(**commit_kwargs), "commit"
+            )
+        except HttpError as exc:
+            # 503 可能发生在服务端已受理之后——edit 已被消费，重试会报 edit 不存在。
+            # 回查轨道确认版本确实挂上了就当成功，避免误判成失败去重传 421MB。
+            if track_has_version(service, args.package, args.track, str(uploaded_vc)):
+                log("[commit] 回查确认版本已在轨道上 —— 视为提交成功（首次响应为 503）")
+            else:
+                raise
         log("")
         log(f"✅ 提交成功：{args.package} -> {args.track} / versionCode {uploaded_vc}")
         if args.track == "production":
-            log("   下一步：Play Console 会进入审核，通过后按你设定的放量比例生效。")
+            log("   提示：「会进入审核」仅适用于 status=completed；status=draft 只保存草稿，需人工在 Console 发布。")
         return 0
 
     except HttpError as exc:

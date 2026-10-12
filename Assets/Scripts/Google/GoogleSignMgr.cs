@@ -27,6 +27,28 @@ public class GoogleSignMgr : MonoBehaviour
     {
         this.CrtPlatformId = platformId;
         if (platformId==1){
+            // 2026-10-12: Android 真机改用 Play Games 实现。
+            // 原因: 原 Google Sign-In 插件依赖 com.google.signin:google-signin-support:1.0.4,
+            //       其 jni/arm64-v8a/libnative-googlesignin.so 由 NDK r17 编译 -> 触发
+            //       Play「16KB 设备上可能崩溃」告警；该依赖已从 mainTemplate.gradle 移除。
+            // 关键: 保持 LoginPlatform=1 与 "go" 账号前缀不变, 因此 Lua 侧 LoginPanel、
+            //       PlayerPrefs 的 lastLoginPlatform 语义与老玩家已保存凭据全部不受影响
+            //       (lastPlt==1==LoginPlatform -> 走 RequestUser 用旧凭据, 账号不变)。
+#if UNITY_ANDROID && !UNITY_EDITOR
+            GooglePlayGamesLogin signin = new GooglePlayGamesLogin();
+            signin.LoginAuth((isSucc, id) => {
+                XDebug.Log.l("GoogleSignMgr 1(PlayGames):id:" + id);
+
+                string name = null;
+                string pw = null;
+                GetAcc("go" + id, out name, out pw);
+
+                if (callback != null)
+                {
+                    callback(new LoginData(isSucc, name, pw));
+                }
+            });
+#else
             SigninSampleScript signin = new SigninSampleScript();
             signin.OnSignIn((isSucc,id)=> {
                 XDebug.Log.l("GoogleSignMgr 1:id:" + id);
@@ -41,7 +63,7 @@ public class GoogleSignMgr : MonoBehaviour
                     callback(new LoginData(isSucc, name, pw));
                 }
             });
-            
+#endif
         }
         else if (platformId==2)
         {

@@ -34,7 +34,10 @@ dependencies {
     implementation 'com.google.firebase:firebase-crashlytics-ndk:19.4.2' // Assets/Firebase/Editor/CrashlyticsDependencies.xml:13
     implementation 'com.google.firebase:firebase-crashlytics-unity:12.10.1' // Assets/Firebase/Editor/CrashlyticsDependencies.xml:20
     implementation 'com.google.games:gpgs-plugin-support:0.11.01' // Assets/GooglePlayGames/com.google.play.games/Editor/GooglePlayGamesPluginDependencies.xml:11
-    implementation 'com.google.signin:google-signin-support:1.0.4' // Assets/GoogleSignIn/Editor/GoogleSignInSupportDependencies.xml:9
+    // 2026-10-12: 移除 com.google.signin:google-signin-support:1.0.4
+    // 原因: 该 aar 内的 jni/arm64-v8a/libnative-googlesignin.so 由 NDK r17 编译，
+    //       触发 Play「16KB 设备上可能崩溃」告警。Android 侧的 Google 登录改走 Play Games
+    //       （见 GoogleSignMgr.cs），故不再引入该库。
 // Android Resolver Dependencies End
 **DEPS**}
 

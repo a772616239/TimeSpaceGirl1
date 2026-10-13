@@ -48,7 +48,15 @@ TOOLS_DIR = os.environ.get(
 )
 PYTHON = sys.executable or "python3"
 PKG = "com.Warera.timespace"
-SERVICE_ACCOUNT = os.path.expanduser("~/.gplay/service-account.json")
+SERVICE_ACCOUNT_CANDIDATES = [
+    # 🔴 工程本地优先（2026-10-13 起）：见 docs/secrets_setup.md，该目录永不入库
+    os.path.join(os.path.dirname(BASE_DIR), ".secrets", "service-account.json"),
+    os.path.expanduser("~/.gplay/service-account.json"),   # 兼容回退
+]
+SERVICE_ACCOUNT = next(
+    (p for p in SERVICE_ACCOUNT_CANDIDATES if os.path.isfile(p)),
+    SERVICE_ACCOUNT_CANDIDATES[0],
+)
 ARCH = "arm64-v8a"
 STATE_FILE = os.path.join(BASE_DIR, ".play16kb_state.json")
 

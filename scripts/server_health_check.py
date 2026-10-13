@@ -33,7 +33,17 @@ SSH_HOST = os.environ.get('GS_SSH_HOST', 'gs')
 SSH_TIMEOUT = 60
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
 STATE_FILE = os.path.join(BASE_DIR, '.server_health_state.json')
+
+# 🔴 工程本地私钥优先（2026-10-13 起）：<工程>/.secrets/tencent-gameserver.pem
+#    该目录被 .gitignore 排除，永不入库。见 docs/secrets_setup.md
+#    文件不存在时**不加** -i ⇒ 回退到 ~/.ssh/config 里 Host gs 的 IdentityFile，
+#    行为与改动前完全一致（不会因为少了个文件就把巡检弄挂）。
+SSH_KEY = os.environ.get(
+    'GS_SSH_KEY',
+    os.path.join(PROJECT_ROOT, '.secrets', 'tencent-gameserver.pem'),
+)
 
 # 邮件（与 TD config/config.py 的 email 段一致）
 SMTP_SERVER = 'smtp.qq.com'
@@ -41,6 +51,10 @@ SMTP_PORT = 465
 SENDER_EMAIL = '772616239@qq.com'
 RECIPIENTS = ['772616239@qq.com']
 ENV_CANDIDATES = [
+    # 🔴 工程本地优先（2026-10-13 起）：与 Play 密钥 / SSH pem 同处 .secrets/，
+    #    让本工程自包含（不再借读 TD 工程的 /Volumes/S/TD/.env，那卷拔了就巡检不了）。
+    #    文件不存在会被下面 open() 的 except 直接跳过，无副作用。
+    os.path.join(PROJECT_ROOT, '.secrets', 'health.env'),
     os.path.expanduser('~/.gs_health.env'),           # 本机独立凭据（可选，推荐）
     '/Volumes/S/TD/.env',                             # 实盘机权威 .env
     '/Users/wangxufeng/TD-recovery/.env',
@@ -141,7 +155,11 @@ echo "@@@END"
 def run_remote(host, script, timeout=SSH_TIMEOUT):
     """通过 ssh 在服务器上执行 bash 脚本，返回 (rc, stdout, stderr)。"""
     cmd = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
-           '-o', 'StrictHostKeyChecking=accept-new', host, 'bash -s']
+           '-o', 'StrictHostKeyChecking=accept-new']
+    if SSH_KEY and os.path.isfile(SSH_KEY):
+        # 工程本地私钥优先；IdentitiesOnly 防止 ssh-agent 里别的身份被优先尝试
+        cmd += ['-i', SSH_KEY, '-o', 'IdentitiesOnly=yes']
+    cmd += [host, 'bash -s']
     try:
         p = subprocess.run(cmd, input=script, capture_output=True, text=True,
                            timeout=timeout)

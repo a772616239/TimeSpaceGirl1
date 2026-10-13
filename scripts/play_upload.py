@@ -17,7 +17,8 @@ Google Play AAB 上传器 —— 走 Play Developer API v3（androidpublisher）
     已在 Play Console → 用户和权限 中被授权：
       - 传 internal / alpha / beta ⇒ 勾「管理测试轨道和修改测试人员列表」
       - 传 production             ⇒ 另需勾「发布到正式版、排除设备并使用 Google Play 应用签名」
-    密钥路径优先级：--service-account > $GOOGLE_PLAY_SERVICE_ACCOUNT > ~/.gplay/service-account.json
+    密钥路径优先级：--service-account > $GOOGLE_PLAY_SERVICE_ACCOUNT
+                    > <工程>/.secrets/service-account.json（推荐）> ~/.gplay/service-account.json
     申请与授权步骤见 docs/google_play_upload_setup.md
 
 用法示例：
@@ -71,8 +72,14 @@ except ImportError:  # pragma: no cover
 
 SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 DEFAULT_PACKAGE = "com.Warera.timespace"
+# 工程根 = scripts/ 的上一级（.secrets/ 就放在工程根）
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SA_CANDIDATES = [
-    Path.home() / ".gplay" / "service-account.json",
+    # 🔴 工程本地优先（2026-10-13 起）：密钥随工程目录走，换机/迁移不丢，
+    #    也避免同一台机器上不同工程的发版脚本读到不同的密钥。
+    #    该目录被 .gitignore 排除，永不入库。见 docs/secrets_setup.md
+    PROJECT_ROOT / ".secrets" / "service-account.json",
+    Path.home() / ".gplay" / "service-account.json",   # 兼容回退（早期只放家目录）
 ]
 # 允许的 release status
 VALID_STATUS = {"draft", "inProgress", "halted", "completed"}
@@ -204,9 +211,11 @@ def resolve_service_account(explicit: str | None) -> Path:
 
     die(
         "找不到 service account 密钥。请任选其一：\n"
-        "  1) 把密钥放到 ~/.gplay/service-account.json\n"
-        "  2) 设置环境变量 GOOGLE_PLAY_SERVICE_ACCOUNT=/abs/path/key.json\n"
-        "  3) 传 --service-account /abs/path/key.json\n"
+        f"  1) 把密钥放到工程本地 {PROJECT_ROOT / '.secrets' / 'service-account.json'}"
+        "（推荐，见 docs/secrets_setup.md）\n"
+        "  2) 把密钥放到 ~/.gplay/service-account.json\n"
+        "  3) 设置环境变量 GOOGLE_PLAY_SERVICE_ACCOUNT=/abs/path/key.json\n"
+        "  4) 传 --service-account /abs/path/key.json\n"
         "申请步骤见 docs/google_play_upload_setup.md",
         2,
     )

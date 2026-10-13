@@ -49,3 +49,16 @@ build_log_ab_*.txt
 # 只有 run/ 是运行态产物（渲染出的 config.xml + 每次构建的证据目录），不入库。
 # 证据已经由 job 归档到 Jenkins 构建里（evidence/**），仓库里不需要第二份。
 .jenkins/run/
+
+# 🔴 工程本地凭据目录（2026-10-13 起）：Play service account 密钥、服务器 SSH pem
+# 等一律放这里，**永不入库**。远端 github.com/a772616239/TimeSpaceGirl1 是 PUBLIC
+# 仓库 ⇒ 一旦入库即等于把密钥公开到公网，且 push 后无法撤回（只能轮换密钥）。
+# 目录布局、换机恢复步骤见 docs/secrets_setup.md。
+.secrets/
+
+# 兜底：散落在其它位置的密钥类文件也别误提交（命中即疑，需人工判断）
+*.pem
+*.p12
+*.key
+service-account*.json
+*credentials*.json

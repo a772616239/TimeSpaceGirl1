@@ -216,9 +216,10 @@ function PoolManager:UnLoadAsset(resName,res, assetType)
     --        and assetType ~= PoolManager.AssetType.MediaBg
     --        and assetType ~= PoolManager.AssetType.MediaUI
     --then
-    if assetType == PoolManager.AssetType.GameObject
-           and res~=nil and not IsNull(res.transform)
-    then
+    -- res 若已被 Destroy（Unity 侧 fake-null），Lua 里 res ~= nil 仍成立，
+    -- 此时访问 res.transform 会让 tolua 抛 "attempt to index transform on a nil value"
+    -- 致命异常。必须先 IsNull(res) 判活，再访问 transform。
+    if assetType == PoolManager.AssetType.GameObject and not IsNull(res) then
         if IsNull(self.mPoolTrans) then
             return
         end

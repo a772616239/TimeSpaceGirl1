@@ -1,0 +1,17 @@
+diff --git a/luajit-2.1/src/lj_arch.h b/luajit-2.1/src/lj_arch.h
+index 5851fb2..3e8003a 100644
+--- a/luajit-2.1/src/lj_arch.h
++++ b/luajit-2.1/src/lj_arch.h
+@@ -407,7 +407,11 @@
+ #endif
+ 
+ #ifndef LJ_PAGESIZE
+-#define LJ_PAGESIZE		4096
++/* 2026-10-12: 原值 4096。Google Play 自 2025-11 起要求新包支持 16KB 页大小，
++   而 JIT 的 mcode 分配器（lj_mcode.c）按 LJ_PAGESIZE 对齐后调 mprotect，
++   在 16KB 页设备上页粒度不匹配会被内核拒绝。16384 在 4KB 设备上同样满足，
++   故统一取 16384。 */
++#define LJ_PAGESIZE		16384
+ #endif
+ 
+ /* Check for minimum required compiler versions. */

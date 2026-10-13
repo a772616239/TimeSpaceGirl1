@@ -48,7 +48,7 @@ end
 -- end
 
 function ServerListItem:SetValue(serverInfo, flag)
-    self.serverName.text = serverInfo.name
+    self.serverName.text = GetServerName(serverInfo)
     -- self.tipsBg.gameObject:SetActive(not not flag)
     self.newServerFlag:SetActive(serverInfo.isnew == 1)
     -- self.serverArea.text = tonumber(string.sub(serverInfo.server_id, 0, -5)) .. GetLanguageStrById(11120)

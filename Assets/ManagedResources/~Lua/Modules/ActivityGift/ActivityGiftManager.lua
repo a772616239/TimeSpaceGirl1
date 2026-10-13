@@ -10,6 +10,8 @@ local luxuryConfig = ConfigManager.GetConfig(ConfigName.LuxuryFundConfig)
 this.mainLevelConfig = ConfigManager.GetConfig(ConfigName.MainLevelConfig)
 local isFirstTime = true
 this.isFirstForSupremeHero = false--剑影仙踪是否每日第一次登陆
+--mission 是活动数据容器，必须始终为表：活动列表下发前也可能收到指示回调（如 TREASURE_LEVELUP_INDICATION），索引 nil 会中断整条网络消息的处理
+this.mission = {}
 
 function this.Initialize()
     --UpdateBeat:Add(this.update, this)
@@ -382,6 +384,9 @@ function this.GetActivityIdByType(type)
     local globalActConfigs = ConfigManager.GetAllConfigsDataByKey(ConfigName.GlobalActivity, "Type", type)
     local id = 0
     local missionData = nil
+    if not this.mission then--防御：指示回调可能在活动数据下发前触发
+        return id
+    end
     table.walk(globalActConfigs, function(actConfigInfo)
         if this.mission[actConfigInfo.Id] then
             id = actConfigInfo.Id

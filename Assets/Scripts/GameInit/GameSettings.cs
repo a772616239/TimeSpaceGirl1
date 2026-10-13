@@ -98,9 +98,20 @@ namespace GameLogic {
                 SystemLanguage sysLang = Application.systemLanguage;
                 if (!PlayerPrefs.HasKey("multi_language"))
                 {
-                    // 首次启动时，始终根据设备系统语言自动设置初始语言，
-                    // 不受Inspector中originLan默认值的影响
-                    settingInfo.originLan = GetSystemLanguage2(sysLang);
+                    if (Application.isEditor)
+                    {
+                        // 编辑器：尊重 Inspector 里显式设置的 originLan（非 0），便于本地切语言测试
+                        // （英文=10101 / 简中=10001 / 日文=10201）；仅在未指定(0)时才回落系统语言
+                        if (settingInfo.originLan == 0)
+                        {
+                            settingInfo.originLan = GetSystemLanguage2(sysLang);
+                        }
+                    }
+                    else
+                    {
+                        // 真机首次启动：按设备系统语言自动设置初始语言
+                        settingInfo.originLan = GetSystemLanguage2(sysLang);
+                    }
                 }
 
                 // 打包时 CrashlyticsMgr 可能还未初始化，需要空值检查

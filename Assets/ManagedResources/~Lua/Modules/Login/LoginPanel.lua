@@ -259,7 +259,7 @@ end
                         LoginManager.state = list.state
                         -- local severArea = tonumber(string.sub(list.server_id, 0, -5))
                         this.serverImage.sprite = Util.LoadSprite(ServerStateIconDef[list.state])
-                        this.serverMes.text = GetLanguageStrByStr(PlayerManager.serverInfo.name)
+                        this.serverMes.text = GetServerName(PlayerManager.serverInfo)
                     end
                 }
             )
@@ -631,7 +631,7 @@ function this.SetServerList(data)
 
     -- local severArea = tonumber(string.sub(this.serverList[lastIndex].server_id, 0, -5))
     this.serverImage.sprite = Util.LoadSprite(ServerStateIconDef[LoginManager.state])
-    this.serverMes.text = GetLanguageStrByStr(PlayerManager.serverInfo.name)
+    this.serverMes.text = GetServerName(PlayerManager.serverInfo)
 
     RequestPanel.Hide()
 end

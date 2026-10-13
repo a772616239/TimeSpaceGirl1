@@ -2164,6 +2164,50 @@ function GetLanguageStrByStr(zhStr)
     return zhStr
 end
 
+--[[
+ 区服名多语言取值（新增区服不再需要改客户端）
+
+ 取值优先级：
+   1) 服务端下发的分语言字段（tk/getServerList 响应里的 name_en / name_jp / name_kr）
+   2) 本地翻译表 languageDicStr（Language.xlsx + AddManualTranslation 的手动补充）
+   3) 中文原名
+
+ 服务端只需在 server_info 里写好 name / name_en / name_jp，客户端即按当前语言显示；
+ 1) 命中时不走 2)，因此不会再有 "languageDicStr no find Str" 的红字告警。
+ serverInfo 为选服接口返回的单条记录（也可传 PlayerManager.serverInfo）。
+]]--
+function GetServerName(serverInfo)
+    if serverInfo == nil then
+        return ""
+    end
+    local zhName = serverInfo.name
+    if zhName == nil or zhName == "" then
+        return ""
+    end
+    local lang = GetLan()
+    if lang == 0 then
+        -- 中文直接返回原名：避免 GetLanguageStrByStr 在中文语言下也刷红字告警
+        return zhName
+    end
+    local key
+    if lang == 1 then
+        key = "name_en"
+    elseif lang == 2 then
+        key = "name_jp"
+    elseif lang == 3 then
+        key = "name_kr"
+    end
+    if key ~= nil then
+        local value = serverInfo[key]
+        -- 只接受非空字符串：字段缺失/空串/类型异常都视为「没配」，一律回落
+        if type(value) == "string" and value ~= "" then
+            return value
+        end
+    end
+    -- 老区服没有分语言字段：退回既有翻译表（未登记会红字告警并回落中文）
+    return GetLanguageStrByStr(zhName)
+end
+
 function HasLanguageStrKey(zhStr)
     if languageDicStr then
         if languageDicStr[zhStr] then
@@ -2253,6 +2297,21 @@ function SecTorPlayAnimByScroll(scroll,_scale)
     end)
 end
 
+-- 立绘资源名：Load / UnLoad 必须取到同一个名字，否则对象池对不上（baiqi 改名特例只写在 Load 里过）
+function GetHeroliveName(_heroConfig)
+    if _heroConfig == nil then
+        return nil
+    end
+    local artResourcesConfig = ConfigManager.GetConfig(ConfigName.ArtResourcesConfig)
+    local liveConfig = artResourcesConfig[_heroConfig.RoleImage]
+    if liveConfig == nil or liveConfig.Name == nil then
+        return nil
+    end
+    local liveName = liveConfig.Name
+    if liveName == "lihui_baiqi" then liveName = "lihui_baiqi_01" end
+    return liveName
+end
+
 -- 加载立绘
 function LoadHerolive(_heroConfig, _objPoint)
     local artResourcesConfig = ConfigManager.GetConfig(ConfigName.ArtResourcesConfig)
@@ -2261,8 +2320,10 @@ function LoadHerolive(_heroConfig, _objPoint)
     end
     if _heroConfig.RoleImage ~= 0 then
         --动态加载立绘
-        local liveName = artResourcesConfig[_heroConfig.RoleImage].Name
-        if liveName == "lihui_baiqi" then liveName = "lihui_baiqi_01" end
+        local liveName = GetHeroliveName(_heroConfig)
+        if liveName == nil then
+            return nil
+        end
         local testLive = poolManager:LoadLive(liveName, _objPoint.transform, Vector3.one * _heroConfig.Scale, Vector3.New(_heroConfig.Position[1], _heroConfig.Position[2], 0))
         local SkeletonGraphic = testLive:GetComponent("SkeletonGraphic")
         return testLive
@@ -2280,11 +2341,19 @@ function LoadHerolive(_heroConfig, _objPoint)
 end
 --卸载立绘
 function UnLoadHerolive(_heroConfig,_obj)
-    local artResourcesConfig = ConfigManager.GetConfig(ConfigName.ArtResourcesConfig)
-    if _heroConfig~=nil and _heroConfig.RoleImage ~= 0 then
-        poolManager:UnLoadLive(artResourcesConfig[_heroConfig.RoleImage].Name, _obj)
+    -- _obj 可能已被 Destroy，此时 Lua 里非 nil 但 Unity 侧是 fake-null，必须挡掉
+    if _heroConfig == nil or _obj == nil or IsNull(_obj) then
+        return
+    end
+    if _heroConfig.RoleImage ~= 0 then
+        local liveName = GetHeroliveName(_heroConfig)
+        if liveName ~= nil then
+            poolManager:UnLoadLive(liveName, _obj)
+        end
     else 
-        poolManager:UnLoadAsset("TestImg", _obj, PoolManager.AssetType.gameObject)
+        -- 原为 PoolManager.AssetType.gameObject（小写 g）→ 值为 nil，
+        -- 导致静态立绘永远走不到回池分支，随后被 Util.ClearChild 直接 DestroyImmediate
+        poolManager:UnLoadAsset("TestImg", _obj, PoolManager.AssetType.GameObject)
     end
 end
 

@@ -206,31 +206,13 @@ namespace GameEditor.FrameTool
 
             if (isBuildPlayer)
             {
-                var gameSet = GameObject.FindObjectOfType<GameSettings>();
+                // 与命令行打包（CLIBuilder）共用同一份出包配置逻辑，避免两处漂移。
+                // 编辑器下场景是打开的，改内存对象即可被 BuildPlayer 序列化；
+                // 命令行（batchmode）没有已打开场景，必须由 ReleaseBuildSettings 开场景+落盘。
+                var gameSet = ReleaseBuildSettings.FindGameSettings();
                 if (gameSet != null && gameSet.settingInfo != null)
                 {
-                    gameSet.settingInfo.bundleMode = true;
-                    gameSet.settingInfo.luaBundleMode = true;
-
-                    if (isRelease)
-                    {
-                        gameSet.settingInfo.isSDK = true;
-                        gameSet.settingInfo.isSDKLogin = true;
-                        gameSet.settingInfo.isOpenGM = false;
-                        gameSet.settingInfo.isGuide = true;
-                        gameSet.settingInfo.isUpdate = true;
-                        gameSet.settingInfo.isDebug = false;
-                    }
-                    else
-                    {
-
-                    }
-
-                    if (SDKChannelConfigManager.Instance.ChannelType == ChannelType.None.ToString())
-                    {//空渠道下不应该用SDK登录
-                        gameSet.settingInfo.isSDK = false;
-                        gameSet.settingInfo.isSDKLogin = false;
-                    }
+                    ReleaseBuildSettings.Apply(gameSet, isRelease);
                 }
 
                 if (GUILayout.Button(@"不打资源直接出包

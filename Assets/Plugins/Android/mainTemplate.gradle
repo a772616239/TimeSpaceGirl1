@@ -13,6 +13,16 @@ configurations.all {
         force 'androidx.lifecycle:lifecycle-runtime:2.6.2'
         force 'androidx.lifecycle:lifecycle-viewmodel:2.6.2'
         force 'androidx.lifecycle:lifecycle-livedata-core:2.6.2'
+        // 2026-10-12: Play「SDK 版本已过时」告警 —— androidx.fragment:fragment 1.1.0。
+        // 来源是传递依赖：com.google.android.gms:play-services-base 与
+        // play-services-basement 的 POM 都写着 fragment 1.1.0（2019 年的版本）。
+        // 选 1.6.2 的依据：它要求 core>=1.9.0 / lifecycle>=2.5.1，与本块已 force 的
+        // core 1.10.1 / lifecycle 2.6.2 相容；再往上（1.7+）会要 core 1.13+，
+        // 与 AGP 7.4.2 的 dexer 不兼容（原因见本块顶部注释）。
+        // activity 一并钉在 1.7.2：fragment 1.6.2 要求 activity>=1.7.0，而 1.7.x
+        // 只要 core>=1.9.0；不钉的话可能被别的库拉到 1.8+ 又不满足其 core 需求。
+        force 'androidx.fragment:fragment:1.6.2'
+        force 'androidx.activity:activity:1.7.2'
     }
 }
 
@@ -28,12 +38,17 @@ dependencies {
     implementation 'com.google.android.play:integrity:1.4.0' // Packages/com.google.play.integrity/Editor/Dependencies.xml:3
     implementation 'com.google.android.play:review:2.0.2' // Assets/GooglePlayPlugins/com.google.play.review/Editor/Dependencies.xml:3
     implementation 'com.google.firebase:firebase-analytics:22.4.0' // Assets/Firebase/Editor/CrashlyticsDependencies.xml:15
-    implementation 'com.google.firebase:firebase-analytics-unity:12.8.0' // Assets/Firebase/Editor/AnalyticsDependencies.xml:18
-    implementation 'com.google.firebase:firebase-app-unity:12.8.0' // Assets/Firebase/Editor/AppDependencies.xml:22
+    implementation 'com.google.firebase:firebase-analytics-unity:12.10.1' // Assets/Firebase/Editor/AnalyticsDependencies.xml:18
+    implementation 'com.google.firebase:firebase-app-unity:12.10.1' // Assets/Firebase/Editor/AppDependencies.xml:22
     implementation 'com.google.firebase:firebase-common:21.0.0' // Assets/Firebase/Editor/AppDependencies.xml:13
     implementation 'com.google.firebase:firebase-crashlytics-ndk:19.4.2' // Assets/Firebase/Editor/CrashlyticsDependencies.xml:13
-    implementation 'com.google.firebase:firebase-crashlytics-unity:12.8.0' // Assets/Firebase/Editor/CrashlyticsDependencies.xml:20
+    implementation 'com.google.firebase:firebase-crashlytics-unity:12.10.1' // Assets/Firebase/Editor/CrashlyticsDependencies.xml:20
     implementation 'com.google.games:gpgs-plugin-support:0.11.01' // Assets/GooglePlayGames/com.google.play.games/Editor/GooglePlayGamesPluginDependencies.xml:11
+    // 2026-10-12 回滚说明: 72502790b 曾为消除 Play「16KB 设备上可能崩溃」告警而移除本依赖，
+    // 代价是 Android 侧 Google 登录从 Google Sign-In 改走 Play Games —— 两者对同一 Google
+    // 账号返回**不同的 id**，导致账号名(account = f(login sdk id))变化、老号被判为新号。
+    // 实测本 aar 内 libnative-googlesignin.so 的 PT_LOAD p_align = 0x10000(64KB)，
+    // 远高于 16KB 硬门槛，只是 Play 的「旧版 NDK」软告警 ⇒ 可安全回滚。
     implementation 'com.google.signin:google-signin-support:1.0.4' // Assets/GoogleSignIn/Editor/GoogleSignInSupportDependencies.xml:9
 // Android Resolver Dependencies End
 **DEPS**}

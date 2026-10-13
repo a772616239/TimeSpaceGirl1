@@ -42,3 +42,6 @@ end
 AddManualTranslation("英雄祭品未选满", "Not all hero sacrifice slots are filled.")
 AddManualTranslation("升星材料不足", "Insufficient materials for limit break.")
 AddManualTranslation("材料不足且英雄祭品未满", "Insufficient materials and hero sacrifice slots not filled.")
+
+-- 区服名（服务端 server_info.name 下发；Language 表中没有区服名的条目，故走手动通道）
+AddManualTranslation("庇护所九号", "Shelter No. 9")

@@ -12,6 +12,16 @@ configurations.all {
         force 'androidx.lifecycle:lifecycle-runtime:2.6.2'
         force 'androidx.lifecycle:lifecycle-viewmodel:2.6.2'
         force 'androidx.lifecycle:lifecycle-livedata-core:2.6.2'
+        // 2026-10-12: Play「SDK 版本已过时」告警 —— androidx.fragment:fragment 1.1.0。
+        // 来源是传递依赖：com.google.android.gms:play-services-base 与
+        // play-services-basement 的 POM 都写着 fragment 1.1.0（2019 年的版本）。
+        // 选 1.6.2 的依据：它要求 core>=1.9.0 / lifecycle>=2.5.1，与本块已 force 的
+        // core 1.10.1 / lifecycle 2.6.2 相容；再往上（1.7+）会要 core 1.13+，
+        // 与 AGP 7.4.2 的 dexer 不兼容（原因见本块顶部注释）。
+        // activity 一并钉在 1.7.2：fragment 1.6.2 要求 activity>=1.7.0，而 1.7.x
+        // 只要 core>=1.9.0；不钉的话可能被别的库拉到 1.8+ 又不满足其 core 需求。
+        force 'androidx.fragment:fragment:1.6.2'
+        force 'androidx.activity:activity:1.7.2'
     }
 }
 

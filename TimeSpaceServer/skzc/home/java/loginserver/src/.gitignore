@@ -1,0 +1,7 @@
+# 编译产物与运行日志不进版本库
+# 源码在 com/，验证与出包由 build-and-verify.sh / dry-run/run-dry-run.sh 完成
+dist/
+logs/
+*.class
+# 部署脚本产生的 class 备份（.bak 后缀，*.class 规则盖不到）
+backup-gsl-i18n/

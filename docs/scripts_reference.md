@@ -84,7 +84,7 @@ scripts/aab_release.sh --upload --production --publish --yes         # 🔴 送�
 | `--status` | 不传则按轨道推导：`internal` ⇒ `completed`，其余 ⇒ `draft`；可显式 `completed` / `inProgress` / `halted` |
 | `--user-fraction` | 灰度比例，仅 `inProgress` 有效 |
 | `--notes` | 更新说明 |
-| `--key` | 指定 service account JSON（默认 `~/.gplay/service-account.json`） |
+| `--key` | 指定 service account JSON（默认 **`<工程>/.secrets/service-account.json`**，回退 `~/.gplay/service-account.json`；见 `secrets_setup.md`） |
 | `--package` | 覆盖包名（默认 `com.Warera.timespace`） |
 | `--aab <path>` | 直接指定 AAB，隐含 `--skip-build` |
 | `--skip-build` | 跳过 Unity 打包 |
@@ -260,8 +260,10 @@ scripts/server_health_check.py [--dry-run] [--to a@b.com] [--json]
 状态文件 `scripts/.server_health_state.json`（幂等标记）。
 🔴 **默认只读**：不重启服务、不改服务器配置。报告要量化证据并区分「🔴 严重 / ⚠️ 关注」。
 
-授权码优先级：`~/.gs_health.env` → `/Volumes/S/TD/.env`（当前有效）→ `~/TD-recovery/.env`
-→ `~/TD-salvage-20260911/.env`（失效）；脚本逐个试登录自动跳过失效口令。
+授权码优先级：**`<工程>/.secrets/health.env`**（工程本地）→ `~/.gs_health.env` → `/Volumes/S/TD/.env`（当前有效）
+→ `~/TD-recovery/.env` → `~/TD-salvage-20260911/.env`（失效）；脚本逐个试登录自动跳过失效口令，
+**缺失文件也会被安全跳过**。SSH 私钥同理：工程本地 `.secrets/tencent-gameserver.pem` 优先，
+回退 `~/.ssh/config` 的 `Host gs`（见 `secrets_setup.md`）。
 
 ---
 

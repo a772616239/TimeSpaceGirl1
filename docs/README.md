@@ -17,6 +17,7 @@
 | 起服 / 开区服 / 改线上 / 每日巡检 | **`server_ops_runbook.md`** |
 | Unity 构建侧深坑（Gradle / AGP / billing / AndroidX） | `unity_android_build_skill.md` |
 | service account 申请与 Play 后台授权 | `google_play_upload_setup.md` |
+| **密钥 / pem 放哪、换机怎么恢复** | **`secrets_setup.md`** |
 | 原始服务端架设文档（厂商版） | `serverbuild.md` |
 | 客户端功能设计（英雄对比 / 时间线 / 多语言公告） | `HeroCompare_FeatureDesign.md`、`HeroTimeline_FeatureDesign.md` |
 | **多语言：公告 / 区服名** | `notice_multi_lang_guide.md`、`server_name_multi_lang_guide.md` |
@@ -119,6 +120,7 @@ A/B/C 三条链已经收口成 **7 个 Jenkins job**，跑在 `http://127.0.0.1:
 | `zip -u` 报 `Local Entry CRC does not match CD` | **无害**。原 jar 本就如此；按 CRC diff 条目数验证，别看体积 |
 | 「上传到 production 就是送审」 | 对 `status=draft` **不成立**；`--changes-not-sent-for-review` 只对 internal/alpha/beta 有效 |
 | `main_android/Unity` 在跑 batchmode | 与本工程无关，不再会误判为「占用」（已修 `b64b894dd`） |
+| 新机器 clone 完 `.secrets/` 是**空的** | **正常**。凭据不入库，按 `secrets_setup.md` §3 恢复；脚本缺文件会自动走回退链 |
 
 ---
 
@@ -130,6 +132,7 @@ UNITY=/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity
 PY=/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python
 ANDROID_SDK_BT=~/Library/Android/sdk/build-tools/36.0.0   # aapt2 / apksigner
 KEYSTORE=$PROJECT/beauty.keystore                          # alias xing，DN O=EMI
-PLAY_SA=~/.gplay/service-account.json
+PLAY_SA=$PROJECT/.secrets/service-account.json               # 工程本地优先（回退 ~/.gplay/…）
 SSH_HOST=gs                                                # 129.226.213.65
+SSH_KEY=$PROJECT/.secrets/tencent-gameserver.pem             # 工程本地优先（回退 ~/.ssh/config）
 ```

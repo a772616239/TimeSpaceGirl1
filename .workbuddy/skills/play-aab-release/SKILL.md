@@ -61,7 +61,7 @@ scripts/aab_release.sh --skip-build --upload --production --publish --yes
 | `--status` | 不传则按轨道推导：`internal` ⇒ `completed`（立即可测），其余 ⇒ `draft`；可显式 `completed` / `inProgress` / `halted` |
 | `--user-fraction` | 灰度比例，仅 `inProgress` 有效 |
 | `--notes` | 更新说明 |
-| `--key` | 指定 service account JSON（默认 `~/.gplay/service-account.json`） |
+| `--key` | 指定 service account JSON（默认 **`<工程>/.secrets/service-account.json`**，回退 `~/.gplay/service-account.json`） |
 | `--aab <path>` | 直接指定 AAB，隐含 `--skip-build` |
 | `--skip-build` | 跳过 Unity 打包 |
 | `--no-bump` | ⚠️ 不动 versionCode（仅调试；Play **各轨道共享同一个号空间**，重复号一律被拒） |
@@ -94,11 +94,12 @@ app signing key 不同 ⇒ **侧载前必须先卸载 Play 版**。只出 `arm64
    ```
    有 `Library/SourceAssetDB-lock` 但无 Editor 进程 = 陈旧锁，删掉即可。
 
-2. **service account 密钥就位**
+2. **service account 密钥就位**（工程本地 `.secrets/` 优先）
    ```bash
-   ls -la ~/.gplay/service-account.json
+   ls -la .secrets/service-account.json ~/.gplay/service-account.json 2>/dev/null
    ```
-   没有先按 `docs/google_play_upload_setup.md` §1 走（Cloud 建账号 → Play Console 授权 → 落盘）。
+   两处都没有，先按 `docs/secrets_setup.md` §3 恢复（换机场景）；要从零申请，
+   走 `docs/google_play_upload_setup.md` §1（Cloud 建账号 → Play Console 授权 → 落盘）。
    **建完账号 ≠ 能发布**，必须在 Play Console「用户和权限」里把该邮箱加为发布用户并勾
    「发布到正式版」，否则一律 403。
 

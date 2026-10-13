@@ -86,23 +86,28 @@ Play Developer API 只要一个 service account JSON + 两个 Python 包，更�
 
 ### 1.3 本机：落地密钥
 
-```bash
-mkdir -p ~/.gplay && chmod 700 ~/.gplay
-mv ~/Downloads/<刚下载的>.json ~/.gplay/service-account.json
-chmod 600 ~/.gplay/service-account.json
-```
-
-验证内容可读：
+🔴 2026-10-13 起**首选工程本地 `.secrets/`** —— 随工程目录一起备份、换机不丢；
+`~/.gplay/` 作为兼容回退仍然有效。布局与恢复步骤见 **`docs/secrets_setup.md`**。
 
 ```bash
-python3 -c "import json,os;d=json.load(open(os.path.expanduser('~/.gplay/service-account.json')));print('client_email:',d['client_email']);print('project_id  :',d['project_id'])"
+# 首选：工程本地（.gitignore 已排除，永不入库）
+mkdir -p .secrets && chmod 700 .secrets
+mv ~/Downloads/<刚下载的>.json .secrets/service-account.json
+chmod 600 .secrets/service-account.json
 ```
 
-脚本按以下优先级找密钥，`~/.gplay/service-account.json` 是最省事的默认位：
+验证内容可读（以工程本地为例）：
+
+```bash
+python3 -c "import json;d=json.load(open('.secrets/service-account.json'));print('client_email:',d['client_email']);print('project_id  :',d['project_id'])"
+```
+
+脚本按以下优先级找密钥：
 
 1. `--service-account /abs/path.json`
 2. 环境变量 `GOOGLE_PLAY_SERVICE_ACCOUNT`
-3. `~/.gplay/service-account.json` ← 建议用这个
+3. `<工程>/.secrets/service-account.json` ← **建议用这个**（工程本地）
+4. `~/.gplay/service-account.json` ← 兼容回退
 
 ### 1.4 本项目的实际配置（2026-10-11 落地）
 
@@ -110,7 +115,7 @@ python3 -c "import json,os;d=json.load(open(os.path.expanduser('~/.gplay/service
 |---|---|
 | Cloud project_id | `platinum-loop-468100-k5` |
 | service account 邮箱 | `play-publisher@platinum-loop-468100-k5.iam.gserviceaccount.com` |
-| 密钥落盘位置 | `~/.gplay/service-account.json`（`600`，仓库外） |
+| 密钥落盘位置 | **`<工程>/.secrets/service-account.json`**（`600`，`.gitignore` 排除、**永不入库**）；`~/.gplay/service-account.json` 作为回退保留（2026-10-13 起由工程外迁入工程本地，见 `secrets_setup.md`） |
 | 源密钥文件 | `~/Downloads/platinum-loop-468100-k5-29f09eaebc62.json`（**验证通过后应删除**） |
 
 当前状态：**密钥有效、认证通过**，但 Play Console 侧尚未授权，接口返回
@@ -250,7 +255,9 @@ scripts/aab_release.sh --notes "修复卡顿；优化新手引导"
 ## 6. 安全约定
 
 - JSON 密钥等同于该 service account 的全部权限，**绝不提交进 git**。
-  放在 `~/.gplay/` 天然在仓库之外，权限设 `600`。
+  首选放工程本地 `.secrets/service-account.json`（`.gitignore` 已排除整目录），权限 `600`；
+  `~/.gplay/` 作回退同样设 `600`。⚠️ 本工程远端是 **PUBLIC 仓库**，
+  `.gitignore` 只挡未来提交，**不能**把已入库的文件摘出来 —— 详见 `secrets_setup.md` §5/§6。
 - 只授权需要的那一个应用，不要给「所有应用」的全局权限。
 - 授权时不要勾「管理账户 / 财务」等无关高危权限。
 - 密钥泄漏时：在 Google Cloud 删除该密钥 → 在 Play Console 移除该 service account 用户 → 重建。

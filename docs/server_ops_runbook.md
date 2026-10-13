@@ -23,7 +23,7 @@
 | 项 | 值 |
 |---|---|
 | 服务器 | 腾讯云 CentOS7，公网 `129.226.213.65`，内网 `10.3.0.15` |
-| SSH 别名 | `gs`（`~/.ssh/config` + `~/.ssh/tencent-gameserver.pem`） |
+| SSH 别名 | `gs`（`~/.ssh/config`）；私钥优先取工程本地 `.secrets/tencent-gameserver.pem`，回退 `~/.ssh/tencent-gameserver.pem` |
 | 规格 | **2 vCPU / 3.6GB RAM / 59G 盘 —— 已榨干，不能再起第二个 gameserver** |
 | 服务目录 | `/home/java/{gameserver,loginserver,chatserver,xxljob}` |
 | 游戏服 | `gameSrv-1.0.0.jar`，netty **16081**，`-Xms1280m -Xmx1280m` |
@@ -235,8 +235,9 @@ scripts/server_health_check.py --json       # 额外输出结构化 JSON
 - 定时任务「游戏服每日巡检（10:00 邮件）」。
 - 本机 SSH 采集 → QQ SMTP 发信（`smtp.qq.com:465` SSL，回退 587）→ 留档 `scripts/logs/`。
 - 状态文件 `scripts/.server_health_state.json`（幂等标记）。
-- 授权码优先级：`~/.gs_health.env` → `/Volumes/S/TD/.env`（**当前有效**）→ `~/TD-recovery/.env`
-  → `~/TD-salvage-20260911/.env`（失效）；脚本逐个试登录自动跳过失效口令。
+- 授权码优先级：**`<工程>/.secrets/health.env`**（工程本地）→ `~/.gs_health.env` → `/Volumes/S/TD/.env`
+  （**当前有效**）→ `~/TD-recovery/.env` → `~/TD-salvage-20260911/.env`（失效）；
+  脚本逐个试登录自动跳过失效口令，缺失文件也安全跳过。见 `secrets_setup.md`。
 
 **报告约定**：量化证据 + 区分「🔴 严重 / ⚠️ 关注」，不给"看起来还行"这种结论。
 

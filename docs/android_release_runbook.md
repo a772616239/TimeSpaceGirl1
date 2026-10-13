@@ -29,7 +29,7 @@
 | 默认上传轨道 | **`internal`（内部测试）**；production 须显式 `--production`（2026-10-13 起） |
 | 签名 | upload key：`beauty.keystore`，alias `xing`，DN `O=EMI`，证书 SHA-256 `8ed07291…` |
 | Python | `/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python` |
-| Play 凭证 | `~/.gplay/service-account.json` |
+| Play 凭证 | **`<工程>/.secrets/service-account.json`**（工程本地，`.gitignore` 排除、永不入库；回退 `~/.gplay/…`）→ `secrets_setup.md` |
 | 一键入口 | `scripts/aab_release.sh` |
 
 **耗时参考**：全量 ~10–15 分钟（Unity 启动 1–2min + IL2CPP 5–8min + Gradle 2–4min）；

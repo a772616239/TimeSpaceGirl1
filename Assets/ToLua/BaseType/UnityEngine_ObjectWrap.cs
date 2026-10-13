@@ -106,7 +106,7 @@ public class UnityEngine_ObjectWrap
 		{
 			ToLua.CheckArgsCount(L, 1);
 			UnityEngine.Object obj = (UnityEngine.Object)ToLua.CheckObject<UnityEngine.Object>(L, 1);
-			int o = obj.GetInstanceID();
+			int o = obj.GetEntityId().GetHashCode();
 			LuaDLL.lua_pushinteger(L, o);
 			return 1;
 		}

@@ -27,13 +27,6 @@ public class UnityEngine_UI_BaseMeshEffectWrap
 				obj.ModifyMesh(arg0);
 				return 0;
 			}
-			else if (count == 2 && TypeChecker.CheckTypes<UnityEngine.Mesh>(L, 2))
-			{
-				UnityEngine.UI.BaseMeshEffect obj = (UnityEngine.UI.BaseMeshEffect)ToLua.CheckObject<UnityEngine.UI.BaseMeshEffect>(L, 1);
-				UnityEngine.Mesh arg0 = (UnityEngine.Mesh)ToLua.ToObject(L, 2);
-				obj.ModifyMesh(arg0);
-				return 0;
-			}
 			else
 			{
 				return LuaDLL.luaL_throw(L, "invalid arguments to method: UnityEngine.UI.BaseMeshEffect.ModifyMesh");

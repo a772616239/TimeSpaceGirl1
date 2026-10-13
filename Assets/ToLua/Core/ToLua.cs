@@ -45,7 +45,7 @@ namespace LuaInterface
         static public Dictionary<Type, LuaPushVarObject> VarPushMap  = new Dictionary<Type, LuaPushVarObject>();
 
 #if UNITY_EDITOR
-        static int _instanceID = -1;
+        static EntityId _entityId = EntityId.None;
         static int _line = 201;
         private static object consoleWindow;
         private static object logListView;
@@ -511,18 +511,18 @@ namespace LuaInterface
 
         static void GetToLuaInstanceID()
         {
-            if (_instanceID == -1)
+            if (_entityId == EntityId.None)
             {
                 int start = LuaConst.toluaDir.IndexOf("Assets");
                 int end = LuaConst.toluaDir.LastIndexOf("/Lua");
                 string dir = LuaConst.toluaDir.Substring(start, end - start);
                 dir += "/Core/ToLua.cs";
-                _instanceID = AssetDatabase.LoadAssetAtPath(dir, typeof(MonoScript)).GetInstanceID();//"Assets/ToLua/Core/ToLua.cs"
+                _entityId = AssetDatabase.LoadAssetAtPath(dir, typeof(MonoScript)).GetEntityId();//"Assets/ToLua/Core/ToLua.cs"
             }
         }
 
         [OnOpenAssetAttribute(0)]
-        public static bool OnOpenAsset(int instanceID, int line)
+        public static bool OnOpenAsset(EntityId instanceId, int line)
         {
             GetToLuaInstanceID();
 
@@ -531,7 +531,7 @@ namespace LuaInterface
                 return false;
             }
 
-            if (instanceID == _instanceID && line == _line)
+            if (instanceId == _entityId && line == _line)
             {
                 string fileName = GetListViewRowCount(ref line);
 

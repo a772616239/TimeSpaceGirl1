@@ -20,14 +20,7 @@ public class UnityEngine_UI_OutlineWrap
 		{
 			int count = LuaDLL.lua_gettop(L);
 
-			if (count == 2 && TypeChecker.CheckTypes<UnityEngine.Mesh>(L, 2))
-			{
-				UnityEngine.UI.Outline obj = (UnityEngine.UI.Outline)ToLua.CheckObject<UnityEngine.UI.Outline>(L, 1);
-				UnityEngine.Mesh arg0 = (UnityEngine.Mesh)ToLua.ToObject(L, 2);
-				obj.ModifyMesh(arg0);
-				return 0;
-			}
-			else if (count == 2 && TypeChecker.CheckTypes<UnityEngine.UI.VertexHelper>(L, 2))
+			if (count == 2 && TypeChecker.CheckTypes<UnityEngine.UI.VertexHelper>(L, 2))
 			{
 				UnityEngine.UI.Outline obj = (UnityEngine.UI.Outline)ToLua.CheckObject<UnityEngine.UI.Outline>(L, 1);
 				UnityEngine.UI.VertexHelper arg0 = (UnityEngine.UI.VertexHelper)ToLua.ToObject(L, 2);

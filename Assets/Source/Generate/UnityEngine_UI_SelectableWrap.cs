@@ -315,7 +315,7 @@ public class UnityEngine_UI_SelectableWrap
 	{
 		try
 		{
-			ToLua.PushSealed(L, UnityEngine.UI.Selectable.allSelectables);
+			ToLua.PushSealed(L, new System.Collections.Generic.List<UnityEngine.UI.Selectable>(UnityEngine.UI.Selectable.allSelectablesArray));
 			return 1;
 		}
 		catch (Exception e)

@@ -100,6 +100,9 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode 'json={"parameter":[]}' \
   `TD_Auto_Monitor/scm-polling.log`），**必须加 `-f`**，否则索引清不空、`git add .` 又把 builds 全加回来。
 - **结果**：远端 `JenkinJobs` master = **41 个文件 / 61 条 tree 条目、0 builds、0 .DS_Store**；
   本地 `.git` **32MB → 180K**、单提交 `e26c8d87`。
+- **补一刀**：`*/scm-polling.log` 也被 gitignore 并移出索引（Jenkins 每次 SCM 轮询都改写它 ⇒
+  否则仓库每轮轮询都变脏，把「改完 push」淹在无意义 diff 里）。⚠️ 别把 `nextBuildNumber` 也当噪音去掉
+  —— 它是构建计数器，保留可避免编号重置。
 - **合并内容 = 20 个 job**：现行 13 个（TS-*×7 + Daily_Open_iKuuu / Email_Manager / Play_Song /
   System_Monitor / TD_Auto_Monitor / Watermark_Remover）+ JenkinJobs 旧 7 个
   （build_all / build_all_hotfix / build_android / build_ios / hotfix_build_android / hotfix_build_ios / test_net_speed）。

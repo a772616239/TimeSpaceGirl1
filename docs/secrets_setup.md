@@ -17,7 +17,7 @@
 <工程根>/.secrets/              # 目录权限 700，被 .gitignore 整目录排除
 ├── service-account.json        # 600  Google Play 发布用 service account 密钥
 ├── tencent-gameserver.pem      # 600  游戏服 SSH 私钥（129.226.213.65）
-└── health.env                  # 600  巡检邮件 SMTP 授权码（可选，见 §4）
+└── health.env                  # 600  巡检邮件 SMTP 授权码（见 §4）
 ```
 
 ## 2. 谁在用它（解析优先级）
@@ -66,10 +66,17 @@ PY=/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python
 $PY -c "import sys;sys.path.insert(0,'scripts');import play_upload as u;print(u.resolve_service_account(None))"
 ```
 
-## 4. `health.env` 是可选项
+## 4. `health.env`（2026-10-13 已收归）
 
-不放就继续走原优先级链（当前实际是借读 `/Volumes/S/TD/.env`）。
-⚠️ 但 `/Volumes/S/TD` 是**外挂卷**，拔掉 / 换机就没了 ⇒ 想彻底自包含就把它收进来。
+巡检邮件的 QQ SMTP 授权码已写入 `.secrets/health.env`（`600`）⇒ **本项目自此自包含**，
+不再依赖外挂卷或另一个工程。来源是 `/Volumes/S/TD/.env` 的 `EMAIL_PASSWORD`，
+**只挑这一个键**（那份 .env 里还有 Alpaca / DeepSeek / Schwab 等其它工程的密钥，不整份复制）。
+
+已实测：解析链首位即该文件，且 **SMTP 登录认证通过**。
+（注：因其取值与 `/Volumes/S/TD/.env` 相同，候选去重后后者会从列表里消失 —— 属预期。）
+
+删掉该文件即可回退到 `~/.gs_health.env` → `/Volumes/S/TD/.env` → …，
+⚠️ 但 `/Volumes/S/TD` 是**外挂卷**，拔掉 / 换机就没了 ⇒ 留着才彻底自包含。
 
 ## 5. 红线：绝不入库
 

@@ -60,7 +60,15 @@ public class CLIBuilder
             Directory.CreateDirectory(outputDir);
         }
 
-        string outPath = $"{outputDir}/{timeStr}.{(buildAppBundle ? "aab" : "apk")}";
+        // 🔴 产物名必须带 versionCode：Play 轨道只认 versionCode 递增，而 versionName
+        // 会长期重复（1.2.45/46/47 都可能对应同一个 name）。命名形如
+        //   1.2.50_vc69_175432.aab
+        // 让「哪个包是哪一号」在文件系统层面就能分辨，不用再去翻 sidecar。
+        // 注意：所有消费方（aab_release.sh / play_16kb_watch.py / verify_*）都是按
+        // mtime 取最新的，不解析文件名，所以加前缀不会破坏既有链路。
+        string safeVersionName = System.Text.RegularExpressions.Regex.Replace(
+            version ?? "0", @"[^0-9A-Za-z._-]", "_");
+        string outPath = $"{outputDir}/{safeVersionName}_vc{versionCode}_{timeStr}.{(buildAppBundle ? "aab" : "apk")}";
 
         // 🔴 出包配置：与编辑器 BuildWindow 共用同一份逻辑（口径可选）
         string applied;

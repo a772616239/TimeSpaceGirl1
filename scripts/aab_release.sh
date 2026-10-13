@@ -22,8 +22,9 @@
 # --allow-no-lua 强制继续。
 #
 # 说明：
-#   - 默认会先把 AndroidBundleVersionCode +1（CLI 打包本身不自增，详见
-#     scripts/bump_version.py 头部注释），再打包。
+#   - 默认会先把 AndroidBundleVersionCode +1、bundleVersion 末位 +1（CLI 打包本身
+#     不自增，详见 scripts/bump_version.py 头部注释）。产物名形如
+#     apks/{日期}/CLIBuild/1.2.50_vc69_175432.aab —— 文件名直接带 versionCode。
 #   - production 轨道要求 versionCode 严格递增，否则提交必被 Play 拒绝。
 #   - 密钥默认读 ~/.gplay/service-account.json，可用 --key 覆盖。
 #     申请与授权步骤见 docs/google_play_upload_setup.md
@@ -220,9 +221,13 @@ if [[ "$SKIP_BUILD" -eq 1 ]]; then
     step "跳过打包（--skip-build）"
 else
     if [[ "$DO_BUMP" -eq 1 ]]; then
-        step "提升 versionCode"
-        "$VENV_PY" scripts/bump_version.py --bump
-        ok "versionCode 已自增"
+        step "提升 versionCode / versionName"
+        # 🔴 两个一起提：Play 轨道只认 versionCode 递增，但 versionName 会长期重复，
+        # 导致「1.2.45」这种名字在 Play Console 上对应好几个包，核对告警属于哪一版时
+        # 只能靠 versionCode。让 name 与 code 同步前进，人眼才能对上。
+        # （历史缺陷：2026-10-12 那次发版只提了 code、没提 name，见 REF-android-release.md）
+        "$VENV_PY" scripts/bump_version.py --bump --bump-name
+        ok "versionCode / versionName 已自增"
     else
         step "跳过 versionCode 自增（--no-bump）"
         warn "production 轨道要求 versionCode 严格递增，若与历史重复提交会被拒绝"

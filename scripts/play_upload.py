@@ -42,6 +42,12 @@ Google Play AAB 上传器 —— 走 Play Developer API v3（androidpublisher）
     python3 scripts/play_upload.py --aab <path>.aab --track production --status inProgress \
         --user-fraction 0.1 --allow-production-write --allow-publish --yes
 
+    # 🔁 复用已上传的版本号（不传任何文件，只写轨道 —— Play 原生的 track promotion）：
+    #    用于把已发布在别的轨道上的同一版包也挂到本轨道。
+    #    🔴 因为不产生新上传，故不受「versionCode 必须严格递增」约束 ——
+    #    该号本来就是已用过的，正常上传必然被 Play 拒。
+    python3 scripts/play_upload.py --reuse-version-code 69 --track internal --yes
+
 退出码：
     0 成功 / 2 参数或环境错误（含被发布闸门拒绝）/ 3 认证失败 / 4 API 业务错误 / 5 版本号校验失败
 """
@@ -418,24 +424,65 @@ def read_aab_version_code(aab_path: Path, override: int | None) -> int | None:
     return None
 
 
-def current_track_version_codes(service, pkg: str, edit_id: str, track: str) -> list[int]:
-    """返回某轨道当前所有 revision 里出现过的 versionCode。"""
+def all_track_version_codes(service, pkg: str, edit_id: str) -> dict[str, list[int]]:
+    """返回 {轨道名: [versionCode, ...]}，覆盖**全部**轨道。
+
+    🔴 为什么必须看全部轨道，而不是只看目标轨道：
+    Play 的 versionCode 是 **app 级全局**的 —— 新上传必须严格大于该 app
+    **所有轨道**用过的任何号（含别的轨道、乃至只在草稿里出现过的），
+    否则**上传阶段**就被拒（"Version code N has already been used"），
+    而不是等到提交阶段。
+    只比对目标轨道会放过「在别的轨道上已用过」的号 ⇒ 白跑一趟 437 MB /
+    约 8 分钟的整包上传才被 Play 拒掉。
+    参考：https://support.google.com/googleplay/android-developer/answer/9859372
+
+    注：tracks().list 每个轨道只返回**当前** release，历史号会滚掉；
+    取全局最大值即等价于真正的号位下界（最新的一定最大）。
+    """
     try:
         resp = service.edits().tracks().list(packageName=pkg, editId=edit_id).execute()
     except HttpError as exc:
         log(f"[warn] 读取轨道列表失败（不影响上传）：{exc}")
-        return []
-    codes: list[int] = []
+        return {}
+    out: dict[str, list[int]] = {}
     for t in resp.get("tracks", []):
-        if t.get("track") != track:
-            continue
+        codes: list[int] = []
         for rel in t.get("releases", []):
             for vc in rel.get("versionCodes", []):
                 try:
                     codes.append(int(vc))
                 except (TypeError, ValueError):
                     pass
-    return codes
+        out[t.get("track", "?")] = codes
+    return out
+
+
+def app_bundle_version_codes(service, pkg: str, edit_id: str) -> list[int]:
+    """列出本 app **已上传过**的全部 versionCode（bundle 池）。
+
+    与 all_track_version_codes 的区别：tracks().list 只反映「每个轨道**当前**的发布」，
+    老号滚掉后就看不到了；bundles().list 才是 app 层面真正占用过号位的那份清单。
+    --reuse-version-code 要复用的号可能已从轨道上滚掉但仍在池里，故用它判定。
+    """
+    codes: list[int] = []
+    token = None
+    try:
+        while True:
+            kw = {"packageName": pkg, "editId": edit_id}
+            if token:
+                kw["pageToken"] = token
+            resp = service.edits().bundles().list(**kw).execute()
+            for b in resp.get("bundles", []):
+                try:
+                    codes.append(int(b.get("versionCode")))
+                except (TypeError, ValueError):
+                    pass
+            token = resp.get("nextPageToken")
+            if not token:
+                break
+    except HttpError as exc:
+        log(f"[warn] 列 bundle 池失败：{exc}")
+    return sorted(set(codes))
 
 
 # --------------------------------------------------------------------------- #
@@ -446,7 +493,8 @@ def main() -> int:
         description="上传 AAB 到 Google Play 并发布到指定轨道",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument("--aab", required=True, help="AAB 文件路径")
+    ap.add_argument("--aab", default=None,
+                    help="AAB 文件路径。用 --reuse-version-code 复用已上传版本时可省略")
     ap.add_argument("--package", default=DEFAULT_PACKAGE, help=f"应用包名（默认 {DEFAULT_PACKAGE}）")
     ap.add_argument("--track", default="internal",
                     help="目标轨道：internal（内部测试，默认）/ alpha / beta / production")
@@ -466,6 +514,11 @@ def main() -> int:
                     help="更新说明语言标签（默认 zh-CN）")
     ap.add_argument("--service-account", default=None, help="service account JSON 路径")
     ap.add_argument("--version-code", type=int, default=None, help="手动指定 versionCode（覆盖自动探测）")
+    ap.add_argument("--reuse-version-code", type=int, default=None, metavar="N",
+                    help="🔁 **不传任何文件**，只把该 app 已上传过的 versionCode N 写进目标轨道"
+                         "（Play 原生叫 track promotion）。用于把已发布在别的轨道上的版本同时挂到本轨道。"
+                         "因为不产生新上传，故不受「versionCode 必须递增」约束 —— 该号本来就是已用过的。"
+                         "与 --aab 互斥。")
     ap.add_argument("--dry-run", action="store_true", help="只认证并列出现状，不上传不提交")
     ap.add_argument("--yes", action="store_true", help="跳过交互确认（CI 用）")
     ap.add_argument("--changes-not-sent-for-review", action="store_true",
@@ -478,12 +531,21 @@ def main() -> int:
     if args.status is None:
         args.status = "completed" if args.track == "internal" else "draft"
 
-    aab = Path(args.aab).expanduser().resolve()
-    if not aab.is_file():
-        die(f"AAB 不存在：{aab}", 2)
-    size_mb = aab.stat().st_size / 1024 / 1024
-    if aab.stat().st_size < 1024 * 1024:
-        die(f"AAB 体积异常（{size_mb:.2f} MB），疑似构建未完成：{aab}", 2)
+    reuse_vc = args.reuse_version_code
+    if reuse_vc is None and not args.aab:
+        die("必须二选一：--aab <path>（正常上传新包）或 --reuse-version-code N（复用已上传版本）", 2)
+    if reuse_vc is not None and args.aab:
+        die("--reuse-version-code 与 --aab 互斥：复用模式不上传任何文件，只写轨道。", 2)
+
+    aab = None
+    size_mb = 0.0
+    if reuse_vc is None:
+        aab = Path(args.aab).expanduser().resolve()
+        if not aab.is_file():
+            die(f"AAB 不存在：{aab}", 2)
+        size_mb = aab.stat().st_size / 1024 / 1024
+        if aab.stat().st_size < 1024 * 1024:
+            die(f"AAB 体积异常（{size_mb:.2f} MB），疑似构建未完成：{aab}", 2)
 
     if args.status == "inProgress" and args.user_fraction is None:
         die("status=inProgress 必须同时指定 --user-fraction（如 0.1）", 2)
@@ -529,7 +591,10 @@ def main() -> int:
 
     sa_path = resolve_service_account(args.service_account)
     log(f"[env] package      : {args.package}")
-    log(f"[env] aab          : {aab}  ({size_mb:.2f} MB)")
+    if reuse_vc is None:
+        log(f"[env] aab          : {aab}  ({size_mb:.2f} MB)")
+    else:
+        log(f"[env] mode         : reuse —— 不上传文件，复用已上传的 versionCode {reuse_vc}")
     log(f"[env] track        : {args.track}")
     log(f"[env] status       : {args.status}" + (f"  userFraction={args.user_fraction}" if args.user_fraction else ""))
     log(f"[env] key          : {sa_path}")
@@ -564,23 +629,47 @@ def main() -> int:
             ) or "(空)"
             log(f"  - {t.get('track'):<12} {desc}")
 
-        existing = current_track_version_codes(service, args.package, edit_id, args.track)
-        probe_vc = read_aab_version_code(aab, args.version_code)
-        if probe_vc is not None:
-            log(f"[check] 待上传 AAB 的 versionCode（探测值）= {probe_vc}")
-        if existing:
-            log(f"[check] 目标轨道 {args.track} 已有 versionCode = {sorted(existing)}")
+        per_track = all_track_version_codes(service, args.package, edit_id)
+        track_codes = sorted(per_track.get(args.track, []))
+        global_codes = sorted({c for cs in per_track.values() for c in cs})
+        if reuse_vc is not None:
+            probe_vc = reuse_vc
+            log(f"[check] 复用模式：目标 versionCode = {reuse_vc}（不上传新包）")
+        else:
+            probe_vc = read_aab_version_code(aab, args.version_code)
+            if probe_vc is not None:
+                log(f"[check] 待上传 AAB 的 versionCode（探测值）= {probe_vc}")
+        if track_codes:
+            log(f"[check] 目标轨道 {args.track} 已有 versionCode = {track_codes}")
+        if global_codes:
+            log(f"[check] app 全局已用最大 versionCode = {max(global_codes)}"
+                "（Play 要求新号严格大于它，跨全部轨道）")
 
-        if probe_vc is not None and existing:
-            if probe_vc <= max(existing):
+        if reuse_vc is not None:
+            # 复用模式：这个号本来就该是「已用过」的，递增规则不适用。
+            # 但必须确认它真的存在于本 app 的 bundle 池，否则 Play 会直接拒。
+            pool = app_bundle_version_codes(service, args.package, edit_id)
+            log(f"[check] app bundle 池（已上传过的号）= {pool or '(读取失败或为空)'}")
+            if pool and reuse_vc not in pool:
                 log("")
-                log(f"🔴 版本号撞车：待传 {probe_vc} <= 轨道已有最大 {max(existing)}。")
-                log("   production 轨道要求 versionCode 严格递增，否则提交会被 Play 拒绝。")
-                log("   本项目的 CLI 打包不会自增 versionCode（自增逻辑只在 GUI 的")
-                log("   Assets/Scripts/Editor/GameEditor/FrameTool/BuildWindow.cs:449）。")
-                log("   请用 scripts/aab_release.sh（默认带 --bump）或先手动调高")
-                log("   ProjectSettings.asset 里的 AndroidBundleVersionCode。")
+                log(f"🔴 复用失败：versionCode {reuse_vc} 不在本 app 的 bundle 池里。")
+                log(f"   已上传过的号：{pool}")
+                log("   --reuse-version-code 只能复用**已上传过**的号；"
+                    "要发新号请用 --aab 正常上传。")
                 return 5
+        elif probe_vc is not None and global_codes and probe_vc <= max(global_codes):
+            floor = max(global_codes)
+            owners = sorted(t for t, cs in per_track.items() if floor in cs)
+            log("")
+            log(f"🔴 版本号撞车：待传 {probe_vc} <= app 全局已用最大 {floor}"
+                + (f"（占用轨道：{'/'.join(owners)}）" if owners else "") + "。")
+            log("   Play 的 versionCode 是 **app 级全局**的：必须严格大于所有轨道用过的")
+            log("   任何号，否则会在**上传阶段**就被拒（不是提交阶段），白白跑一趟整包上传。")
+            log("   本项目的 CLI 打包不会自增 versionCode（自增逻辑只在 GUI 的")
+            log("   Assets/Scripts/Editor/GameEditor/FrameTool/BuildWindow.cs:449）。")
+            log("   请用 scripts/aab_release.sh（默认带 --bump）或先手动调高")
+            log("   ProjectSettings.asset 里的 AndroidBundleVersionCode。")
+            return 5
 
         if args.dry_run:
             log("")
@@ -594,7 +683,9 @@ def main() -> int:
         # ---------------- 交互确认 ----------------
         if not args.yes:
             log("")
-            log("⚠️  即将把上述 AAB 发布到轨道 "
+            what = (f"复用已上传的 versionCode {reuse_vc}" if reuse_vc is not None
+                    else "上述 AAB")
+            log(f"⚠️  即将把{what}发布到轨道 "
                 f"『{args.track}』，状态 {args.status}"
                 + (f"，放量 {args.user_fraction:.0%}" if args.user_fraction else "")
                 + "。")
@@ -611,52 +702,60 @@ def main() -> int:
                     pass
                 return 0
 
-        # ---------------- 上传 bundle ----------------
-        log("")
-        log(
-            f"[upload] 开始上传 {aab.name}（{size_mb:.2f} MB），"
-            f"分块 {UPLOAD_CHUNK_BYTES // 1048576} MB，可断点续传，请勿中断…"
-        )
-        media = MediaFileUpload(
-            str(aab),
-            mimetype="application/octet-stream",
-            resumable=True,
-            chunksize=UPLOAD_CHUNK_BYTES,
-        )
-        request = service.edits().bundles().upload(
-            packageName=args.package, editId=edit_id, media_body=media
-        )
-        response = None
-        last_pct = -1
-        attempt = 0
-        while response is None:
-            try:
-                status, response = request.next_chunk()
-            except Exception as exc:  # noqa: BLE001
-                # 断点续传语义：服务端已确认的字节保留，再次调用 next_chunk()
-                # 会从最后一个已提交偏移继续，无需重传整个文件。
-                if not is_retryable_upload_error(exc) or attempt >= UPLOAD_MAX_RETRIES:
-                    raise
-                attempt += 1
-                wait = min(2 ** attempt, 30)
-                log(
-                    f"[upload] 第 {attempt}/{UPLOAD_MAX_RETRIES} 次中断"
-                    f"（{type(exc).__name__}: {exc}），{wait}s 后从断点续传…"
-                )
-                time.sleep(wait)
-                continue
+        # ---------------- 上传 bundle（复用模式整段跳过）----------------
+        if reuse_vc is not None:
+            uploaded_vc = reuse_vc
+            log("")
+            log(f"[reuse] 跳过上传：直接复用已上传的 versionCode {reuse_vc}，"
+                "只把它写进目标轨道。")
+        else:
+            log("")
+            log(
+                f"[upload] 开始上传 {aab.name}（{size_mb:.2f} MB），"
+                f"分块 {UPLOAD_CHUNK_BYTES // 1048576} MB，可断点续传，请勿中断…"
+            )
+            media = MediaFileUpload(
+                str(aab),
+                mimetype="application/octet-stream",
+                resumable=True,
+                chunksize=UPLOAD_CHUNK_BYTES,
+            )
+            request = service.edits().bundles().upload(
+                packageName=args.package, editId=edit_id, media_body=media
+            )
+            response = None
+            last_pct = -1
             attempt = 0
-            if status:
-                pct = int(status.progress() * 100)
-                if pct != last_pct and pct % 5 == 0:
-                    log(f"[upload] {pct}%")
-                    last_pct = pct
-        uploaded_vc = int(response.get("versionCode", probe_vc or 0))
-        log(f"[upload] ✅ 上传完成，Play 返回 versionCode = {uploaded_vc}")
+            while response is None:
+                try:
+                    status, response = request.next_chunk()
+                except Exception as exc:  # noqa: BLE001
+                    # 断点续传语义：服务端已确认的字节保留，再次调用 next_chunk()
+                    # 会从最后一个已提交偏移继续，无需重传整个文件。
+                    if not is_retryable_upload_error(exc) or attempt >= UPLOAD_MAX_RETRIES:
+                        raise
+                    attempt += 1
+                    wait = min(2 ** attempt, 30)
+                    log(
+                        f"[upload] 第 {attempt}/{UPLOAD_MAX_RETRIES} 次中断"
+                        f"（{type(exc).__name__}: {exc}），{wait}s 后从断点续传…"
+                    )
+                    time.sleep(wait)
+                    continue
+                attempt = 0
+                if status:
+                    pct = int(status.progress() * 100)
+                    if pct != last_pct and pct % 5 == 0:
+                        log(f"[upload] {pct}%")
+                        last_pct = pct
+            uploaded_vc = int(response.get("versionCode", probe_vc or 0))
+            log(f"[upload] ✅ 上传完成，Play 返回 versionCode = {uploaded_vc}")
 
-        if existing and uploaded_vc <= max(existing):
+        # 复用模式下 uploaded_vc 必然 <= 全局最大值（它就是已用过的号），
+        # 故此兜底只对「真实上传」生效。
+        if reuse_vc is None and global_codes and uploaded_vc <= max(global_codes):
             die(
-                f"上传后的 versionCode {uploaded_vc} 仍 <= 轨道已有最大 {max(existing)}，"
+                f"上传后的 versionCode {uploaded_vc} 仍 <= app 全局已用最大 {max(global_codes)}，"
                 "Play 会在提交阶段拒绝。请提升 versionCode 后重新打包。",
                 5,
             )

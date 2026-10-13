@@ -9,7 +9,7 @@ namespace vietlabs.fr2
 	public class FR2_Selection : IRefDraw
 	{	
 		internal HashSet<string> guidSet = new HashSet<string>();
-		internal HashSet<string> instSet = new HashSet<string>(); // Do not reference directly to SceneObject (which might be destroyed anytime)
+		internal HashSet<EntityId> instSet = new HashSet<EntityId>(); // Do not reference directly to SceneObject (which might be destroyed anytime)
 		
 		public int Count
 		{
@@ -18,19 +18,19 @@ namespace vietlabs.fr2
 
 		public bool Contains(string guidOrInstID)
 		{
-			return guidSet.Contains(guidOrInstID) || instSet.Contains(guidOrInstID);
+			return guidSet.Contains(guidOrInstID); // Unity 6：scene 对象改由 EntityId 重载匹配
 		}
 
 		public bool Contains(UnityObject sceneObject)
 		{
-			var id = sceneObject.GetInstanceID().ToString();
+			var id = sceneObject.GetEntityId();
 			return instSet.Contains(id);
 		}
 
 		public void Add(UnityObject sceneObject)
 		{
 			if (sceneObject == null) return;
-			var id = sceneObject.GetInstanceID().ToString();
+			var id = sceneObject.GetEntityId();
 			instSet.Add(id); // hashset does not need to check exist before add
 			dirty = true;
 		}
@@ -39,7 +39,7 @@ namespace vietlabs.fr2
 		{
 			foreach (var go in sceneObjects)
 			{
-				var id = go.GetInstanceID().ToString();
+				var id = go.GetEntityId();
 				instSet.Add(id); // hashset does not need to check exist before add	
 			}
 
@@ -72,7 +72,7 @@ namespace vietlabs.fr2
 		public void Remove(UnityObject sceneObject)
 		{
 			if (sceneObject == null) return;
-			var id = sceneObject.GetInstanceID().ToString();
+			var id = sceneObject.GetEntityId();
 			instSet.Remove(id);
 			dirty = true;
 		}
@@ -80,8 +80,6 @@ namespace vietlabs.fr2
 		public void Remove(string guidOrInstID)
 		{
 			guidSet.Remove(guidOrInstID);
-			instSet.Remove(guidOrInstID);
-			
 			dirty = true;
 		}
 		
@@ -193,7 +191,7 @@ namespace vietlabs.fr2
 			{
 				foreach (var instId in instSet)
 				{
-					refs.Add(instId, new FR2_SceneRef(0, EditorUtility.InstanceIDToObject(int.Parse(instId))));
+					refs.Add(instId.ToString(), new FR2_SceneRef(0, EditorUtility.EntityIdToObject(instId)));
 				}	
 			}
 			else

@@ -11,12 +11,13 @@ public class EditorUtils : MonoBehaviour
 	/// <returns>filename</returns>
 	public static string SelectObjectPathInfo(ref string dirName)
 	{
-		if (UnityEditor.Selection.activeInstanceID < 0)
+		// Unity 6：activeInstanceID 已废弃，改用 activeEntityId（这里只需判断「有没有选中对象」）
+		if (UnityEditor.Selection.activeObject == null)
 		{
 			return "";
 		}
 
-		string path = UnityEditor.AssetDatabase.GetAssetPath(UnityEditor.Selection.activeInstanceID);
+		string path = UnityEditor.AssetDatabase.GetAssetPath(UnityEditor.Selection.activeObject);
 
 		dirName = Path.GetDirectoryName(path) + "/";
 		return Path.GetFileName(path);

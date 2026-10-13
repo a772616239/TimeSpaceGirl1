@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -9,32 +9,32 @@ using UnityEngine;
 namespace GameEditor.Core.TreeViewBase
 {
 
-    public class TreeViewItem<T> : TreeViewItem where T : TreeElement
+    public class DataTreeViewItem<T> : TreeViewItem<int> where T : TreeElement
 	{
 		public T data { get; set; }
 
-		public TreeViewItem (int id, int depth, string displayName, T data) : base (id, depth, displayName)
+		public DataTreeViewItem (int id, int depth, string displayName, T data) : base (id, depth, displayName)
 		{
 			this.data = data;
 		}
 	}
 
-	public class TreeViewWithTreeModel<T> : TreeView where T : TreeElement
+	public class TreeViewWithTreeModel<T> : TreeView<int> where T : TreeElement
 	{
 		TreeModel<T> m_TreeModel;
-		readonly List<TreeViewItem> m_Rows = new List<TreeViewItem>(100);
+		readonly List<TreeViewItem<int>> m_Rows = new List<TreeViewItem<int>>(100);
 		public event Action treeChanged;
 
 		public TreeModel<T> treeModel { get { return m_TreeModel; } }
-		public event Action<IList<TreeViewItem>>  beforeDroppingDraggedItems;
+		public event Action<IList<TreeViewItem<int>>>  beforeDroppingDraggedItems;
 
 
-		public TreeViewWithTreeModel (TreeViewState state, TreeModel<T> model) : base (state)
+		public TreeViewWithTreeModel (TreeViewState<int> state, TreeModel<T> model) : base (state)
 		{
 			Init (model);
 		}
 
-		public TreeViewWithTreeModel (TreeViewState state, MultiColumnHeader multiColumnHeader, TreeModel<T> model)
+		public TreeViewWithTreeModel (TreeViewState<int> state, MultiColumnHeader multiColumnHeader, TreeModel<T> model)
 			: base(state, multiColumnHeader)
 		{
 			Init (model);
@@ -54,13 +54,13 @@ namespace GameEditor.Core.TreeViewBase
 			Reload ();
 		}
 
-		protected override TreeViewItem BuildRoot()
+		protected override TreeViewItem<int> BuildRoot()
 		{
 			int depthForHiddenRoot = -1;
-			return new TreeViewItem<T>(m_TreeModel.root.id, depthForHiddenRoot, m_TreeModel.root.name, m_TreeModel.root);
+			return new DataTreeViewItem<T>(m_TreeModel.root.id, depthForHiddenRoot, m_TreeModel.root.name, m_TreeModel.root);
 		}
 
-		protected override IList<TreeViewItem> BuildRows (TreeViewItem root)
+		protected override IList<TreeViewItem<int>> BuildRows (TreeViewItem<int> root)
 		{
 			if (m_TreeModel.root == null)
 			{
@@ -85,11 +85,11 @@ namespace GameEditor.Core.TreeViewBase
 			return m_Rows;
 		}
 
-		void AddChildrenRecursive (T parent, int depth, IList<TreeViewItem> newRows)
+		void AddChildrenRecursive (T parent, int depth, IList<TreeViewItem<int>> newRows)
 		{
 			foreach (T child in parent.children)
 			{
-				var item = new TreeViewItem<T>(child.id, depth, child.name, child);
+				var item = new DataTreeViewItem<T>(child.id, depth, child.name, child);
 				newRows.Add(item);
 
 				if (child.hasChildren)
@@ -106,7 +106,7 @@ namespace GameEditor.Core.TreeViewBase
 			}
 		}
 
-		void Search(T searchFromThis, string search, List<TreeViewItem> result)
+		void Search(T searchFromThis, string search, List<TreeViewItem<int>> result)
 		{
 			if (string.IsNullOrEmpty(search))
 				throw new ArgumentException("Invalid search: cannot be null or empty", "search");
@@ -122,7 +122,7 @@ namespace GameEditor.Core.TreeViewBase
 				// Matches search?
 				if (current.name.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0)
 				{
-					result.Add(new TreeViewItem<T>(current.id, kItemDepth, current.name, current));
+					result.Add(new DataTreeViewItem<T>(current.id, kItemDepth, current.name, current));
 				}
 
 				if (current.children != null && current.children.Count > 0)
@@ -136,7 +136,7 @@ namespace GameEditor.Core.TreeViewBase
 			SortSearchResult(result);
 		}
 
-		protected virtual void SortSearchResult (List<TreeViewItem> rows)
+		protected virtual void SortSearchResult (List<TreeViewItem<int>> rows)
 		{
 			rows.Sort ((x,y) => EditorUtility.NaturalCompare (x.displayName, y.displayName)); // sort by displayName by default, can be overriden for multicolumn solutions
 		}
@@ -178,7 +178,7 @@ namespace GameEditor.Core.TreeViewBase
 		protected override DragAndDropVisualMode HandleDragAndDrop (DragAndDropArgs args)
 		{
 			// Check if we can handle the current drag data (could be dragged in from other areas/windows in the editor)
-			var draggedRows = DragAndDrop.GetGenericData(k_GenericDragID) as List<TreeViewItem>;
+			var draggedRows = DragAndDrop.GetGenericData(k_GenericDragID) as List<TreeViewItem<int>>;
 			if (draggedRows == null)
 				return DragAndDropVisualMode.None;
 
@@ -191,7 +191,7 @@ namespace GameEditor.Core.TreeViewBase
 						bool validDrag = ValidDrag(args.parentItem, draggedRows);
 						if (args.performDrop && validDrag)
 						{
-							T parentData = ((TreeViewItem<T>)args.parentItem).data;
+							T parentData = ((DataTreeViewItem<T>)args.parentItem).data;
 							OnDropDraggedElementsAtIndex(draggedRows, parentData, args.insertAtIndex == -1 ? 0 : args.insertAtIndex);
 						}
 						return validDrag ? DragAndDropVisualMode.Move : DragAndDropVisualMode.None;
@@ -210,14 +210,14 @@ namespace GameEditor.Core.TreeViewBase
 			}
 		}
 
-		public virtual void OnDropDraggedElementsAtIndex (List<TreeViewItem> draggedRows, T parent, int insertIndex)
+		public virtual void OnDropDraggedElementsAtIndex (List<TreeViewItem<int>> draggedRows, T parent, int insertIndex)
 		{
 			if (beforeDroppingDraggedItems != null)
 				beforeDroppingDraggedItems (draggedRows);
 
 			var draggedElements = new List<TreeElement> ();
 			foreach (var x in draggedRows)
-				draggedElements.Add (((TreeViewItem<T>) x).data);
+				draggedElements.Add (((DataTreeViewItem<T>) x).data);
 		
 			var selectedIDs = draggedElements.Select (x => x.id).ToArray();
 			m_TreeModel.MoveElements (parent, insertIndex, draggedElements);
@@ -225,9 +225,9 @@ namespace GameEditor.Core.TreeViewBase
 		}
 
 
-		bool ValidDrag(TreeViewItem parent, List<TreeViewItem> draggedItems)
+		bool ValidDrag(TreeViewItem<int> parent, List<TreeViewItem<int>> draggedItems)
 		{
-			TreeViewItem currentParent = parent;
+			TreeViewItem<int> currentParent = parent;
 			while (currentParent != null)
 			{
 				if (draggedItems.Contains(currentParent))

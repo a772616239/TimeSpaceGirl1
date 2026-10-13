@@ -13,11 +13,11 @@ namespace GameEditor.Core.DataConfig
         public DataConfigWindow configWin;
 
         private ExcelTreeView excelTreeView = null;
-        private TreeViewState excelTreeViewState = null;
+        private TreeViewState<int> excelTreeViewState = null;
         private ExcelTreeViewData selectedExcelData = null;
 
         private ExcelSheetView sheetTreeView = null;
-        private TreeViewState sheetTreeViewState = null;
+        private TreeViewState<int> sheetTreeViewState = null;
         public DataConfigExcelTab(DataConfigWindow win)
         {
             configWin = win;
@@ -168,7 +168,7 @@ namespace GameEditor.Core.DataConfig
 
         public void InitExcelTreeView()
         {
-            excelTreeViewState = new TreeViewState();
+            excelTreeViewState = new TreeViewState<int>();
             excelTreeView = new ExcelTreeView(excelTreeViewState, GetExcelTreeViewModel());
             excelTreeView.onSelected = OnSelected;
         }
@@ -178,7 +178,7 @@ namespace GameEditor.Core.DataConfig
             var hs = ExcelSheetView.CreateDefaultMultiColumnHeaderState(sheetData.fields);
             var header = new MultiColumnHeader(hs);
 
-            sheetTreeViewState = new TreeViewState();
+            sheetTreeViewState = new TreeViewState<int>();
             sheetTreeView = new ExcelSheetView(sheetTreeViewState,
                                                 header,
                                                 GetSheetTreeViewModel(sheetData));

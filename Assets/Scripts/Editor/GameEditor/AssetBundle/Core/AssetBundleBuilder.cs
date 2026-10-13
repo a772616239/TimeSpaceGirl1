@@ -50,7 +50,7 @@ namespace GameEditor.AssetBundle
         {
             get
             {
-                return BuildAssetBundleOptions.DeterministicAssetBundle | BuildAssetBundleOptions.UncompressedAssetBundle;
+                return BuildAssetBundleOptions.UncompressedAssetBundle;
             }
         }
 
@@ -61,7 +61,7 @@ namespace GameEditor.AssetBundle
         {
             get
             {
-                return BuildAssetBundleOptions.DeterministicAssetBundle | BuildAssetBundleOptions.ChunkBasedCompression;
+                return BuildAssetBundleOptions.ChunkBasedCompression;
             }
         }
 
@@ -72,7 +72,7 @@ namespace GameEditor.AssetBundle
         {
             get
             {
-                return BuildAssetBundleOptions.DeterministicAssetBundle;
+                return BuildAssetBundleOptions.None;
             }
         }
     }

@@ -292,15 +292,15 @@ namespace CreateScript
 
         public static string GetInfoPath()
         {
-            int id;
+            EntityId id; // Unity 6：实例 ID 已由 int 改为 EntityId
             var go = PrefabUtility.GetCorrespondingObjectFromSource(selectTransform.gameObject);
             if (go != null)
             {
-                id = go.GetInstanceID();
+                id = go.GetEntityId();
             }
             else
             {
-                id = selectTransform.gameObject.GetInstanceID();
+                id = selectTransform.gameObject.GetEntityId();
             }
             return string.Format(InfoPath, id);
         }

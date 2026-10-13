@@ -17,7 +17,7 @@ namespace MikuLuaProfiler
 #if UNITY_5_6_OR_NEWER
     public class LuaProfilerWindow : EditorWindow
     {
-        [SerializeField] TreeViewState m_TreeViewState;
+        [SerializeField] TreeViewState<int> m_TreeViewState;
 
         LuaProfilerTreeView m_TreeView;
         SearchField m_SearchField;
@@ -36,7 +36,7 @@ namespace MikuLuaProfiler
         void OnEnable()
         {
             if (m_TreeViewState == null)
-                m_TreeViewState = new TreeViewState();
+                m_TreeViewState = new TreeViewState<int>();
 
             LuaProfilerTreeView.m_nodeDict.Clear();
             startFrame = 0;

@@ -15,7 +15,7 @@ namespace GameEditor.Core.DataConfig
     public class ExcelSheetView : TreeViewWithTreeModel<TreeElementWithData<ExcelSheetData>>
     {
         const float kRowHeights = 20f;
-        public ExcelSheetView(TreeViewState state, MultiColumnHeader multiColumnHeader, TreeModel<TreeElementWithData<ExcelSheetData>> model) 
+        public ExcelSheetView(TreeViewState<int> state, MultiColumnHeader multiColumnHeader, TreeModel<TreeElementWithData<ExcelSheetData>> model) 
             : base(state, multiColumnHeader, model)
         {
             rowHeight = kRowHeights;
@@ -30,14 +30,14 @@ namespace GameEditor.Core.DataConfig
             return false;
         }
 
-        protected override bool CanMultiSelect(TreeViewItem item)
+        protected override bool CanMultiSelect(TreeViewItem<int> item)
         {
             return false;
         }
 
         protected override void RowGUI(RowGUIArgs args)
         {
-            var item = (TreeViewItem<TreeElementWithData<ExcelSheetData>>)args.item;
+            var item = (DataTreeViewItem<TreeElementWithData<ExcelSheetData>>)args.item;
             TreeElementWithData<ExcelSheetData> element = item.data;
 
             for (int i = 0; i < args.GetNumVisibleColumns(); ++i)

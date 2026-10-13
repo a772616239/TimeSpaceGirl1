@@ -232,7 +232,7 @@ namespace vietlabs.fr2
 					continue;
 				}
 
-				string key = objs[i].GetInstanceID().ToString();
+				string key = objs[i].GetEntityId().ToString();
 				if (!results.ContainsKey(key))
 				{
 					results.Add(key, new FR2_SceneRef(0, objs[i]));
@@ -252,7 +252,7 @@ namespace vietlabs.fr2
 							if (item.isSceneObject)
 							{
 								Object obj = item.target;
-								string key1 = obj.GetInstanceID().ToString();
+								string key1 = obj.GetEntityId().ToString();
 								if (!results.ContainsKey(key1))
 								{
 									results.Add(key1, new FR2_SceneRef(1, obj));
@@ -278,7 +278,7 @@ namespace vietlabs.fr2
 					continue;
 				}
 
-				string key = objs[i].GetInstanceID().ToString();
+				string key = objs[i].GetEntityId().ToString();
 				if (!results.ContainsKey(key))
 				{
 					results.Add(key, new FR2_SceneRef(0, objs[i]));
@@ -316,7 +316,7 @@ namespace vietlabs.fr2
 						continue;
 					}
 
-					key = item.Key.GetInstanceID().ToString();
+					key = item.Key.GetEntityId().ToString();
 					if (!results.ContainsKey(key))
 					{
 						results.Add(key, new FR2_SceneRef(1, item.Key));
@@ -450,7 +450,7 @@ namespace vietlabs.fr2
 
 		private static void Add(Dictionary<string, FR2_Ref> refs, Object target, int depth)
 		{
-			string targetId = target.GetInstanceID().ToString();
+			string targetId = target.GetEntityId().ToString();
 			if (!refs.ContainsKey(targetId))
 			{
 				refs.Add(targetId, new FR2_SceneRef(depth, target));
@@ -557,7 +557,7 @@ namespace vietlabs.fr2
 				return string.Empty;
 			}
 
-			return component.GetInstanceID().ToString();
+			return component.GetEntityId().ToString();
 		}
 
 		public virtual bool isSelected()
@@ -808,9 +808,9 @@ namespace vietlabs.fr2
 				}
 
 				//add selection
-				if (!dict.ContainsKey(objs[i].GetInstanceID().ToString()))
+				if (!dict.ContainsKey(objs[i].GetEntityId().ToString()))
 				{
-					dict.Add(objs[i].GetInstanceID().ToString(), new FR2_SceneRef(0, objs[i]));
+					dict.Add(objs[i].GetEntityId().ToString(), new FR2_SceneRef(0, objs[i]));
 				}
 
 				foreach (Object item in FR2_Unity.GetAllRefObjects(objs[i]))

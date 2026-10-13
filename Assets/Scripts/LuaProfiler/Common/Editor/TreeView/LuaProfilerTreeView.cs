@@ -21,7 +21,7 @@ namespace MikuLuaProfiler
 
     #region item
     //The TreeElement data class is extended to hold extra data, which you can show and edit in the front-end TreeView.
-    public class LuaProfilerTreeViewItem : TreeViewItem
+    public class LuaProfilerTreeViewItem : TreeViewItem<int>
     {
         private static ObjectPool<LuaProfilerTreeViewItem> objectPool = new ObjectPool<LuaProfilerTreeViewItem>(30);
         public static LuaProfilerTreeViewItem Create(Sample sample, int depth, LuaProfilerTreeViewItem father)
@@ -178,7 +178,7 @@ namespace MikuLuaProfiler
     }
     #endregion
 
-    public class LuaProfilerTreeView : TreeView
+    public class LuaProfilerTreeView : TreeView<int>
     {
         #region pool
         private static int _uniqueId = 0;
@@ -196,7 +196,7 @@ namespace MikuLuaProfiler
 
         private List<int> m_expandIds = new List<int>();
         private readonly LuaProfilerTreeViewItem root;
-        private readonly List<TreeViewItem> treeViewItems = new List<TreeViewItem>();
+        private readonly List<TreeViewItem<int>> treeViewItems = new List<TreeViewItem<int>>();
         public readonly List<Sample> history = new List<Sample>(216000);
         private GUIStyle gs;
         public bool needRebuild = true;
@@ -204,7 +204,7 @@ namespace MikuLuaProfiler
         public string startUrl = null;
         public string endUrl = null;
         #endregion
-        public LuaProfilerTreeView(TreeViewState treeViewState, float width)
+        public LuaProfilerTreeView(TreeViewState<int> treeViewState, float width)
             : base(treeViewState, CreateDefaultMultiColumnHeaderState(width))
         {
             LuaProfiler.SetSampleEnd(LoadRootSample);
@@ -609,7 +609,7 @@ namespace MikuLuaProfiler
         }
 
         bool setting = false;
-        protected override TreeViewItem BuildRoot()
+        protected override TreeViewItem<int> BuildRoot()
         {
             while (samplesQueue.Count > 0)
             {

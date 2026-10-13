@@ -144,8 +144,13 @@ namespace GameEditor.FrameTool
 
         public static void AssetsDuplicatedInMultBundlesCache(int type)
         {
+            // ⚠️ Unity 6 升级：项目内置的 AssetBundles-Browser 1.x 不兼容 Unity 6（TreeView 非泛型已升为编译错误），
+            //    已整体移出 Assets/ → _disabled_for_unity6/AssetBundles-Browser-master/。
+            //    本诊断入口原先直接读它的 AssetBundleModel.Model.AssetsDuplicatedInMultBundlesCache，
+            //    现改为空集合；要恢复该功能需先把浏览器迁移回 Unity 6 兼容版本。
+            Debug.LogWarning("AssetsDuplicatedInMultBundlesCache：AssetBundles-Browser 已在 Unity 6 升级中停用，本项跳过。");
             string target;
-            foreach(var path in AssetBundleBrowser.AssetBundleModel.Model.AssetsDuplicatedInMultBundlesCache)
+            foreach(var path in System.Array.Empty<string>())
             {
                 if(type == 1)
                 {
@@ -308,7 +313,7 @@ namespace GameEditor.FrameTool
             build2.assetNames = new string[] { ai2.assetPath };
 
             string exportPath = AssetBundleConfig.GetExportPath(EditorUserBuildSettings.activeBuildTarget);
-            var manifest = BuildPipeline.BuildAssetBundles(exportPath, new AssetBundleBuild[] { build, build2 }, BuildAssetBundleOptions.DeterministicAssetBundle, EditorUserBuildSettings.activeBuildTarget);
+            var manifest = BuildPipeline.BuildAssetBundles(exportPath, new AssetBundleBuild[] { build, build2 }, BuildAssetBundleOptions.None, EditorUserBuildSettings.activeBuildTarget);
 
             // 加密 文件前加入128个空字符
             foreach (var name in manifest.GetAllAssetBundles())

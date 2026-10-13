@@ -10,7 +10,7 @@ namespace vietlabs.fr2
 	public class FR2_Bookmark : IRefDraw
 	{	
 		internal static HashSet<string> guidSet = new HashSet<string>();
-		internal static HashSet<string> instSet = new HashSet<string>(); // Do not reference directly to SceneObject (which might be destroyed anytime)
+		internal static HashSet<EntityId> instSet = new HashSet<EntityId>(); // Do not reference directly to SceneObject (which might be destroyed anytime)
 		
 		public static int Count
 		{
@@ -19,12 +19,12 @@ namespace vietlabs.fr2
 
 		public static bool Contains(string guidOrInstID)
 		{
-			return guidSet.Contains(guidOrInstID) || instSet.Contains(guidOrInstID);
+			return guidSet.Contains(guidOrInstID); // Unity 6：scene 对象改由 EntityId 重载匹配
 		}
 
 		public static bool Contains(UnityObject sceneObject)
 		{
-			var id = sceneObject.GetInstanceID().ToString();
+			var id = sceneObject.GetEntityId();
 			return instSet.Contains(id);
 		}
         public static bool Contains(FR2_Ref rf)
@@ -32,7 +32,7 @@ namespace vietlabs.fr2
             if (rf.isSceneRef)
             {
                 if (instSet == null) return false;
-                return instSet.Contains(rf.component.GetInstanceID().ToString());
+                return instSet.Contains(rf.component.GetEntityId());
             }
             else
             {
@@ -43,7 +43,7 @@ namespace vietlabs.fr2
         public static void Add(UnityObject sceneObject)
 		{
 			if (sceneObject == null) return;
-			var id = sceneObject.GetInstanceID().ToString();
+			var id = sceneObject.GetEntityId();
 			instSet.Add(id); // hashset does not need to check exist before add
 			dirty = true;
 		}
@@ -66,7 +66,7 @@ namespace vietlabs.fr2
 		public static void Remove(UnityObject sceneObject)
 		{
 			if (sceneObject == null) return;
-			var id = sceneObject.GetInstanceID().ToString();
+			var id = sceneObject.GetEntityId();
 			instSet.Remove(id); 
 			dirty = true;
 		}
@@ -74,7 +74,6 @@ namespace vietlabs.fr2
 		public static void Remove(string guidOrInstID)
 		{
 			guidSet.Remove(guidOrInstID);
-			instSet.Remove(guidOrInstID);
 			dirty = true;
 		}
 		
@@ -124,10 +123,9 @@ namespace vietlabs.fr2
 				if (obj != null) list.Add(obj);
 			}
 
-			foreach (string instID in instSet)
+			foreach (var instId in instSet)
 			{
-				var id = int.Parse(instID);
-				var obj = EditorUtility.InstanceIDToObject(id);
+				var obj = EditorUtility.EntityIdToObject(instId);
 				if (obj != null) list.Add(obj);
 			}
 
@@ -239,7 +237,7 @@ namespace vietlabs.fr2
 			
 			foreach (var instId in instSet)
 			{
-				refs.Add(instId, new FR2_SceneRef(0, EditorUtility.InstanceIDToObject(int.Parse(instId))));
+				refs.Add(instId.ToString(), new FR2_SceneRef(0, EditorUtility.EntityIdToObject(instId)));
 			}
 
 			

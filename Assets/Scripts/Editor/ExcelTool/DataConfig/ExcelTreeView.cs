@@ -30,7 +30,7 @@ namespace GameEditor.Core.DataConfig
         public delegate void OnTreeElementSelected(TreeElementWithData<ExcelTreeViewData> data);
         public OnTreeElementSelected onSelected = null;
            
-        public ExcelTreeView(TreeViewState state, TreeModel<TreeElementWithData<ExcelTreeViewData>> model) : base(state, model)
+        public ExcelTreeView(TreeViewState<int> state, TreeModel<TreeElementWithData<ExcelTreeViewData>> model) : base(state, model)
         {
             showBorder = true;
             Reload();
@@ -38,7 +38,7 @@ namespace GameEditor.Core.DataConfig
 
         protected override void RowGUI(RowGUIArgs args)
         {
-            var item = (TreeViewItem<TreeElementWithData<ExcelTreeViewData>>)args.item;
+            var item = (DataTreeViewItem<TreeElementWithData<ExcelTreeViewData>>)args.item;
             TreeElementWithData<ExcelTreeViewData> element = item.data;
 
             Rect contentRect = args.rowRect;
@@ -48,7 +48,7 @@ namespace GameEditor.Core.DataConfig
             EditorGUI.LabelField(contentRect, element.name);
         }
 
-        protected override bool CanMultiSelect(TreeViewItem item)
+        protected override bool CanMultiSelect(TreeViewItem<int> item)
         {
             return false;
         }

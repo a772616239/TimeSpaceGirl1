@@ -45,3 +45,28 @@
 - 登录服整机重启代价参考：`tk` 冷部署实测 3.5~6.2s（TLD/JAR 扫描 ~2.9s + Mongo 连接池 ~0.6s），
   全站 `Server startup in 7605 ms`。
 - 具体到区服名补丁的用法见 **`REF-server-name-i18n.md`** 的「部署」节。
+
+## 区服登记与寻址（开新服必读）
+
+> 从 `MEMORY.md` 拆出（2026-10-13）以免主记忆文件超注入上限被截断。
+
+- 区服列表是**动态**的：登录库 `x1_cn_test_login.server_info` → 登录服 HTTP 下发 → 客户端
+  `ServerListSelectPanel.lua` 渲染 ⇒ **新增区服 = 插一条记录**，客户端**不用出包**；
+  列表每请求重查、无缓存 ⇒ **登记即生效，不用重启登录服**。
+- 🔴 `tk/getServerList` 有 **server_version 门控**（`GetServerListController:104`）：
+  必须传真实版本 `1.26001`。传 `0` 会把自己数进 `shenheNum` 从而被跳过 → 返回**空列表**；
+  而记录里反而要照抄 `"0"`。（这一条踩过，最容易误判成「区服没登记上」。）
+- **隐藏区服**：Java 主循环对 `state == -1 || state == 0` 直接 `continue`；
+  只有 `state == 5` 才动态计算成 2/3/4（**永不返回 1**）。
+  客户端是**逐条渲染不过滤**的 ⇒ 隐藏只能靠**服务端不下发**。
+  `add-shard-10002.sh {hide|show}` 幂等。
+- 客户端硬编码 `channel=pc / plat=android / sub_channel=1`，插入记录必须与之对齐；
+  登录 / 热更地址**硬编码在二进制**里。
+- 🔑 **登录服 `isTestLan=1` 时的自测技巧**：`GetUserController.vertify` 只比对
+  `JL_LOGIN_TOKEN`、**完全不校验 sign** ⇒ 可直接取生产 Redis 的
+  `JL_LOGIN_TOKEN:<openId>` 调 `tk/getUserInfo`，造一次真实登录做端到端自测。
+- 区服名多语言（`name_en/jp/kr`）细节见 **`REF-server-name-i18n.md`**。
+- 🔴 **语言 id 权威表**（`conf/server/MultiLanguage.txt`，`lanid = floor(id/100) % 100`）：
+  **10001=中文CNY / 10101=English USD / 10002=中文USD / 10201=日文 / 10301=韩文**
+  ⇒ 英文**不是** 10002（极易搞错）。
+- 骨架搭建原文档 `docs/serverbuild.md`。

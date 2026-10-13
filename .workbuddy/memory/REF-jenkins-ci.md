@@ -59,10 +59,22 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode 'json={"parameter":[]}' \
 **分级降级**：`run_stage.sh --warn-rc 3`；`android_env.sh` rc=3 = 「环境就绪但被 Unity 编辑器占用」（临时状态），
 总览用 `--warn-rc 3` 标黄，打包 job 不加 ⇒ rc=3 当硬阻塞。
 
-## 状态（2026-10-12）
-- 7 个 job 已创建、参数与视图已核对；`TS-Pipeline-Overview` 实跑 **#6 = UNSTABLE（黄球）**，
-  JUnit **7 通过 / 0 失败 / 1 跳过**，归档 21 个文件（5 + 8 log + 8 stage json），描述
-  `⚠️ 7/8 环节通过，1 项需关注`。构建历史 #1（sandbox 未批准）/#2（BUILD_CAUSE unbound）/#3~#6 逐步修通。
+## 状态（2026-10-13 傍晚实跑核对）
+- 7 个 job 定义与视图已核对：`lint.sh` 四道全绿（7/7 语法通过）、`apply-jobs.sh --dry-run` **7/0**。
+- **已实跑拿到绿 / 黄球（无红球）**：
+  - `TS-Pipeline-Overview` **#8 / #9 连两次 UNSTABLE**（7 通过 · 0 失败 · 1 关注），
+    归档 21 条（5 文件 + 8 log + 8 stage json），构建历史 #1~#3 逐步修通、#4~#6 红、#7 假红、#8~#9 黄。
+  - `TS-Client-Resources`(`ACTION=check`) #1 SUCCESS · `TS-Server-Health` #1 SUCCESS · `TS-Play-Watch` #2 SUCCESS。
+  - 三者默认都不发信（`SEND_MAIL=false` / `DRY_RUN=true`），可安全试跑。
+- 🔴 **闸门自检曾偶发假红**：Jenkins #7 判「发布闸门已被削弱」，而**同一份代码**本地连跑 17 次全绿。
+  根因是判定用了 `printf '%s' "$out" | grep -q 拒绝` —— `set -o pipefail` 下 `grep -q` 命中即退、
+  写端收 SIGPIPE(141)，「已命中」被读成「未命中」。已改 shell 内建 `[[ "$out" == *"$TAG"* ]]`，
+  并把失败诊断由 `tail -3`（会把决定性首行裁掉）改为打印完整输出（commit `930965657`）。
+  **教训：自检本身也是代码，也会出假红；假红比没有自检更糟 —— 它会训练人忽略红灯。**
 - **未实跑**：`TS-Android-Release` / `TS-Android-TestPackage` / `TS-Server-Ops`（含破坏性动作，**需用户明确同意**）。
-  `TS-Server-Health`(`H 10`) / `TS-Play-Watch`(`H 9`) 的定时**尚未自然触发过一次**。
-- 本机 Unity 实例占用本工程 ⇒ 打包类 job 暂时跑不了（那条黄球说的就是这件事，不是代码问题）。
+- 🔴 **cron 语义极易读错**：`H 9 * * *` / `H 10 * * *` 里 `H` 是**分钟**占位、`9` / `10` 是**小时**，
+  ⇒ 含义是「**每天 9 点 / 10 点各一次**」，**不是每小时第 9/10 分**。这两个 job 建于当天 14:13，
+  已过当日窗口 ⇒ **要等次日早晨才能确认调度真的会响**；此前只经 REST 手动触发验证过。
+- 本机只有 **Unity Hub** 在跑、**无编辑器实例**占用工程 ⇒ 打包类 job 现在**可跑**
+  （`android_env.sh` rc=3 那条黄球今天没出现；真开编辑器时会变黄球，属正常，非代码问题）。
+- 唯一黄球：`本地 10002 区服状态` → 找不到 `~/ts-shard10002`（该环节计「关注」，不阻断流水线）。

@@ -25,7 +25,7 @@
 │       ├─ scripts/verify_aab_release_config.py （包内出包开关）           │
 │       └─ scripts/verify_aab_native_16kb.py    （包内 native 16KB/NDK）   │
 │            ↓                                                           │
-│  ④上传（必须显式 --upload --production [--publish]）                     │
+│  ④上传（默认 internal 内部测试；正式版须显式抬旗）                     │
 │       scripts/play_upload.py                                            │
 │            ↓                                                           │
 │  ⑤交付/自测 scripts/verify_apk_delivery.py（APK·AAB 能不能拿去测）       │
@@ -62,12 +62,14 @@
 
 **职责**：提版本号 → Unity batchmode 打 AAB → 三道路包内校验 → （可选）上传 Play。
 
-**默认行为（2026-10-12 起）：只打包 + 校验，不上传，`status=draft`。**
+**默认行为：只打包 + 校验，不上传。要上传时默认目标是 `internal`（内部测试轨道）且
+`status=completed` ⇒ 传完测试员几分钟内即可安装**（2026-10-13 起；`production` 正式版必须显式抬旗）。
 
 ```bash
 scripts/aab_release.sh                                  # 出包 + 校验，不上传（默认）
 scripts/aab_release.sh --dry-run                        # 打包 + 只认证列轨道现状（只读）
 scripts/aab_release.sh --skip-build --aab <path>        # 复用已有 AAB
+scripts/aab_release.sh --upload --yes                   # ★ 传 internal 内部测试（默认，立即可测）
 scripts/aab_release.sh --upload --production --status draft --yes    # 传 production 草稿
 scripts/aab_release.sh --upload --production --publish --yes         # 🔴 送审/上线（须先获批）
 ```
@@ -75,17 +77,18 @@ scripts/aab_release.sh --upload --production --publish --yes         # 🔴 送�
 | 参数 | 说明 |
 |---|---|
 | `--upload` | 🔴 才会上传；不加则只在本地出包 |
+| `--internal` | **默认**。传 internal 内部测试轨道（不面向公众、免常规审核、可随时 halt/替换） |
 | `--production` | 🔴 才允许写 production 轨道（同时把 `--track` 置为 production） |
-| `--publish` | 🔴 才允许 `status=completed/inProgress`（= 提交审核 / 上线） |
-| `--track` | `production`(默认) / `beta` / `alpha` / `internal` |
-| `--status` | `draft`(默认) / `completed` / `inProgress` / `halted` |
+| `--publish` | 🔴 才允许**非 internal 轨道**用 `status=completed/inProgress`（= 提交审核 / 上线） |
+| `--track` | `internal`(默认) / `alpha` / `beta` / `production` |
+| `--status` | 不传则按轨道推导：`internal` ⇒ `completed`，其余 ⇒ `draft`；可显式 `completed` / `inProgress` / `halted` |
 | `--user-fraction` | 灰度比例，仅 `inProgress` 有效 |
 | `--notes` | 更新说明 |
 | `--key` | 指定 service account JSON（默认 `~/.gplay/service-account.json`） |
 | `--package` | 覆盖包名（默认 `com.Warera.timespace`） |
 | `--aab <path>` | 直接指定 AAB，隐含 `--skip-build` |
 | `--skip-build` | 跳过 Unity 打包 |
-| `--no-bump` | ⚠️ 不动 versionCode（仅调试；production 要求严格递增） |
+| `--no-bump` | ⚠️ 不动 versionCode（仅调试；Play **各轨道共享同一个 versionCode 空间**，重复号一律被拒） |
 | `--no-upload` | 兼容保留（已等于默认行为） |
 | `--allow-no-lua` | 强行跳过「未发现 Lua bundle」闸门（风险自负） |
 | `--yes` / `-y` | 跳过交互确认 |
@@ -107,13 +110,18 @@ scripts/aab_release.sh --upload --production --publish --yes         # 🔴 送�
 **AB 就绪闸门**（`Assets/StreamingAssets/Android` 下必须有文件名含 `luabytes` 的 bundle，
 否则 `fail`；确需继续加 `--allow-no-lua`）→ bundle 与 `ResourcePathConfig.asset` 的新旧比对（仅 warn）。
 
-**发布闸门自检**（脚本内、`play_upload.py` 内各一份，互不传递旗标 = 双保险）：
+**发布闸门自检**（`aab_release.sh` 内、`play_upload.py` 内各一份，互不传递旗标 = 双保险）：
 
 ```bash
-# 下面两条都会被拒（这正是设计目标）
-scripts/aab_release.sh --upload --status completed          # 没 --production → 拒
-scripts/aab_release.sh --upload --production --status completed   # 没 --publish → 拒
+# 下面三条都会被拒（这正是设计目标）
+scripts/aab_release.sh --upload --track production                 # 没 --production → 拒
+scripts/aab_release.sh --upload --production --status completed    # 没 --publish → 拒
+scripts/aab_release.sh --upload --production --status inProgress   # 没 --publish → 拒
+# 而这条放行：internal 内部测试不面向公众 ⇒ 免 --publish
+scripts/aab_release.sh --upload                                    # → internal + completed
 ```
+
+代码级守门人：`.jenkins/lib/checks/play_gate.sh`（文本断言 + 行为断言，CI 每次发版前必跑）。
 
 ### 1.2 `scripts/bump_version.py` —— 提版本号
 

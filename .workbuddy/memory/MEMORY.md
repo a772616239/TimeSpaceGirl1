@@ -53,7 +53,7 @@
 - 🔴🔴 **versionCode 只增不减，同一号只能上一次**：当前 **69**（`apks/2026-10-13/CLIBuild/1.2.50_vc69_170356.aab`，2026-10-13 传到 production **draft**），下一个必须 ≥ **70**。
   - 根因：GUI 打包（`BuildWindow.cs:449`）**自动自增** versionCode，CLI 的 `CLIBuilder.cs` **只读不自增** ⇒ CLI 反复打包会复用同一个号，传 production 必被拒。补洞 `scripts/bump_version.py {--show|--bump|--set-code N|--bump-name}`。
   - ⇒ 🔴 **别用 `aab_release.sh` 重跑已失败的推送**（会再提一号 → 号段跳空）；重传请 `--skip-build` 或直接 `play_upload.py`。撞车时 `play_upload.py` 以**退出码 5** 拦截。核对「告警/包属于哪一版」**必须以 versionCode 为准**。
-- 🔴 **送审闸门**：默认拒绝 + 三旗标显式放行（`--upload` / `--production` / `--publish`），默认 `status=draft`、默认不上传。🔴 **`--status draft` 是 production 轨道「不送审」的唯一姿势**。
+- 🔴 **送审闸门**：默认不上传 + 三旗标显式放行（`--upload` / `--production` / `--publish`）。🔴 **默认轨道 = `internal`（内部测试），不是 production**（2026-10-13 改，用户要求"不要直接传正式环境，传内部测试的管线"）；`STATUS` 按轨道推导（internal⇒completed，其余⇒draft），internal 豁免 `--publish`（草稿在 internal 上等于没传）。🔴 **`--status draft` 是 production 轨道"不送审"的唯一姿势**。🔴 Play **各轨道共享 versionCode 空间**，换轨道重传同号同样被拒。
 - 🔴 **交付自检 `scripts/verify_apk_delivery.py`** 答「这包能不能测」；16KB 以**包内产物**为准（`scripts/verify_aab_native_16kb.py`），Unity 打印的 `libtolua.so is not 16KB-aligned` 是**误报**；**升 Unity 引擎解决不了 16KB**。
 - 🔴 **上传期间禁止并发调用任何 Play API**（多进程开 edit 会互删，实测 85% 处 `HTTP 400 FAILED_PRECONDITION`）。
 - 🔴 **账号名 = f(登录 SDK 给的 id)**，换 SDK 就等于换号；Android `platformId==1` **必须走 Google Sign-In（`f74ffb436`），勿改回 PlayGames**。

@@ -84,22 +84,26 @@
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
 | **TS-Pipeline-Overview** | 只读总览：一次看完 8 个环节，失败互不阻断 | `SKIP_PLAY=False` `SKIP_HEALTH=False` | — | 允许 |
-| **TS-Android-Release** | AAB 全链路（9 stage），含**送审审批闸门** | `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=False` `TRACK=production` `STATUS=draft` `PUBLISH=False` `NOTES=` | — | **禁止** |
+| **TS-Android-Release** | AAB 全链路（9 stage），含**送审审批闸门** | `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=False` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `NOTES=` | — | **禁止** |
 | **TS-Android-TestPackage** | 出测试 APK（universal，upload key 签名） | `BUMP_VERSION=False` `EXPECT_PROFILE=minimal` | — | **禁止** |
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |
 | **TS-Server-Ops** | 服务端/区服运维动作统一入口 | `ACTION=health` `CONFIRM=` `REASON=` | — | 允许 |
 | **TS-Play-Watch** | Play 轨道 + 16KB 合规巡检 | `DRY_RUN=True` `NO_MAIL=False` `AAB=` `TO=` | `H 9 * * *` | 允许 |
 
-### 3.1 送审红线（三层闸门，写在代码里）
+### 3.1 送审红线（三层闸门 + 一层代码级自检）
 
 > 红线：**绝不自行提交审核。** 打包/构建/校验可以做；**「上传 production + `status=completed`」必须先获用户明确同意。**
+> 2026-10-13 起默认目标轨道是 **`internal`（内部测试）**，production 必须显式抬旗。
 
-1. **参数默认值**：`UPLOAD=False`、`STATUS=draft`、`PUBLISH=False`。
-2. **运行时硬拦**：`STATUS in [completed, inProgress] && !PUBLISH` ⇒ `error(...)` 直接失败（防「下拉框手滑」）。
+1. **参数默认值**：`UPLOAD=False`、`TRACK=internal`、`STATUS=completed`（internal 传完即可测）、`PUBLISH=False`。
+2. **运行时硬拦**：`TRACK != internal && STATUS in [completed, inProgress] && !PUBLISH` ⇒ `error(...)` 直接失败（防「下拉框手滑」）。
+   `internal` 轨道豁免 —— 它不面向公众、可随时 halt / 替换。
 3. **人工审批**：上传 stage 带 `input` 步骤，必须有人点确认。
 
-另有 `play_gate.sh` 做**行为断言**：真跑 `aab_release.sh --skip-build --upload --status completed` 等组合，必须被拒绝且输出含「拒绝」——防止哪天有人把默认值改松了而没人发现。
+另有 `play_gate.sh` 做**行为断言**：真跑 `aab_release.sh --skip-build --upload --track production`、
+`--upload --production --status completed` 等组合，必须被拒绝且输出含「拒绝」；同时断言
+`--upload`（默认 internal + completed）**不被拦** —— 防止哪天有人把默认值改松了而没人发现。
 
 ### 3.2 跨 job 互斥：为什么不用 `disableConcurrentBuilds`
 

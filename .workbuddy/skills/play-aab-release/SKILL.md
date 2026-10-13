@@ -1,6 +1,6 @@
 ---
 name: play-aab-release
-description: 为 TimeSpaceGirl1 打包 Android AAB/APK 并上传到 Google Play 后台。当用户提到"打包 AAB""打 APK""上传 Google Play""发版""传正式版/测试轨道""Play Console""aab_release""16KB 合规""Google 登录变新号"等意图时使用。覆盖 versionCode 自增、Unity batchmode 打包、包内出包配置校验、native 16KB/NDK 体检、Play Developer API 上传与轨道发布、APK 交付自检。
+description: 为 TimeSpaceGirl1 打包 Android AAB/APK 并上传到 Google Play 后台（默认走 internal 内部测试轨道，正式版 production 需显式抬旗）。当用户提到"打包 AAB""打 APK""上传 Google Play""发版""传正式版/测试轨道""Play Console""aab_release""16KB 合规""Google 登录变新号"等意图时使用。覆盖 versionCode 自增、Unity batchmode 打包、包内出包配置校验、native 16KB/NDK 体检、Play Developer API 上传与轨道发布、APK 交付自检。
 ---
 
 # Play AAB / APK 发版
@@ -21,7 +21,9 @@ description: 为 TimeSpaceGirl1 打包 Android AAB/APK 并上传到 Google Play 
 
 1. **绝不自行送审。** 打包、构建、校验、提交 git 都可以；
    **「上传到 production 轨道 + `status=completed`」= 提交审核，必须先问用户同意。**
-   已用代码锁死：默认不上传、默认 `draft`，必须显式给 `--upload` / `--production` / `--publish`。
+   已用代码锁死：默认不上传；**默认轨道是 `internal`（内部测试），不是 production**；
+   写 production 必须显式 `--production`，非 internal 轨道送审必须显式 `--publish`。
+   （2026-10-13 用户要求「不要直接传正式环境，传内部测试的管线」。）
 2. **上传期间绝不并发调用任何 Play API**（含 `play_16kb_watch.py`、其它脚本/其它 agent）——
    多进程对同一 App 开 edit 会互删，实测「传 85% 报 `This Edit has been deleted.`」，421MB 白传。
 3. **本工程 Unity GUI 不能开着**。但本机其它项目（如 `~/Documents/main_android/Unity`）在跑
@@ -37,7 +39,10 @@ scripts/aab_release.sh                          # 出包 + 三道包内校验（
 scripts/aab_release.sh --dry-run                # 打包 + 只认证列轨道现状（只读）
 scripts/aab_release.sh --skip-build             # 复用最近 AAB，跳过 Unity 打包
 
-# 上传成 production 草稿（不送审）—— 看过产物后
+# ★ 传到 internal 内部测试轨道（默认目标；status 默认 completed，测试员几分钟内可装）
+scripts/aab_release.sh --skip-build --upload --yes
+
+# 要发正式版才抬旗：传 production 草稿（不送审）
 scripts/aab_release.sh --skip-build --upload --production --status draft --yes
 
 # 🔴 送审 / 上线 —— 必须先取得用户明确同意
@@ -49,16 +54,17 @@ scripts/aab_release.sh --skip-build --upload --production --publish --yes
 | 参数 | 说明 |
 |---|---|
 | `--upload` | 🔴 才会上传；不加则只在本地出包（**默认**） |
+| `--internal` | **默认**。传 internal 内部测试轨道（不面向公众、免常规审核、可随时 halt/替换） |
 | `--production` | 🔴 才允许写 production 轨道 |
-| `--publish` | 🔴 才允许 `status=completed/inProgress`（= 送审 / 上线） |
-| `--track` | `production`(默认) / `beta` / `alpha` / `internal` |
-| `--status` | **`draft`(默认)** / `completed` / `inProgress` / `halted` |
+| `--publish` | 🔴 才允许**非 internal 轨道**用 `status=completed/inProgress`（= 送审 / 上线） |
+| `--track` | `internal`(**默认**) / `alpha` / `beta` / `production` |
+| `--status` | 不传则按轨道推导：`internal` ⇒ `completed`（立即可测），其余 ⇒ `draft`；可显式 `completed` / `inProgress` / `halted` |
 | `--user-fraction` | 灰度比例，仅 `inProgress` 有效 |
 | `--notes` | 更新说明 |
 | `--key` | 指定 service account JSON（默认 `~/.gplay/service-account.json`） |
 | `--aab <path>` | 直接指定 AAB，隐含 `--skip-build` |
 | `--skip-build` | 跳过 Unity 打包 |
-| `--no-bump` | ⚠️ 不动 versionCode（仅调试；production 要求严格递增） |
+| `--no-bump` | ⚠️ 不动 versionCode（仅调试；Play **各轨道共享同一个号空间**，重复号一律被拒） |
 | `--allow-no-lua` | 强行跳过「未发现 Lua bundle」闸门（风险自负） |
 | `--yes` / `-y` | 跳过交互确认 |
 | `--dry-run` | 只读认证 + 列轨道，不受发布闸门限制 |
@@ -148,8 +154,8 @@ app signing key 不同 ⇒ **侧载前必须先卸载 Play 版**。只出 `arm64
 | 400 `App bundle was not signed` | Play 应用签名未启用 | Console 启用 Play App Signing |
 | 400 `FAILED_PRECONDITION / This Edit has been deleted.` | **并发**调了 Play API | 重跑（会新建 edit）；上传期间别跑巡检脚本 |
 | 退出码 5 | versionCode 预检撞车，脚本主动拦截 | 提号后重打包 |
-| 退出码 2 且提示「拒绝对 production 轨道做写操作」 | 没给 `--production` | 这是闸门在正常工作；要传就显式加 |
-| 退出码 2 且提示「拒绝把包置为 status=completed」 | 没给 `--publish` | 同上；只传草稿用 `--status draft` |
+| 退出码 1/2 且提示「拒绝写 production 轨道」 | 没给 `--production` | 闸门在正常工作（默认只传 internal）；要发正式版就显式加 |
+| 退出码 1/2 且提示「拒绝把包置为 status=completed」 | 非 internal 轨道没给 `--publish` | 同上；只传草稿用 `--status draft`。**internal 轨道不受此限** |
 | `:launcher:mergeExtDexRelease FAILED` | AndroidX 与 AGP 7.4.2 dexer 不兼容 | `docs/unity_android_build_skill.md` §3 双模板 force |
 | `Multiple Unity instances cannot open the same project` | 本工程 GUI Unity 占锁 | 关 GUI / 删陈旧 `Library/SourceAssetDB-lock` |
 | 前置检查报「未发现 Lua bundle」 | AB 链路断开 | `scripts/check_ab_ready.sh` 定位；GUI 重建 AB |
@@ -166,6 +172,10 @@ app signing key 不同 ⇒ **侧载前必须先卸载 Play 版**。只出 `arm64
   渠道 SDK 而全挂**（`ReleaseBuildSettings.Validate()` 已把它写成硬校验）。
 - **「上传到 production 就是送审」对 `status=draft` 不成立**；`--changes-not-sent-for-review`
   只对 internal/alpha/beta 有效。
+- **别以为「传 internal 能省 versionCode」**：Play 的 production / internal / alpha / beta
+  **共享同一个 versionCode 空间**，一个号传过一次就永久占用，换轨道重传同号同样被拒。
+- **internal 不是「法外之地」**：它免的是**常规发布审核**（一般几分钟即可装），
+  不等于免于 Google Play 政策 —— Google 仍可事后拦截。
 - **账号名 = f(登录 SDK 给的 id)**：`GetAcc("go"+id)`，`name = acc[0..12)`、`pw = acc[12..24)`，
   服务端以 `name` 为主键。历史上把 Google Sign-In（21 位数字 `UserId`）换成 Play Games
   （20 字符 `Social.localUser.id`）导致**同一个人变新号**，已回退（`f74ffb436`，**勿再改回去**）。

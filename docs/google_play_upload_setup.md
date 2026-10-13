@@ -146,20 +146,23 @@ scripts/aab_release.sh --skip-build --dry-run
 ## 3. 日常发布
 
 ```bash
-# 正式版全量：提版本号 → 打包 → 上传 → 提交审核
+# ★ 默认路径：只出包 + 校验，不上传
 scripts/aab_release.sh
 
-# 先传内部测试验证
-scripts/aab_release.sh --track internal
+# 传内部测试（internal）—— 现在 --upload 的默认轨道，传完测试员几分钟内可装
+scripts/aab_release.sh --skip-build --upload --yes
+
+# 正式版草稿（不送审）—— 必须显式抬 --production
+scripts/aab_release.sh --skip-build --upload --production --status draft --yes
+
+# 🔴 正式版送审 / 上线 —— 须先获批，再抬 --publish
+scripts/aab_release.sh --skip-build --upload --production --publish --yes
 
 # 正式版分阶段放量 10%
-scripts/aab_release.sh --track production --status inProgress --user-fraction 0.1
+scripts/aab_release.sh --upload --production --status inProgress --user-fraction 0.1 --publish
 
-# 只打包不传（产物留着自己看）
+# 只打包不传（写出来只是显式；这已是默认行为）
 scripts/aab_release.sh --no-upload
-
-# 复用已有 AAB 只补一次上传
-scripts/aab_release.sh --skip-build
 
 # 自定义更新说明
 scripts/aab_release.sh --notes "修复卡顿；优化新手引导"
@@ -169,16 +172,20 @@ scripts/aab_release.sh --notes "修复卡顿；优化新手引导"
 
 | 参数 | 说明 |
 |---|---|
-| `--track` | `production`(默认) / `beta` / `alpha` / `internal` |
-| `--status` | `completed`(默认,全量) / `inProgress`(灰度) / `draft` / `halted` |
+| `--track` | `internal`(**默认**) / `alpha` / `beta` / `production` |
+| `--status` | 不传则按轨道推导：`internal` ⇒ `completed`（立即可测），其余 ⇒ `draft`。可显式 `completed`(全量) / `inProgress`(灰度) / `halted` |
 | `--user-fraction` | 灰度比例，仅 `inProgress` 有效 |
 | `--notes` | 更新说明（默认写「问题修复与体验优化。」） |
-| `--no-bump` | 不动 versionCode（⚠️ production 用了必被拒） |
+| `--no-bump` | 不动 versionCode（⚠️ 号重复必被 Play 拒 —— 各轨道共享同一个号空间） |
 | `--skip-build` | 跳过 Unity 打包，复用最近 AAB |
-| `--no-upload` | 只打包 + 校验 |
+| `--no-upload` | 只打包 + 校验（已等于默认） |
 | `--dry-run` | 认证 + 列现状，不上传 |
 | `--yes` / `-y` | 跳过交互确认（自动化用） |
 | `--key` | 指定 service account JSON 路径 |
+
+🔴 **三层闸门**：`--upload` 才会上传；写 `production` 还要 `--production`；
+**非 internal 轨道**的 `completed`/`inProgress` 还要 `--publish`。
+`internal` 轨道不受 `--publish` 限制 —— 它不面向公众、可随时 halt / 替换。
 
 ---
 
@@ -193,10 +200,12 @@ scripts/aab_release.sh --notes "修复卡顿；优化新手引导"
 2. **必须已启用 Play 应用签名（Play App Signing）**
    未启用时 AAB 上传会被拒。在 Console →「测试和发布」→「应用完整性」里确认。
 
-3. **versionCode 必须严格递增**
+3. **versionCode 必须严格递增（各轨道共享同一个号空间）**
    这就是本项目最需要小心的一条：`Assets/Editor/CLIBuilder.cs` **只读不自增** versionCode，
    自增逻辑只在 GUI 的 `Assets/Scripts/Editor/GameEditor/FrameTool/BuildWindow.cs:449`。
-   → 所以 CLI 打包出来的包号一直是 `62`，直接传 production 必被拒。
+   → CLI 打包出来的包号会一直停在同一个值，直接传任何轨道都必被拒。
+   🔴 **别以为「传 internal 就能省号」**：production / internal / alpha / beta
+   **共享同一个 versionCode 空间**，一个号上传过一次就永久占用，换轨道重传同号同样被拒。
    `aab_release.sh` 默认帮你在打包前 `+1`（`scripts/bump_version.py`）。
    脚本还会在上传前查询轨道现有最大 versionCode 做比对，撞车会**在上传前就拦住并返回退出码 5**。
 

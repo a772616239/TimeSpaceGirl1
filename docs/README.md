@@ -42,7 +42,7 @@
 │       ├─ scripts/verify_aab_release_config.py   （包内出包开关）          │
 │       └─ scripts/verify_aab_native_16kb.py      （包内 native 16KB/NDK）  │
 │                          ↓                                              │
-│  ④ 上传（须显式 --upload --production [--publish]）                       │
+│  ④ 上传（默认 internal 内部测试；正式版须显式抬旗）                       │
 │       scripts/play_upload.py                                             │
 │                          ↓                                              │
 │  ⑤ 交付自检   scripts/verify_apk_delivery.py    （这包能不能拿去测）      │
@@ -96,6 +96,7 @@ A/B/C 三条链已经收口成 **7 个 Jenkins job**，跑在 `http://127.0.0.1:
 
 1. **绝不自行提交审核。** 打包、构建、校验可以；**「上传 production + `status=completed`」必须先获用户明确同意。**
    → 已用代码锁死（默认拒绝 + `--upload`/`--production`/`--publish` 三旗标显式放行）。
+   → 且 2026-10-13 起**默认目标轨道是 `internal` 内部测试**，不是 production；只有显式 `--production` 才走得通。
 2. **上传期间不要并发调用任何 Play API**（含巡检脚本、其它 agent）——
    多进程对同一 App 开 edit 会互删，实测导致 421MB 白传。
 3. **重启生产游戏服会踢线，必须先取得用户确认。**

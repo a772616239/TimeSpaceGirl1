@@ -55,13 +55,22 @@
 - 处置：直接重跑 `play_upload.py`（会新建 edit 重传）。🔴 **不要用 `aab_release.sh` 重跑** —— 它默认 `--bump`，会再提一次 versionCode 导致号段跳空。
 - 规则：**上传/发布进行中，不要跑巡检、dry-run 或任何会 `edits.insert` 的工具**。已写进 `play_16kb_watch.py` 文档头与 `docs/google_play_upload_setup.md §5`。
 
-## 轨道与发布状态：如何「上传但不送审」（2026-10-12）
-- Play Developer API 的 `release.status` 合法值 = `{draft, inProgress, halted, completed}`（= `play_upload.py` 的 `VALID_STATUS`）。默认 `completed`。
+## 轨道与发布状态：默认 internal，不送审靠 draft（2026-10-12 / 10-13）
+- Play Developer API 的 `release.status` 合法值 = `{draft, inProgress, halted, completed}`（= `play_upload.py` 的 `VALID_STATUS`）。
+- 🔴 **2026-10-13：默认轨道由 `production` 改为 `internal`**（用户要求「不要直接传正式环境，传内部测试的管线」）。
+  - `TRACK="internal"`；`STATUS` 按轨道推导（internal ⇒ `completed`，其余 ⇒ `draft`）。
+  - internal 豁免 `--publish`：它不面向公众、免常规审核（上传后几分钟即可装）、可随时 halt/替换；
+    **草稿在 internal 上等于「没传」**（测试员看不到），所以默认就该是 completed。
+  - production / beta / alpha 不变：仍须 `--publish` 才能 completed/inProgress。
+  - `.jenkins/lib/checks/play_gate.sh` 已同步（新增「默认 internal」文本断言 + 「internal 免 publish」行为断言，
+    并把 probe 改成走不存在的 `--aab` 快速路径，不再依赖 `apks/` 里有包）。
 - 🔑 **production 轨道上唯一的不送审姿势 = `--status draft`**：上传后只是「草稿」，**不进 Google 审核**，要人工在 Play Console 点发布才生效。
 - ⛔ `--changes-not-sent-for-review`（即 `changesNotSentForReview=true`）**只对 internal/alpha/beta 有效**，传 production 会被脚本 `die`（`play_upload.py` 内有硬校验）。
-- 🔴 `aab_release.sh` 末尾输出「Play Console 会进入审核」是 `play_upload.py` 里 `if args.track == "production"` 的**固定文案**，`status=draft` 时它**是错的**，别被误导。
-- 复核现状（只读内容，但会 `edits.insert`）：`play_upload.py --dry-run`，看 `[tracks]` 段 —— draft 与 completed 并存时形如 `production  draft v66; completed v64`。⚠️ **上传/发布进行中不要跑**（见上节 edit 互斥）。⚠️ 若目标是**已在轨道上**的 versionCode，dry-run 会以「版本号撞车」失败退出（预期行为，说明号确实上去了）。
-- 完整命令：`scripts/aab_release.sh --skip-build --aab <path>.aab --track production --status draft --yes`
+- ✅ 已修：`aab_release.sh` 末尾的结论文案现在按轨道分支打印（internal / draft / 其它），不再对 draft 说「会进入审核」。
+- 🔴 **Play 各轨道共享同一个 versionCode 空间** —— 一个号传过一次就永久占用，换轨道重传同号同样被拒。「传 internal 省号」是错觉。
+- 复核现状（只读内容，但会 `edits.insert`）：`play_upload.py --dry-run`，看 `[tracks]` 段 —— draft 与 completed 并存时形如 `production  draft v69; completed v68`。⚠️ **上传/发布进行中不要跑**（见上节 edit 互斥）。⚠️ 若目标是**已在轨道上**的 versionCode，dry-run 会以「版本号撞车」失败退出（预期行为，说明号确实上去了）。
+- 完整命令：`scripts/aab_release.sh --skip-build --aab <path>.aab --upload --yes`（→ internal，默认）
+  / `scripts/aab_release.sh --skip-build --aab <path>.aab --upload --production --status draft --yes`（→ production 草稿）
 
 ## Play 16KB 合规巡检（2026-10-12 起）
 - 工具 `scripts/play_16kb_watch.py`（轨道现状 + 两层取证 + diff + 邮件）；定时任务 id `ea56e5de-abc2-45c2-abb9-401505a65a96`（每 3 天 10:00）。

@@ -10,7 +10,7 @@
 ## 0. 🔴 三条红线（先看这个）
 
 1. **绝不自行送审。** 打包、构建、校验、提交 git 可以做；**「上传到 production 轨道 + `status=completed`」= 提交审核，必须先问用户**。
-   → 已用代码锁死，见 §5。
+   → 已用代码锁死，见 §5。**默认上传目标是 `internal`（内部测试轨道），不是 production**（2026-10-13 起）。
 2. **上传期间不要并发调任何 Play API**（含 `play_16kb_watch.py`、其它脚本/其它 agent）。多进程对同一 App 开 edit 会互删。
 3. **重启生产游戏服会踢线，必须先取得用户确认。**（见 `server_ops_runbook.md`）
 
@@ -25,7 +25,8 @@
 | 打包方法 | `CLIBuilder.BuildAndroidAAB`（发版）/ `CLIBuilder.BuildAndroidAPK`（自测） |
 | 出包口径真源 | `Assets/Editor/ReleaseBuildSettings.cs`，CLI 固定 `MinimalGmOff` |
 | 产物目录 | `apks/{yyyy-MM-dd}/CLIBuild/{HHmmss}.{aab\|apk}`（`apks/` 已 gitignore） |
-| 当前版本 | versionCode **68** / versionName **1.2.49** |
+| 当前版本 | versionCode **69** / versionName **1.2.50**（下一个包必须 ≥ 70） |
+| 默认上传轨道 | **`internal`（内部测试）**；production 须显式 `--production`（2026-10-13 起） |
 | 签名 | upload key：`beauty.keystore`，alias `xing`，DN `O=EMI`，证书 SHA-256 `8ed07291…` |
 | Python | `/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python` |
 | Play 凭证 | `~/.gplay/service-account.json` |
@@ -106,10 +107,13 @@ git status --short | grep Logo.unity && git checkout -- Assets/LuaFramework/Scen
 # ③ 出包 + 三道包内校验（默认不上传）
 scripts/aab_release.sh
 
-# ④ 上传成 production 草稿（不送审）—— 确认过 ③ 的产物后
+# ④ 上传到 internal 内部测试轨道（默认目标；传完测试员几分钟内可装）
+scripts/aab_release.sh --skip-build --upload --yes
+
+# ⑤ 只有要发正式版才抬旗：传 production 草稿（不送审）
 scripts/aab_release.sh --skip-build --upload --production --status draft --yes
 
-# ⑤ 送审/上线 —— 🔴 必须先取得用户明确同意再执行
+# ⑥ 送审/上线 —— 🔴 必须先取得用户明确同意再执行
 scripts/aab_release.sh --skip-build --upload --production --publish --yes
 ```
 
@@ -220,24 +224,37 @@ Plugin 'Assets/Plugins/Android/libs/arm64-v8a/libtolua.so' is not 16KB-aligned.
 `play_upload.py --status` 默认 `completed`、`aab_release.sh` 的 `STATUS` 默认 `completed`、
 `DO_UPLOAD` 默认 `1`。任一处漏传参数 ⇒ 直接提交审核 + 面向全量用户。
 
-### 5.2 现方案（`2479709ae`）：默认拒绝 + 三旗标显式放行
+### 5.2 现方案（`2479709ae` + 2026-10-13 收紧）：默认拒绝 + 默认 internal + 三旗标显式放行
 
 | 想做的事 | 命令 | 必须显式给出 |
 |---|---|---|
 | 只出包（默认） | `scripts/aab_release.sh` | — |
+| 传 **internal 内部测试**（默认轨道，传完即可测） | `… --skip-build --upload --yes` | `--upload` |
 | 传 production **草稿** | `… --skip-build --upload --production --status draft --yes` | `--upload` + `--production` |
 | **提交审核 / 上线** | `… --upload --production --publish` | 再加 `--publish`（须先获批！） |
 | 只读看现状 | `… --dry-run` | —（`--dry-run` 不受闸门限制） |
 
-- 默认 `status=draft`、默认不上传。
-- **两层各自独立校验**（shell 与 python），脚本之间不传递旗标 ⇒ 双保险。
-- 被拒时退出码 `2`，并直接打印拒绝理由。
+- 默认不上传；**默认轨道 `internal`**；`status` 按轨道推导（internal ⇒ `completed`，其余 ⇒ `draft`）。
+- **两层各自独立校验**（shell 与 python），脚本之间不传递旗标 ⇒ 双保险；
+  第三层在 Jenkins `TS-Android-Release` 的上传阶段（人工审批前的复核），
+  第四层是 `.jenkins/lib/checks/play_gate.sh` 的代码级断言（文本 + 行为，CI 每次发版前必跑）。
+- 被拒时 shell 侧退出码 `1`、python 侧 `2`，并直接打印拒绝理由。
+- 🔴 **`internal` 豁免 `--publish`**：它不面向公众、免常规审核、可随时 halt / 替换。
+  这是刻意的 —— **草稿在 internal 轨道上等于「没传」**（测试员根本看不到），
+  所以「传内部测试管线」这个动作本身就应该是 `completed`。
 
 ### 5.3 平台的坑
 
 🔴 **`--status draft` 是 production 轨道「不送审」的唯一姿势。**
 `--changes-not-sent-for-review` 只对 internal/alpha/beta 有效。
-`aab_release.sh` 末尾那句「会进入审核」是固定文案，**对 draft 不成立**。
+（已修：`aab_release.sh` 末尾的结论文案现在按轨道分支打印，不再对 draft 说「会进入审核」。）
+
+🔴 **Play 的所有轨道共享同一个 versionCode 空间** —— 一个号传过一次就永久占用，
+换个轨道重传同一个号同样被拒。所以「传 internal」并不能省 versionCode，号照样要递增。
+
+ℹ️ **internal 轨道的口径**（2026-10 核对）：上传后**不需要等常规审核**，一般几分钟内测试员即可
+从内部测试链接安装（首次发布时商店名称/商品详情可能有最长 48h 的展示延迟）。但它**不等于免于
+Google Play 政策**：Google 仍可事后拦截。它是「内部测试管线」，不是法外之地。
 
 ---
 
@@ -360,14 +377,18 @@ LoginPanel.lua:1243
 
 ---
 
-## 10. 当前轨道现状与待决事项（2026-10-12）
+## 10. 当前轨道现状与待决事项（2026-10-13）
 
-只读复核：**`production draft v68; completed v67`**（beta/alpha 空；internal completed v61）。
+只读复核（`play_upload.py --dry-run`）：**`production draft v69; completed v68`**
+（2026-10-12 时 beta/alpha 空）。
 
-- ⚠️ **已 completed 的 v67 恰恰是带 r17 老库、未修 16KB 的那版。**
-- 修好的 v68 只是**草稿**（含 r28c 重编的 `libnative-googlesignin.so`）。
-- **待用户决定**是否把 v68 提升为 completed。
-- 本地 `release` 分支领先 `origin/release` 若干笔提交，**未 push**。
+- v68（completed）= 已上线版本；v69（draft）= 2026-10-13 出的包 —— 含 r28c 重编的
+  `libnative-googlesignin.so`、13 个 `.so` 全部 16KB 对齐、包内 `isOpenGM=0`。
+- 🔴 v69 目前挂在 **production 的草稿位**。2026-10-13 用户要求「不要直接传正式环境，
+  传内部测试的管线」⇒ 流程已改为**默认传 internal**；这个 production 草稿**暂时保留**，
+  由用户决定撤下 / 提升 / 改传 internal。
+- 下一个包 versionCode 必须 ≥ **70**。
+- 本地 `release` 分支与 `origin/release` 已同步。
 
 ---
 

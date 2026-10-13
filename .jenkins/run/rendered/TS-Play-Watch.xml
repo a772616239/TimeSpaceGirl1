@@ -1,0 +1,177 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <description>Google Play 轨道与 16KB 合规巡检：查各轨道 versionCode/status → 对最新 AAB 做两层 16KB 取证 → 与上次 diff 后汇报。全程持有 Play API 排他锁，绝不上传。</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.DisableConcurrentBuildsJobProperty/>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DRY_RUN</name>
+          <description>只打印，不发邮件、不写状态（默认）。取消勾选会发邮件并更新比对基线</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>NO_MAIL</name>
+          <description>发邮件之外的选项：只写状态不发信</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>AAB</name>
+          <description>指定要体检的 AAB（留空 = 自动取 apks/ 下最新）</description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TO</name>
+          <description>覆盖收件人邮箱</description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+      <triggers>
+        <hudson.triggers.TimerTrigger>
+          <spec>H 9 * * *</spec>
+        </hudson.triggers.TimerTrigger>
+      </triggers>
+    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script>pipeline {
+  agent any
+
+  options {
+    timestamps()
+    timeout(time: 40, unit: 'MINUTES')
+    buildDiscarder(logRotator(daysToKeepStr: '90', numToKeepStr: '60'))
+  }
+
+  environment {
+    PROJ = '/Users/wangxufeng/Documents/TimeSpaceGirl1'
+    PY   = '/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python'
+    BASH = '/usr/local/bin/bash'
+  }
+
+  stages {
+
+    stage('① 准备与取证') {
+      steps {
+        script {
+          env.TS_RUN_DIR = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
+          env.TS_AAB     = params.AAB.trim()
+          env.TS_TO      = params.TO.trim()
+        }
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ" || exit 2
+mkdir -p "$TS_RUN_DIR/logs"
+{
+  echo "运行：$JOB_NAME #$BUILD_NUMBER"
+  echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
+  echo "模式：$([[ "$DRY_RUN" == "true" ]] &amp;&amp; echo '只读（不发信/不写状态）' || echo '正式（发信并写状态）')"
+  echo "AAB ：${TS_AAB:-（自动取最新）}"
+  echo ""
+  echo "🔴 会创建/删除一个 Play edit，因此全程持 play 锁 —— 与上传互斥。"
+  echo "   Play Console 的 16KB 告警没有公开 API，另一半仍需人工看 Console。"
+} | tee "$TS_RUN_DIR/context.txt"
+''')
+      }
+    }
+
+    stage('② 轨道与 16KB 巡检（持 Play 锁）') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+
+WATCH_ARGS=()
+[[ "$DRY_RUN" == "true" ]] &amp;&amp; WATCH_ARGS+=(--dry-run)
+[[ "$NO_MAIL" == "true" ]] &amp;&amp; WATCH_ARGS+=(--no-mail)
+[[ -n "${TS_AAB:-}" ]] &amp;&amp; WATCH_ARGS+=(--aab "$TS_AAB")
+[[ -n "${TS_TO:-}"  ]] &amp;&amp; WATCH_ARGS+=(--to "$TS_TO")
+
+echo "→ scripts/play_16kb_watch.py ${WATCH_ARGS[*]}"
+# 🔴 等锁最多 30 分钟：宁可排在上传后面，也不与它并发（实测并发会把上传的 edit 判成 deleted）
+"$BASH" .jenkins/lib/run_stage.sh --name "Play 轨道与 16KB 巡检" \
+  --group "Play" --slug play-watch --timeout 2400 \
+  -- "$BASH" .jenkins/lib/lock.sh --name play run \
+       --who "$JOB_NAME #$BUILD_NUMBER" --timeout 1800 -- \
+       "$PY" scripts/play_16kb_watch.py "${WATCH_ARGS[@]}"
+''')
+      }
+    }
+
+    stage('③ 归档巡检状态') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+mkdir -p "$TS_RUN_DIR/artifacts"
+STATE="scripts/.play16kb_state.json"
+if [[ -f "$STATE" ]]; then
+  cp "$STATE" "$TS_RUN_DIR/artifacts/play16kb_state.json"
+  echo "已收取状态文件（与上次的比对基线）"
+  "$PY" -c 'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); print(json.dumps(d,ensure_ascii=False,indent=2)[:1200])' "$STATE" 2&gt;/dev/null || true
+else
+  echo "（没有状态文件：$STATE）"
+fi
+"$PY" .jenkins/lib/stage_report.py add --run "$TS_RUN_DIR" \
+  --name "巡检状态归档" --group "交付" --status pass \
+  --detail "$([[ -f "$STATE" ]] &amp;&amp; echo '已归档 .play16kb_state.json' || echo '无状态文件')"
+''')
+      }
+    }
+  }
+
+  post {
+    always {
+      script {
+        sh(returnStatus: true, script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ" 2&gt;/dev/null || true
+mkdir -p "$TS_RUN_DIR/logs"
+"$PY" .jenkins/lib/stage_report.py junit --run "$TS_RUN_DIR" \
+  --out "$TS_RUN_DIR/junit.xml" --suite "$JOB_NAME" || true
+"$PY" .jenkins/lib/stage_report.py summary --run "$TS_RUN_DIR" \
+  --out "$TS_RUN_DIR/summary.md" --title "$JOB_NAME #$BUILD_NUMBER" || true
+# 每次都重建本 job 的 evidence/：
+# workspace 不做 cleanWs，而 `cp -R` 只增不删 ⇒ 上几次构建的 stages/*.json 会被一起归档，
+# 看起来像「同一个环节跑了两遍」。实测 2026-10-12 构建#5 的归档里混进了 #3/#4 的记录。
+# 只删本 job 自己的 evidence/（$WORKSPACE 已由 Jenkins 设置，且只在非空时动手）。
+if [[ -n "${WORKSPACE:-}" &amp;&amp; -d "$WORKSPACE/evidence" ]]; then
+  rm -rf "$WORKSPACE/evidence"
+fi
+mkdir -p "$WORKSPACE/evidence"
+cp -R "$TS_RUN_DIR/." "$WORKSPACE/evidence/" 2&gt;/dev/null || true
+''')
+
+        if (fileExists("${WORKSPACE}/evidence/junit.xml")) {
+          junit allowEmptyResults: true, skipPublishingChecks: true, testResults: 'evidence/junit.xml'
+        }
+
+        def desc = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
+cd "$PROJ" 2&gt;/dev/null || true
+"$PY" .jenkins/lib/stage_report.py desc --run "$TS_RUN_DIR" 2&gt;/dev/null || true
+''').trim()
+        if (desc) { currentBuild.description = desc }
+
+        def st = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
+cd "$PROJ" 2&gt;/dev/null || true
+"$PY" .jenkins/lib/stage_report.py status --run "$TS_RUN_DIR" 2&gt;/dev/null || echo pass
+''').trim()
+        if (st == 'warn' &amp;&amp; currentBuild.currentResult == 'SUCCESS') {
+          currentBuild.result = 'UNSTABLE'
+        }
+
+        archiveArtifacts allowEmptyArchive: true, artifacts: 'evidence/**', fingerprint: false
+      }
+    }
+  }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

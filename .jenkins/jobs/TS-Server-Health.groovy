@@ -1,0 +1,144 @@
+/**@META
+{
+  "description": "生产游戏服每日巡检（只读）：SSH 采集 → 机器化结论 →（可选）发邮件 → 报告与 JSON 归档。默认只采集不发信，避免与本机既有的 10:00 巡检邮件自动化重复发信。",
+  "concurrent": true,
+  "cron": "H 10 * * *",
+  "params": [
+    {"name":"SEND_MAIL","type":"bool","default":false,"description":"是否真的发巡检邮件。默认否 —— 本机已有「游戏服每日巡检（10:00 邮件）」自动化，两边都发会重复。要在 Jenkins 里发信再勾"},
+    {"name":"TO","type":"string","default":"","description":"覆盖收件人邮箱（留空用脚本默认）"}
+  ]
+}
+META*/
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    timeout(time: 20, unit: 'MINUTES')
+    buildDiscarder(logRotator(daysToKeepStr: '90', numToKeepStr: '120'))
+  }
+
+  environment {
+    PROJ = '/Users/wangxufeng/Documents/TimeSpaceGirl1'
+    PY   = '/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python'
+    BASH = '/usr/local/bin/bash'
+  }
+
+  stages {
+
+    stage('① 准备与取证') {
+      steps {
+        script {
+          env.TS_RUN_DIR = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
+          env.TS_TO      = params.TO.trim()
+        }
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ" || exit 2
+mkdir -p "$TS_RUN_DIR/logs"
+{
+  echo "运行：$JOB_NAME #$BUILD_NUMBER"
+  echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
+  echo "目标：gs (129.226.213.65)"
+  echo "发信：$SEND_MAIL 收件人：${TS_TO:-（脚本默认）}"
+  echo ""
+  echo "🔴 巡检默认只读：不重启服务、不改服务器配置。"
+} | tee "$TS_RUN_DIR/context.txt"
+''')
+      }
+    }
+
+    stage('② 采集与体检（只读）') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+"$BASH" .jenkins/lib/run_stage.sh --name "生产服只读巡检" \
+  --group "生产服" --slug remote-health --timeout 900 \
+  -- "$BASH" .jenkins/lib/checks/remote_health.sh
+''')
+      }
+    }
+
+    stage('③ 发送巡检邮件') {
+      when { expression { params.SEND_MAIL } }
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+MAIL_ARGS=(--json)
+[[ -n "${TS_TO:-}" ]] && MAIL_ARGS+=(--to "$TS_TO")
+"$BASH" .jenkins/lib/run_stage.sh --name "发送巡检邮件" \
+  --group "生产服" --slug mail --timeout 600 \
+  -- "$PY" scripts/server_health_check.py "${MAIL_ARGS[@]}"
+''')
+      }
+    }
+
+    stage('④ 趋势与归档') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+mkdir -p "$TS_RUN_DIR/artifacts"
+[[ -f "$TS_RUN_DIR/health.json" ]] && cp "$TS_RUN_DIR/health.json" "$TS_RUN_DIR/artifacts/"
+[[ -f "$TS_RUN_DIR/health-report.txt" ]] && cp "$TS_RUN_DIR/health-report.txt" "$TS_RUN_DIR/artifacts/"
+# 巡检脚本自己的留档（scripts/logs/YYYY-MM-DD.log）也带上，便于和历史对齐
+TODAY="$(date +%F)"
+if [[ -f "scripts/logs/$TODAY.log" ]]; then
+  cp "scripts/logs/$TODAY.log" "$TS_RUN_DIR/artifacts/health-log-$TODAY.log"
+  echo "已收取脚本留档 scripts/logs/$TODAY.log"
+fi
+"$PY" .jenkins/lib/stage_report.py add --run "$TS_RUN_DIR" \
+  --name "报告归档" --group "交付" --status pass \
+  --detail "$(ls -1 "$TS_RUN_DIR/artifacts" 2>/dev/null | tr '\n' ' ')"
+''')
+      }
+    }
+  }
+
+  post {
+    always {
+      script {
+        sh(returnStatus: true, script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ" 2>/dev/null || true
+mkdir -p "$TS_RUN_DIR/logs"
+"$PY" .jenkins/lib/stage_report.py junit --run "$TS_RUN_DIR" \
+  --out "$TS_RUN_DIR/junit.xml" --suite "$JOB_NAME" || true
+"$PY" .jenkins/lib/stage_report.py summary --run "$TS_RUN_DIR" \
+  --out "$TS_RUN_DIR/summary.md" --title "$JOB_NAME #$BUILD_NUMBER" || true
+# 每次都重建本 job 的 evidence/：
+# workspace 不做 cleanWs，而 `cp -R` 只增不删 ⇒ 上几次构建的 stages/*.json 会被一起归档，
+# 看起来像「同一个环节跑了两遍」。实测 2026-10-12 构建#5 的归档里混进了 #3/#4 的记录。
+# 只删本 job 自己的 evidence/（$WORKSPACE 已由 Jenkins 设置，且只在非空时动手）。
+if [[ -n "${WORKSPACE:-}" && -d "$WORKSPACE/evidence" ]]; then
+  rm -rf "$WORKSPACE/evidence"
+fi
+mkdir -p "$WORKSPACE/evidence"
+cp -R "$TS_RUN_DIR/." "$WORKSPACE/evidence/" 2>/dev/null || true
+''')
+
+        if (fileExists("${WORKSPACE}/evidence/junit.xml")) {
+          junit allowEmptyResults: true, skipPublishingChecks: true, testResults: 'evidence/junit.xml'
+        }
+
+        def desc = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
+cd "$PROJ" 2>/dev/null || true
+"$PY" .jenkins/lib/stage_report.py desc --run "$TS_RUN_DIR" 2>/dev/null || true
+''').trim()
+        if (desc) { currentBuild.description = desc }
+
+        def st = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
+cd "$PROJ" 2>/dev/null || true
+"$PY" .jenkins/lib/stage_report.py status --run "$TS_RUN_DIR" 2>/dev/null || echo pass
+''').trim()
+        if (st == 'warn' && currentBuild.currentResult == 'SUCCESS') {
+          currentBuild.result = 'UNSTABLE'
+        }
+
+        archiveArtifacts allowEmptyArchive: true, artifacts: 'evidence/**', fingerprint: false
+      }
+    }
+  }
+}

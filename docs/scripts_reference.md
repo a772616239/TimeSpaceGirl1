@@ -141,19 +141,25 @@ scripts/bump_version.py --set-code 70         # 直接设值
 
 ```bash
 python3 scripts/play_upload.py --aab <path> --dry-run                       # 只读：认证 + 列轨道
+python3 scripts/play_upload.py --aab <path> --track internal --yes           # 传内测（默认轨道，status=completed）
 python3 scripts/play_upload.py --aab <path> --track production --status draft \
         --allow-production-write --yes                                       # 传草稿（不送审）
 python3 scripts/play_upload.py --aab <path> --track production --status completed \
         --allow-production-write --allow-publish --yes                       # 🔴 送审（须先获批）
+python3 scripts/play_upload.py --reuse-version-code 69 --track internal --yes # 🔁 复用已上传号挂轨道（不传文件）
 ```
 
 | 参数 | 说明 |
 |---|---|
-| `--aab` | AAB 路径（必填） |
-| `--package` / `--track` / `--status` | 默认 `com.Warera.timespace` / `production` / **`draft`** |
+| `--aab` | AAB 路径（正常上传必填；用 `--reuse-version-code` 时可省） |
+| `--reuse-version-code N` | 🔁 **不传任何文件**，把 app 已上传过的 N 写进目标轨道（Play 原生 track promotion）。与 `--aab` 互斥。因不产生新上传 ⇒ 不受「versionCode 必须递增」约束 |
+| `--package` / `--track` / `--status` | 默认 `com.Warera.timespace` / **`internal`** / 按轨道推导（internal ⇒ `completed`，其余 ⇒ `draft`） |
 | `--allow-production-write` | 🔴 放行 production 轨道写操作，不传一律拒绝 |
-| `--allow-publish` | 🔴 放行 `completed`/`inProgress`，不传一律拒绝 |
+| `--allow-publish` | 🔴 放行非 internal 轨道的 `completed`/`inProgress`，不传一律拒绝（internal 豁免） |
 | `--user-fraction` / `--release-notes` / `--service-account` / `--dry-run` / `--yes` | 同前 |
+
+🔴 **versionCode 是 app 级全局的**：撞车判定取**全部轨道**的全局最大值（不是只看目标轨道），
+否则会白跑整包上传、到 Play 才被拒。🔁 复用已上传号时改用 `bundles().list()` 查号池。
 
 **已内置的健壮性修复**（勿回退）：上传超时 `300s`、分块 `8MB`、断点续传重试；
 `tracks.update` / `edits.commit` 可重试 + commit 结果回查兜底。

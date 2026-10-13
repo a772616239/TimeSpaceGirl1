@@ -68,9 +68,22 @@
 - ⛔ `--changes-not-sent-for-review`（即 `changesNotSentForReview=true`）**只对 internal/alpha/beta 有效**，传 production 会被脚本 `die`（`play_upload.py` 内有硬校验）。
 - ✅ 已修：`aab_release.sh` 末尾的结论文案现在按轨道分支打印（internal / draft / 其它），不再对 draft 说「会进入审核」。
 - 🔴 **Play 各轨道共享同一个 versionCode 空间** —— 一个号传过一次就永久占用，换轨道重传同号同样被拒。「传 internal 省号」是错觉。
+  - 撞车判定必须是 **app 级全局**：`play_upload.py` 用 `all_track_version_codes()`（全部轨道全局最大值）判定，
+    **不能只看目标轨道** —— 2026-10-13 实测踩到：internal 当前最大才 v61，vc69 会通过本地检查、
+    白跑 437MB / 约 8 分钟整包上传，到 Play 才被拒（`Version code N has already been used`）。
+- 🔁 **复用已上传号 = track promotion（2026-10-13 新增 `--reuse-version-code N`）**：不传任何文件，
+  只把 app **已上传过**的号写进目标轨道。用于「已在 production 的同一版包也挂到 internal」这类需求。
+  - 与 `--aab` 互斥（`--aab` 已改为可选）；复用前用 `app_bundle_version_codes()`（`bundles().list()`）
+    查号在不在池里，不在则 rc=5。🔴 必须用 `bundles().list()` 而非 `tracks().list` —— 后者只反映
+    各轨道**当前**发布，老号滚掉就看不到；要复用的号可能已滚掉却仍在池里。
+  - 因为不产生新上传 ⇒ **不受「必须严格递增」约束**（该号本就是已用过的）。
+  - 实测命令：`play_upload.py --reuse-version-code 69 --track internal --yes`（vc69 已挂上 internal）
 - 复核现状（只读内容，但会 `edits.insert`）：`play_upload.py --dry-run`，看 `[tracks]` 段 —— draft 与 completed 并存时形如 `production  draft v69; completed v68`。⚠️ **上传/发布进行中不要跑**（见上节 edit 互斥）。⚠️ 若目标是**已在轨道上**的 versionCode，dry-run 会以「版本号撞车」失败退出（预期行为，说明号确实上去了）。
 - 完整命令：`scripts/aab_release.sh --skip-build --aab <path>.aab --upload --yes`（→ internal，默认）
   / `scripts/aab_release.sh --skip-build --aab <path>.aab --upload --production --status draft --yes`（→ production 草稿）
+  / `play_upload.py --reuse-version-code <N> --track internal --yes`（复用已上传号，不传文件）
+- **2026-10-13 轨道实测**：`production completed v69`（已上线）/ `internal completed v69`（复用挂上）/ beta·alpha 空；
+  app bundle 池 = `[1,6,24,26,27,61,64,65,66,67,68,69]` ⇒ **下一个新号必须 ≥ 70**。
 
 ## Play 16KB 合规巡检（2026-10-12 起）
 - 工具 `scripts/play_16kb_watch.py`（轨道现状 + 两层取证 + diff + 邮件）；定时任务 id `ea56e5de-abc2-45c2-abb9-401505a65a96`（每 3 天 10:00）。

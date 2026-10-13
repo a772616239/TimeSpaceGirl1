@@ -1,16 +1,16 @@
 /**@META
 {
-  "description": "Android 发版全链路（AAB）：发布安全闸门 → 打包环境预检 → 提版本号 → Unity 构建 → 包内三重校验（出包口径 / native 16KB / 交付自检）→ 归档 →（可选）人工审批后上传 Play。默认只出包、不上传、status=draft。",
+  "description": "Android 发版全链路（AAB）：发布安全闸门 → 打包环境预检 → 提版本号 → Unity 构建 → 包内三重校验（出包口径 / native 16KB / 交付自检）→ 归档 →（可选）人工审批后上传 Play。默认只出包、不上传；上传默认走 internal 内部测试轨道（status=completed，测试员即可安装），发正式版 production 必须显式勾 PUBLISH 抬旗。",
   "concurrent": false,
   "params": [
     {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","dev","full"],"default":"minimal","description":"核验口径（包内 12 位开关应等于哪一档）。⚠️ CLI 构建固定 minimal（CLIBuilder.kProfile 硬编码），选 dev/full 只应用于配合 REUSE_AAB 核验 GUI/手工出的包"},
-    {"name":"BUMP_VERSION","type":"bool","default":true,"description":"构建前把 versionCode +1。CLI 打包不自增，传 production 必须严格递增"},
+    {"name":"BUMP_VERSION","type":"bool","default":true,"description":"构建前把 versionCode +1。CLI 打包不自增；Play 各轨道共享 versionCode 空间，重复号一律被拒"},
     {"name":"REUSE_AAB","type":"string","default":"","description":"复用已有 AAB 的路径（填了就跳过 Unity 构建，只做校验/上传）"},
     {"name":"ALLOW_NO_LUA","type":"bool","default":false,"description":"强行跳过「未发现 Lua bundle」闸门（风险自负，会打出没有 Lua 的废包）"},
     {"name":"UPLOAD","type":"bool","default":false,"description":"🔴 是否上传到 Google Play。默认否。勾上后仍需通过人工审批；是否送审另由 STATUS/PUBLISH 决定"},
-    {"name":"TRACK","type":"choice","choices":["production","beta","alpha","internal"],"default":"production","description":"上传轨道"},
-    {"name":"STATUS","type":"choice","choices":["draft","inProgress","completed"],"default":"draft","description":"发布状态：draft=草稿（不送审）/ completed=提交审核 = 上线"},
-    {"name":"PUBLISH","type":"bool","default":false,"description":"🔴 才允许 STATUS=completed/inProgress。要送审必须先拿到用户明确同意"},
+    {"name":"TRACK","type":"choice","choices":["internal","alpha","beta","production"],"default":"internal","description":"上传轨道。默认 internal=内部测试（不面向公众、免常规审核、几分钟可装）；production=正式版，需同时勾 PUBLISH"},
+    {"name":"STATUS","type":"choice","choices":["completed","draft","inProgress"],"default":"completed","description":"发布状态。internal 轨道 completed 即测试员可装；**非 internal 轨道**的 completed/inProgress 必须同时勾 PUBLISH"},
+    {"name":"PUBLISH","type":"bool","default":false,"description":"🔴 只对非 internal 轨道生效：放行 STATUS=completed/inProgress（= 提交审核 / 上线），须先拿到用户明确同意。internal 轨道不需要"},
     {"name":"NOTES","type":"string","default":"","description":"更新说明（Play 发布说明）"}
   ]
 }
@@ -250,20 +250,27 @@ cat "$TS_RUN_DIR/aab.path" 2>/dev/null || true
 
           // 闸门复核：与 aab_release.sh / play_upload.py 内的两层校验独立，这里是第三层，
           // 目的是把「为什么被拒」在审批之前就讲清楚，而不是等上传脚本报错。
-          if (params.STATUS in ['completed', 'inProgress'] && !params.PUBLISH) {
-            error("拒绝送审：STATUS=${params.STATUS} 等于「提交审核 / 上线」，必须同时勾选 PUBLISH 表示已获批准。"
-                + "只想上传草稿请把 STATUS 保持为 draft。")
+          // internal 内部测试轨道不面向公众、可随时 halt/替换 ⇒ 豁免 PUBLISH。
+          // 其余轨道（production / beta / alpha）的 completed/inProgress = 送审 / 上线，
+          // 属「对外生效、不可轻易撤回」的动作，必须另勾 PUBLISH。
+          if (params.TRACK != 'internal' && params.STATUS in ['completed', 'inProgress'] && !params.PUBLISH) {
+            error("拒绝送审：轨道 ${params.TRACK} 上的 STATUS=${params.STATUS} 等于「提交审核 / 上线」，"
+                + "必须同时勾选 PUBLISH 表示已获批准。只想上传草稿请把 STATUS 改为 draft。"
+                + "（internal 内部测试轨道不受此限。）")
           }
           if (!aab) {
             error("找不到本次构建的 AAB（${env.TS_RUN_DIR}/aab.path 为空），无法上传。")
           }
 
+          def trackNote = params.TRACK == 'internal'
+              ? '（内部测试，不面向公众、免常规审核，测试员几分钟内可装）'
+              : (params.STATUS == 'draft' ? '（草稿，不会送审）' : '  🔴 会提交审核 / 上线')
           def msg = """即将上传到 Google Play，请确认：
   AAB      : ${aab}
   口径     : ${params.PROFILE}
   轨道     : ${params.TRACK}
-  状态     : ${params.STATUS}${params.STATUS == 'draft' ? '（草稿，不会送审）' : '  🔴 会提交审核 / 上线'}
-  送审旗标 : ${params.PUBLISH}
+  状态     : ${params.STATUS} ${trackNote}
+  送审旗标 : ${params.PUBLISH}${params.TRACK == 'internal' ? '（internal 轨道不需要）' : ''}
   更新说明 : ${params.NOTES ?: '（空）'}
 
 确认无误请点「确认上传」；不想传点「中止」。"""
@@ -276,7 +283,8 @@ AAB="$(cat "$TS_RUN_DIR/aab.path")"
 
 UPLOAD_ARGS=(--aab "$AAB" --track "$TS_TRACK" --status "$TS_STATUS" --yes)
 [[ "$TS_TRACK" == "production" ]] && UPLOAD_ARGS+=(--allow-production-write)
-if [[ "$TS_STATUS" == "completed" || "$TS_STATUS" == "inProgress" ]]; then
+# internal 轨道豁免 --allow-publish（内部测试不面向公众、可随时 halt）；其余轨道送审才需要
+if [[ "$TS_TRACK" != "internal" && ( "$TS_STATUS" == "completed" || "$TS_STATUS" == "inProgress" ) ]]; then
   UPLOAD_ARGS+=(--allow-publish)
 fi
 [[ -n "${TS_NOTES:-}" ]] && UPLOAD_ARGS+=(--release-notes "$TS_NOTES")

@@ -16,7 +16,7 @@
 set -uo pipefail
 
 PROJ="${PROJ:-/Users/wangxufeng/Documents/TimeSpaceGirl1}"
-UNITY="${UNITY:-/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity}"
+UNITY="${UNITY:-/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity}"
 PY="${PY:-/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python}"
 BT="${BT:-$HOME/Library/Android/sdk/build-tools/36.0.0}"
 

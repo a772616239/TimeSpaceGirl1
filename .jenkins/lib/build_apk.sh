@@ -23,7 +23,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 PROJ="${PROJ:-$ROOT}"
 PY="${PY:-/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python}"
 BASH_BIN="${BASH:-/usr/local/bin/bash}"
-UNITY="${UNITY:-/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity}"
+UNITY="${UNITY:-/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity}"
 RUN_DIR="${TS_RUN_DIR:-$ROOT/.jenkins/run/$(date +%Y%m%d-%H%M%S)}"
 
 DO_BUMP=1

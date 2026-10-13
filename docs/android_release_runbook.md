@@ -370,10 +370,25 @@ AAB 体积基准随引擎升级上移，**不是资源变多**，逐文件归因
 + 原生库 +2.2（`libunity.so` +2.34，被 Firebase 12.10.1 −0.35 抵消一部分）
 + Data +1.3（`global-metadata.dat` +0.80、内置 `unity default resources` +0.49）；dex / res 基本持平。
 
-🔴 **附带异常**：包内 AB 的**原始**字节数 411 MiB → 906 MiB（+495 MiB，2.2x），
-被 AAB 自身 deflate 吸收，故 AAB 只多 13 MiB；同一个 bundle 磁盘 2.58→11.54 MiB
-而 zlib 后 2.32→2.35 MiB（熵 7.58→4.91）⇒ Unity 6 的 `ChunkBasedCompression`
-输出比 2022.3 松得多（脚本未改）。影响装机占用与热更体量，未决。
+🔴 **附带异常（已定位根因）**：包内 AB 的**原始**字节数 411 MiB → 906 MiB（+495 MiB，2.2x）。
+根因**不是「压缩档位变松」，而是 Unity 6 打出的 AB 正文内容块完全未压缩**：解析 UnityFS
+分块表，旧包每 128 KiB 一块、块压缩类型 = LZ4HC（3），新包整包单块、类型 = None（0）。
+抽样 `BuildABs/Android/**` 各 200 个包：Unity 6 **200/200 全部未压缩（整体压缩率 1.0000）**，
+2022.3 备份 **197/200 为 LZ4HC（整体压缩率 0.4253）**。同一次构建里唯一例外是 `files.unity3d`
+（走 `AssetBundleBuilder.BuildAssetBundle` 单包路径）仍被 LZMA 正常压缩（比率 0.155）
+⇒ 不是「引擎全盘禁用压缩」，而是**某条打包路径在 Unity 6 下失效**，有修复空间。
+
+已排除「设置 / 代码」两条线：升级期间 AB 打包代码的唯一改动是删掉 Unity 6 已移除的
+`DeterministicAssetBundle` 位（`bd5454371`），`UncompressedAssetBundle` / `ChunkBasedCompression` /
+`None` 三个压缩选项**原样保留**；`ProjectSettings.asset` 无 AB 压缩开关
+（`androidSplitApplicationBinary: 0`）、EditorPrefs 无「多进程 AB 构建」开关。
+官方文档亦确认语义未变（SBP 升级文档原话：ChunkBasedCompression *"has always been LZ4HC
+in the Editor"*）。⇒ **属 Unity 6 引擎侧行为变化**；社区同类案例见 Magic Leap 论坛
+（2026-01，Unity 官方回复定性为 *"Unity Engine issue"*，用户最终降级 2022.3）。
+
+影响：AAB 下发体积无感（被 zip deflate 吸收，仅 +16.2 MiB）；但**装机后 StreamingAssets
+解包占用与热更 CDN 体量翻倍**。未决 —— 待做受控实验定位触发条件（批量 `AssetBundleBuild[]`
+vs 单包路径），再定修复方案（改用 SBP 显式 `BuildCompression` 或构建后置重压）。
 
 ---
 

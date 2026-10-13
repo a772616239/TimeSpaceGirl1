@@ -25,7 +25,7 @@
 - 发版时应同时推进 versionName：`bump_version.py --bump-name`（本次未执行，属待改流程缺陷）。
 
 ## 认证 / 授权
-- 认证 = Google Cloud service account JSON。🔴 **Cloud 建完账号 ≠ 能发布**：必须在 Play Console「用户和权限」把该邮箱加为发布用户并勾「发布到正式版」，否则 API 一律 403。密钥放 `~/.gplay/service-account.json`（仓库外），Cloud 项目 `platinum-loop-468100-k5`。
+- 认证 = Google Cloud service account JSON。🔴 **Cloud 建完账号 ≠ 能发布**：必须在 Play Console「用户和权限」把该邮箱加为发布用户并勾「发布到正式版」，否则 API 一律 403。密钥**优先放工程本地 `.secrets/service-account.json`**（回退 `~/.gplay/service-account.json`，仓库外），Cloud 项目 `platinum-loop-468100-k5`。布局 / 优先级 / 换机恢复见 `docs/secrets_setup.md`。
 - 依赖 `google-api-python-client` + `google-auth`（⚠️ PyPI 直连超时，**用清华镜像** `-i https://pypi.tuna.tsinghua.edu.cn/simple`）。本机无 fastlane/Ruby，故走 API 直连。
 
 ## 🔴 上传 421MB 大包：必须放宽超时 + 缩小分块（2026-10-12 实测踩坑）

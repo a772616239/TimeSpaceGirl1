@@ -16,7 +16,7 @@
 
 ## 项目 / 生产环境
 - Unity 手游「时空美少女/时空战场」客户端 + 同仓 `TimeSpaceServer/`；远端 `a772616239/TimeSpaceGirl1`（~3.3GB，public）。
-- SSH 别名 `gs` → 129.226.213.65（腾讯云 CentOS7，内网 10.3.0.15），私钥 `~/.ssh/tencent-gameserver.pem`；上传助手 `~/server-push.sh`。
+- SSH 别名 `gs` → 129.226.213.65（腾讯云 CentOS7，内网 10.3.0.15）；私钥优先取工程本地 `.secrets/tencent-gameserver.pem`，回退 `~/.ssh/tencent-gameserver.pem`；上传助手 `~/server-push.sh`。
 - **2vCPU / 3.6GB RAM / 59G 盘 → 已榨干，不能再起第二个 gameserver。**
 - `/home/java/{gameserver,loginserver,chatserver,xxljob}`；Mongo/Redis/Nginx 由宝塔管。`gameSrv-1.0.0.jar`（netty 16081，`-Xms1280m -Xmx1280m`）、Tomcat 8.5.95 登录服 8080、mongod 27017、redis 6379（**无密码**、`bind 127.0.0.1`）。
 - 重启 `/home/java/gameserver/RESTART-GAMESERVER.sh`（幂等）。日志 `/data/srvlog/{gameserver,chatserver}.log`。🔴 Mongo 连接串**必须含 `authSource=admin`**。
@@ -34,7 +34,7 @@
 
 ## 巡检
 - `scripts/server_health_check.py`：本机 SSH 采集 → QQ SMTP 发信 → 留档 `scripts/logs/`。定时任务 id `fb2c3e4c-7290-4cfa-9606-83cd5144f03c`（每日 10:00）。
-- SMTP `smtp.qq.com:465` SSL（回退 587），收发 `772616239@qq.com`。授权码优先级：`~/.gs_health.env` → `/Volumes/S/TD/.env`（**当前有效**）→ `~/TD-recovery/.env` → `~/TD-salvage-20260911/.env`（失效）；脚本逐个试登录自动跳过失效口令。
+- SMTP `smtp.qq.com:465` SSL（回退 587），收发 `772616239@qq.com`。授权码优先级：**工程本地 `.secrets/health.env`** → `~/.gs_health.env` → `/Volumes/S/TD/.env`（**当前有效**）→ `~/TD-recovery/.env` → `~/TD-salvage-20260911/.env`（失效）；脚本逐个试登录自动跳过失效口令，**缺失文件也安全跳过**。
 
 ## 🔴 客户端 Lua：改完必须重生成 LuaBytes 字节码
 - 真机跑**预编译字节码**（`!isEditor` 时 `GameSettings.cs:112-117` 强制 `luaBundleMode=true` → 读 `Assets/ManagedResources/LuaBytes/<路径下划线化>_64.bytes`）；只有 Editor 回落 `~Lua/*.lua`。
@@ -58,7 +58,7 @@
 - 🔴 **上传期间禁止并发调用任何 Play API**（多进程开 edit 会互删，实测 85% 处 `HTTP 400 FAILED_PRECONDITION`）。
 - 🔴 **账号名 = f(登录 SDK 给的 id)**，换 SDK 就等于换号；Android `platformId==1` **必须走 Google Sign-In（`f74ffb436`），勿改回 PlayGames**。
 - 出包配置真源 `Assets/Editor/ReleaseBuildSettings.cs`（`297b9ba9f`）；线上渠道值就是 `None`、`isSDK=false` 是**正常**的。
-- 🔑 **Play 凭据**：`~/.gplay/service-account.json`（700/600），账号 `play-publisher@platinum-loop-468100-k5.iam.gserviceaccount.com`，project `platinum-loop-468100-k5`。优先级 `--service-account` > `$GOOGLE_PLAY_SERVICE_ACCOUNT` > 该默认路径（`play_16kb_watch.py` 只认默认路径）。venv `/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python` 已装 google-api-python-client。
+- 🔑 **Play 凭据**：优先**工程本地 `.secrets/service-account.json`**（700/600），回退 `~/.gplay/service-account.json`。账号 `play-publisher@platinum-loop-468100-k5.iam.gserviceaccount.com`，project `platinum-loop-468100-k5`。优先级 `--service-account` > `$GOOGLE_PLAY_SERVICE_ACCOUNT` > 工程本地 > `~/.gplay`（`play_16kb_watch.py` 也已同步为工程本地优先）。venv `/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python` 已装 google-api-python-client。
 
 ## 全流程 CI（Jenkins）→ 细节见 `REF-jenkins-ci.md`
 - **7 个 job**（本机 2.568，`http://127.0.0.1:8080/`，视图「时空美少女 · 全流程」）：`TS-Pipeline-Overview` / `TS-Android-Release` / `TS-Android-TestPackage` / `TS-Client-Resources` / `TS-Server-Health`(H 10) / `TS-Server-Ops` / `TS-Play-Watch`(H 9)。
@@ -72,6 +72,7 @@
 - 🔴 重启生产游戏服（会踢线）**必须先取得用户确认**。
 - 🔴 代码改动逐条 commit，中文 `type(scope): 摘要`，**严禁 `git add -A`**；客户端 Lua 改动须源码 + LuaBytes 成对提交。
 - 🔴 本项目 skill 与记忆**一律写在工程目录下**：记忆 → `.workbuddy/memory/`；Skill → `.workbuddy/skills/<name>/SKILL.md`。
+- 🔴 **凭据一律放工程本地 `.secrets/`**（目录 700、文件 600，`.gitignore` 整目录排除、**永不入库**）：Play service account、服务器 SSH pem、巡检 SMTP 授权码。布局 / 解析优先级 / 换机恢复步骤见 `docs/secrets_setup.md`。⚠️ 远端 `a772616239/TimeSpaceGirl1` 是 **PUBLIC 仓库**，`.gitignore` 只挡未来提交、**摘不出已入库的文件** —— 仓内 4 个签名 keystore（`user.keystore` / `beauty.keystore` / `keystore/emiplay.keystore` / `userGP_for_total_war.keystore`）是 2025-07 进公开库的历史遗留，**待处置**。
 - 🔴 **后台长任务（>1 分钟）不能用 `nohup cmd &` / `disown`**：几十秒内会被**父会话进程组清理**杀掉（日志只留第一行、无报错，极易误判成脚本 bug）。唯一可靠姿势 `python -c "subprocess.Popen([...], stdout/stderr/stdin=DEVNULL, start_new_session=True)"`；判活要在**下一次工具调用**里 `pgrep`/`lsof`，不能同一调用内 sleep 后查。详见 skill `background-longrun-detach-macos`。
 - 🔴 **shell 脚本含中文标点时变量必须写 `${VAR}` 花括号**：`set -u` 下 `"…$STATUS）"` 会因全角括号字节并入变量名而报 `unbound variable`。
 - 🔴 **`set -o pipefail` 下 `cmd | head -1` 必须加 `|| true`**：head 早退 → cmd 收 SIGPIPE(141) → pipefail 视为失败 → `set -e` 中止。

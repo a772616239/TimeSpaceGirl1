@@ -3,7 +3,10 @@
 """
 Google Play AAB 上传器 —— 走 Play Developer API v3（androidpublisher）。
 
-用途：把 Unity 打出的 .aab 上传到 Google Play，并发布到指定轨道（默认 production）。
+用途：把 Unity 打出的 .aab 上传到 Google Play，并发布到指定轨道。
+      🔴 **默认 Track = internal（内部测试轨道）**：不面向公众、免常规审核、
+      上传后几分钟测试员即可安装（2026-10-13 用户要求「不要直接传正式环境，
+      传内部测试的管线」）。要写 production 必须再显式抬 --allow-production-write。
 
 依赖：
     google-api-python-client, google-auth
@@ -11,13 +14,19 @@ Google Play AAB 上传器 —— 走 Play Developer API v3（androidpublisher）
 
 认证：
     需要 Google Cloud service account 的 JSON 密钥，且该 service account 的邮箱
-    已在 Play Console → 用户和权限 中被授予「发布到正式版」权限。
+    已在 Play Console → 用户和权限 中被授权：
+      - 传 internal / alpha / beta ⇒ 勾「管理测试轨道和修改测试人员列表」
+      - 传 production             ⇒ 另需勾「发布到正式版、排除设备并使用 Google Play 应用签名」
     密钥路径优先级：--service-account > $GOOGLE_PLAY_SERVICE_ACCOUNT > ~/.gplay/service-account.json
     申请与授权步骤见 docs/google_play_upload_setup.md
 
 用法示例：
     # 先干跑：只认证 + 列出各轨道现状，不上传（只读，不受闸门限制）
     python3 scripts/play_upload.py --aab apks/2026-10-11/CLIBuild/120000.aab --dry-run
+
+    # ★ 默认用法：传 internal 内部测试轨道，status 默认 completed ⇒ 测试员几分钟内可装。
+    #   internal 不面向公众、可随时 halt/替换 ⇒ 不需要任何放行旗标。
+    python3 scripts/play_upload.py --aab <path>.aab --yes
 
     # 上传成 production 草稿（不送审）
     python3 scripts/play_upload.py --aab <path>.aab --track production --status draft \
@@ -430,14 +439,16 @@ def main() -> int:
     )
     ap.add_argument("--aab", required=True, help="AAB 文件路径")
     ap.add_argument("--package", default=DEFAULT_PACKAGE, help=f"应用包名（默认 {DEFAULT_PACKAGE}）")
-    ap.add_argument("--track", default="production",
-                    help="目标轨道：production / beta / alpha / internal（默认 production）")
-    ap.add_argument("--status", default="draft", choices=sorted(VALID_STATUS),
-                    help="发布状态（默认 draft=草稿，不送审）。要 completed/inProgress 必须另加 --allow-publish")
+    ap.add_argument("--track", default="internal",
+                    help="目标轨道：internal（内部测试，默认）/ alpha / beta / production")
+    ap.add_argument("--status", default=None, choices=sorted(VALID_STATUS),
+                    help="发布状态。不传则按轨道推导：internal ⇒ completed（内部测试免常规审核、"
+                         "可随时 halt/替换）；其余轨道 ⇒ draft（不送审）")
     ap.add_argument("--allow-production-write", action="store_true",
                     help="🔴 显式放行对 production 轨道的写操作。不传则一律拒绝（2026-10-12 起）")
     ap.add_argument("--allow-publish", action="store_true",
-                    help="🔴 显式放行 status=completed/inProgress（= 提交 Google 审核 / 上线）。不传则一律拒绝")
+                    help="🔴 显式放行**非 internal 轨道**的 status=completed/inProgress"
+                         "（= 提交 Google 审核 / 上线）。不传则一律拒绝")
     ap.add_argument("--user-fraction", type=float, default=None,
                     help="分阶段放量比例 0~1，仅 status=inProgress 时有效")
     ap.add_argument("--release-notes", default=None,
@@ -452,6 +463,12 @@ def main() -> int:
                     help="提交但不送审（仅 internal/alpha/beta 有效）")
     args = ap.parse_args()
 
+    # 默认发布状态按轨道推导（与 aab_release.sh 的 STATUS_FOR_INTERNAL / STATUS_FOR_OTHER 对齐）：
+    #   internal ⇒ completed：草稿在内部测试轨道上等于「没传」，测试员根本看不到。
+    #   其余轨道 ⇒ draft：production 的 completed = 送审 + 上线，必须由人另抬 --allow-publish。
+    if args.status is None:
+        args.status = "completed" if args.track == "internal" else "draft"
+
     aab = Path(args.aab).expanduser().resolve()
     if not aab.is_file():
         die(f"AAB 不存在：{aab}", 2)
@@ -465,28 +482,39 @@ def main() -> int:
         die("--user-fraction 必须在 (0, 1] 区间", 2)
 
     # ----------------------------------------------------------------------- #
-    # 🔴 发布闸门（2026-10-12 加）
+    # 🔴 发布闸门（2026-10-12 加，2026-10-13 收紧）
     #
     # 背景：用户明确要求「不要帮我送审，我要自己看一下」。此前只能靠"记得别写 completed"
     # 这种口头纪律，事实证明不可靠 —— 仓库里有 3 处会写 Play 的入口，任一处漏传 --status
     # 就会走默认 completed（= 直接送审 + 上线）。
     # ⇒ 改成默认拒绝：production 写入要 --allow-production-write，非 draft 状态要 --allow-publish。
     #   两个旗标都只能由人显式敲出来，脚本之间不会互相传递。
+    # 2026-10-13：默认轨道由 production 改为 **internal**（内部测试管线），
+    #   并让 internal 豁免 --allow-publish —— 它天生就是给内部测试员装的，不面向公众。
     #   --dry-run 是只读，不受限。
     # ----------------------------------------------------------------------- #
     if not args.dry_run:
         if args.track == "production" and not args.allow_production_write:
             die(
                 "拒绝对 production 轨道做写操作。\n"
-                "   本脚本默认拒绝任何 production 写入。若确实要上传（且已取得用户明确同意），\n"
-                "   请显式加 --allow-production-write；只想看现状请用 --dry-run。",
+                "   本脚本默认只传 internal（内部测试轨道）。若确实要写 production\n"
+                "   （且已取得用户明确同意），请显式加 --allow-production-write；\n"
+                "   只想看现状请用 --dry-run。",
                 2,
             )
-        if args.status in ("completed", "inProgress") and not args.allow_publish:
+        # internal 轨道 = 内部测试：不面向公众、免常规审核、可随时 halt/替换 ⇒ 豁免。
+        # 其余轨道（production / beta / alpha）的 completed/inProgress 属「对外生效、
+        # 不可轻易撤回」的动作，必须先取得用户明确同意再显式加 --allow-publish。
+        if (
+            args.track != "internal"
+            and args.status in ("completed", "inProgress")
+            and not args.allow_publish
+        ):
             die(
                 f"拒绝把包置为 status={args.status}（= 提交 Google 审核 / 上线）。\n"
                 "   这属于「对外生效、不可轻易撤回」的动作，必须先取得用户明确同意，\n"
-                "   再显式加 --allow-publish。只上传成草稿请用 --status draft。",
+                "   再显式加 --allow-publish。只上传成草稿请用 --status draft。\n"
+                "   （internal 内部测试轨道不受此限 —— 它不面向公众。）",
                 2,
             )
 
@@ -563,6 +591,8 @@ def main() -> int:
                 + "。")
             if args.track == "production":
                 log("    production = 正式版，将进入 Google 审核并面向全部用户。")
+            elif args.track == "internal":
+                log("    internal = 内部测试轨道，不面向公众、免常规审核，测试员几分钟内即可安装。")
             ans = input("    确认继续？输入 yes 回车：").strip().lower()
             if ans != "yes":
                 log("[abort] 用户取消。删除 edit 后退出。")
@@ -660,7 +690,10 @@ def main() -> int:
                 raise
         log("")
         log(f"✅ 提交成功：{args.package} -> {args.track} / versionCode {uploaded_vc}")
-        if args.track == "production":
+        if args.track == "internal":
+            log("   内部测试轨道：测试员打开内部测试链接即可安装"
+                "（首次发布后商店名称/商品详情的展示可能有最长 48h 延迟）。")
+        elif args.track == "production":
             log("   提示：「会进入审核」仅适用于 status=completed；status=draft 只保存草稿，需人工在 Console 发布。")
         return 0
 

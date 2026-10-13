@@ -8,14 +8,19 @@
 #   scripts/aab_release.sh --skip-build             # 复用最近一个 AAB，跳过 Unity 打包
 #   scripts/aab_release.sh --no-bump                # 不动 versionCode（仅调试用！）
 #
-# 🔴 上传是显式动作（2026-10-12 起，用户要求「不要帮我送审，我要自己看一下」）：
+# 🔴 上传是显式动作，且**默认目标轨道是 internal（内部测试），不是 production**
+#    （2026-10-13 用户要求「不要直接传正式环境，传内部测试的管线」）：
 #     --upload      才会上传；不加则只在本地出包
-#     --production  才允许写 production 轨道
-#     --publish     才允许 status=completed/inProgress（= 送审 + 上线）
-#   默认 --status draft（草稿）。三个旗标必须由人显式敲出来，脚本之间不会互相传递。
+#     --internal    默认。传 Google Play 内部测试轨道，测试员几分钟内可装
+#     --production  才允许写 production 轨道（= 正式版）；不带则一律拒绝
+#     --publish     才允许**非 internal 轨道**用 status=completed/inProgress（= 送审 + 上线）
+#   发布状态按轨道推导：internal ⇒ completed（内部测试不面向公众，免 --publish）；
+#   其余轨道 ⇒ draft（不送审，需人工在 Console 发布）。四个旗标只由人显式敲出，
+#   脚本之间不互相传递。
 #
-#   例：scripts/aab_release.sh --upload --production --status draft   # 传 production 草稿
-#       scripts/aab_release.sh --upload --production --publish        # 正式发布（需先获批准！）
+#   例：scripts/aab_release.sh --upload                             # 传 internal（默认，立即可测）
+#       scripts/aab_release.sh --upload --production --status draft  # 传 production 草稿
+#       scripts/aab_release.sh --upload --production --publish       # 正式发布（需先获批准！）
 #
 # 前置检查里有一道 AssetBundle 闸门：若 StreamingAssets 里找不到任何 Lua bundle
 # 会直接中止（因为这样打出的 AAB 真机起不来）。确认要发不含 Lua 的包时加
@@ -25,7 +30,9 @@
 #   - 默认会先把 AndroidBundleVersionCode +1、bundleVersion 末位 +1（CLI 打包本身
 #     不自增，详见 scripts/bump_version.py 头部注释）。产物名形如
 #     apks/{日期}/CLIBuild/1.2.50_vc69_175432.aab —— 文件名直接带 versionCode。
-#   - production 轨道要求 versionCode 严格递增，否则提交必被 Play 拒绝。
+#   - 🔴 Play 的**所有轨道共享同一个 versionCode 空间**：一个号上传过一次就永久占用，
+#     换个轨道重传同一个号同样会被拒。所以无论传 internal 还是 production，
+#     versionCode 都必须递增。
 #   - 密钥默认读 ~/.gplay/service-account.json，可用 --key 覆盖。
 #     申请与授权步骤见 docs/google_play_upload_setup.md
 # =============================================================================
@@ -37,8 +44,10 @@ VENV_PY="/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python"
 BUILD_LOG="${PROJECT_ROOT}/build_log_aab_main.txt"
 PACKAGE_NAME="com.Warera.timespace"
 
-TRACK="production"
-STATUS="draft"          # 🔴 默认草稿（不送审）；completed/inProgress 需 --publish
+TRACK="internal"        # 🔴 默认 internal（内部测试轨道）；production 需 --production 显式抬旗
+STATUS=""               # 🔴 空 = 按轨道推导，见下方「默认发布状态」
+STATUS_FOR_INTERNAL="completed"  # internal：传完测试员即可装（内部测试不面向公众 ⇒ 免 --publish）
+STATUS_FOR_OTHER="draft"         # 其余轨道：只存草稿（不送审）；送审另需 --publish
 USER_FRACTION=""
 NOTES=""
 KEY=""
@@ -65,15 +74,17 @@ while [[ $# -gt 0 ]]; do
         --aab)            EXPLICIT_AAB="$2"; SKIP_BUILD=1; shift 2 ;;
         --no-bump)        DO_BUMP=0; shift ;;
         --skip-build)     SKIP_BUILD=1; shift ;;
-        # 🔴 闸门旗标（2026-10-12）：必须由人显式敲出来，脚本之间不互相传递
+        # 🔴 轨道 / 闸门旗标：必须由人显式敲出来，脚本之间不互相传递
         --upload)         DO_UPLOAD=1; shift ;;
+        --internal)       TRACK="internal"; shift ;;      # 内部测试轨道（默认）
         --production)     ALLOW_PROD=1; TRACK="production"; shift ;;
         --publish)        ALLOW_PUBLISH=1; shift ;;
         --no-upload)      DO_UPLOAD=0; shift ;;   # 保留兼容；现已是默认
         --dry-run)        DRY_RUN=1; shift ;;
         --allow-no-lua)   ALLOW_NO_LUA=1; shift ;;
         --yes|-y)         ASSUME_YES=1; shift ;;
-        -h|--help)        sed -n '2,31p' "$0"; exit 0 ;;
+        # 用法段 = 从第 3 行到下一个 `# ===…` 分隔线之前（不要再写死行号）
+        -h|--help)        awk 'NR>=3 && /^# =====/{exit} NR>=3{print}' "$0"; exit 0 ;;
         *) echo "未知参数：${1}（用 --help 查看用法）" >&2; exit 2 ;;
     esac
 done
@@ -84,20 +95,41 @@ warn()  { printf '\033[1;33m  ! %s\033[0m\n' "$*"; }
 fail()  { printf '\033[1;31m  ✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 # --------------------------------------------------------------------------- #
+# 默认发布状态（按轨道推导，仅在未显式给 --status 时生效）
+#
+#   internal  ⇒ completed：内部测试轨道不面向公众、免常规审核、可随时 halt/替换；
+#              而草稿在 internal 上等于「没传」（测试员根本看不到）⇒ 默认直接可测。
+#   其余轨道  ⇒ draft：production 的 completed = 送审 + 上线，必须由人另抬 --publish。
+# --------------------------------------------------------------------------- #
+if [[ -z "$STATUS" ]]; then
+    if [[ "$TRACK" == "internal" ]]; then
+        STATUS="$STATUS_FOR_INTERNAL"
+    else
+        STATUS="$STATUS_FOR_OTHER"
+    fi
+fi
+
+# --------------------------------------------------------------------------- #
 # 🔴 发布闸门自检（fail fast，把拒绝理由直接讲清楚）
 #
 # 背景：2026-10-12 用户明确要求「不要帮我送审，我要自己看一下」。此前默认值就是
 # completed（= 直接送审 + 上线），任何一次漏传参数都会造成误送审。
-# ⇒ 现在改成默认拒绝：要上传加 --upload，要写 production 加 --production，
-#   要送审/上线（completed / inProgress）加 --publish。三者缺一即拒。
+# 2026-10-13 再收紧一层：默认轨道从 production 改成 **internal（内部测试管线）**，
+# 正式版必须显式抬 --production。
+# ⇒ 默认拒绝：要上传加 --upload，要写 production 加 --production，
+#   要送审/上线（completed / inProgress）加 --publish —— 但 internal 豁免
+#   --publish（它天生就是给内部测试员装的，不面向公众）。
 # --------------------------------------------------------------------------- #
 if [[ "$DRY_RUN" -eq 0 && "$DO_UPLOAD" -eq 1 ]]; then
     if [[ "$TRACK" == "production" && "$ALLOW_PROD" -eq 0 ]]; then
-        fail "拒绝写 production 轨道：请显式加 --production（只想看现状请用 --dry-run）"
+        fail "拒绝写 production 轨道：默认只传 internal，要发正式版请显式加 --production
+    （只想看现状请用 --dry-run）。"
     fi
-    if [[ "$STATUS" == "completed" || "$STATUS" == "inProgress" ]] && [[ "$ALLOW_PUBLISH" -eq 0 ]]; then
+    if [[ "$TRACK" != "internal" ]] \
+       && [[ "$STATUS" == "completed" || "$STATUS" == "inProgress" ]] \
+       && [[ "$ALLOW_PUBLISH" -eq 0 ]]; then
         fail "拒绝把包置为 status=${STATUS}（= 提交审核 / 上线）：请显式加 --publish。
-    只上传成草稿请用默认的 --status draft（或显式 --status draft）。"
+    只想上传成草稿请用 --status draft。"
     fi
 fi
 
@@ -358,7 +390,8 @@ ok "16KB 硬门槛通过（上面 ⚠️ 列表为 Play 软告警候选，需人
 if [[ "$DO_UPLOAD" -eq 0 ]]; then
     step "跳过上传（默认行为；要上传请显式加 --upload）"
     ok "产物就绪：$AAB"
-    ok "下一步（上传成 production 草稿）：scripts/aab_release.sh --skip-build --upload --production --status draft --yes"
+    ok "下一步（传内部测试轨道 internal，默认）：scripts/aab_release.sh --skip-build --upload --yes"
+    ok "（只有要发正式版才需要抬旗：… --skip-build --upload --production --status draft --yes）"
     exit 0
 fi
 
@@ -389,7 +422,9 @@ fi
 
 step "全流程完成"
 ok "AAB: $AAB"
-if [[ "$STATUS" == "draft" ]]; then
+if [[ "$TRACK" == "internal" ]]; then
+    ok "已发布到轨道：internal（内部测试，免常规审核，测试员几分钟内即可安装）"
+elif [[ "$STATUS" == "draft" ]]; then
     ok "已上传到轨道：${TRACK}（草稿，**未送审**，可在 Play Console 自行检查后手动发布）"
 else
     ok "已提交到轨道：${TRACK}（${STATUS}）"

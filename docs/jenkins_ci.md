@@ -369,15 +369,44 @@ org.dom4j.DocumentException: … invalid XML character (Unicode: 0x1b)
 > 为什么必须真跑：`pipeline-model-converter/validate` 查不到 DSL 结构问题（第 6 节），
 > 本机这四个坑里有三个（坑 2/3/5）都是**静态检查过了、跑起来才炸**。
 
+> **2026-10-13 实跑核对**：`lint.sh` 四道全绿 · `apply-jobs.sh` 完成 7/失败 0 ·
+> `TS-Pipeline-Overview` #8 / #9 连两次黄球（7 通过 · 0 失败 · 1 关注）·
+> `evidence/**` 归档 **21** 条（5 文件 + 8 log + 8 stage json）✓。
+
 ---
 
 ## 10. 限制与待办
 
+### 已验证（2026-10-13 傍晚实跑）
+
+| job | 结果 | 说明 |
+|---|---|---|
+| `TS-Pipeline-Overview` | **UNSTABLE**（#8 / #9 连两次） | 7 通过 · 0 失败 · 1 关注；黄球符合设计 |
+| `TS-Client-Resources`（`ACTION=check`） | **SUCCESS** #1 | 字节码一致性 + AB 就绪体检，真跑了环节 |
+| `TS-Server-Health` | **SUCCESS** #1 | 默认 `SEND_MAIL=false`，只采集不发信 |
+| `TS-Play-Watch` | **SUCCESS** #2 | 默认 `DRY_RUN=true`，不发信、不写状态 |
+
+- ✅ 球色语义符合设计：**有 warn 无 fail ⇒ 黄球（UNSTABLE）**；有 fail ⇒ 红球。
+- 🔴 **送审闸门自检曾偶发假红**：同一份代码在 Jenkins 判 fail（rc=2 却判「竟然放行」），
+  本地连跑 17 次全绿。根因是判定用了 `printf '%s' "$out" | grep -q 拒绝` ——
+  `set -o pipefail` 下 `grep -q` 命中即退、写端收 SIGPIPE(141)，把「已命中」读成「未命中」。
+  已改 shell 内建子串比较，并把失败诊断从 `tail -3` 改为打印完整输出（`930965657`）。
+  **教训：自检本身也是代码，也会出假红 —— 假红比没有自检更糟（会训练人忽略它）。**
+
+### 仍未做
+
 - [ ] **未实跑过的 job**：`TS-Android-Release`、`TS-Android-TestPackage`、`TS-Server-Ops`。
-  它们含破坏性动作（重启游戏服会踢线 / 上传）⇒ **需要用户明确同意才能试跑**，不自行验证。
-- [ ] `TS-Server-Health` / `TS-Play-Watch` 的定时触发**尚未等到自然触发一次**（`H 9` / `H 10`），
-  目前只用 REST 手动触发验证过。
-- [ ] 本机有 Unity 实例（pid 76463）占用本工程 ⇒ 打包类 job 现在跑不了（这正是 `android_env.sh`
-  rc=3 那条黄球在说的事）。**关掉编辑器即可**，不是代码问题。
-- [ ] `.jenkins/**` 尚未 commit（本次一并提交）。
-- [ ] `junit` 的趋势图需要**至少两次**构建才有曲线；目前 #4（失败）→ #6（7 通过）已能看出差异。
+  它们含破坏性动作（Unity 打包 / 重启游戏服会踢线 / 上传）⇒ **需要用户明确同意才能试跑**，不自行验证。
+- [ ] `TS-Server-Health` / `TS-Play-Watch` 的**定时触发尚未自然触发**过 ——
+  注意 `H 9 * * *` / `H 10 * * *` 里 `H` 是**分钟**、`9` / `10` 是**小时** ⇒
+  含义是「**每天 9 点 / 10 点各一次**」，**不是每小时**。这两个 job 建于当天 14:13，
+  已过当日窗口，要等**次日早晨**才能确认调度真的会响。目前只经 REST 手动触发验证过。
+- [ ] `junit` 趋势图需至少两次构建；`TS-Pipeline-Overview` 现已有 #4（失败）→ #9（7 通过）多条可比。
+
+### 已知黄球（非缺陷）
+
+- `本地 10002 区服状态` → `找不到 10002 区服目录：/Users/wangxufeng/ts-shard10002`。
+  本地区服目录当前不存在（脚本按 `$HOME/ts-shard10002` 找）。该环节计为「关注」而非「失败」，
+  不阻断流水线；要恢复本地 10002 区服见记忆 `REF-shard10002.md`。
+- 打包类 job 的 `android_env.sh` rc=3（编辑器占着工程）今天**没有出现**：
+  当前只有 Unity Hub 在跑、无编辑器实例，故「打包环境预检」是 ✅ 而非黄球。

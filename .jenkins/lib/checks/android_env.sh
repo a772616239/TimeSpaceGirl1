@@ -18,7 +18,44 @@ set -uo pipefail
 PROJ="${PROJ:-/Users/wangxufeng/Documents/TimeSpaceGirl1}"
 UNITY="${UNITY:-/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity}"
 PY="${PY:-/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python}"
+
+# ── 工具链定位（Unity 6 起必须优先看 Unity.app 自带的那套）────────────────────
+# Unity 6 默认使用「内嵌 SDK / JDK / NDK」——EditorPrefs 里
+#   SdkUseEmbedded=1 / JdkUseEmbedded=1 / NdkUseEmbedded=1
+# 所以真正参与打包的是 Unity.app 自带的工具链，而不是用户自装的
+# ~/Library/Android/sdk。后者版本常常落后：本机实测只有 build-tools 35.0.1、
+# platforms android-34/35，而本工程 targetSdk=36（CLIBuilder.PrepareAndroid）
+# 需要 build-tools 36.0.0 + platforms/android-36 —— 内嵌 SDK 恰好两者都有。
+# 旧版检查写死"用户 SDK/36.0.0"，在 Unity 6 下必然误报阻塞。
+# 反推 Unity 安装根：…/<ver>/Unity.app/Contents/MacOS/Unity -> …/<ver>
+UNITY_ROOT="$(cd "$(dirname "$UNITY")/../../.." 2>/dev/null && pwd || true)"
+APLAYER="${UNITY_ROOT:+$UNITY_ROOT/PlaybackEngines/AndroidPlayer}"
+
+# 在候选根目录下取版本号最高的子目录（sort -V），并探活其中的 $2
+pick_dir() {
+  [[ -n "$1" && -d "$1" ]] || return 1
+  local v
+  v="$(ls -1 "$1" 2>/dev/null | sort -V | tail -1 || true)"
+  [[ -n "$v" && -e "$1/$v/$2" ]] || return 1
+  printf '%s' "$1/$v"
+}
+
+# 显式传入且可用则尊重之；否则「内嵌 SDK → 用户 SDK」依次回落
+if [[ -z "${BT:-}" || ! -e "${BT}/aapt2" ]]; then
+  BT="$(pick_dir "${APLAYER:+$APLAYER/SDK/build-tools}" aapt2 || true)"
+  [[ -n "$BT" ]] || BT="$(pick_dir "$HOME/Library/Android/sdk/build-tools" aapt2 || true)"
+fi
 BT="${BT:-$HOME/Library/Android/sdk/build-tools/36.0.0}"
+BT_KIND="用户 SDK"
+case "$BT" in "${APLAYER:-__none__}"/*) BT_KIND="Unity 内嵌 SDK" ;; esac
+
+# JDK 同理：优先 Unity 内嵌（Unity 6 自带 Temurin 17），回落系统 java
+JDK="${JDK:-${APLAYER:+$APLAYER/OpenJDK/bin/java}}"
+[[ -n "$JDK" && -x "$JDK" ]] || JDK="$(command -v java || true)"
+JDK_VER="$([[ -x "$JDK" ]] && "$JDK" -version 2>&1 | head -1 || echo '未找到')"
+
+# targetSdk=36 ⇒ 需要同一套 SDK 里的 android-36 platform
+SDK_PLATFORMS="${APLAYER:+$APLAYER/SDK/platforms}"
 
 [[ -d "$PROJ" ]] || { echo "找不到工程目录：$PROJ" >&2; exit 2; }
 cd "$PROJ" || exit 2
@@ -33,9 +70,11 @@ chk()  { if eval "$2" >/dev/null 2>&1; then pass "$1  ${3:-}"; else bad "$1  ${3
 echo "── 工具链 ─────────────────────────────────────────"
 chk "Unity 可执行"        "[ -x \"$UNITY\" ]"              "$UNITY"
 chk "python venv"        "[ -x \"$PY\" ]"                 "$PY"
-chk "aapt2"              "[ -x \"$BT/aapt2\" ]"           "$BT"
+chk "aapt2"              "[ -x \"$BT/aapt2\" ]"           "$BT  [$BT_KIND]"
 chk "apksigner"          "[ -x \"$BT/apksigner\" ]"
-chk "jdk (签名用)"        "command -v java"
+chk "jdk (打包+签名)"      "[ -x \"$JDK\" ]"               "$JDK_VER"
+chk "platform android-36" "[ -d \"${SDK_PLATFORMS:-/nonexistent}/android-36\" ]" \
+                          "${SDK_PLATFORMS:-<无>}（targetSdk=36 需要）"
 
 echo "── 出包配置真源 ───────────────────────────────────"
 chk "ReleaseBuildSettings.cs" "[ -f Assets/Editor/ReleaseBuildSettings.cs ]"

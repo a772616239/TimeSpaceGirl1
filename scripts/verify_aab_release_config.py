@@ -20,11 +20,19 @@ GameSettings.settingInfo 是 [System.Serializable]，在场景 level0 的 Serial
   base/assets/bin/Data/level0 中该 48 字节特征**精确命中 1 次**（offset 3792），
   值 = [0,0,1,1,0,0,1,0,1,0,0,10001] ⇒ isOpenGM=1，即线上包确实带 GM 面板。
 
-口径（profile）
---------------
-  dev      = [0,0,1,1,0,0,1,0,1,0,0,10001]  开发态，GM 面板开启（线上 v64 实测值）
-  minimal  = [0,0,1,1,0,0,1,0,0,0,0,10001]  最小改动：只把 isOpenGM 置 0（与 dev 只差一位）
-  full     = [0,0,1,1,1,0,0,1,0,0,0,10001]  完整「正式包」模板（isGuide/isUpdate 也打开）
+口径（profile）—— 🔴 **只匹配前 11 个字段，不含 originLan**
+--------------------------------------------------------
+2026-10-13 起 release 分支的场景把 Inspector originLan 改成了英文 10101（commit `eb063a8db`），
+而本脚本原先把 `10001` 写死在特征里 ⇒ 包内一改语言，第 4.5 步就整条误判为「未命中任何已知口径」
+并拒绝上传。originLan **本来就不该是口径判据**：
+  - 真机首次启动时 `GameSettings.InitGameSettings()`（GameSettings.cs:110-114）会用**设备系统语言**
+    覆盖包内的 originLan，只有 Editor 才尊重 Inspector 值 ⇒ 它不影响发行行为；
+  - 语言 id 权威表（conf/server/MultiLanguage.txt）：10001=简中 / 10101=English / 10201=日文 / 10301=韩文。
+⇒ 现在特征只取**前 11 个 int32**（logLevel…isOpenBLog），第 12 个 originLan 仅解码出来**报告**。
+
+  dev      = [0,0,1,1,0,0,1,0,1,0,0]  开发态，GM 面板开启（线上 v64 实测值）
+  minimal  = [0,0,1,1,0,0,1,0,0,0,0]  最小改动：只把 isOpenGM 置 0（与 dev 只差一位）
+  full     = [0,0,1,1,1,0,0,1,0,0,0]  完整「正式包」模板（isGuide/isUpdate 也打开）
 
 用法
 ----
@@ -41,7 +49,7 @@ FIELD_ORDER = [
     "logLevel", "isDebug", "bundleMode", "luaBundleMode", "isUpdate", "isSDK",
     "isSDKLogin", "isGuide", "isOpenGM", "isOpenTLog", "isOpenBLog", "originLan",
 ]
-ORIGIN_LAN = 10001
+ORIGIN_LAN = 10001  # 仅作历史标定参考；**不参与匹配**（见文件头「口径」说明）
 LEVEL_CANDIDATES = [
     "base/assets/bin/Data/level0",
     "assets/bin/Data/level0",
@@ -49,9 +57,15 @@ LEVEL_CANDIDATES = [
 
 
 def pattern(is_debug, bundle, lua_bundle, is_update, is_sdk, is_sdk_login,
-            is_guide, is_open_gm, tlog=0, blog=0, origin_lan=ORIGIN_LAN, log_level=0):
+            is_guide, is_open_gm, tlog=0, blog=0, log_level=0):
+    """口径特征 = 前 11 个 int32（**不含 originLan**）。
+
+    originLan 随发行区域变化（英文 10101 / 简中 10001 / 日文 10201），且真机上会被
+    设备系统语言覆盖，不能作为「出包开关是否套用」的判据。匹配到的 offset 仍是字段 0
+    的起点，decode_at() 可从同一 offset 解出含 originLan 的完整 12 字段用于报告。
+    """
     vals = [log_level, is_debug, bundle, lua_bundle, is_update, is_sdk, is_sdk_login,
-            is_guide, is_open_gm, tlog, blog, origin_lan]
+            is_guide, is_open_gm, tlog, blog]
     return b"".join(struct.pack("<i", v) for v in vals)
 
 
@@ -69,7 +83,11 @@ PROFILE_LABEL = {
 
 
 def decode_at(data, off):
-    return dict(zip(FIELD_ORDER, struct.unpack_from("<12i", data, off)))
+    # 完整 12 字段（含 originLan）—— 特征只匹配前 11 个，故末尾可能差 4 字节越界
+    buf = data[off:off + 48]
+    if len(buf) < 48:
+        buf = buf + b"\x00" * (48 - len(buf))
+    return dict(zip(FIELD_ORDER, struct.unpack("<12i", buf)))
 
 
 def load_level0(path):

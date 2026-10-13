@@ -85,18 +85,32 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode 'json={"parameter":[]}' \
 
 **两个落点（改完两边都要入库）**：
 1. 项目内 `TimeSpaceGirl1/.jenkins/jobs/*.groovy` ＝ 单一真源 → `lint.sh` → `apply-jobs.sh`（REST 推 `config.xml`，热生效）。
-2. 本机 `/Users/wangxufeng/.jenkins/jobs/` **本身是 git 仓库**（分支 `main`）：
-   - 每 job 一个目录，跟踪 `config.xml` + `nextBuildNumber`；`.gitignore` = `Daily_Open_iKuuu/builds` + `*/builds`。
-   - **34940 个跟踪文件里 34910 个是 `*/builds/`（全是 System_Monitor 的构建日志，19MB 已入库，磁盘上 209MB）**
-     ⇒ `.gitignore` 只挡未来提交、摘不出已入库的；仓库 `.git` 已 32MB。
-   - 2 条提交：`20c65cb1 Initial commit`（2026-06-03）、`f9118b89 jobs`（**2026-10-13 18:33**）。
-     ⚠️ reflog 只剩 1 条 ⇒ 有**本机其它自动化 / 工具**在动它；但 **提交者身份不能用于区分** ——
-     本机全局 git 身份就是 `AI Assistant <992694856@qq.com>`（我的提交也是它）。
-   - 工作区当前干净。
-- 🔴 **远端坏了**：`origin` = `https://<PAT>@github.com/a772616239/jobs1.git` → **GitHub 404，仓库不存在**
-  （PAT 本身有效，`/user` 200 登录 `a772616239`；token scopes 含 `repo`/`delete_repo`，**足够建新仓**）。
-  ⇒ 「改完 push」这条约定**目前兑现不了**。账号下只有个 2024 年的 `a772616239/JenkinJobs`
-  （private、默认分支 `master`、last push 2024-05-12，内容是 android/ios 构建脚本，**与本仓库无关，别误指过去**）。
-- 待用户定夺：① 建 private `jobs1` 再推（含是否先把 `*/builds` 从索引摘掉瘦身）；② 改指向别的仓；③ 先不动。
-- ⚠️ 该目录有**并发 AI 工具在写**，动手前先 `git status` + `git reflog` 看有没有别人刚提交。
+2. 本机 `/Users/wangxufeng/.jenkins/jobs/` **本身是 git 仓库**（**分支 `master`**，upstream=`origin/master`）：
+   - 每 job 一个目录，跟踪 `config.xml` + `nextBuildNumber`；`.gitignore` = `*/builds` + `Daily_Open_iKuuu/builds` + `.DS_Store`。
+   - ⚠️ 2026-10-13 起**已重建为纯配置仓库**（原被 `System_Monitor/builds` 的 1.4 万次构建日志污染，
+     34940 个跟踪文件里 34910 个是构建产物、`.git` 32MB）。
+
+### 🔴 2026-10-13 重建经过（已解决）
+- **远端坏了**：原 `origin` = `.../a772616239/jobs1.git` → **GitHub 404 根本不存在**（PAT 本身有效、
+  有 `repo`/`delete_repo` 权限）。用户定夺：**改用** `github.com/a772616239/JenkinJobs.git`（2024 年的旧仓，
+  private、默认分支 `master`）+ **彻底重写历史去掉构建产物**。
+- **做法**：合并两代 job 定义 → 起孤儿分支 `git rm -r --cached -f .` → `git add .`（靠 `.gitignore` 过滤）
+  → 单条 root commit → `git branch -M master` → `reflog expire --all` + `gc --prune=now` → `push -u --force origin master`。
+- 🔴 **坑：`git rm -r --cached .` 会因「索引内容与磁盘/HEAD 都不一致」的文件中途失败**（本例
+  `TD_Auto_Monitor/scm-polling.log`），**必须加 `-f`**，否则索引清不空、`git add .` 又把 builds 全加回来。
+- **结果**：远端 `JenkinJobs` master = **41 个文件 / 61 条 tree 条目、0 builds、0 .DS_Store**；
+  本地 `.git` **32MB → 180K**、单提交 `e26c8d87`。
+- **合并内容 = 20 个 job**：现行 13 个（TS-*×7 + Daily_Open_iKuuu / Email_Manager / Play_Song /
+  System_Monitor / TD_Auto_Monitor / Watermark_Remover）+ JenkinJobs 旧 7 个
+  （build_all / build_all_hotfix / build_android / build_ios / hotfix_build_android / hotfix_build_ios / test_net_speed）。
+- ⚠️ **副作用（已核，风险可控）**：那 7 个旧 job 目录被放进了**运行中的 Jenkins 家目录** ⇒ 下次 Jenkins
+  重扫/重启会作为活跃 job 出现。已确认它们 **7 个全无触发器**（不会自触发），引用的是旧项目
+  `git@github.com:a772616239/MainPro.git`。若不想让它们出现在 Jenkins UI，把目录挪到
+  `_legacy-2024/<job>/` 即可（git 里仍在，Jenkins 不再当 job 扫）。**截至 18:4x Jenkins 仍只列 13 个 job（尚未重扫）**。
+- **备份**（`~/.jenkins/`）：`jobs-backup-20261013_183829.bundle`（3.2M，旧全历史）、
+  `jobs-worktree-20261013_183829.tgz`（18K，旧跟踪文件）、`JenkinJobs-remote-full-20261013_183829.tgz`
+  （256M，旧远端含 62M apk/bundle 等构建产物）。
+- ⚠️ 该目录有**非本会话产生的提交**且 reflog 被截断 ⇒ 有其它自动化在动它；**提交者身份无法区分**
+  （本机全局 git 身份就是 `AI Assistant <992694856@qq.com>`）。动手前先看 `git status` + `git reflog`。
+
 

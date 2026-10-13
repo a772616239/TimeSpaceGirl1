@@ -354,7 +354,26 @@ LoginPanel.lua:1243
 
 - `TimeoutError` → 已内置 `300s` 超时 + `8MB` 分块 + 断点续传重试。
 - `HTTP 400 FAILED_PRECONDITION / This Edit has been deleted.` → **并发调 Play API 导致**。
-  重跑即可（新建 edit），但 421MB 要重传一遍。
+  重跑即可（新建 edit），但 ~437MB 要重传一遍。
+
+### 8.4 包体基准（Unity 6 起）
+
+AAB 体积基准随引擎升级上移，**不是资源变多**，逐文件归因见
+`.workbuddy/memory/2026-10-13.md`：
+
+| 引擎 | AAB | 口径 |
+|---|---|---|
+| 2022.3.62f2c1（≤v68） | **421.3 MiB** | `apks/2026-08-17/CLIBuild/231312.aab` |
+| 6000.6.5f1（v69 起） | **437.5 MiB** | `apks/2026-10-13/CLIBuild/1.2.50_vc69_170356.aab` |
+
+差异 +16.2 MiB ≈ AB 资产 +13.0（2750 个包 1910 个变大、中位 +0.5 KiB，属引擎侧统一开销）
++ 原生库 +2.2（`libunity.so` +2.34，被 Firebase 12.10.1 −0.35 抵消一部分）
++ Data +1.3（`global-metadata.dat` +0.80、内置 `unity default resources` +0.49）；dex / res 基本持平。
+
+🔴 **附带异常**：包内 AB 的**原始**字节数 411 MiB → 906 MiB（+495 MiB，2.2x），
+被 AAB 自身 deflate 吸收，故 AAB 只多 13 MiB；同一个 bundle 磁盘 2.58→11.54 MiB
+而 zlib 后 2.32→2.35 MiB（熵 7.58→4.91）⇒ Unity 6 的 `ChunkBasedCompression`
+输出比 2022.3 松得多（脚本未改）。影响装机占用与热更体量，未决。
 
 ---
 
@@ -371,7 +390,7 @@ LoginPanel.lua:1243
 | `Multiple Unity instances cannot open the same project` | 本工程 GUI Unity 占锁 | 关 GUI / 删陈旧 `Library/SourceAssetDB-lock` |
 | 前置检查报「未发现 Lua bundle」 | AB 链路断开，`StreamingAssets/Android` 里没有 `lzma\|luabytes.unity3d` | `scripts/check_ab_ready.sh` 定位；GUI 里「整体打包资源」→「复制资源到流媒体目录」 |
 | 真机启动报 `StreamingAssets 路径资源丢失，请重新打包包内资源!` | 发出的包不含 Lua | 重建 AB 后重打包 |
-| AAB 只有约 139MB（正常 421MB） | AB 构建残包（缺 prefabs/texture/spine/audio/atlas） | 重建 AB 再打包 |
+| AAB 明显偏小（如 ~139MB；正常 **421 MiB @2022.3 / 437 MiB @Unity 6**，见 §8.4） | AB 构建残包（缺 prefabs/texture/spine/audio/atlas） | 重建 AB 再打包 |
 | Unity 打印 `libtolua.so is not 16KB-aligned` | **误报** | 忽略，见 §4.5 |
 | `build_log` 有 `Application is shutting down...` 且没产包 | 进程被外部杀掉，`finally` 未执行 | 重跑；先 `git checkout -- Logo.unity` 清残留 |
 

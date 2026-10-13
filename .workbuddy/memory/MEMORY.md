@@ -56,6 +56,8 @@
 - 🔴 **账号名 = f(登录 SDK 给的 id)**，换 SDK 就等于换号；Android `platformId==1` **必须走 Google Sign-In（`f74ffb436`），勿改回 PlayGames**。
 - 出包配置真源 `Assets/Editor/ReleaseBuildSettings.cs`（`297b9ba9f`）；线上渠道值就是 `None`、`isSDK=false` 是**正常**的。
 - 🔑 **Play 凭据**：优先**工程本地 `.secrets/service-account.json`**（700/600），回退 `~/.gplay/service-account.json`；账号 `play-publisher@platinum-loop-468100-k5.iam.gserviceaccount.com`，project `platinum-loop-468100-k5`。完整优先级链见 `REF-android-release.md`。venv `/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python` 已装 google-api-python-client。
+- 🔴 **AAB 基准体积**：2022.3 = **421.3 MiB**（`apks/2026-08-17/CLIBuild/231312.aab`）/ Unity 6 = **437.5 MiB**，差 +16.2 MiB **全是引擎开销**（AB 统一开销 +13.0 / `libunity.so` +2.34 / metadata +0.80，逐文件归因见 `2026-10-13.md`）⇒ `docs/android_release_runbook.md` §8.4。
+- ⚠️ **AB 原始体积异常**：包内 AB raw 411 MiB → **906 MiB（2.2x）**，被 AAB 的 deflate 吸收（AAB 只 +13 MiB）；同一 bundle 磁盘 2.58→11.54 MiB 而 zlib 后 2.32→2.35 MiB（熵 7.58→4.91）⇒ Unity 6 `ChunkBasedCompression` 输出变松、脚本未改。**影响装机占用与热更体量，未决。**
 
 ## 全流程 CI（Jenkins）→ 细节见 `REF-jenkins-ci.md`
 - **7 个 job**（本机 Jenkins **2.551**，`http://127.0.0.1:8080/`，视图「时空美少女 · 全流程」）：`TS-Pipeline-Overview` / `TS-Android-Release` / `TS-Android-TestPackage` / `TS-Client-Resources` / `TS-Server-Health`(cron `H 10`) / `TS-Server-Ops` / `TS-Play-Watch`(cron `H 9`)。🔴 cron 里 `H` 是**分钟**、`9`/`10` 是**小时** ⇒ **每天 9 点 / 10 点各一次**，**不是每小时**。

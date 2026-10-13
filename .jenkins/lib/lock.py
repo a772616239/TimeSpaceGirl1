@@ -90,6 +90,24 @@ def stamp(fh, who: str) -> None:
     fh.flush()
 
 
+def progress(msg: str) -> None:
+    """包装器自身的进度日志：**只在人工交互（stderr 是 TTY）时**输出，且走 stderr。
+
+    为什么不能无条件打印：`lock.sh run -- <命令>` 常被 `run_stage.sh` 包裹，而
+    run_stage 取「日志里最后一条非空行」当环节结论。若这里在命令输出**之后**再打一行，
+    真正的结论就被盖掉了 —— 实测 2026-10-13 构建 #2：Play 环节的结论变成
+    「🔓 [play] 锁已释放」，而真正的失败原因是「[ERROR] 找不到 AAB」。
+
+    锁的状态语义已经由退出码完整表达（0=持锁跑完 / 75=拿不到锁），
+    所以这两行只对人工排障有意义 ⇒ 交互时显示，流水线里保持静默。
+    """
+    try:
+        if sys.stderr.isatty():
+            print(msg, file=sys.stderr)
+    except Exception:
+        pass
+
+
 def cmd_run(args) -> int:
     path = lock_path(args.name)
     fh = open(path, "a+")            # 锁文件常驻，从不删除
@@ -108,7 +126,7 @@ def cmd_run(args) -> int:
             waited_msg = True
         time.sleep(5)
     stamp(fh, args.who)
-    print("\033[1;32m   🔒 [%s] 锁已获得（%s）\033[0m" % (args.name, args.who))
+    progress("\033[1;32m   🔒 [%s] 锁已获得（%s）\033[0m" % (args.name, args.who))
     try:
         rc = subprocess.call(args.cmd)
     except FileNotFoundError as e:
@@ -120,7 +138,7 @@ def cmd_run(args) -> int:
         except OSError:
             pass
         fh.close()
-    print("\033[1;32m   🔓 [%s] 锁已释放\033[0m" % args.name)
+    progress("\033[1;32m   🔓 [%s] 锁已释放\033[0m" % args.name)
     return rc
 
 

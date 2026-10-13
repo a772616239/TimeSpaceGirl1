@@ -89,8 +89,9 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode 'json={"parameter":[]}' \
    - 每 job 一个目录，跟踪 `config.xml` + `nextBuildNumber`；`.gitignore` = `Daily_Open_iKuuu/builds` + `*/builds`。
    - **34940 个跟踪文件里 34910 个是 `*/builds/`（全是 System_Monitor 的构建日志，19MB 已入库，磁盘上 209MB）**
      ⇒ `.gitignore` 只挡未来提交、摘不出已入库的；仓库 `.git` 已 32MB。
-   - 2 条提交：`20c65cb1 Initial commit`（2026-06-03）、`f9118b89 jobs`（**2026-10-13 18:33**，提交者
-     `AI Assistant <992694856@qq.com>` —— 是**并发 AI 工具 QClaw 自动 commit 的**，不是我）。
+   - 2 条提交：`20c65cb1 Initial commit`（2026-06-03）、`f9118b89 jobs`（**2026-10-13 18:33**）。
+     ⚠️ reflog 只剩 1 条 ⇒ 有**本机其它自动化 / 工具**在动它；但 **提交者身份不能用于区分** ——
+     本机全局 git 身份就是 `AI Assistant <992694856@qq.com>`（我的提交也是它）。
    - 工作区当前干净。
 - 🔴 **远端坏了**：`origin` = `https://<PAT>@github.com/a772616239/jobs1.git` → **GitHub 404，仓库不存在**
   （PAT 本身有效，`/user` 200 登录 `a772616239`；token scopes 含 `repo`/`delete_repo`，**足够建新仓**）。

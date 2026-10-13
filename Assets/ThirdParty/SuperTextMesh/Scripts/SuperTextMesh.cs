@@ -99,7 +99,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showWavesFoldout = EditorGUILayout.Foldout(stm.data.showWavesFoldout, "Waves", foldoutStyle);
 				if(stm.data.showWavesFoldout){
 				//Gather all data:
-					foreach(KeyValuePair<string, STMWaveData> i in stm.data.waves.OrderBy(x => -x.Value.GetInstanceID())){
+					foreach(KeyValuePair<string, STMWaveData> i in stm.data.waves.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -112,7 +112,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showJittersFoldout = EditorGUILayout.Foldout(stm.data.showJittersFoldout, "Jitters", foldoutStyle);
 				if(stm.data.showJittersFoldout){
 				//Gather all data:
-					foreach(KeyValuePair<string, STMJitterData> i in stm.data.jitters.OrderBy(x => -x.Value.GetInstanceID())){
+					foreach(KeyValuePair<string, STMJitterData> i in stm.data.jitters.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -125,7 +125,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showDrawAnimsFoldout = EditorGUILayout.Foldout(stm.data.showDrawAnimsFoldout, "DrawAnims", foldoutStyle);
 				if(stm.data.showDrawAnimsFoldout){
 				//Gather all data:
-					foreach(KeyValuePair<string, STMDrawAnimData> i in stm.data.drawAnims.OrderBy(x => -x.Value.GetInstanceID())){
+					foreach(KeyValuePair<string, STMDrawAnimData> i in stm.data.drawAnims.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -143,7 +143,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showColorsFoldout = EditorGUILayout.Foldout(stm.data.showColorsFoldout, "Colors", foldoutStyle);
 				if(stm.data.showColorsFoldout){
 				//Gather all data
-					foreach(KeyValuePair<string, STMColorData> i in stm.data.colors.OrderBy(x => -x.Value.GetInstanceID())){
+					foreach(KeyValuePair<string, STMColorData> i in stm.data.colors.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -156,7 +156,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showGradientsFoldout = EditorGUILayout.Foldout(stm.data.showGradientsFoldout, "Gradients", foldoutStyle);
 				if(stm.data.showGradientsFoldout){
 				//Gather all data:
-					foreach(KeyValuePair<string, STMGradientData> i in stm.data.gradients.OrderBy(x => -x.Value.GetInstanceID())){ //reorder so the order stays consistent
+					foreach(KeyValuePair<string, STMGradientData> i in stm.data.gradients.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){ //reorder so the order stays consistent
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -169,7 +169,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showTexturesFoldout = EditorGUILayout.Foldout(stm.data.showTexturesFoldout, "Textures", foldoutStyle);
 				if(stm.data.showTexturesFoldout){
 				//Gather all data:
-					foreach(KeyValuePair<string, STMTextureData> i in stm.data.textures.OrderBy(x => -x.Value.GetInstanceID())){
+					foreach(KeyValuePair<string, STMTextureData> i in stm.data.textures.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -187,7 +187,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showDelaysFoldout = EditorGUILayout.Foldout(stm.data.showDelaysFoldout, "Delays", foldoutStyle);
 				if(stm.data.showDelaysFoldout){
 				//Gather all data:
-					foreach(KeyValuePair<string, STMDelayData> i in stm.data.delays.OrderBy(x => -x.Value.GetInstanceID())){
+					foreach(KeyValuePair<string, STMDelayData> i in stm.data.delays.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -200,7 +200,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showVoicesFoldout = EditorGUILayout.Foldout(stm.data.showVoicesFoldout, "Voices", foldoutStyle);
 				if(stm.data.showVoicesFoldout){
 				//Gather all data:
-					foreach(KeyValuePair<string, STMVoiceData> i in stm.data.voices.OrderBy(x => -x.Value.GetInstanceID())){
+					foreach(KeyValuePair<string, STMVoiceData> i in stm.data.voices.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -213,7 +213,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showFontsFoldout = EditorGUILayout.Foldout(stm.data.showFontsFoldout, "Fonts", foldoutStyle);
 				if(stm.data.showFontsFoldout){
 				//Gather all data:
-					foreach(KeyValuePair<string, STMFontData> i in stm.data.fonts.OrderBy(x => -x.Value.GetInstanceID())){
+					foreach(KeyValuePair<string, STMFontData> i in stm.data.fonts.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -226,7 +226,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showAudioClipsFoldout = EditorGUILayout.Foldout(stm.data.showAudioClipsFoldout, "AudioClips", foldoutStyle);
 				if(stm.data.showAudioClipsFoldout){
 				//Gather all data:
-					foreach(KeyValuePair<string, STMAudioClipData> i in stm.data.audioClips.OrderBy(x => -x.Value.GetInstanceID())){
+					foreach(KeyValuePair<string, STMAudioClipData> i in stm.data.audioClips.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -241,7 +241,7 @@ public class SuperTextMeshEditor : Editor{
 				if(stm.data.showSoundClipsFoldout)
 				{
 				//Gather all data:
-					foreach(KeyValuePair<string, STMSoundClipData> i in stm.data.soundClips.OrderBy(x => -x.Value.GetInstanceID()))
+					foreach(KeyValuePair<string, STMSoundClipData> i in stm.data.soundClips.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value)))
 					{
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
@@ -257,7 +257,7 @@ public class SuperTextMeshEditor : Editor{
 				{
 					EditorGUILayout.HelpBox("For information on how this works, please refer to the sample image under 'Quads' in the documentation.", MessageType.None, true);
 				//Gather all data:
-					foreach(KeyValuePair<string, STMQuadData> i in stm.data.quads.OrderBy(x => -x.Value.GetInstanceID()))
+					foreach(KeyValuePair<string, STMQuadData> i in stm.data.quads.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value)))
 					{
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
@@ -272,7 +272,7 @@ public class SuperTextMeshEditor : Editor{
 				if(stm.data.showMaterialsFoldout)
 				{
 				//Gather all data:
-					foreach(KeyValuePair<string, STMMaterialData> i in stm.data.materials.OrderBy(x => -x.Value.GetInstanceID()))
+					foreach(KeyValuePair<string, STMMaterialData> i in stm.data.materials.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value)))
 					{
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
@@ -294,7 +294,7 @@ public class SuperTextMeshEditor : Editor{
 				stm.data.showAutoDelaysFoldout = EditorGUILayout.Foldout(stm.data.showAutoDelaysFoldout, "AutoDelays", foldoutStyle);
 				if(stm.data.showAutoDelaysFoldout){
 				//Gather all data:
-					foreach(KeyValuePair<string, STMAutoDelayData> i in stm.data.autoDelays.OrderBy(x => -x.Value.GetInstanceID()))
+					foreach(KeyValuePair<string, STMAutoDelayData> i in stm.data.autoDelays.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value)))
 					{
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
@@ -310,7 +310,7 @@ public class SuperTextMeshEditor : Editor{
 				{
 				//Gather all data:
 					//STMSoundClipData[] allAutoClips = Resources.LoadAll<STMSoundClipData>("STMAutoClips").OrderBy(x => -x.GetInstanceID()).ToArray(); //do this so order keeps consistent
-					foreach(KeyValuePair<string, STMAutoClipData> i in stm.data.autoClips.OrderBy(x => -x.Value.GetInstanceID())){
+					foreach(KeyValuePair<string, STMAutoClipData> i in stm.data.autoClips.OrderBy(x => -System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(x.Value))){
 						EditorGUI.indentLevel++;
 						i.Value.showFoldout = EditorGUILayout.Foldout(i.Value.showFoldout, i.Key, foldoutStyle);
 						EditorGUI.indentLevel--;
@@ -5727,6 +5727,10 @@ Vector3 JitterValue_MyJit = Vector3.zero;
 		}
 	}
 	public virtual float flexibleWidth { get { return -1; } }
+	// Unity 6 给 ILayoutElement 新增了 maxWidth / maxHeight 两个成员；
+	// 返回 -1 = 不设上限，与 Unity 官方 LayoutElement 的默认语义一致。
+	public virtual float maxWidth { get { return -1; } }
+	public virtual float maxHeight { get { return -1; } }
 	public virtual float minHeight{
 		get { return 0; }
 	}

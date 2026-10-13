@@ -646,8 +646,11 @@ namespace Spine.Unity {
 
 			class AnimationClipEqualityComparer : IEqualityComparer<AnimationClip> {
 				internal static readonly IEqualityComparer<AnimationClip> Instance = new AnimationClipEqualityComparer();
-				public bool Equals (AnimationClip x, AnimationClip y) { return x.GetInstanceID() == y.GetInstanceID(); }
-				public int GetHashCode (AnimationClip o) { return o.GetInstanceID(); }
+				// Unity 6：Object.GetInstanceID() 已标记为 obsolete(error:true)，pragma 无法抑制，
+				// 官方迁移目标是 GetEntityId()。此处比较器只用于「按对象身份」建表，
+				// 故改用引用相等 + RuntimeHelpers 哈希 —— 语义等价，且不依赖已废弃 API。
+				public bool Equals (AnimationClip x, AnimationClip y) { return ReferenceEquals(x, y); }
+				public int GetHashCode (AnimationClip o) { return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(o); }
 			}
 
 			class IntEqualityComparer : IEqualityComparer<int> {

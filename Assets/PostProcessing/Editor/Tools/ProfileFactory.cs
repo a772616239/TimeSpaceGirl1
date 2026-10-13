@@ -15,7 +15,7 @@ namespace UnityEditor.Rendering.PostProcessing
         static void CreatePostProcessProfile()
         {
             //var icon = EditorGUIUtility.FindTexture("ScriptableObject Icon");
-            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(0, ScriptableObject.CreateInstance<DoCreatePostProcessProfile>(), "New Post-processing Profile.asset", null, null);
+            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(EntityId.None, ScriptableObject.CreateInstance<DoCreatePostProcessProfile>(), "New Post-processing Profile.asset", null, null);
         }
 
         /// <summary>
@@ -71,9 +71,11 @@ namespace UnityEditor.Rendering.PostProcessing
         }
     }
 
-    class DoCreatePostProcessProfile : EndNameEditAction
+    // Unity 6：EndNameEditAction 已 obsolete(error:true)，pragma 抑制无效。
+    // 替代品 AssetCreationEndAction 用 EntityId 取代了原来的 int instanceId。
+    class DoCreatePostProcessProfile : AssetCreationEndAction
     {
-        public override void Action(int instanceId, string pathName, string resourceFile)
+        public override void Action(EntityId instanceId, string pathName, string resourceFile)
         {
             var profile = ProfileFactory.CreatePostProcessProfileAtPath(pathName);
             ProjectWindowUtil.ShowCreatedAsset(profile);

@@ -916,7 +916,7 @@ namespace BuildReportTool
 #if !UNITY_4
 			// Xbox One build settings
 			// ---------------------------------------------------------------
-			settings.XboxOneDeployMethod = EditorUserBuildSettings.xboxOneDeployMethod.ToString();
+			settings.XboxOneDeployMethod = ""; // Unity 6：XDK Xbox One 于 2021.1 移除，对应 API 已不存在
 			settings.XboxOneTitleId = PlayerSettings.XboxOne.TitleId;
 			settings.XboxOneContentId = PlayerSettings.XboxOne.ContentId;
 			settings.XboxOneProductId = PlayerSettings.XboxOne.ProductId;
@@ -937,7 +937,7 @@ namespace BuildReportTool
 
 			settings.XboxOneDisableKinectGpuReservation = PlayerSettings.XboxOne.DisableKinectGpuReservation;
 			settings.XboxOneEnableVariableGPU = PlayerSettings.XboxOne.EnableVariableGPU;
-			settings.XboxOneStreamingInstallLaunchRange = EditorUserBuildSettings.streamingInstallLaunchRange;
+			settings.XboxOneStreamingInstallLaunchRange = 0; // Unity 6：XDK Xbox One 于 2021.1 移除，对应 API 已不存在
 			settings.XboxOnePersistentLocalStorageSize = PlayerSettings.XboxOne.PersistentLocalStorageSize;
 
 			settings.XboxOneSocketNames = PlayerSettings.XboxOne.SocketNames;

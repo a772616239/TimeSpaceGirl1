@@ -950,11 +950,7 @@ namespace BuildReportTool.Window.Screen
 			DrawSetting("Enable Virtual Reality Support:", settings.EnableVirtualRealitySupport);
 
 #if UNITY_2020_2_OR_NEWER
-			if (unityBuildReport != null)
-			{
-				DrawSetting("Enable Shader Livelink Support:",
-					unityBuildReport.HasBuildOption(BuildOptions.ShaderLivelinkSupport));
-			}
+			// Unity 6：BuildOptions.ShaderLivelinkSupport 已移除（Shader LiveLink 不再支持），本项不再展示
 #endif
 
 			if (buildReportToDisplay.IsUnityVersionAtLeast(5, 2, 0))

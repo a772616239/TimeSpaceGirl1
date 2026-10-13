@@ -9,6 +9,25 @@
 > - **`REF-jenkins-ci.md`** —— 本机 Jenkins 全流程 CI（`.jenkins/` 7 个 job + **7 个只有真跑才暴露的坑** + REST 触发姿势）
 > - 当日细节一律进 `YYYY-MM-DD.md`（append-only）。
 
+## 🔴 客户端 Unity 版本：已升到 6000.6.5f1（2026-10-13，编译已全绿）
+- `ProjectSettings/ProjectVersion.txt` = `6000.6.5f1 (3ff58d469c8a)`。🔴 **必须写国际版号**，
+  中国版版本号字符串会被 UPM 直接拒绝打开工程。
+- 本机编辑器路径统一为 `/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity`
+  （已同步 `.jenkins/lib/build_apk.sh`、`.jenkins/lib/checks/android_env.sh`、`scripts/aab_release.sh`）。
+- 🔴 **batchmode 跑本工程必须显式 `-buildTarget Android`**：`UNITY_ANDROID` 只在
+  active build target 是 Android 时定义；否则 `com.google.play.games`（asmdef
+  `includePlatforms:["Android","Editor"]`）会编译成空程序集并连带报错。
+- 🔴 **批量改文件的 python 补丁脚本要自查两个副作用**：① `"` 被写成 `\"`（语法错）；
+  ② CRLF 被归一化成 LF（整文件级 diff）。取路径必须用 `git diff --name-only -z`
+  （`git status --short` 会给含空格路径加引号导致漏改），并**按扩展名白名单跳过二进制**。
+- 已停用（`_disabled_for_unity6/`）：AssetBundles-Browser 1.x、`DefaultPackerPolicySampleToNormal.cs`。
+- 迁移要点：`GetInstanceID()`→`GetEntityId()`、`InstanceIDToObject`→`EntityIdToObject`、
+  非泛型 `TreeView/…`→`TreeView<int>/…`（工程自带 `TreeViewItem<T>` 已改名 `DataTreeViewItem<T>`）、
+  `BaseMeshEffect.ModifyMesh(Mesh)` 分支删除、`PhysicMaterial`→`PhysicsMaterial`、
+  `LightType.Area`→`Rectangle`、`SetActiveRecursively`→`SetActive`、`SetLayoutInputForAxis` 新增
+  `totalFlexible` 参数、`DeterministicAssetBundle` 等枚举删除、`SetAssetBundleDecryptKey`（中国版专属）删除。
+  细节见 `2026-10-13.md`。
+
 ## 项目 / 生产环境
 - Unity 手游「时空美少女/时空战场」客户端 + 同仓 `TimeSpaceServer/`；远端 `a772616239/TimeSpaceGirl1`（~3.3GB）。
 - SSH 别名 `gs` → 129.226.213.65（腾讯云 CentOS7，内网 10.3.0.15），私钥 `~/.ssh/tencent-gameserver.pem`；上传助手 `~/server-push.sh`。
@@ -47,12 +66,19 @@
 - **本地新区服 10002** → 见 `REF-shard10002.md`。一句话：**已上线可登录，属内测级**。
 
 ## Android 发版 / 账号体系 → 细节见 `REF-android-release.md`
-- 轨道现状（2026-10-12 11:43 后）：`production draft v68; completed v67`（beta/alpha 空）。⚠️ **v67（未修 16KB）已被提升为 completed**；修好的 v68 仍是草稿，**待用户决定是否送审**。最新可测包 `apks/2026-10-12/CLIBuild/121249.apk`（v68 / 1.2.49 / isOpenGM=0 / googlesignin r28c）。
+- 轨道现状（2026-10-13 16:50 实测）：`production completed v68 (1.2.49)`；`internal completed v61 (1.2.44)`；beta/alpha 空。⚠️ v68 **已是正式发布态**（非草稿）。
+- 🔴🔴 **versionCode 只增不减，同一号只能上一次**：`AndroidBundleVersionCode` 当前 **68**，下一个包必须 ≥ **69**。
+  - 根因：GUI 打包（`BuildWindow.cs:449`）会 `PlayerSettings.Android.bundleVersionCode++` **自动自增**，而 CLI 的 `CLIBuilder.cs` **只读不自增** ⇒ CLI 反复打包会复用同一个号，传 Play production 必被拒。
+  - 补洞：`scripts/bump_version.py {--show|--bump|--set-code N|--bump-name}`；`aab_release.sh` 默认就调 `--bump`。
+  - ⇒ 🔴 **不要用 `aab_release.sh` 重跑一次已失败的推送** —— 它会再提一号，导致号段跳空。重传请直接跑 `play_upload.py`。
+  - ⇒ 上传前 `play_upload.py` 会查轨道现有 versionCode，撞车以**退出码 5** 拦截。
+  - ⇒ 核对「告警/安装包属于哪一版」**必须以 versionCode 为准**，versionName（1.2.45/46/47/48/49）区分不了。
 - 🔴 **送审闸门**：默认拒绝 + 三旗标显式放行（`--upload` / `--production` / `--publish`），默认 `status=draft`、默认不上传。🔴 `--status draft` 是 production 轨道「不送审」的**唯一**姿势。
 - 🔴 **交付自检 `scripts/verify_apk_delivery.py`** 答「这包能不能测」；16KB 以**包内产物**为准（`scripts/verify_aab_native_16kb.py`），Unity 打印的 `libtolua.so is not 16KB-aligned` 是**误报**；🔴 **升 Unity 引擎解决不了 16KB**。
 - 🔴 **上传期间禁止并发调用任何 Play API**（多进程开 edit 会互删，实测 85% 处 `HTTP 400 FAILED_PRECONDITION`）。
 - 🔴 **账号名 = f(登录 SDK 给的 id)**，换 SDK 就等于换号；Android `platformId==1` **必须走 Google Sign-In（`f74ffb436`），勿改回 PlayGames**。
 - 出包配置真源 `Assets/Editor/ReleaseBuildSettings.cs`（`297b9ba9f`）；线上渠道值就是 `None`、`isSDK=false` 是**正常**的。
+- 🔑 **Play 服务账号凭据**：`~/.gplay/service-account.json`（700/600），账号 `play-publisher@platinum-loop-468100-k5.iam.gserviceaccount.com`，project `platinum-loop-468100-k5`。解析优先级 `--service-account` > `$GOOGLE_PLAY_SERVICE_ACCOUNT` > `~/.gplay/service-account.json`（`play_16kb_watch.py` 只认第三项）。venv `/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python` 已装 google-api-python-client。
 
 ## 全流程 CI（Jenkins）→ 细节见 `REF-jenkins-ci.md`
 - 三条链已收口成 **7 个 Jenkins job**（本机 2.568，`http://127.0.0.1:8080/`，视图「时空美少女 · 全流程」）：

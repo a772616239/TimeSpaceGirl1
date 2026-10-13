@@ -65,15 +65,30 @@ assert_line "$PYF" 'allow-publish'                   "--allow-publish 闸门存�
 
 echo "── ② 行为断言：这些组合必须被闸门拒 ───────────────"
 GATE_TAG='拒绝'
+
+# 🔴 判定「输出里有没有拒绝文案」必须用 **shell 内建子串比较**，不要用
+#    `printf '%s' "$out" | grep -q "$GATE_TAG"`：
+#    ① `set -o pipefail` 下 `grep -q` 命中即退，写端（printf）可能收 SIGPIPE(141)
+#       ⇒ 整条管道被判失败 ⇒ **「明明拒绝了」被误判成「闸门失效」**。
+#       本机踩过同类坑（`cmd | head -1` 必须加 `|| true`，见项目记忆）。
+#    ② 顺带摆脱对 grep 实现 / 区域设置（locale）的依赖 —— 模式是中文，
+#       非 UTF-8 locale 下字节匹配会失手。
+#    2026-10-13 实测：同一份代码在 Jenkins 里出现过**一次假红**
+#    （rc=2 却判「竟然放行」），本地连跑 17 次全绿 ⇒ 典型偶发误判，就是这个坑。
+has_gate_tag() { [[ "$1" == *"$GATE_TAG"* ]]; }
+# 打印探针的**完整**输出（不再 tail -3）：曾因只留最后 3 行而把决定性错误行裁掉，
+# 导致拿到假红却看不出为什么。用 here-string 逐行读，不引入管道。
+show_probe_out() { while IFS= read -r l; do printf '       %s\n' "$l"; done <<< "$1"; }
+
 probe_refused() { # $1=说明，其余=参数
   local desc="$1"; shift
   local out rc
   out="$(bash "$SH" --skip-build "$@" 2>&1)"; rc=$?
-  if [[ $rc -ne 0 ]] && printf '%s' "$out" | grep -q "$GATE_TAG"; then
+  if [[ $rc -ne 0 ]] && has_gate_tag "$out"; then
     printf '   ✓ %s → 被拒（rc=%s）\n' "$desc" "$rc"
   elif [[ $rc -ne 0 ]]; then
     printf '   ⚠️ %s → 非 0 退出，但不是被闸门拒的（先看别的前置检查）\n' "$desc"
-    printf '%s\n' "$out" | tail -3 | sed 's/^/       /'
+    show_probe_out "$out"
     FAIL=1
   else
     printf '   🔴 %s → **竟然放行了**（rc=0），闸门失效\n' "$desc"; FAIL=1
@@ -120,20 +135,23 @@ py_probe() { # $1=期望 expect_refuse|expect_allow，$2=说明，其余=参数
   local want="$1" desc="$2"; shift 2
   local out rc hit
   out="$("$PY" "$PYF" --aab "$PY_PROBE_AAB" --service-account "$NOKEY" "$@" 2>&1)"; rc=$?
-  if printf '%s' "$out" | grep -q "$GATE_TAG"; then hit=1; else hit=0; fi
+  # 用内建子串比较，不用 `| grep -q`（pipefail 下会偶发误判，见上方说明）
+  if has_gate_tag "$out"; then hit=1; else hit=0; fi
   if [[ "$want" == "refuse" ]]; then
     if [[ $rc -ne 0 && $hit -eq 1 ]]; then
       printf '   ✓ %s → 被拒（rc=%s）\n' "$desc" "$rc"
     else
-      printf '   🔴 %s → 竟然放行（rc=%s），闸门失效\n' "$desc" "$rc"; FAIL=1
-      printf '%s\n' "$out" | tail -3 | sed 's/^/       /'
+      printf '   🔴 %s → 竟然放行（rc=%s，输出中%s拒绝文案），闸门失效\n' \
+             "$desc" "$rc" "$([[ $hit -eq 1 ]] && echo '有' || echo '无')"
+      FAIL=1
+      show_probe_out "$out"
     fi
   else
     if [[ $hit -eq 0 ]]; then
       printf '   ✓ %s → 未被闸门拦（预期；实际死于「找不到密钥」= 已过闸门）\n' "$desc"
     else
       printf '   🔴 %s → 被闸门拦了（不该拦）\n' "$desc"; FAIL=1
-      printf '%s\n' "$out" | tail -3 | sed 's/^/       /'
+      show_probe_out "$out"
     fi
   fi
 }

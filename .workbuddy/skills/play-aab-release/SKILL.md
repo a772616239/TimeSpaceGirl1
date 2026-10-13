@@ -69,7 +69,7 @@ scripts/aab_release.sh --skip-build --upload --production --publish --yes
 ## 打 APK 自测（不经过 aab_release.sh）
 
 ```bash
-/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity \
+/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity \
   -projectpath /Users/wangxufeng/Documents/TimeSpaceGirl1 \
   -batchmode -nographics -executeMethod CLIBuilder.BuildAndroidAPK \
   -logFile /Users/wangxufeng/Documents/TimeSpaceGirl1/build_log_apk_main.txt -quit
@@ -123,7 +123,7 @@ app signing key 不同 ⇒ **侧载前必须先卸载 Play 版**。只出 `arm64
 | 项 | 值 |
 |---|---|
 | 包名 | `com.Warera.timespace` |
-| UnityEngine | `/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity` |
+| UnityEngine | `/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity` |
 | 打包方法 | `CLIBuilder.BuildAndroidAAB` / `CLIBuilder.BuildAndroidAPK` |
 | 产物目录 | `apks/{yyyy-MM-dd}/CLIBuild/{HHmmss}.{aab\|apk}`（`apks/` 已 gitignore） |
 | 耗时 | 全量 ~10-15 min；增量（缓存完好）APK ~1 min |

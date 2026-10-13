@@ -125,7 +125,7 @@ A/B/C 三条链已经收口成 **7 个 Jenkins job**，跑在 `http://127.0.0.1:
 
 ```bash
 PROJECT=/Users/wangxufeng/Documents/TimeSpaceGirl1
-UNITY=/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity
+UNITY=/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity
 PY=/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python
 ANDROID_SDK_BT=~/Library/Android/sdk/build-tools/36.0.0   # aapt2 / apksigner
 KEYSTORE=$PROJECT/beauty.keystore                          # alias xing，DN O=EMI

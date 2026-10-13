@@ -1,7 +1,7 @@
 # Android 发版 Runbook（AAB / APK → Google Play）
 
 > 更新时间：2026-10-12
-> 适用范围：`com.Warera.timespace`（Unity 2022.3.62f2c1，IL2CPP，仅 `arm64-v8a`）
+> 适用范围：`com.Warera.timespace`（Unity 6000.6.5f1，IL2CPP，仅 `arm64-v8a`）
 > 配套：`scripts_reference.md`（脚本地图）、`unity_android_build_skill.md`（构建侧坑位与 Gradle/AGP 细节）、
 > `google_play_upload_setup.md`（service account 申请与授权）、`client_build_chain.md`（改 Lua/配置表）
 
@@ -21,7 +21,7 @@
 | 项 | 值 |
 |---|---|
 | 包名 | `com.Warera.timespace` |
-| Unity | `/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity` |
+| Unity | `/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity` |
 | 打包方法 | `CLIBuilder.BuildAndroidAAB`（发版）/ `CLIBuilder.BuildAndroidAPK`（自测） |
 | 出包口径真源 | `Assets/Editor/ReleaseBuildSettings.cs`，CLI 固定 `MinimalGmOff` |
 | 产物目录 | `apks/{yyyy-MM-dd}/CLIBuild/{HHmmss}.{aab\|apk}`（`apks/` 已 gitignore） |
@@ -119,7 +119,7 @@ scripts/aab_release.sh --skip-build --upload --production --publish --yes
 
 ```bash
 # 打 APK（不提 versionCode，保持与线上 AAB 同号，便于对照）
-/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity \
+/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity \
   -projectpath /Users/wangxufeng/Documents/TimeSpaceGirl1 \
   -batchmode -nographics \
   -executeMethod CLIBuilder.BuildAndroidAPK \
@@ -374,8 +374,8 @@ LoginPanel.lua:1243
 ## 11. 环境路径备忘
 
 ```bash
-UNITY=/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity
-UNITY_ANDROID=/Applications/Unity/Hub/Editor/2022.3.62f2c1/PlaybackEngines/AndroidPlayer
+UNITY=/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity
+UNITY_ANDROID=/Applications/Unity/Hub/Editor/6000.6.5f1/PlaybackEngines/AndroidPlayer
 # Gradle 7.5.1: $UNITY_ANDROID/Tools/gradle
 # NDK:          $UNITY_ANDROID/NDK   （23.1.7779620；重编 .so 用独立的 r28，见 libtolua16k/README.md）
 # JDK 11:       $UNITY_ANDROID/OpenJDK

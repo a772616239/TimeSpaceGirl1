@@ -21,7 +21,7 @@ pipeline {
     PROJ  = '/Users/wangxufeng/Documents/TimeSpaceGirl1'
     PY    = '/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python'
     BASH  = '/usr/local/bin/bash'
-    UNITY = '/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity'
+    UNITY = '/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity'
   }
 
   stages {

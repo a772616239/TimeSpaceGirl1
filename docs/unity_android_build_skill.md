@@ -1,6 +1,6 @@
 # Unity Android 打包流程（IAP Billing 8+ 升级 + CLI 打包）
 
-> 适用范围：TimeSpaceGirl1 项目（Unity 2022.3.62f2c1）
+> 适用范围：TimeSpaceGirl1 项目（Unity 6000.6.5f1）
 > 更新时间：2026-10-12（原版 2026-08-17；当时 APK 454MB / AAB 421MB，billing 9.0.0）
 >
 > 🔴 **本文只讲"构建侧"的深坑（Gradle / AGP / billing / AndroidX / CLI 入口）。**
@@ -14,7 +14,7 @@
 | 项 | 值 |
 |---|---|
 | 项目路径 | `/Users/wangxufeng/Documents/TimeSpaceGirl1/` |
-| Unity 版本 | 2022.3.62f2c1（ProjectSettings/ProjectVersion.txt） |
+| Unity 版本 | 6000.6.5f1（ProjectSettings/ProjectVersion.txt） |
 | 应用 ID | `com.Warera.timespace` |
 | versionName / versionCode | 1.2.49 / 68（**CLI 不自增**，需 `scripts/bump_version.py`） |
 | minSdk / targetSdk | 24 / 36 |
@@ -304,7 +304,7 @@ public class CLIBuilder
 
 **打包 APK：**
 ```bash
-/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity \
+/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity \
   -projectpath /Users/wangxufeng/Documents/TimeSpaceGirl1 \
   -batchmode -nographics \
   -executeMethod CLIBuilder.BuildAndroidAPK \
@@ -314,7 +314,7 @@ public class CLIBuilder
 
 **打包 AAB：**
 ```bash
-/Applications/Unity/Hub/Editor/2022.3.62f2c1/Unity.app/Contents/MacOS/Unity \
+/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity \
   -projectpath /Users/wangxufeng/Documents/TimeSpaceGirl1 \
   -batchmode -nographics \
   -executeMethod CLIBuilder.BuildAndroidAAB \
@@ -368,13 +368,13 @@ public class CLIBuilder
 
 ### 7.1 APK 验证
 ```bash
-AAPT="/Applications/Unity/Hub/Editor/2022.3.62f2c1/PlaybackEngines/AndroidPlayer/SDK/build-tools/34.0.0/aapt"
+AAPT="/Applications/Unity/Hub/Editor/6000.6.5f1/PlaybackEngines/AndroidPlayer/SDK/build-tools/36.0.0/aapt"
 "$AAPT" dump badging "$APK" | grep -E "^package|sdkVersion|targetSdkVersion"
 # 期望: package: name='com.Warera.timespace' versionCode='62' versionName='1.2.45'
 #       sdkVersion:'24'  targetSdkVersion:'36'
 
 # 签名验证
-APKSIGNER=$(find "/Applications/Unity/Hub/Editor/2022.3.62f2c1" -name "apksigner" | head -1)
+APKSIGNER=$(find "/Applications/Unity/Hub/Editor/6000.6.5f1" -name "apksigner" | head -1)
 "$APKSIGNER" verify --print-certs "$APK"
 # 期望: Signer #1 certificate DN: O=EMI
 ```
@@ -427,7 +427,7 @@ ls ~/.gradle/caches/modules-2/files-2.1/androidx.core/core/
 
 ```bash
 # Unity 自带工具
-UNITY_ANDROID="/Applications/Unity/Hub/Editor/2022.3.62f2c1/PlaybackEngines/AndroidPlayer"
+UNITY_ANDROID="/Applications/Unity/Hub/Editor/6000.6.5f1/PlaybackEngines/AndroidPlayer"
 # Gradle 7.5.1（Unity 自带）: $UNITY_ANDROID/Tools/gradle
 # NDK 23.1.7779620: $UNITY_ANDROID/NDK
 # JDK 11（Unity 自带）: $UNITY_ANDROID/OpenJDK

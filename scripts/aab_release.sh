@@ -109,7 +109,10 @@ cd "$PROJECT_ROOT"
 step "前置检查"
 
 [[ -x "$UNITY_BIN" ]] || fail "Unity 编辑器不存在：$UNITY_BIN"
-ok "Unity 编辑器就位 (2022.3.62f2c1)"
+# 版本号从路径反推（.../Hub/Editor/<version>/Unity.app/...），别再写死 —— 写死的那次
+# 升到 6000.6.5f1 后这句一直骗人地打印旧版本。
+UNITY_VER=$(printf '%s' "$UNITY_BIN" | sed -nE 's|.*/Hub/Editor/([^/]+)/.*|\1|p')
+ok "Unity 编辑器就位 (${UNITY_VER:-未知版本} @ $UNITY_BIN)"
 
 [[ -f "${PROJECT_ROOT}/Assets/Editor/CLIBuilder.cs" ]] || fail "缺少 Assets/Editor/CLIBuilder.cs"
 ok "CLIBuilder.cs 就位"

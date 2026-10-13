@@ -78,3 +78,24 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode 'json={"parameter":[]}' \
 - 本机只有 **Unity Hub** 在跑、**无编辑器实例**占用工程 ⇒ 打包类 job 现在**可跑**
   （`android_env.sh` rc=3 那条黄球今天没出现；真开编辑器时会变黄球，属正常，非代码问题）。
 - 唯一黄球：`本地 10002 区服状态` → 找不到 `~/ts-shard10002`（该环节计「关注」，不阻断流水线）。
+
+## job 定义的两个落点 & `/Users/wangxufeng/.jenkins/jobs/` 的 git 问题（2026-10-13）
+
+用户要求「**今后所有任务都用 Jenkins 跑、功能改动加到 Jenkins 上，改完 push git `/Users/wangxufeng/.jenkins/jobs/`**」。
+
+**两个落点（改完两边都要入库）**：
+1. 项目内 `TimeSpaceGirl1/.jenkins/jobs/*.groovy` ＝ 单一真源 → `lint.sh` → `apply-jobs.sh`（REST 推 `config.xml`，热生效）。
+2. 本机 `/Users/wangxufeng/.jenkins/jobs/` **本身是 git 仓库**（分支 `main`）：
+   - 每 job 一个目录，跟踪 `config.xml` + `nextBuildNumber`；`.gitignore` = `Daily_Open_iKuuu/builds` + `*/builds`。
+   - **34940 个跟踪文件里 34910 个是 `*/builds/`（全是 System_Monitor 的构建日志，19MB 已入库，磁盘上 209MB）**
+     ⇒ `.gitignore` 只挡未来提交、摘不出已入库的；仓库 `.git` 已 32MB。
+   - 2 条提交：`20c65cb1 Initial commit`（2026-06-03）、`f9118b89 jobs`（**2026-10-13 18:33**，提交者
+     `AI Assistant <992694856@qq.com>` —— 是**并发 AI 工具 QClaw 自动 commit 的**，不是我）。
+   - 工作区当前干净。
+- 🔴 **远端坏了**：`origin` = `https://<PAT>@github.com/a772616239/jobs1.git` → **GitHub 404，仓库不存在**
+  （PAT 本身有效，`/user` 200 登录 `a772616239`；token scopes 含 `repo`/`delete_repo`，**足够建新仓**）。
+  ⇒ 「改完 push」这条约定**目前兑现不了**。账号下只有个 2024 年的 `a772616239/JenkinJobs`
+  （private、默认分支 `master`、last push 2024-05-12，内容是 android/ios 构建脚本，**与本仓库无关，别误指过去**）。
+- 待用户定夺：① 建 private `jobs1` 再推（含是否先把 `*/builds` 从索引摘掉瘦身）；② 改指向别的仓；③ 先不动。
+- ⚠️ 该目录有**并发 AI 工具在写**，动手前先 `git status` + `git reflog` 看有没有别人刚提交。
+

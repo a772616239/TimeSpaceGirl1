@@ -65,6 +65,8 @@
 - 🔴 **静态检查挡不住的三类坑**：`config.xml` 的 Content-Type **必须带 `charset=UTF-8`**；`<sandbox>` **必须 `true`**；`junit testResults` **必须相对 workspace**；ANSI 码进 XML ⇒ 整份报告 `[failed-to-read]`。
 - 🔴 **`POST /job/<n>/build` 在 2.551 上恒 400**；正确姿势 `POST /buildWithParameters` + `--data-urlencode 'json={"parameter":[]}'` → 201。
 - 🔴 **自检也会假红**：`play_gate.sh` 曾因判定用管道而误判（同一份代码 Jenkins 判 fail、本地 17 次全绿），已修 `930965657` —— 机理见下方「pipefail 假失败」红线。
+- 🔴 **任务一律走 Jenkins**（2026-10-13 用户要求）：功能改动要同步加到 Jenkins；`.jenkins/jobs/*.groovy` 改完跑 `lint.sh` → `apply-jobs.sh`。
+- 🔴 **本机 `/Users/wangxufeng/.jenkins/jobs/` 也是 git 仓库**（分支 `main`，存各 job 的 `config.xml`+`nextBuildNumber`，`apply-jobs.sh` 推完会变脏）⇒ **改完必须 commit + push**。⚠️ 其 `origin`（`github.com/a772616239/jobs1.git`）**404 不存在**，push 必失败；该目录另有并发 AI 工具（QClaw）自动 commit。详见 `REF-jenkins-ci.md`。
 
 ## 🔴 约定（红线）
 - 巡检默认**只读**：不重启服务、不改服务器配置。报告要有量化证据，区分「严重🔴 / 关注⚠️」。

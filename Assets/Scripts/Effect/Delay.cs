@@ -7,13 +7,13 @@ public class Delay : MonoBehaviour {
 	
 	// Use this for initialization
 	void Start () {		
-		gameObject.SetActiveRecursively(false);
+		gameObject.SetActive(false);
 		Invoke("DelayFunc", delayTime);
 	}
 	
 	void DelayFunc()
 	{
-		gameObject.SetActiveRecursively(true);
+		gameObject.SetActive(true);
 	}
 	
 }

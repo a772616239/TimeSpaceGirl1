@@ -45,7 +45,7 @@ public class UUICenterOnChild : MonoBehaviour, IBeginDragHandler, IEndDragHandle
         var activeCount = 0;
         foreach (Transform item in uUIGrid)
         {
-            if (item.gameObject.active)
+            if (item.gameObject.activeSelf)
             { 
                 items.Add(item);
                 activeCount++;

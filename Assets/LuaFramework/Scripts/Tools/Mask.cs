@@ -253,13 +253,13 @@ namespace ToJ
 					foreach (Material material in differentMaterials)
 					{
 						if ((material.shader.ToString() == _maskedSpriteWorldCoordsShader.ToString()) &&
-							(material.shader.GetInstanceID() != _maskedSpriteWorldCoordsShader.GetInstanceID()))
+							(material.shader.GetEntityId() != _maskedSpriteWorldCoordsShader.GetEntityId()))
 						{
 							Debug.Log("There seems to be more than one masked shader in the project with the same display name, and it's preventing the mask from being properly applied.");
 							_maskedSpriteWorldCoordsShader = null;
 						}
 						if ((material.shader.ToString() == _maskedUnlitWorldCoordsShader.ToString()) &&
-							(material.shader.GetInstanceID() != _maskedUnlitWorldCoordsShader.GetInstanceID()))
+							(material.shader.GetEntityId() != _maskedUnlitWorldCoordsShader.GetEntityId()))
 						{
 							Debug.Log("There seems to be more than one masked shader in the project with the same display name, and it's preventing the mask from being properly applied.");
 							_maskedUnlitWorldCoordsShader = null;

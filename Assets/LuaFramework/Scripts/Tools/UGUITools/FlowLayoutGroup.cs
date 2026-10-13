@@ -21,7 +21,7 @@ namespace UnityEngine.UI.Extensions
 
             var minWidth = GetGreatestMinimumChildWidth() + padding.left + padding.right;
 
-            SetLayoutInputForAxis(minWidth, -1, -1, 0);
+            SetLayoutInputForAxis(minWidth, -1, -1, -1, 0);
 
         }
 
@@ -172,7 +172,7 @@ namespace UnityEngine.UI.Extensions
             {
 
                 if (axis == 1)
-                    SetLayoutInputForAxis(yOffset, yOffset, -1, axis);
+                    SetLayoutInputForAxis(yOffset, yOffset, yOffset, -1, axis);
 
             }
 

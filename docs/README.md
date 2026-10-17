@@ -15,7 +15,8 @@
 | 知道有哪些脚本、怎么调、退出码是什么 | **`scripts_reference.md`** |
 | 改 Lua / 配置表 / 资源，改完不生效 | **`client_build_chain.md`** |
 | 起服 / 开区服 / 改线上 / 每日巡检 | **`server_ops_runbook.md`** |
-| **玩家作弊 / 数据异常 / 封号处置** | **`gm_abuse_incident_playbook.md`** |
+| **查某个玩家是不是开挂（判定）** | **`cheat_detection_skill.md`** |
+| **玩家作弊 / 数据异常 / 封号处置（动作）** | **`gm_abuse_incident_playbook.md`** |
 | Unity 构建侧深坑（Gradle / AGP / billing / AndroidX） | `unity_android_build_skill.md` |
 | service account 申请与 Play 后台授权 | `google_play_upload_setup.md` |
 | **密钥 / pem 放哪、换机怎么恢复** | **`secrets_setup.md`** |
@@ -123,6 +124,19 @@ A/B/C 三条链已经收口成 **7 个 Jenkins job**，跑在 `http://127.0.0.1:
 | internal 上传报 `400 Changes cannot be sent for review automatically` | 2026-10-17 起 Play **所有轨道**都要求 `changesNotSentForReview=true`；脚本已在 non-prod 轨道自动带（见 runbook §5.3） |
 | `main_android/Unity` 在跑 batchmode | 与本工程无关，不再会误判为「占用」（已修 `b64b894dd`） |
 | 新机器 clone 完 `.secrets/` 是**空的** | **正常**。凭据不入库，按 `secrets_setup.md` §3 恢复；脚本缺文件会自动走回退链 |
+
+---
+
+## 作弊排查速查
+
+```bash
+python3 scripts/cheat_scan.py --uid 10000017    # 单号裁决（只读，~30s）
+python3 scripts/cheat_scan.py --hunt            # 全服扫可疑号（~90s）
+python3 scripts/cheat_scan.py --ban-list        # 当前 FORBID_LOGIN 名单
+```
+
+判据 / 阈值 / 误判陷阱 / 四个真实样本的回归集 → **`cheat_detection_skill.md`**
+确认作弊后的封禁与数据清理动作 → **`gm_abuse_incident_playbook.md`**
 
 ---
 

@@ -1,9 +1,10 @@
 # 全流程脚本速查（TimeSpaceGirl1）
 
-> 更新时间：2026-10-12
-> 面向：所有需要「出包 / 发版 / 起服 / 改客户端资源」的动作。
+> 更新时间：2026-10-18
+> 面向：所有需要「出包 / 发版 / 起服 / 改客户端资源 / 查作弊」的动作。
 > 一句话定位：**本文回答「有哪条链、链上有哪些脚本、每个脚本干什么、怎么调、失败看什么」。**
-> 端到端操作步骤见 `android_release_runbook.md` 与 `server_ops_runbook.md`。
+> 端到端操作步骤见 `android_release_runbook.md` 与 `server_ops_runbook.md`；
+> 作弊判定方法论见 `cheat_detection_skill.md`。
 
 ---
 
@@ -270,6 +271,38 @@ scripts/server_health_check.py [--dry-run] [--to a@b.com] [--json]
 → `~/TD-recovery/.env` → `~/TD-salvage-20260911/.env`（失效）；脚本逐个试登录自动跳过失效口令，
 **缺失文件也会被安全跳过**。SSH 私钥同理：工程本地 `.secrets/tencent-gameserver.pem` 优先，
 回退 `~/.ssh/config` 的 `Host gs`（见 `secrets_setup.md`）。
+
+### 1.11 `scripts/cheat_scan.py` —— 作弊快速排查（**只读**）
+
+```bash
+scripts/cheat_scan.py --uid 10000017        # 单号裁决，~30s
+scripts/cheat_scan.py --uid 10000017 --full # 追加 IP / 同伙 / 登录轨迹
+scripts/cheat_scan.py --hunt                # 全服扫可疑号，~90s
+scripts/cheat_scan.py --ban-list            # 当前 FORBID_LOGIN 名单
+scripts/cheat_scan.py --uid <UID> --json    # 机器可读
+```
+
+退出码：`0` = 干净或可疑；`1` = **确证作弊**（可接告警/CI）；`2` = 参数错误。
+
+三层判定（硬信号 → 软信号 → 参考信号），阈值集中在文件顶部 `TH = {...}`：
+
+| 层 | 判据 | 阈值 |
+|---|---|---|
+| 硬 | `GM_REQUEST` 次数 | `> 12` |
+| 硬 | `itemLog.reason=28`（`GM_REWARD`）单笔 | `≥ 100 万` |
+| 硬 | 任意单笔发放 | `≥ 1 亿` |
+| 硬 | 主线 `delta = fightLog最高 − (Name−1)` | `< -1`（跳关；`> +1` 是回档不算） |
+| 软 | 金币 | `> 活跃号 P90 × 3` |
+| 软 | 竞技场相邻战斗间隔 | `< 1s` |
+| 软 | 竞技场场次 vs 挑战券（`reason=1022`） | 差 `> 券 × 50%` |
+| 软 | 主线已通关范围内有缺口 | 任意 |
+
+🔴 **只读**：不封号、不改数据。封禁动作走 `gm_abuse_incident_playbook.md` §3/§5。
+判据来源、误判陷阱、四个真实样本的回归集 → **`cheat_detection_skill.md`**。
+
+依赖：本机 `Host gs` 别名、远端 `mongo`/`redis-cli`、本地 `openpyxl`（读 `MainLevelConfig.xlsx`
+做 `Id→Name` 换算；缺了会自动跳过该项并标注 `SKIP`）。
+`--hunt` 的四项：GM_REWARD 持有者 / 单笔发放 TOP15 / 主线进度不一致 / 排行榜脏数据。
 
 ---
 

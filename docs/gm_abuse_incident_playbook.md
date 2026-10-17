@@ -1,7 +1,9 @@
 # GM 指令滥用 / 玩家作弊 处置手册
 
 > 更新时间：2026-10-18
-> 配套：`server_ops_runbook.md`（生产环境事实）、`scripts_reference.md`（脚本清单）
+> 配套：`cheat_detection_skill.md`（**判定**：这号是不是挂）、`server_ops_runbook.md`（生产环境事实）、`scripts_reference.md`（脚本清单）
+> 分工：**`cheat_detection_skill.md` 判「是不是挂」，本文管「确认了之后怎么封」。**
+> 一键排查：`python3 scripts/cheat_scan.py --uid <UID>` / `--hunt`（全服扫）
 > 一句话定位：**发现玩家数据异常 → 怎么确认是作弊 → 怎么封 → 怎么修漏洞 → 怎么验。**
 
 ---
@@ -97,6 +99,15 @@ if (!GameApplication.serverProperties.isDebug()) {
 ---
 
 ## 2. 排查步骤（可复制）
+
+> 🔴 **本节是「确认到账号」的最短路径。想要完整的三层判定（GM 通道 / 业务接口 / 数据自洽）、
+> 阈值、误判陷阱与四个真实样本的回归集 → 看 `cheat_detection_skill.md`。**
+>
+> 一键版：
+> ```bash
+> python3 scripts/cheat_scan.py --uid 10000240     # 单号裁决
+> python3 scripts/cheat_scan.py --hunt             # 全服扫可疑
+> ```
 
 ### 2.1 从现象到账号
 

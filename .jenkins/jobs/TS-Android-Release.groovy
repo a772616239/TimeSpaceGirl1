@@ -1,16 +1,17 @@
 /**@META
 {
-  "description": "Android 发版全链路（AAB）：发布安全闸门 → 打包环境预检 → 提版本号 → Unity 构建 → 包内三重校验（出包口径 / native 16KB / 交付自检）→ 归档 →（可选）人工审批后上传 Play。默认只出包、不上传；上传默认走 internal 内部测试轨道（status=completed，测试员即可安装），发正式版 production 必须显式勾 PUBLISH 抬旗。",
+  "description": "Android 发版全链路（AAB）：发布安全闸门 → 打包环境预检 → 提版本号 → Unity 构建 → 包内三重校验（出包口径 / native 16KB / 交付自检）→ 归档 → 上传 Play。**默认上传并发布**（UPLOAD=True、AUTO_APPROVE=True）：默认轨道 internal 内部测试（status=completed，测试员即可安装）；选 production/beta/alpha 时同样上传并发布，其 completed/inProgress 仍需勾 PUBLISH 作为线上最后一道确认。需要停下来点按钮时把 AUTO_APPROVE 设为 False。",
   "concurrent": false,
   "params": [
     {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","dev","full"],"default":"minimal","description":"核验口径（包内 12 位开关应等于哪一档）。⚠️ CLI 构建固定 minimal（CLIBuilder.kProfile 硬编码），选 dev/full 只应用于配合 REUSE_AAB 核验 GUI/手工出的包"},
     {"name":"BUMP_VERSION","type":"bool","default":true,"description":"构建前把 versionCode +1。CLI 打包不自增；Play 各轨道共享 versionCode 空间，重复号一律被拒"},
     {"name":"REUSE_AAB","type":"string","default":"","description":"复用已有 AAB 的路径（填了就跳过 Unity 构建，只做校验/上传）"},
     {"name":"ALLOW_NO_LUA","type":"bool","default":false,"description":"强行跳过「未发现 Lua bundle」闸门（风险自负，会打出没有 Lua 的废包）"},
-    {"name":"UPLOAD","type":"bool","default":false,"description":"🔴 是否上传到 Google Play。默认否。勾上后仍需通过人工审批；是否送审另由 STATUS/PUBLISH 决定"},
-    {"name":"TRACK","type":"choice","choices":["internal","alpha","beta","production"],"default":"internal","description":"上传轨道。默认 internal=内部测试（不面向公众、免常规审核、几分钟可装）；production=正式版，需同时勾 PUBLISH"},
-    {"name":"STATUS","type":"choice","choices":["completed","draft","inProgress"],"default":"completed","description":"发布状态。internal 轨道 completed 即测试员可装；**非 internal 轨道**的 completed/inProgress 必须同时勾 PUBLISH"},
-    {"name":"PUBLISH","type":"bool","default":false,"description":"🔴 只对非 internal 轨道生效：放行 STATUS=completed/inProgress（= 提交审核 / 上线），须先拿到用户明确同意。internal 轨道不需要"},
+    {"name":"UPLOAD","type":"bool","default":true,"description":"是否上传到 Google Play。**默认是**。只出包不传时才取消勾选"},
+    {"name":"TRACK","type":"choice","choices":["internal","alpha","beta","production"],"default":"internal","description":"上传轨道。默认 internal=内部测试（不面向公众、免常规审核、几分钟可装）；选 production/beta/alpha 会「上传并发布」，其 completed/inProgress 仍要求勾 PUBLISH"},
+    {"name":"STATUS","type":"choice","choices":["completed","draft","inProgress"],"default":"completed","description":"发布状态。默认 completed=上传即发布（internal 测试员可装；线上轨道配合 PUBLISH 即送审上线）。只存草稿不发布才选 draft"},
+    {"name":"PUBLISH","type":"bool","default":false,"description":"🔴 线上轨道（production/beta/alpha）的放行旗标：选这些轨道 + STATUS=completed/inProgress 时必须勾选，表示已知晓「会送审 / 上线」。internal 轨道不需要"},
+    {"name":"AUTO_APPROVE","type":"bool","default":true,"description":"上传前的审批闸门是否自动放行。**默认是**（无人值守跑通整条链路）。设为 False 则停下来等人在 Jenkins 页面点「确认上传」"},
     {"name":"NOTES","type":"string","default":"","description":"更新说明（Play 发布说明）"}
   ]
 }
@@ -44,6 +45,7 @@ pipeline {
           env.TS_TRACK     = params.TRACK
           env.TS_STATUS    = params.STATUS
           env.TS_PUBLISH   = params.PUBLISH.toString()
+          env.TS_AUTOAPPROVE = params.AUTO_APPROVE.toString()
           env.TS_NOTES     = params.NOTES
           env.TS_BUILD_START = (System.currentTimeMillis() / 1000L).toString()
         }
@@ -56,7 +58,7 @@ mkdir -p "$TS_RUN_DIR/logs"
   echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
   echo "口径：$TS_PROFILE  提版本号：$TS_BUMP  复用 AAB：${TS_REUSE:-（无，将构建）}"
-  echo "上传：$UPLOAD  轨道：$TS_TRACK  状态：$TS_STATUS  PUBLISH：$TS_PUBLISH"
+  echo "上传：$UPLOAD  轨道：$TS_TRACK  状态：$TS_STATUS  PUBLISH：$TS_PUBLISH  自动放行审批：$TS_AUTOAPPROVE"
   echo "取证：$TS_RUN_DIR"
 } | tee "$TS_RUN_DIR/context.txt"
 ''')
@@ -239,7 +241,7 @@ done
       }
     }
 
-    stage('⑨ 上传 Google Play（需人工审批）') {
+    stage('⑨ 上传 Google Play（AUTO_APPROVE 控制审批）') {
       when { expression { params.UPLOAD } }
       steps {
         script {
@@ -274,7 +276,18 @@ cat "$TS_RUN_DIR/aab.path" 2>/dev/null || true
   更新说明 : ${params.NOTES ?: '（空）'}
 
 确认无误请点「确认上传」；不想传点「中止」。"""
-          input message: msg, ok: '确认上传'
+
+          // 审批闸门：AUTO_APPROVE=True（默认）时直接放行，让整条链路无人值守跑通；
+          // 设 False 才真的停下来等人在 Jenkins 页面点按钮。
+          // 🔴 上面的送审闸门（TRACK!=internal 且 completed/inProgress 必须 PUBLISH）
+          //    与下面这层是**两道独立**的门：自动放行只解掉「点按钮」这一步，
+          //    不会替你把线上轨道的 PUBLISH 抬起来。
+          if (params.AUTO_APPROVE) {
+            echo "⏭ 审批闸门自动放行（AUTO_APPROVE=true）：TRACK=${params.TRACK} / STATUS=${params.STATUS}"
+            echo msg
+          } else {
+            input message: msg, ok: '确认上传'
+          }
 
           sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail

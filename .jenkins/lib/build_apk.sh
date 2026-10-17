@@ -65,12 +65,17 @@ RC=$?
 DUR=$(( $(date +%s) - START ))
 
 # ---- 从 Unity 日志里摘结论 --------------------------------------------------
-KEY="$(grep -aE 'Build SUCCESS|Build FAILED|Aborted|Exception|error CS|CLIBuilder BuildAndroid' "$LOG" 2>/dev/null \
-       | tail -1 | cut -c1-190 || true)"
+# 🔴 判定必须看**全量**匹配行，不能看 `tail -1`：
+#    CLIBuilder 的收尾顺序是 `✅ Build SUCCESS! <path>` 然后才是
+#    `===== CLIBuilder BuildAndroidAPK End (built=True) =====`，
+#    所以最后一行永远是 End 行，`tail -1` 会把 SUCCESS 挤掉 ⇒ 白判一次「关注」。
+#    （2026-10-17 TS-Android-TestPackage #1 实测：APK 明明打好了，仍被标 warn。）
+ALL_KEY="$(grep -aE 'Build SUCCESS|Build FAILED|Aborted|Exception|error CS|CLIBuilder BuildAndroid' "$LOG" 2>/dev/null | cut -c1-190 || true)"
+KEY="$(printf '%s\n' "$ALL_KEY" | tail -1)"
 [[ -n "$KEY" ]] || KEY="（Unity 日志无关键行，见 ${LOG}）"
 
-if [[ $RC -eq 0 && "$KEY" != *"Build SUCCESS"* ]]; then
-  # Unity 退出码 0 但日志里没有 SUCCESS：可能是被 -quit 提前截断，标成「关注」而不是通过
+if [[ $RC -eq 0 && "$ALL_KEY" != *"Build SUCCESS"* ]]; then
+  # Unity 退出码 0 但**整份日志**都没有 SUCCESS：可能是被 -quit 提前截断，标「关注」而不是通过
   echo "⚠️ Unity 退出码为 0，但日志里没找到 'Build SUCCESS' —— 标为关注"
   STATUS="warn"
 elif [[ $RC -eq 0 ]]; then

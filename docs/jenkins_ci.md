@@ -84,7 +84,7 @@
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
 | **TS-Pipeline-Overview** | 只读总览：一次看完 8 个环节，失败互不阻断 | `SKIP_PLAY=False` `SKIP_HEALTH=False` | — | 允许 |
-| **TS-Android-Release** | AAB 全链路（9 stage），含**送审审批闸门** | `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=False` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `NOTES=` | — | **禁止** |
+| **TS-Android-Release** | AAB 全链路（9 stage），默认打包 + 上传发布 | `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
 | **TS-Android-TestPackage** | 出测试 APK（universal，upload key 签名） | `BUMP_VERSION=False` `EXPECT_PROFILE=minimal` | — | **禁止** |
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |
@@ -95,11 +95,18 @@
 
 > 红线：**绝不自行提交审核。** 打包/构建/校验可以做；**「上传 production + `status=completed`」必须先获用户明确同意。**
 > 2026-10-13 起默认目标轨道是 **`internal`（内部测试）**，production 必须显式抬旗。
+> 2026-10-17 起 **`UPLOAD` 与 `AUTO_APPROVE` 都默认 `True`**（用户要求「默认上传并发布测试管道；
+> 选线上管线时也上传发布」）⇒ **不带任何参数点构建 = 打包 + 传 internal + 发布**，无需人点按钮。
 
-1. **参数默认值**：`UPLOAD=False`、`TRACK=internal`、`STATUS=completed`（internal 传完即可测）、`PUBLISH=False`。
+1. **参数默认值**：`UPLOAD=True`、`AUTO_APPROVE=True`、`TRACK=internal`、`STATUS=completed`、`PUBLISH=False`。
+   注意 `PUBLISH=False` 依然把守线上轨道 —— 默认值组合只会走到 internal。
 2. **运行时硬拦**：`TRACK != internal && STATUS in [completed, inProgress] && !PUBLISH` ⇒ `error(...)` 直接失败（防「下拉框手滑」）。
    `internal` 轨道豁免 —— 它不面向公众、可随时 halt / 替换。
-3. **人工审批**：上传 stage 带 `input` 步骤，必须有人点确认。
+3. **审批闸门**：上传 stage 的 `input` 步骤由 `AUTO_APPROVE` 控制 —— 默认 True 时打印确认信息后**自动放行**，
+   设 `False` 才停下来等人在页面点「确认上传」。
+   🔴 自动放行**只解掉「点按钮」这一步**，不会替你把线上轨道的 `PUBLISH` 抬起来；
+   脚本层闸门（`aab_release.sh` / `play_upload.py` 的 `--upload` / `--production` / `--publish`）
+   与 `play_gate.sh` 的 18 项断言**完全没动**，仍是「不加参数不上传 / 不写 production / 不送审」。
 
 另有 `play_gate.sh` 做**行为断言**：真跑 `aab_release.sh --skip-build --upload --track production`、
 `--upload --production --status completed` 等组合，必须被拒绝且输出含「拒绝」；同时断言

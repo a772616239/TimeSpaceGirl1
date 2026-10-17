@@ -49,7 +49,7 @@
 ├── lint.sh                    ← 推送前四道静态检查（见第 6 节）
 ├── jobs/
 │   ├── TS-Pipeline-Overview.groovy     只读总览（8 个环节一次看完）
-│   ├── TS-Android-Release.groovy       AAB 全链路
+│   ├── TS-Android-Release.groovy       AAB + APK 全链路
 │   ├── TS-Android-TestPackage.groovy   测试 APK
 │   ├── TS-Client-Resources.groovy      Lua 源码 ↔ 字节码
 │   ├── TS-Server-Health.groovy         生产服巡检（定时）
@@ -84,7 +84,15 @@
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
 | **TS-Pipeline-Overview** | 只读总览：一次看完 8 个环节，失败互不阻断 | `SKIP_PLAY=False` `SKIP_HEALTH=False` | — | 允许 |
-| **TS-Android-Release** | AAB 全链路（9 stage），默认打包 + 上传发布 | `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
+| **TS-Android-Release** | **AAB + APK** 全链路（10 stage），默认打包 + 上传发布 | `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
+
+> **`BUILD_APK`（默认 True）**：打完 AAB 立刻在同一把 `unity` 锁下再出 **同 versionCode** 的 universal APK
+> （`--no-bump`，绝不二次提号），供直接装机测试。
+> - APK 失败**不阻断** AAB 发版（红线是 Play 包），但会记成「关注」并在归档里写明「本次未产出 APK」。
+> - APK 会单独跑 `verify_apk_delivery.py` 生成 `.delivery.json`（口径 / 16KB / googlesignin / 签名），
+>   ⑦ 的三重校验只针对 AAB —— 不单独校，就是「发出去的装机包没人验过」。
+> - ⚠️ APK 用 upload key，与 Play 的 app signing key 不同 ⇒ **侧载前必须先卸载 Play 版**。
+
 | **TS-Android-TestPackage** | 出测试 APK（universal，upload key 签名） | `BUMP_VERSION=False` `EXPECT_PROFILE=minimal` | — | **禁止** |
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |

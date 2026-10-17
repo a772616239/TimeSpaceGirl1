@@ -1,10 +1,11 @@
 /**@META
 {
-  "description": "Android 发版全链路（AAB）：发布安全闸门 → 打包环境预检 → 提版本号 → Unity 构建 → 包内三重校验（出包口径 / native 16KB / 交付自检）→ 归档 → 上传 Play。**默认上传并发布**（UPLOAD=True、AUTO_APPROVE=True）：默认轨道 internal 内部测试（status=completed，测试员即可安装）；选 production/beta/alpha 时同样上传并发布，其 completed/inProgress 仍需勾 PUBLISH 作为线上最后一道确认。需要停下来点按钮时把 AUTO_APPROVE 设为 False。",
+  "description": "Android 发版全链路（AAB + APK）：发布安全闸门 → 打包环境预检 → 提版本号 → Unity 构建 AAB → **同版本号打出测试 APK** → 包内三重校验 → 归档 → 上传 Play。**默认上传并发布**（UPLOAD=True、AUTO_APPROVE=True、BUILD_APK=True）：默认轨道 internal 内部测试（status=completed，测试员即可安装）；选 production/beta/alpha 时同样上传并发布，其 completed/inProgress 仍需勾 PUBLISH 作为线上最后一道确认。需要停下来点按钮时把 AUTO_APPROVE 设为 False。",
   "concurrent": false,
   "params": [
     {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","dev","full"],"default":"minimal","description":"核验口径（包内 12 位开关应等于哪一档）。⚠️ CLI 构建固定 minimal（CLIBuilder.kProfile 硬编码），选 dev/full 只应用于配合 REUSE_AAB 核验 GUI/手工出的包"},
     {"name":"BUMP_VERSION","type":"bool","default":true,"description":"构建前把 versionCode +1。CLI 打包不自增；Play 各轨道共享 versionCode 空间，重复号一律被拒"},
+    {"name":"BUILD_APK","type":"bool","default":true,"description":"**默认是**：打完 AAB 后接着出一份同 versionCode 的 universal APK（upload key 签名），方便直接装手机测试。APK 失败不阻断 AAB 发版，但会标成关注"},
     {"name":"REUSE_AAB","type":"string","default":"","description":"复用已有 AAB 的路径（填了就跳过 Unity 构建，只做校验/上传）"},
     {"name":"ALLOW_NO_LUA","type":"bool","default":false,"description":"强行跳过「未发现 Lua bundle」闸门（风险自负，会打出没有 Lua 的废包）"},
     {"name":"UPLOAD","type":"bool","default":true,"description":"是否上传到 Google Play。**默认是**。只出包不传时才取消勾选"},
@@ -162,6 +163,61 @@ echo "→ scripts/aab_release.sh ${BUILD_ARGS[*]}"
       }
     }
 
+    stage('⑤-2 打包 APK（同版本号，便于真机测试）') {
+      when { expression { params.BUILD_APK && params.REUSE_AAB.trim().isEmpty() } }
+      options { timeout(time: 120, unit: 'MINUTES') }
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+
+# 🔴 关键：APK 必须与本次 AAB **同一个 versionCode**。
+#    版本号已在 ④ 提过一次，这里必须 --no-bump，否则 APK 会比 AAB 大一号，
+#    两者对不上、也没法与 Play 上那个号互相印证。
+# 🔴 必须仍然纳 unity 锁：同一 Unity 工程只允许一个 batchmode 实例。
+#    AAB 刚构建完、锁已释放，这里再拿一次 —— 期间若有人手工开了编辑器，
+#    我们只会等锁（rc=75 超时）而不是把工程搞坏。
+echo "→ build_apk.sh --no-bump（复用 ④ 已提的版本号，与 AAB 保持一致）"
+"$BASH" .jenkins/lib/run_stage.sh --name "Unity 构建 APK" \
+  --group "构建" --slug build-apk --timeout 7000 \
+  -- "$BASH" .jenkins/lib/build_apk.sh --no-bump --who "$JOB_NAME #$BUILD_NUMBER"
+''')
+      }
+      post {
+        always {
+          script {
+            // APK 是「方便测试」的产物，不是发布阻断项：它挂了不该让整条发版链变红，
+            // 但要**明确记成关注**并在总结里说出来，不能悄悄吞掉。
+            def apkLog = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
+cd "$PROJ" 2>/dev/null || true
+cat "$TS_RUN_DIR/apk.path" 2>/dev/null || true
+''').trim()
+            if (apkLog) {
+              env.TS_APK_PATH = apkLog
+              echo "✅ 本次同时产出 APK：${apkLog}"
+              // 装机包也要过交付自检：出包口径 / 16KB / googlesignin / **签名**。
+              // ⑦ 的三重校验只针对 AAB，APK 若不单独校，就是「发出去的测试包没人验过」。
+              // 这里用 returnStatus：APK 校验不过只标关注、不阻断 AAB 发版（真正的红线是 Play 包）。
+              def apkRc = sh(returnStatus: true, script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+APK="$(cat "$TS_RUN_DIR/apk.path" 2>/dev/null || true)"
+[[ -n "$APK" ]] || exit 1
+"$BASH" .jenkins/lib/run_stage.sh --name "APK 交付自检（供装机）" \
+  --group "包内校验" --slug apk-delivery --timeout 300 \
+  -- "$PY" scripts/verify_apk_delivery.py "$APK" --expect "$TS_PROFILE"
+''')
+              if (apkRc != 0) {
+                echo "⚠️ APK 交付自检未通过（rc=${apkRc}）——AAB 发版不受影响，但这份 APK 不建议拿去装机。"
+              }
+            } else {
+              echo "⚠️ 本次没有产出 APK（AAB 已正常出包）。要排查请看 'Unity 构建 APK' 环节日志。"
+            }
+          }
+        }
+      }
+    }
+
     stage('⑥ 定位本次产物') {
       steps {
         sh(script: '''#!/usr/local/bin/bash
@@ -230,12 +286,36 @@ AAB="$(cat "$TS_RUN_DIR/aab.path" 2>/dev/null || true)"
 echo "AAB: $AAB"
 mkdir -p "$TS_RUN_DIR/artifacts"
 for f in "$AAB.release.json" "$AAB.delivery.json"; do
-  [[ -f "$f" ]] && cp "$f" "$TS_RUN_DIR/artifacts/" && echo "  已收取证：${f##*/}"
+  if [[ -f "$f" ]]; then
+    cp "$f" "$TS_RUN_DIR/artifacts/" && echo "  已收取证：${f##*/}"
+  fi
 done
 # 大包本体（450MB）不进 Jenkins 归档：它就在 apks/ 下，路径记进证据文件即可
 {
   echo "AAB=$AAB"
-  [[ -f "$AAB" ]] && echo "size=$(stat -f%z "$AAB")" && echo "md5=$(md5 -q "$AAB")"
+  [[ -f "$AAB" ]] && echo "aab_size=$(stat -f%z "$AAB")" && echo "aab_md5=$(md5 -q "$AAB")"
+  # 同版本的测试 APK（BUILD_APK 默认开）也记账，便于拿走直接装机
+  APK="$(cat "$TS_RUN_DIR/apk.path" 2>/dev/null || true)"
+  if [[ -n "$APK" && -f "$APK" ]]; then
+    echo "APK=$APK"
+    echo "apk_size=$(stat -f%z "$APK")"
+    echo "apk_md5=$(md5 -q "$APK")"
+    # 🔴 不要在循环体末尾用 `[[ -f … ]] && cp … && echo …` 这种串：
+    #    APK 的 .delivery.json 由本轮**后续**环节才生成，此刻大概率还不存在，
+    #    该表达式于是返回 1，而 `set -uo pipefail` 下循环体最后一次求值就是脚本的退出码
+    #    ⇒ 整个 ⑧ 变成 exit 1，连累 ⑨ 上传被 skip（2026-10-17 构建 #3 实测）。
+    #    一律显式 if + 循环末尾 `|| true`。
+    for f in "$APK.release.json" "$APK.delivery.json"; do
+      if [[ -f "$f" ]]; then
+        cp "$f" "$TS_RUN_DIR/artifacts/" && echo "  已收取证：${f##*/}"
+      else
+        echo "  （暂无 ${f##*/}，属正常：该 sidecar 由后续环节生成）"
+      fi
+    done
+  else
+    echo "APK=（本次未产出）"
+  fi
+  true
 } | tee "$TS_RUN_DIR/artifacts/artifact.txt"
 ''')
       }

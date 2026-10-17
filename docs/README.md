@@ -1,6 +1,6 @@
 # TimeSpaceGirl1 运维文档索引
 
-> 更新时间：2026-10-12
+> 更新时间：2026-10-18
 > 本项目（Unity 手游「时空美少女/时空战场」客户端 + 同仓 `TimeSpaceServer/`）的**运维与发版知识库**。
 > 本目录面向"要动手做事"的场景；历史决策细节另见 `.workbuddy/memory/`。
 
@@ -15,6 +15,7 @@
 | 知道有哪些脚本、怎么调、退出码是什么 | **`scripts_reference.md`** |
 | 改 Lua / 配置表 / 资源，改完不生效 | **`client_build_chain.md`** |
 | 起服 / 开区服 / 改线上 / 每日巡检 | **`server_ops_runbook.md`** |
+| **玩家作弊 / 数据异常 / 封号处置** | **`gm_abuse_incident_playbook.md`** |
 | Unity 构建侧深坑（Gradle / AGP / billing / AndroidX） | `unity_android_build_skill.md` |
 | service account 申请与 Play 后台授权 | `google_play_upload_setup.md` |
 | **密钥 / pem 放哪、换机怎么恢复** | **`secrets_setup.md`** |

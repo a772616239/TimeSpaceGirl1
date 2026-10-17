@@ -44,7 +44,9 @@
 
 **根因 A：正式服 `server.debug = true`**
 
-配置文件 `config/logicSrv.properties` 第 14 行长期为 `true`（随包发布，非被入侵篡改）。
+配置文件 **`jar 内置 application.properties`** 第 14 行长期为 `true`（随包发布，非被入侵篡改），
+而线上的 `config/logicSrv.properties` 虽然也是 `true`，但**它根本没被加载**（见 §4 顶部说明）。
+真正生效的就是 jar 内置那份 ⇒ 运行时 `debug=true`。
 而 `GMRequestHandler.processWithProto()` 的**唯一**校验是：
 
 ```java
@@ -233,25 +235,52 @@ ssh gs 'iptables -L INPUT -n --line-numbers | head -8'
 
 ## 4. 关掉漏洞源头：`server.debug`
 
+> 🔴 **必须先读：改 `config/logicSrv.properties` 是无效操作。**
+>
+> `RESTART-GAMESERVER.sh` 启动时**不带** `--spring.config.location`，
+> 所以 Spring Boot 只按默认顺序找 `./config/application.properties` → `./application.properties`，
+> **`logicSrv.properties` 从头到尾没有被加载过**（`serverbuild.md` 里那条带
+> `--spring.config.location=config/logicSrv.properties` 的启动命令是历史写法，与现网脚本不符）。
+>
+> 实证：2026-10-18 00:34 那次重启前已把 `logicSrv.properties` 改成 `false`，
+> 但启动日志仍是 `debug=true`；01:10 改的是 `config/application.properties` 才变成 `debug=false`。
+>
+> 正确做法只有一条：**在 `config/application.properties` 里覆盖**（外部配置优先级高于 jar 内置）。
+
 ```bash
 # 1. 备份
-ssh gs 'cp -a /home/java/gameserver/config/logicSrv.properties \
-  /root/incident_$(date +%Y%m%d)/logicSrv.properties.bak.$(date +%H%M%S)'
+ssh gs 'cp -a /home/java/gameserver/config/application.properties \
+  /root/incident_$(date +%Y%m%d)/application.properties.bak.$(date +%H%M%S)'
 
-# 2. 改
-ssh gs 'sed -i "s/^server\.debug = true/server.debug = false/" \
-  /home/java/gameserver/config/logicSrv.properties && \
-  grep -n "^server.debug" /home/java/gameserver/config/logicSrv.properties'
+# 2. 改（追加，不覆盖已有的 Mongo 凭据行）
+ssh gs 'cd /home/java/gameserver && \
+  grep -q "^server.debug" config/application.properties \
+    && sed -i "s/^server\.debug *=.*/server.debug=false/" config/application.properties \
+    || printf "\n# 关闭 GM 调试通道（覆盖 jar 内置 true）\nserver.debug=false\n" >> config/application.properties
+  grep -n "^server.debug" config/application.properties'
 
 # 3. 重启（幂等脚本，自带自检：实例数/认证/端口/OOM）
 ssh gs 'cd /home/java/gameserver && sh RESTART-GAMESERVER.sh'
 ```
+
+**第 4 步（不可省）：用运行时真值验证，不能只 grep 配置文件**
+
+```bash
+ssh gs 'grep -a "ServerProperties ->" /data/srvlog/gameserver.log | tail -1' \
+  | grep -o 'debug=[a-z]*'
+# 期望输出：debug=false
+```
+
+`ServerProperties` 是 Spring 把配置真正绑定到 Bean 后由 `GameApplication` 打出来的，
+它才是「服务实际认为的 debug 值」。**只 grep 配置文件等于没验证**——
+上一轮就是栽在「文件改了、实际没生效」上。
 
 重启后自检应全部通过：
 
 | 检查项 | 期望 |
 |---|---|
 | gameserver 实例数 | 1 |
+| `ServerProperties` 里 `debug=` | **false**（关键） |
 | Authentication failed | 0 |
 | Address already in use | 0 |
 | OutOfMemoryError | 0 |
@@ -261,8 +290,11 @@ ssh gs 'cd /home/java/gameserver && sh RESTART-GAMESERVER.sh'
 后续若要恢复 GM 能力，正确做法是给 `GMRequestHandler` 加**账号白名单鉴权**
 （而不是把 `debug` 再打开）。
 
-🔴 **本地仓库同步**：`TimeSpaceServer/skzc/home/java/gameserver/config/logicSrv.properties`
-必须一并改成 `false` 并提交，否则重新部署会把漏洞配置推回线上。
+🔴 **本地仓库同步**：线上改的是 `config/application.properties`，所以入库的也必须是它。
+⚠️ 该文件含 Mongo 明文口令，而本仓是 **PUBLIC** 仓库 —— 入库前先脱敏，
+真实口令只留在线上和 `docs/secrets_setup.md` 描述的 `.secrets/` 链路里。
+（`logicSrv.properties` 也改 `false` 仍然值得做：无害且能防止将来有人恢复带
+`--spring.config.location` 的旧启动命令时漏掉。）
 
 ---
 
@@ -338,7 +370,9 @@ echo "--- 3. 数据已删 ---";     mongo --quiet m5_x1_game_10001 --eval "
   print(\"itemLog: \"+db.itemLog.count({uid:10000240}));"
 echo "--- 4. 排行榜已清 ---";   redis-cli -n 0 ZSCORE "10001:common_force_rank:" 10000240
 echo "--- 5. Redis 无残留 ---"; redis-cli -n 0 --scan --pattern "*10000240*" | wc -l
-echo "--- 6. debug 已关 ---";   grep "^server.debug" /home/java/gameserver/config/logicSrv.properties
+echo "--- 6. debug 已关（运行时真值）---"
+grep -a "ServerProperties ->" /data/srvlog/gameserver.log | tail -1 | grep -o "debug=[a-z]*"
+echo "--- 6b. 外部配置落盘 ---"; grep "^server.debug" /home/java/gameserver/config/application.properties
 echo "--- 7. 服务健康 ---";     redis-cli -n 0 GET "ONLINE_NUM:10001"
 '
 ```

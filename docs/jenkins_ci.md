@@ -61,6 +61,7 @@
 │   ├── stage_report.py        环节报告库：add / junit / summary / desc / status / san
 │   ├── lock.sh → lock.py      flock(2) 跨 job 命名互斥锁（rc=75 = 拿不到锁）
 │   ├── build_apk.sh           APK 构建层（固定 MinimalGmOff 口径）
+│   ├── stage_apk.sh           APK 收成构建产物（cp -c 克隆 → workspace/artifacts/，出固定下载链接）
 │   ├── find_artifact.py       按 mtime 定位「本次」产物；**默认拒绝回退到旧包**
 │   ├── server_ops.sh          服务端动作统一派发口（14 个动作，标注破坏性/只读）
 │   └── checks/
@@ -94,6 +95,18 @@
 > - ⚠️ APK 用 upload key，与 Play 的 app signing key 不同 ⇒ **侧载前必须先卸载 Play 版**。
 
 | **TS-Android-TestPackage** | 出测试 APK（universal，upload key 签名） | `BUMP_VERSION=False` `EXPECT_PROFILE=minimal` | — | **禁止** |
+
+> **`TS-Android-TestPackage` 的产物就是 APK 本体**（2026-10-17 修正）：构建页「Build Artifacts」
+> 里直接挂着 `artifacts/<版本>_vc<N>_<HHmmss>.apk`，点一下就下载，不用去磁盘上翻 `apks/`。
+> 构建描述也会写成 `✅ 9 个环节全部通过 · APK 1.2.51_vc74_215144.apk · 965M`。
+> - 另有**固定下载地址** `http://localhost:8080/userContent/TS-TestPackage-latest.apk`，
+>   永远指向最新一次的 APK（`userContent/` 下的软链，构建时自动重建）。适合存书签 / 发给自己。
+> - 🔴 以前只归档 `evidence/**`，APK 本体只留一行**相对路径文本** ⇒ 构建页一个安装包都下不到，
+>   且那条相对路径离开工程目录就指不到文件。这是「生成物应该是 apk」这个诉求的真正堵点。
+> - 归档用 `cp -c`（APFS clone，写时复制）：965MB 瞬间就位、不额外占盘；跨卷时自动退化成硬链接或真复制。
+> - 产物**只留最近 3 份 / 14 天**（META `artifactKeep` / `artifactDays`）。不设限则 30 次 × 965MB ≈ 29GB。
+> - 本次没产出 APK 时，post 段会**清空** `workspace/artifacts/`：宁可不给下载，也不把上一次的旧包当本次产物挂上去。
+
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |
 | **TS-Server-Ops** | 服务端/区服运维动作统一入口 | `ACTION=health` `CONFIRM=` `REASON=` | — | 允许 |
@@ -410,7 +423,9 @@ org.dom4j.DocumentException: … invalid XML character (Unicode: 0x1b)
 
 ### 仍未做
 
-- [ ] **未实跑过的 job**：`TS-Android-Release`、`TS-Android-TestPackage`、`TS-Server-Ops`。
+- [x] **`TS-Android-TestPackage` 已实跑**（2026-10-17 #1 / #2 / #3）：#2 九环节全绿、产出
+  `1.2.51_vc74_215144.apk`（965M）；#3 验证「APK 本体进构建产物」这次改造。
+- [ ] **未实跑过的 job**：`TS-Android-Release`、`TS-Server-Ops`。
   它们含破坏性动作（Unity 打包 / 重启游戏服会踢线 / 上传）⇒ **需要用户明确同意才能试跑**，不自行验证。
 - [ ] `TS-Server-Health` / `TS-Play-Watch` 的**定时触发尚未自然触发**过 ——
   注意 `H 9 * * *` / `H 10 * * *` 里 `H` 是**分钟**、`9` / `10` 是**小时** ⇒

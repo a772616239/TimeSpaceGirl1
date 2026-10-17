@@ -11,6 +11,8 @@ job 定义文件（`.jenkins/jobs/<job名>.groovy`）是**单一真源**，格�
       "concurrent": false,               // 可选，false = 禁止并发构建（默认 true）
       "disabled": false,                 // 可选，默认 false
       "keep": [30, 40],                  // 可选，[保留天数, 保留个数]
+      "artifactKeep": 3,                 // 可选，构建产物（archive/）单独只留 N 份
+      "artifactDays": 14,                // 可选，构建产物单独只留 N 天
       "params": [
         {"name":"X","type":"choice","choices":["a","b"],"default":"a","description":"..."},
         {"name":"Y","type":"bool","default":false,"description":"..."},
@@ -107,15 +109,22 @@ def render(path: str) -> str:
     keep = meta.get("keep")
     if keep:
         days, num = (list(keep) + [None, None])[:2]
+        # 🔴 artifactDaysToKeep / artifactNumToKeep 单独一组旋钮，别和日志保留混用。
+        #    原因：本项目的构建产物里有 ~1GB 的 APK（见 TS-Android-TestPackage），
+        #    而「保留 30 天 × 30 次日志」若同时套到产物上 ⇒ 最多 30GB 只是用来放测试包。
+        #    默认 -1（跟随 job 保留策略），要限制就显式写 artifactKeep / artifactDays。
+        art_days = meta.get("artifactDays", -1)
+        art_num = meta.get("artifactKeep", -1)
         props.append(
             "    <jenkins.model.BuildDiscarderProperty>\n"
             '      <strategy class="hudson.tasks.LogRotator">\n'
             "        <daysToKeep>%s</daysToKeep>\n"
             "        <numToKeep>%s</numToKeep>\n"
-            "        <artifactDaysToKeep>-1</artifactDaysToKeep>\n"
-            "        <artifactNumToKeep>-1</artifactNumToKeep>\n"
+            "        <artifactDaysToKeep>%s</artifactDaysToKeep>\n"
+            "        <artifactNumToKeep>%s</artifactNumToKeep>\n"
             "      </strategy>\n"
-            "    </jenkins.model.BuildDiscarderProperty>\n" % (days, num))
+            "    </jenkins.model.BuildDiscarderProperty>\n"
+            % (days, num, art_days, art_num))
 
     params = meta.get("params") or []
     if params:

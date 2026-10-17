@@ -1,7 +1,10 @@
 /**@META
 {
-  "description": "出测试用 APK（universal，upload key 签名）：环境预检 → Unity batchmode → 包内三重校验 → 归档。专为「我要拿个包装到手机上测」设计，不做任何上传。侧载前必须先卸载 Play 版（签名不同）。",
+  "description": "出测试用 APK（universal，upload key 签名）：环境预检 → Unity batchmode → 包内三重校验 → **把 APK 本体收成构建产物（构建页可直接下载安装）**。专为「我要拿个包装到手机上测」设计，不做任何上传。侧载前必须先卸载 Play 版（签名不同）。",
   "concurrent": false,
+  "keep": [30, 30],
+  "artifactKeep": 3,
+  "artifactDays": 14,
   "params": [
     {"name":"BUMP_VERSION","type":"bool","default":false,"description":"是否把 versionCode +1。测试包一般不用，保持与线上同号便于对照"},
     {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","dev","full"],"default":"minimal","description":"核验口径。CLI/CLIBuilder 固定 minimal（只关 GM）"}
@@ -144,13 +147,27 @@ APK="$(cat "$TS_RUN_DIR/apk.path")"
 
     stage('⑤ 归档与交付说明') {
       steps {
+        // 🔴 这一环是「用户要的东西」：把 APK 本体摆进 workspace/artifacts/，
+        //    post 段才能真正把它 archive 进构建产物（archiveArtifacts 只认 workspace 相对路径）。
+        //    以前只把 evidence/** 归档，APK 只留一行相对路径 ⇒ 构建页没有任何可下载的安装包。
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+"$BASH" .jenkins/lib/run_stage.sh --name "APK 收成构建产物" \
+  --group "交付" --slug stage-apk --timeout 900 \
+  -- "$BASH" .jenkins/lib/stage_apk.sh
+''')
+
+        // 取证 sidecar（口径 / 16KB / 签名）继续留在 evidence 里，与 APK 本体一起归档
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
 APK="$(cat "$TS_RUN_DIR/apk.path")"
 mkdir -p "$TS_RUN_DIR/artifacts"
 for f in "$APK.release.json" "$APK.delivery.json"; do
-  [[ -f "$f" ]] && cp "$f" "$TS_RUN_DIR/artifacts/" && echo "  已收取证：${f##*/}"
+  if [[ -f "$f" ]]; then
+    cp "$f" "$TS_RUN_DIR/artifacts/" && echo "  已收取证：${f##*/}"
+  fi
 done
 VER="$("$PY" scripts/bump_version.py --show 2>/dev/null | tr '\n' ' ')"
 {
@@ -163,9 +180,6 @@ VER="$("$PY" scripts/bump_version.py --show 2>/dev/null | tr '\n' ' ')"
   echo "🔴 若手机已装 Play 版，必须先卸载 —— 本包用 upload key（beauty.keystore）签名，"
   echo "   与 Play 的 app signing key 不同，签名不匹配会装不上去。"
 } | tee "$TS_RUN_DIR/artifacts/artifact.txt"
-"$PY" .jenkins/lib/stage_report.py add --run "$TS_RUN_DIR" \
-  --name "归档与交付说明" --group "交付" --status pass \
-  --detail "$(basename "$APK") · $(du -h "$APK" | cut -f1)"
 ''')
       }
     }
@@ -191,6 +205,18 @@ if [[ -n "${WORKSPACE:-}" && -d "$WORKSPACE/evidence" ]]; then
 fi
 mkdir -p "$WORKSPACE/evidence"
 cp -R "$TS_RUN_DIR/." "$WORKSPACE/evidence/" 2>/dev/null || true
+# 🔴 同一条病根延伸到 APK：若本次构建在 ⑤ 之前就失败了，stage_apk.sh 没跑，
+#    $WORKSPACE/artifacts/ 里还留着**上一次**的 APK。此时若照样归档，
+#    构建页上会挂着一个「本次构建产出的」旧安装包 —— 比没有产物危险得多。
+#    所以：本次没登记 apk.name ⇒ 删掉 artifacts/，宁可不给下载也不给错包。
+if [[ -n "${WORKSPACE:-}" ]]; then
+  if [[ -z "$(cat "$TS_RUN_DIR/apk.name" 2>/dev/null || true)" ]]; then
+    if [[ -d "$WORKSPACE/artifacts" ]]; then
+      rm -rf "$WORKSPACE/artifacts"
+      echo "⚠️ 本次未产出 APK ⇒ 已清空 artifacts/，不归档任何安装包（避免把旧包当本次产物）"
+    fi
+  fi
+fi
 ''')
 
         if (fileExists("${WORKSPACE}/evidence/junit.xml")) {
@@ -200,6 +226,14 @@ cp -R "$TS_RUN_DIR/." "$WORKSPACE/evidence/" 2>/dev/null || true
         def desc = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
 cd "$PROJ" 2>/dev/null || true
 "$PY" .jenkins/lib/stage_report.py desc --run "$TS_RUN_DIR" 2>/dev/null || true
+# 构建描述里直接写出 APK 文件名与大小 —— 「这次的产物是个什么包」应当在标题下就看见，
+# 而不是点开九个环节的表格去翻一行 artifact.txt。
+# 名字与大小都读 stage_apk.sh 写下的 machine-readable 行，不再自己去猜路径。
+NAME="$(cat "$TS_RUN_DIR/apk.name" 2>/dev/null || true)"
+SZ="$(sed -n 's/^APK_SIZE_H=//p' "$TS_RUN_DIR/apk.artifact.txt" 2>/dev/null | head -1 || true)"
+if [[ -n "$NAME" ]]; then
+  printf ' · APK %s%s' "$NAME" "${SZ:+ · $SZ}"
+fi
 ''').trim()
         if (desc) { currentBuild.description = desc }
 
@@ -211,7 +245,13 @@ cd "$PROJ" 2>/dev/null || true
           currentBuild.result = 'UNSTABLE'
         }
 
-        archiveArtifacts allowEmptyArchive: true, artifacts: 'evidence/**', fingerprint: false
+        // 🔴 归档清单必须含 APK 本体，这是本 job 存在的意义。
+        //    以前只写 'evidence/**' ⇒ 构建页「Build Artifacts」里只有 json/log，
+        //    965MB 的安装包一个都下不到（只能自己去 apks/ 目录翻）。
+        //    两个路径同时归档：artifacts/<name>.apk 是给人下载的，evidence/** 是取证。
+        //    数量由 META 的 artifactKeep=3 兜住（LogRotator.artifactNumToKeep），
+        //    否则 30 次构建 × 965MB ≈ 29GB 只为存测试包。
+        archiveArtifacts allowEmptyArchive: true, artifacts: 'artifacts/*.apk,evidence/**', fingerprint: false
       }
     }
   }

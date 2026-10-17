@@ -61,7 +61,31 @@ if (!GameApplication.serverProperties.isDebug()) {
 `fightResDiffLog`（服务器结果 vs 客户端结果比对）只覆盖 UID `10000002 ~ 10000140`，
 高 UID 玩家（如 `10000240`）**完全没有比对日志**，改战斗结果查不出来。
 
-### 1.4 附带发现（非作弊，是产品 bug）
+### 1.4 第二类作弊：业务接口缺少频次校验（同日发现）
+
+**这与 §1.3 的 GM 漏洞是两种完全不同的手法，GM 关了也防不住。**
+
+玩家 Mozart（UID `10000013`）在 `2026-10-18 00:07` 的 **1 分钟内连发 35 次**
+`ADVENTURE_REWARD_REQUEST{type:2, position:-1}`，最短间隔 **0.3 秒**。
+
+| 判据 | 数据 |
+|---|---|
+| 单次产出 | **777,600 钻石** + item3/14/79 等 20 余种物品 |
+| 当日奖励笔数 vs 第二名 | **33 vs 6**（5.5 倍） |
+| 钻石总量 vs 全服中位数 | **125,634,740 vs 200**（约 62.8 万倍） |
+| `777600` 这个数值 | **全服仅他一人**，重复出现 6 次 |
+
+根因在 `CombatLogic.takeNewAdventureReward()`：
+- `type != 2` 分支会走 `PlayerLogic.checkAndUpdate(user, 4, 1)`，**有次数校验**
+- `type == 2` 分支只调 `getNewAdventureReward()` 算奖励后**直接下发，无任何次数/冷却/进度校验**
+
+修复见 `TimeSpaceServer/patches/adventure_reward_guard/`（Javassist 注入频次护栏）。
+
+> 💡 **排查启示**：GM 指令计数为 0 **不等于**没作弊。
+> Mozart 的 GM_REQUEST 只有 3 次（正常新手引导），作弊走的是普通业务接口。
+> 必须同时看：奖励发放笔数（`itemLog.reason=1`）、单笔数量级、同数值的独有性。
+
+### 1.5 附带发现（非作弊，是产品 bug）
 
 `HeroLogic.upHeroLevel()` **不读取请求里的 `targetLevel`**，只把当前等级 +1。
 玩家连续发送 `targetLevel: 6/11/16/21/26`，服务端每次都写回 `level 4`，
@@ -334,18 +358,40 @@ print(\"Mozart itemLog: \"+db.itemLog.count({uid:10000013}));"'
 | 问题 | 影响 | 建议 |
 |---|---|---|
 | `GMRequestHandler` 无身份鉴权 | 一旦 `debug` 被误开，任何玩家可刷 | 加 GM 账号 UID 白名单 + IP 白名单双条件 |
+| **`server.debug` 定义在 3 处，jar 内置那份优先级最高** | 只改 `config/logicSrv.properties` **无效** | 必须在 `config/application.properties` 覆盖，并按 §4 用 `ServerProperties` 日志验证 |
+| `ADVENTURE_REWARD type=2` 无频次校验 | 可无限连领远征奖励 | 已打补丁（`patches/adventure_reward_guard/`），但需转正到源码 |
 | `HeroLogic.upHeroLevel` 忽略 `targetLevel` | 所有玩家英雄卡 4 级 | 按目标等级循环升级或直接计算消耗 |
 | `fightResDiffLog` 只覆盖 UID ≤10000140 | 高 UID 改战斗结果检测不到 | 扩大到全部 UID |
 | `playerManager.ip` 恒为空 | 游戏库查不到登录 IP | 在游戏服侧记录 `session.getIp()` |
+| 其他 `type` 分支是否同样缺校验 | 未知，可能还有同类洞 | 建议对全部 `take*Reward` 类接口做一次频次审计 |
 
 ---
 
 ## 8. 附：本次事件处置记录（2026-10-18）
 
-| 项目 | 值 |
+本轮共处置 **3 个作弊账号**，分属 **3 种不同作弊手法**：
+
+| 账号 | 手法 | 关键证据 | 处置 |
+|---|---|---|---|
+| `10000240` Sieg | **GM 指令刷资源** | 114 条 `GM_REQUEST`（`4#`/`1#`），20 亿资源 | 封号 + IP 封禁 ×2 + 删数据 + 移出排行 |
+| `10000153` 稀拉拉梵妮 | **直改库伪造关卡进度** | `fightId=15405` 但真实只 45 关，`fightStateInfo` 仅 1 个非零；**GM 指令 0 次** | 封号 + 删数据 + 移出排行 |
+| `10000013` Mozart | **业务接口无频次校验** | 1 分钟连领 `type=2` 35 次，每次 77 万钻石；**GM 指令仅 3 次（正常）** | 封号 + 删数据 + 移出 4 个排行 + **打补丁** |
+
+### 漏洞修复
+
+| 漏洞 | 修复 |
 |---|---|
-| 作弊账号 | UID `10000240`「Sieg」，openId `go1060321172` / `6d748af4bce0432c97a6142181a370fc` |
-| 封禁手段 | `FORBID_LOGIN` 名单 + IP 封禁（2 个）+ 数据删除 + 排行榜移除 |
-| 漏洞修复 | `server.debug: true → false`，重启自检全通过 |
-| 备份位置 | 服务器 `/root/incident_20261018/` |
-| 误伤检查 | 通过（Mozart 等玩家 itemLog 完整） |
+| `server.debug=true`（GM 无鉴权） | 在 `config/application.properties` 覆盖为 `false`，**用 `ServerProperties` 日志验证 `debug=false`** |
+| `ADVENTURE_REWARD type=2` 无频次校验 | Javassist 注入 `AdventureRewardGuard`（3 秒间隔 / 每日 5 次） |
+
+### 备份位置
+
+服务器 `/root/incident_20261018/`：
+- `sieg_*.json`、`p153_*.json`、`m13_*.json`（三个账号完整快照）
+- `gameSrv-1.0.0.jar.bak.*`（打补丁前的原始 jar）
+- `logicSrv.properties.bak.*`、`application.properties.bak.*`
+- `iptables.backup.*`、`mozart_adventure_abuse.log`（作弊原始日志）
+
+### 误伤检查
+
+通过。清理后确认其他玩家数据完整（如 `itemLog` 计数正常），在线人数未受影响。

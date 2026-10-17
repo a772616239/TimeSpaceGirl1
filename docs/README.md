@@ -119,6 +119,7 @@ A/B/C 三条链已经收口成 **7 个 Jenkins job**，跑在 `http://127.0.0.1:
 | CLI 打的包 versionCode 一直不变 | **设计如此**。`CLIBuilder` 只读不自增，用 `bump_version.py` 补 |
 | `zip -u` 报 `Local Entry CRC does not match CD` | **无害**。原 jar 本就如此；按 CRC diff 条目数验证，别看体积 |
 | 「上传到 production 就是送审」 | 对 `status=draft` **不成立**；`--changes-not-sent-for-review` 只对 internal/alpha/beta 有效 |
+| internal 上传报 `400 Changes cannot be sent for review automatically` | 2026-10-17 起 Play **所有轨道**都要求 `changesNotSentForReview=true`；脚本已在 non-prod 轨道自动带（见 runbook §5.3） |
 | `main_android/Unity` 在跑 batchmode | 与本工程无关，不再会误判为「占用」（已修 `b64b894dd`） |
 | 新机器 clone 完 `.secrets/` 是**空的** | **正常**。凭据不入库，按 `secrets_setup.md` §3 恢复；脚本缺文件会自动走回退链 |
 

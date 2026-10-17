@@ -112,6 +112,8 @@ UPLOAD_MAX_RETRIES = int(os.environ.get("PLAY_UPLOAD_MAX_RETRIES", "8"))
 RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
 # 这些轨道支持 changesNotSentForReview
 NON_PROD_TRACKS = {"internal", "alpha", "beta"}
+# 会让改动「自动送审」的发布状态（draft / halted 不会）
+AUTO_REVIEW_STATUSES = {"completed", "inProgress"}
 
 
 # --------------------------------------------------------------------------- #
@@ -194,6 +196,16 @@ def hint_for_error(text: str) -> str:
 def die(msg: str, code: int = 2) -> None:
     sys.stderr.write(f"[ERROR] {msg}\n")
     sys.exit(code)
+
+
+def is_status_completing(status: str) -> bool:
+    """该 status 会不会让 Play 把这次改动「自动送审」。
+
+    2026-10-17 实测：连 internal 轨道的 `status=completed` 都必须显式带
+    `changesNotSentForReview=true`，否则 commit 报
+    `400 INVALID_ARGUMENT / Changes cannot be sent for review automatically`。
+    """
+    return status in AUTO_REVIEW_STATUSES
 
 
 def resolve_service_account(explicit: str | None) -> Path:
@@ -780,11 +792,26 @@ def main() -> int:
         )
 
         # ---------------- 提交 ----------------
+        # 2026-10-17 起 Play 对**所有**轨道（含 internal）的 edits.commit 都强制要求
+        # changesNotSentForReview=true，否则 400 INVALID_ARGUMENT：
+        #   "Changes cannot be sent for review automatically. Please set the query parameter
+        #    changesNotSentForReview to true."
+        # ⇒ 内部测试轨道默认自动带上该参数（这样才符合「内部测试不送审」的语义）；
+        #    显式传 --changes-not-sent-for-review 则仍只允许 non-prod 轨道。
         commit_kwargs = {"packageName": args.package, "editId": edit_id}
+        gate = is_status_completing(args.status)
+        commit_changes_not_sent = gate and (args.track in NON_PROD_TRACKS)
         if args.changes_not_sent_for_review:
             if args.track not in NON_PROD_TRACKS:
                 die("--changes-not-sent-for-review 仅对 internal/alpha/beta 轨道有效", 2)
+            commit_changes_not_sent = True
+        if commit_changes_not_sent:
             commit_kwargs["changesNotSentForReview"] = True
+            log(
+                f"[commit] changesNotSentForReview=True"
+                f"（轨道 {args.track} / status={args.status}：提交但不送审，"
+                "需自行在 Play Console 点「送审」）"
+            )
         try:
             execute_with_retry(
                 lambda: service.edits().commit(**commit_kwargs), "commit"

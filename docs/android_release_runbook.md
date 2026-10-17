@@ -249,6 +249,22 @@ Plugin 'Assets/Plugins/Android/libs/arm64-v8a/libtolua.so' is not 16KB-aligned.
 `--changes-not-sent-for-review` 只对 internal/alpha/beta 有效。
 （已修：`aab_release.sh` 末尾的结论文案现在按轨道分支打印，不再对 draft 说「会进入审核」。）
 
+🔴 **2026-10-17 起 Play 对「所有」轨道强制 `changesNotSentForReview=true`。**
+`status=completed/inProgress` 时 `edits.commit` 不带该参数一律 `400 INVALID_ARGUMENT`：
+
+```
+Changes cannot be sent for review automatically. Please set the query parameter
+changesNotSentForReview to true. Once committed, the changes in this edit can be sent
+for review from the Google Play Console UI.
+```
+
+以前只有 non-prod 轨道需要、脚本默认没带 ⇒ **internal 上传 100% 卡在 commit**；
+而 AAB 已经传完、edit 被丢弃后该 versionCode **不会进 bundle 池**
+（复现：`--reuse-version-code 70` 报「不在 bundle 池里」），437 MB 白传一次。
+现已修：`play_upload.py` 在 `status ∈ {completed, inProgress}` 且轨道属于
+`internal/alpha/beta` 时**自动**带该参数。它的含义是「提交但不送审」——
+internal 轨道本就免常规审核、测试员立即可装，不需要走审核流。
+
 🔴 **Play 的所有轨道共享同一个 versionCode 空间** —— 一个号传过一次就永久占用，
 换个轨道重传同一个号同样被拒。所以「传 internal」并不能省 versionCode，号照样要递增。
 

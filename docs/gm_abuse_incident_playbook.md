@@ -494,6 +494,7 @@ print(\"Mozart itemLog: \"+db.itemLog.count({uid:10000013}));"'
 | `playerManager.ip` 恒为空 | 游戏库查不到登录 IP | 在游戏服侧记录 `session.getIp()` |
 | 其他 `type` 分支是否同样缺校验 | 未知，可能还有同类洞 | 建议对全部 `take*Reward` 类接口做一次频次审计 |
 | **内购无服务端验单**（`TEST_BUY_GIGT_GOODS_REQEUST` 即唯一发货通道） | 客户端不上传收据，服务端无法判断是否真付钱 | 见 §7.1 |
+| **`RankingInfoList` 遇已删号 NPE** | 排行成员 `user` 文档缺失时 `fillUpRankingInfoProto:228` 抛 NPE，日志已累计 **88 次**（首次 2026-10-10 17:36，早于本轮清理） | `getUser()` 返回值判空并跳过该名次；当前孤儿条目已清零，暂无触发源 |
 
 ### 7.1 🔴 关掉 debug 的副作用：内购全废（2026-10-18 二次发现）
 
@@ -545,9 +546,10 @@ print(\"Mozart itemLog: \"+db.itemLog.count({uid:10000013}));"'
 
 ---
 
-## 8. 附：本次事件处置记录（2026-10-18）
+## 8. 附：第一轮处置记录（2026-10-18 00:1x）
 
 本轮共处置 **3 个作弊账号**，分属 **3 种不同作弊手法**：
+（第二轮全服扫描后追加 3 个 → 见 §9）
 
 | 账号 | 手法 | 关键证据 | 处置 |
 |---|---|---|---|
@@ -573,3 +575,62 @@ print(\"Mozart itemLog: \"+db.itemLog.count({uid:10000013}));"'
 ### 误伤检查
 
 通过。清理后确认其他玩家数据完整（如 `itemLog` 计数正常），在线人数未受影响。
+
+---
+
+## 9. 第二轮处置（2026-10-18 02:20，全服扫描后）
+
+用 `scripts/cheat_scan.py --hunt` 及五维深扫（钻石离群/重复数值/分钟密度/成长速率/exp 阈值）
+过完全部 211 个账号后，追加封禁 **3 个**：
+
+| 账号 | 判定依据 | 处置 |
+|---|---|---|
+| `10000198` **оня** | `GM_REWARD` **9 笔、单笔 20 亿**（item3/14/16 各 20 亿 + item4 10 亿），建号 **37 分钟**后发放；IP `31.207.7.168` 瑞典 Qwins LTD（`proxy=true,hosting=true`）；199 英雄里 190 个 1 级毛坯、0 装备，靠 5 个 10星255级撑到 139 万战力；**27 天未登录仍占 force_rank 第 2** | 封号 + 清 6 个 Redis key + 移出 7 个排行 + 删数据（itemLog 2802 / fightLog 117 / heroLog 60 / storeLog 1） |
+| `10000034` 未命名号 | 建号 **12 分钟**生命周期内 `fightId` 仅推进到第 2 关，却持有 **372 万钻石 + 548 万金币**；`reason=19/52` 走 V2/V1 礼包（690 item16→200 万钻）。虽然每笔都能用合法通道解释，但**战力 974（未玩）+ 资源量是活跃号 P90 的 3.6 倍**，属异常资源账户 | 封号 + 清 6 个 Redis key + 移出 3 个排行 + 删数据（itemLog 107 / storeLog 5 / fightLog 1） |
+| `10000016` | **排行榜脏数据**：`common_force_rank` 第 1 名（369 万战力），但 `user` 文档早已不存在，登录库也无记录 —— 是历史删号残留 | 清 2 个排行条目 + 写入封禁名单（防重建） |
+
+### 9.1 Redis 清理明细（27 个 key + 12 个排行条目）
+
+```bash
+# 会话/token（12 个 key，删前先 --scan 全扫，不要盲删）
+JL_TOKEN:<uid>  USER_LOGIN_URL:<uid>  PIDGIDTEMP:<uid>
+null:RESPONSE_OFFLINE:<uid>  null:INDICATION_OFFLINE_INDEX:<uid>  null:LEVE_DIFFICULTY_INFO:<uid>
+
+# 排行榜（ZREM，先 ZSCORE 确认存在再删）
+common_force_rank: / FORCE_CURR_RANK: / FORCE_RANK:11 / MAIN_LEVEL_RANK:
+WORLD_CALCUL_LEVE_RAND: / AREDEF_TEAM_FORCE_RANK: / DefTraining_RANK:
+```
+
+> ⚠️ **先扫后删**：`redis-cli --scan --pattern "*<uid>*"` 拿到真实 key 列表再逐个 `DEL`，
+> 不要按通配符批量删（会误伤 `CAR_DEALY_RANK:<uid><date>` 这类正常数据，且该 key 由其他 uid 持有）。
+
+### 9.2 验收结果（全部通过）
+
+| 项 | 期望 | 实测 |
+|---|---|---|
+| 封禁名单 | 6 个 | `10000240 / 10000153 / 10000013 / 10000198 / 10000034 / 10000016` ✅ |
+| 游戏库残留 | 0 | 三个 uid 的 `user/itemLog/heroLog/fightLog/storeLog` 全 0 ✅ |
+| Redis key 残留 | 0 | 三个 uid 均 0 ✅ |
+| 排行榜残留 | 0 | 三个 uid 的 `ZSCORE` 全空 ✅ |
+| **排行榜孤儿条目** | 0 | 全库 139 个排行成员，无 `user` 文档缺失 ✅ |
+| 登录库标记 | banned | 10000198 / 10000034 已标 ✅（10000016 无登录库记录） |
+| 服务健康 | 正常 | 在线 1 人、16081 端口 LISTEN、无 OOM ✅ |
+
+### 9.3 遗留：`RankingInfoList` NPE（**非本次引入**）
+
+```bash
+grep -c "RankingRewardLogic.fillUpRankingInfoProto" /data/srvlog/gameserver.log
+# 首次出现在 2026-10-10 17:36，早于本轮清理
+```
+
+`RankingInfoListHandler.processWithProto` → `fillUpRankingInfoProto:228` 在排行成员
+`user` 文档缺失时抛 NPE。上一轮（`469ee8f9a`）修过一版，但仍有未覆盖的分支。
+**当前孤儿条目已清零，暂无触发源**；根治需在 `fillUpRankingInfoProto` 里对
+`UserManager.getUser()` 返回值判空并跳过该名次。
+
+### 9.4 备份位置
+
+`/root/incident_20261018/`（与第一轮同目录）：
+- `user_<uid>.json`、`itemLog_<uid>.json`、`heroLog_<uid>.json`、`fightLog_<uid>.json`、
+  `storeLog_<uid>.json`、`fightResDiffLog_<uid>.json`（三个账号完整快照）
+- `backup_10001_*_RANK_*.txt`（清理前全部排行榜快照）

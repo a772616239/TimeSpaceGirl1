@@ -493,6 +493,55 @@ print(\"Mozart itemLog: \"+db.itemLog.count({uid:10000013}));"'
 | `fightResDiffLog` 只覆盖 UID ≤10000140 | 高 UID 改战斗结果检测不到 | 扩大到全部 UID |
 | `playerManager.ip` 恒为空 | 游戏库查不到登录 IP | 在游戏服侧记录 `session.getIp()` |
 | 其他 `type` 分支是否同样缺校验 | 未知，可能还有同类洞 | 建议对全部 `take*Reward` 类接口做一次频次审计 |
+| **内购无服务端验单**（`TEST_BUY_GIGT_GOODS_REQEUST` 即唯一发货通道） | 客户端不上传收据，服务端无法判断是否真付钱 | 见 §7.1 |
+
+### 7.1 🔴 关掉 debug 的副作用：内购全废（2026-10-18 二次发现）
+
+**这条比 Sieg 本身更要紧，已单独出补丁。**
+
+关闭 `server.debug` 之后，全服礼包都买不了。根因：**付费与免单共用同一条协议**。
+
+```
+客户端 PayManager.Pay() → iapMgr:BuyItem1()（Google Play 真实扣款）
+  → ProcessPurchase 成功 → NetManager.RequestBuyGiftGoods()（NetManager.lua:3398）
+  → TEST_BUY_GIGT_GOODS_REQEUST
+  → TestBuyGiftGoodsHandler.process()
+       if (!isDebug()) throw "In a formal setting"      ← §1.3 里那道 GM 门禁
+```
+
+即 `debug=false` 会把内购一起关掉，且玩家是**被 Google Play 真实扣款后**才被拒（收钱不发货）。
+
+**线上实证**（`/data/srvlog/gameserver.log`）：
+
+```
+01:14:49 / 01:15:01 / 01:15:06 / 01:15:12 / 01:15:16  uid=10000017(Sakuya) 连点 5 次全被拒
+01:49:13 / 01:49:16                                     uid=10000001 同样被拒
+```
+
+**为什么不能简单删掉门禁**：`TestBuyGiftGoodsHandler` 背后是 `BuyGoodsLogic.testBuyGoods()`，
+它是 GM 免单路径 —— `sendGoods(uid, goodsId, "gm-test", "111111", now, -999, true, channel)`，
+`amount=-999` 免金额校验、`isGM=true` 跳过 billno 去重，且 **141 个商品 `Limit=0` 完全不限购**。
+裸开门禁 = 对全服开放免费无限刷钻石。
+
+**处置**：`patches/pay_gate_whitelist/`（Javassist 补丁），把 debug 硬门禁换成三档开关：
+
+| 模式 | 行为 |
+|---|---|
+| `open`（默认） | 全体放行，恢复内购；带频控（1s 间隔 / 50 次每人每日 / 20 次每商品每日） |
+| `whitelist` | 只放行 Redis 白名单 UID |
+| `off` | 全拒（紧急止血） |
+
+`debug=true` 时行为零改动。改档不重启：
+`redis-cli -n 0 SET 10001:PAY_GATE_MODE <open|whitelist|off>`（5 秒生效）。
+
+**根治**（未做）：proto 加 `receipt` 字段 → 客户端上传 `product.receipt` →
+服务端用 Play Developer API `purchases.products.get` 验单并用 `purchaseToken` 当 billno 去重。
+当前客户端 `IAPManager.ProcessPurchase` 已拿到 `product.receipt` 但只打印不上传；
+服务端全 jar 搜 `androidpublisher`/`receipt` 零命中 —— **验单链路从来没实现过**。
+
+> ⚠️ **教训**：`server.debug` 不只是「GM 开关」，它同时挂着**发货通道**。
+> 关任何全局开关前，必须先全 jar 搜一遍 `isDebug()` 的所有调用点
+> （本服共 3 处：`GMRequestHandler`、`SendChatInfoHandler`、`TestBuyGiftGoodsHandler`）。
 
 ---
 

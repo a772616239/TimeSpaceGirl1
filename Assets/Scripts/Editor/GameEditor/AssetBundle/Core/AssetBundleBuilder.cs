@@ -320,12 +320,22 @@ namespace GameEditor.AssetBundle
                 Debug.Log("BuildSelectAssetBundles:"+builds[i].assetBundleName);
             }
             //
-            // if (builds.Length==0)
-            // {
-            //     return;
-            // }
-            // List<AssetBundleBuild> builds1 = new List<AssetBundleBuild>();
-            // builds1.Add(builds[0]);
+            // 🔴 空数组必须直接返回，绝不能调 BuildPipeline.BuildAssetBundles。
+            //
+            // Unity 6 实测（2026-10-17 受控实验）：传 `new AssetBundleBuild[0]` **不是**「什么都不打」，
+            // 而是回退成「按 AssetDatabase 里所有 assetBundleName 标记重建全部 bundle」，
+            // 并且用**本次传入的 options** 去建。后果：
+            //   FrameTool.BuildGameAssetBundles() 连打三批（LZ4 → LZMA → NoCompress）；
+            //   第三批 CompressType.NoCompress 命中 0 个包 ⇒ builds 为空；
+            //   于是这次「空打」用 UncompressedAssetBundle 把前两批刚压好的包**全部覆写**成未压缩。
+            //   实测：10 个包 372,849 B → 2739 个包 966,341,088 B，同名单包 16063 B → 25296 B。
+            //   这就是 APK 从 ~454MB 膨胀到 965MB 的直接原因（AAB 因 zip deflate 才显得正常）。
+            //   （这段 return 原本就有，后来被注释掉，才引出 Unity 6 下这个坑。）
+            if (builds.Length == 0)
+            {
+                Debug.Log("BuildSelectAssetBundles: 本批 0 个包，跳过（禁止空数组调用，否则会覆盖全部已打包资源）");
+                return;
+            }
             var manifest = BuildPipeline.BuildAssetBundles(exportPath, builds.ToArray(), options, buildTarget);
             var exportPathTarget = exportPath+ "/"+FrameTool.FrameTool.CombinePack+ "/";
             Debug.Log("create:"+exportPath);

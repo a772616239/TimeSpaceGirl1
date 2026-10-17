@@ -137,6 +137,9 @@ SIZE_H="$(du -h "$APK" | cut -f1)"
 # 成功构建」的稳定地址，不用复制文件、不怕构建号变化，且随 buildDiscarder 一起过期
 # （不会留下指向已删构建的死链）。
 BASE="${JENKINS_URL:-http://localhost:8080}"
+# JENKINS_URL 常常自带尾斜杠，直接拼会出 `host//job/…` —— 能访问但打出来难看，
+# 也会让人怀疑是不是地址拼错了。统一去掉尾斜杠再拼。
+while [[ "$BASE" == */ ]]; do BASE="${BASE%/}"; done
 JOBU="$BASE/job/${JOB_NAME:-TS-Android-TestPackage}"
 BUILD_URL="$JOBU/${BUILD_NUMBER:-0}"
 ART_URL="$BUILD_URL/artifact/artifacts/$NAME"

@@ -386,25 +386,32 @@ AAB 体积基准随引擎升级上移，**不是资源变多**，逐文件归因
 + 原生库 +2.2（`libunity.so` +2.34，被 Firebase 12.10.1 −0.35 抵消一部分）
 + Data +1.3（`global-metadata.dat` +0.80、内置 `unity default resources` +0.49）；dex / res 基本持平。
 
-🔴 **附带异常（已定位根因）**：包内 AB 的**原始**字节数 411 MiB → 906 MiB（+495 MiB，2.2x）。
-根因**不是「压缩档位变松」，而是 Unity 6 打出的 AB 正文内容块完全未压缩**：解析 UnityFS
-分块表，旧包每 128 KiB 一块、块压缩类型 = LZ4HC（3），新包整包单块、类型 = None（0）。
-抽样 `BuildABs/Android/**` 各 200 个包：Unity 6 **200/200 全部未压缩（整体压缩率 1.0000）**，
-2022.3 备份 **197/200 为 LZ4HC（整体压缩率 0.4253）**。同一次构建里唯一例外是 `files.unity3d`
-（走 `AssetBundleBuilder.BuildAssetBundle` 单包路径）仍被 LZMA 正常压缩（比率 0.155）
-⇒ 不是「引擎全盘禁用压缩」，而是**某条打包路径在 Unity 6 下失效**，有修复空间。
+🔴 **附带异常（已修，见下）**：包内 AB 的**原始**字节数 411 MiB → 906 MiB（+495 MiB，2.2x）。
+根因**不是「压缩档位变松」，也不是 Unity 6 引擎问题**，而是**工程代码 bug**：
+`BuildSelectAssetBundles` 里 `if (builds.Length == 0) return;` 的守卫被注释掉了。
 
-已排除「设置 / 代码」两条线：升级期间 AB 打包代码的唯一改动是删掉 Unity 6 已移除的
-`DeterministicAssetBundle` 位（`bd5454371`），`UncompressedAssetBundle` / `ChunkBasedCompression` /
-`None` 三个压缩选项**原样保留**；`ProjectSettings.asset` 无 AB 压缩开关
-（`androidSplitApplicationBinary: 0`）、EditorPrefs 无「多进程 AB 构建」开关。
-官方文档亦确认语义未变（SBP 升级文档原话：ChunkBasedCompression *"has always been LZ4HC
-in the Editor"*）。⇒ **属 Unity 6 引擎侧行为变化**；社区同类案例见 Magic Leap 论坛
-（2026-01，Unity 官方回复定性为 *"Unity Engine issue"*，用户最终降级 2022.3）。
+Unity 6 实测：传 `new AssetBundleBuild[0]` 给 `BuildPipeline.BuildAssetBundles` **不是**
+「什么都不打」，而是回退成「按 AssetDatabase 里所有 assetBundleName 标记重建全部 bundle」，
+并且用**本次传入的 options**。而 `FrameTool.BuildGameAssetBundles()` 连打三批：
 
-影响：AAB 下发体积无感（被 zip deflate 吸收，仅 +16.2 MiB）；但**装机后 StreamingAssets
-解包占用与热更 CDN 体量翻倍**。未决 —— 待做受控实验定位触发条件（批量 `AssetBundleBuild[]`
-vs 单包路径），再定修复方案（改用 SBP 显式 `BuildCompression` 或构建后置重压）。
+| 批次 | options | buildMap | 后果 |
+|---|---|---|---|
+| ① | `ChunkBasedCompression` | 2755 | 正常压成 LZ4HC |
+| ② | `None`（LZMA） | 2 | 正常压成 LZMA |
+| ③ | `UncompressedAssetBundle` | **0** | **空数组回退 → 把①②全部覆写成未压缩** |
+
+受控实验（同进程同目录，2026-10-17）：① 正常压缩打 10 个包 → 10 个文件 372,849 B，
+单包 `adjutantpanelatlas` 16063 B；② 紧接空数组 + `UncompressedAssetBundle` → **2739 个文件
+966,341,088 B**，同名包变 25296 B。完全复现线上现象。
+
+已排除的旁支（都不是原因）：素材类型（真实 atlas/spine/prefab 单打均 LZ4HC）、批量规模
+（2000 个真实 bundle 仍 100% LZ4HC）、AssetDatabase 标记数（2757 个标记时仍正常）、
+SBP 缺失。唯一变量就是「空数组」这条调用。
+
+修复 `ae8051b6c`：恢复该守卫。验证：`BuildABs` 1.8G → 842M，lz4 批次压缩率 **0.4321**
+（2022.3 基线 0.4253）、lzma 批次 0.2410（`luabytes` 15.88MB → 3.8MB）；
+剩余 69 个 None 全为 audio（Vorbis 本身已压缩，LZ4HC 无收益，属正常）；
+**APK 965MB → 458MB**。AAB 侧因 zip deflate 兜底一直看不出问题（仅 +16.2 MiB）。
 
 ---
 

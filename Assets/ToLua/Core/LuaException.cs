@@ -160,7 +160,7 @@ namespace LuaInterface
                     fileName = fileName.Replace('\\', '/');
                     sb.Append(" (at ");
 
-                    if (fileName.StartsWith(projectFolder))
+                    if (!string.IsNullOrEmpty(projectFolder) && fileName.StartsWith(projectFolder))
                     {
                         fileName = fileName.Substring(projectFolder.Length, fileName.Length - projectFolder.Length);
                     }
@@ -181,9 +181,29 @@ namespace LuaInterface
         public static void Init(IntPtr L0)
         {
             L = L0;
+            // 🔴 这段反射在 Unity 6 上会抛 NullReferenceException，导致 Lua 虚拟机初始化
+            // 中断、游戏一进就卡死（LuaManager.InitLua -> LuaState..ctor -> 这里）。
+            // 原因：Unity 2020.3 的 UnityEngine.StackTraceUtility 有
+            //   internal static string projectFolder
+            // 这个私有字段，而 Unity 6（6000.x）把这个类型上的字段全部删掉了，
+            // GetField 返回 null。原代码直接 field.GetValue(null) ⇒ NRE，且
+            // projectFolder 为 null 时下一行的 .Replace 也会炸。
+            // 该字段只用于把异常栈里的绝对路径裁成工程相对路径，属于「锦上添花」，
+            // 拿不到就应该降级退化，绝不能让它阻断 Lua 启动。
             Type type = typeof(StackTraceUtility);
             FieldInfo field = type.GetField("projectFolder", BindingFlags.Static | BindingFlags.GetField | BindingFlags.NonPublic);
-            LuaException.projectFolder = (string)field.GetValue(null);
+            if (field != null)
+            {
+                LuaException.projectFolder = (string)field.GetValue(null);
+            }
+
+            if (string.IsNullOrEmpty(LuaException.projectFolder))
+            {
+                // 回退值：仅用于路径裁剪。Android 上 dataPath 与源码路径不匹配 ⇒ 不会命中
+                // StartsWith，只是保留完整路径，异常栈依然可读。
+                LuaException.projectFolder = Application.dataPath;
+            }
+
             projectFolder = projectFolder.Replace('\\', '/');
 #if DEVELOPER
             Debugger.Log("projectFolder is {0}", projectFolder);

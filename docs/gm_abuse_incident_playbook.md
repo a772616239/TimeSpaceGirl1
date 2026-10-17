@@ -357,6 +357,90 @@ ssh gs 'redis-cli -n 0 ZREM "10001:common_force_rank:" 10000240
 > ⚠️ **只删 Redis 不够**：`user.playerManager.maxForce` 里还存着他的战力，
 > 重启或回填后会重新上榜。因此必须先删 `user` 文档（§5.2），再清 Redis。
 
+### 5.4 🔴🔴 删号后必须清理全部引用，否则排行榜直接崩
+
+**这是 2026-10-18 实际踩到的坑，删号后排行榜打不开。**
+
+症状：玩家点排行榜报错，服务端日志出现
+```
+java.lang.Exception: 1-UserManager::getUser null exception：10000013
+    at ...HeroForceRank.getFirst(HeroForceRank.java:69)
+    at ...RankLogic.getRankFirstInfo(RankLogic.java:113)
+    at ...RankFirstHandler.processWithProto(RankFirstHandler.java:23)
+```
+
+原因：删了 `user` 文档，但**排行榜里还留着他的条目**。`getFirst()` 取到第 1 名后
+调 `UserManager.getUser(uid)` 拿到 null，紧接着 `everyUser.getHeroManager()` 空指针。
+
+`HeroForceRank.getFirst()` 的关键逻辑（反编译）：
+```java
+Set<...> rankByKey = this.getRankByKey(...);
+if (rankByKey.size() != 1) return builder;      // 只有恰好 1 条时才继续
+ZSetOperations.TypedTuple<String> data = rankByKey.iterator().next();
+String[] arr = StringUtil.getStringList(data.getValue(), ":");
+int uid = Integer.parseInt(arr[0]);
+User everyUser = UserManager.getUser(uid, true);   // ← 已删账号在这里返回 null
+Hero hero = everyUser.getHeroManager().getHero(heroId);  // ← NPE
+```
+
+**注意成员是 `<uid>:<heroId>` 复合格式**，用 `ZREM key <uid>` 删不掉，
+必须按成员全串删：
+
+```bash
+# 正确做法：先扫出所有匹配成员再删
+redis-cli -n 0 ZRANGE "10001:HERO_FORCE_RANK:" 0 -1 | grep "^10000240:"
+redis-cli -n 0 ZREM "10001:HERO_FORCE_RANK:" "10000240:10000240010017917911100000"
+```
+
+**删号后必须清理的三类引用**（缺一个就 NPE）：
+
+| 类型 | 位置 | 清理方式 |
+|---|---|---|
+| ZSET 排行成员 | Redis 全部 `*RANK*` 等 zset，成员可能为 `<uid>` 或 `<uid>:<heroId>` | 扫 `ZRANGE` 后逐个 `ZREM` |
+| **Mongo 排行表** | `supremacyInfo` 的 `uid` 字段（**最容易漏！**） | 置为 `uid: 0` 保留空位，或删整条 |
+| 其他业务引用 | `guildInfo`/`supremacyInfo`/任务/邮件等 `uid`/`targetUid`/`rootId` | 全库扫描确认 |
+
+**一键清理脚本**（本仓已用于本次事故，清了 74 个残留成员）：
+
+```bash
+ssh gs 'cat > /tmp/cleanrank.sh <<"SHEOF"
+#!/bin/bash
+DEL="10000240 10000153 10000013"      # ← 换成要清的 uid
+total=0
+for key in $(redis-cli -n 0 --scan --pattern "*" 2>/dev/null); do
+  [ "$(redis-cli -n 0 TYPE "$key" 2>/dev/null)" = "zset" ] || continue
+  [ "$(redis-cli -n 0 ZCARD "$key" 2>/dev/null)" = "0" ] && continue
+  for d in $DEL; do
+    redis-cli -n 0 ZRANGE "$key" 0 -1 2>/dev/null | grep "^${d}:" | while IFS= read -r m; do
+      redis-cli -n 0 ZREM "$key" "$m" >/dev/null 2>&1; total=$((total+1))
+    done
+    redis-cli -n 0 ZSCORE "$key" "$d" >/dev/null 2>&1 && redis-cli -n 0 ZREM "$key" "$d" >/dev/null 2>&1
+  done
+done
+echo "清理成员数: $total"
+SHEOF
+sh /tmp/cleanrank.sh'
+```
+
+Mongo 侧：
+
+```bash
+ssh gs 'mongo --quiet m5_x1_game_10001 --eval "
+// 把指向已删账号的排行条目置为空位（保留 rank/pos 结构）
+db.supremacyInfo.find().forEach(function(d){
+  if (d.uid && d.uid !== 0 && db.user.count({_id: d.uid}) === 0) {
+    db.supremacyInfo.updateOne({_id: d._id}, {\$set: {uid: 0}});
+    print(\"清零 _id=\" + d._id + \" 原 uid=\" + d.uid);
+  }
+});"'
+```
+
+**验证顺序**：改完后先 `ZRANGE`/`supremacyInfo` 确认无已删 uid，
+再让玩家点一次排行榜，看日志有无 `UserManager::getUser null exception`。
+
+> 💡 **教训**：删号不是删 `user` 表就完了。这个游戏有大量反范式冗余
+> （排行、supremacy、公会、邮件都存 uid），**删号前应先扫全库+全 Redis 找出所有引用**。
+
 ---
 
 ## 6. 验收清单

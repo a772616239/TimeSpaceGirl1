@@ -17,9 +17,31 @@ this.IsEndBattle=false
 -- 保证顺序是「先剧情对话框、后英雄显示框」，不会被结算弹框抢在前面。
 this.storyDialogueBeginTime = nil  -- 剧情触发时刻（Time.realtimeSinceStartup），nil 表示当前没有待播剧情
 this.storyDialogueShown = false    -- 剧情面板是否已经真正弹出来过
+-- 本场战斗已经播过的剧情 id。BattleRoundBeginDialogue 有多个派发点
+-- （BattleLogic 追加单位/无单位参战、BattleView 助战英雄 3.5s 回调、帧校验回滚重放），
+-- 不去重会把同一段剧情对话框弹出两次。
+this.storyDialoguePlayed = {}
+
+-- 新一场战斗开始时清空剧情标记（BattleView.InitBattleData 调用）
+function this.ResetStoryDialogue()
+    this.storyDialogueBeginTime = nil
+    this.storyDialogueShown = false
+    this.storyDialoguePlayed = {}
+end
+
+-- 该剧情本场是否已经播过（重复派发时直接跳过，避免剧情框重复弹出）
+function this.IsStoryDialoguePlayed(storyId)
+    if not storyId or storyId == 0 then
+        return false
+    end
+    return this.storyDialoguePlayed[storyId] == true
+end
 
 -- 战斗内剧情对话框开始播放（BattleView.RoundBeginDialogue 调用）
-function this.BeginStoryDialogue()
+function this.BeginStoryDialogue(storyId)
+    if storyId and storyId ~= 0 then
+        this.storyDialoguePlayed[storyId] = true
+    end
     this.storyDialogueBeginTime = Time.realtimeSinceStartup
     this.storyDialogueShown = false
 end

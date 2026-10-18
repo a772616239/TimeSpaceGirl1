@@ -512,6 +512,8 @@ function this.InitBattleData()
     --BattleLogic.IsOpenBattleRecord = true
     BattleLogic.Init(this.fightData, nil, this.maxRound)
     BattleLogic.Type = this.battleType
+    -- 新一场战斗：清空战斗内剧情播放标记（同一段剧情本场只弹一次）
+    BattleManager.ResetStoryDialogue()
     this.InitBattleEvent()
 end
 
@@ -599,9 +601,17 @@ function this.RoundBeginDialogue(dialogueId)
         end
     end
 
+    -- 同一段剧情本场只播一次：BattleRoundBeginDialogue 有多个派发点
+    -- （BattleLogic 追加单位/无单位参战、助战英雄 3.5s 回调、帧校验回滚重放），
+    -- 重复派发会把同一个剧情对话框再弹一遍，表现为「剧情框重复弹出/结算后又弹剧情」
+    if BattleManager.IsStoryDialoguePlayed(dialogueId) then
+        Log("RoundBeginDialogue 跳过重复剧情 id=" .. tostring(dialogueId))
+        return
+    end
+
     BattleManager.PauseBattle()
     -- 标记战斗中剧情开始：结算弹框会等这段剧情播完再弹（先剧情对话框、后英雄显示框）
-    BattleManager.BeginStoryDialogue()
+    BattleManager.BeginStoryDialogue(dialogueId)
     StoryManager.EventTrigger(dialogueId, function()
         BattleManager.EndStoryDialogue()
         BattleManager.ResumeBattle()

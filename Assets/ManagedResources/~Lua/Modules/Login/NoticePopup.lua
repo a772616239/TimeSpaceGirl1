@@ -59,6 +59,37 @@ end
 
 local noticeContent = nil
 
+-- 公告 title 的约定是「多语言用 | 拼接、每段形如 <语言id>:<正文>」，
+-- 例如 "10001:中文公告|10101:English notice"。但后端/本地服也可能只下发纯文本，
+-- 此时没有 langId: 前缀，必须整段兜底显示，不能拿 nil 去拼字符串。
+local function PickLocalizedNotice(raw)
+    if type(raw) ~= "string" or raw == "" then
+        return ""
+    end
+    local lang = tostring(GetCurLanguage() or "10001")
+    local firstPart = nil
+
+    for part in string.gmatch(raw, "([^|]+)") do
+        if not firstPart then
+            firstPart = part
+        end
+        local langCode, text = string.match(part, "^([%w%-_]+):(.+)$")
+        if langCode and text and langCode == lang then
+            return text
+        end
+    end
+
+    -- 未命中当前语言：先回退中文，再回退第一段，最后整段原文
+    local zh = string.match(raw, "10001:([^|]+)")
+    if zh then
+        return zh
+    end
+    if firstPart then
+        return (string.match(firstPart, ":%s*(.+)") or firstPart)
+    end
+    return raw
+end
+
 function this.GetNotice()
     local timeStamp = Time.realtimeSinceStartup
     local timeSign = Util.MD5Encrypt(string.format("%s%s", timeStamp, LoginManager.sign))
@@ -66,60 +97,36 @@ function this.GetNotice()
     local showCb= function  (str)
             noticeContent=str
             RequestPanel.Hide()
-            if str == nil or str == "" then
+            -- 面板可能在请求返回前被关掉，此时不要写 UI
+            if not this.ContentText then
                 return
             end
-            
-            local json = require 'cjson'
-            local data = json.decode(str)
-            
-            if data.parms then
-                -- 获取客户端当前语言标识（根据实际项目调整）
-                local lang = GetCurLanguage().."" or "10001"
-                Log("当前语言标识: " .. lang.."--获取公告内容"..GetCurLanguage())
-                local content = data.parms.title
-                
-                -- 解析多语言公告
-                local localizedContent = ""
-                local found = false
-                
-                -- 尝试查找当前语言的公告
-                for part in string.gmatch(content, "([^|]+)") do
-                  
-                    local langCode, text = string.match(part, "^(%w+):(.+)$")
-                      Log("公告部分langCode: " .. langCode)
-                    if langCode and text then
-                        if langCode == lang then
-                            localizedContent = text
-                            found = true
-                            break
-                        end
-                    end
-                end
-                
-                -- 如果未找到匹配语言，尝试中文或第一条公告
-                if not found then
-                    -- 尝试找中文
-                    local zhText = string.match(content, "10001:([^|]+)")
-                    if zhText then
-                        localizedContent = zhText
-                    else
-                        -- 使用第一条公告
-                        local firstPart = string.match(content, "([^|]+)")
-                        if firstPart then
-                            localizedContent = string.match(firstPart, ":%s*(.+)") or firstPart
-                        else
-                            localizedContent = content
-                        end
-                    end
-                end
-                
-                this.ContentText.text = string.gsub(localizedContent, "\\n", "\n")
-            else
+            if str == nil or str == "" then
                 this.ContentText.text = GetLanguageStrById(11130)
+                return
             end
+
+            -- 公告解析整体兜底：任何异常都不该让整个 HTTP 回调崩掉（否则公告永远空白）
+            local ok, localizedContent = pcall(function()
+                local json = require 'cjson'
+                local data = json.decode(str)
+                if type(data) == "table" and type(data.parms) == "table" then
+                    return PickLocalizedNotice(data.parms.title or data.parms.content)
+                end
+                return nil
+            end)
+
+            if not ok or localizedContent == nil or localizedContent == "" then
+                if not ok then
+                    Log("NoticePopup 解析公告失败: " .. tostring(localizedContent))
+                end
+                this.ContentText.text = GetLanguageStrById(11130)
+                return
+            end
+
+            this.ContentText.text = (string.gsub(localizedContent, "\\n", "\n"))
         end
-    if noticeContent then
+    if noticeContent and noticeContent ~= "" then
         showCb(noticeContent)
         return
     else

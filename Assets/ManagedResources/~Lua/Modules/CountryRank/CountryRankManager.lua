@@ -72,6 +72,49 @@ function CountryRankManager.SetPlayerCountry(code)
     return normalized
 end
 
+---------------------------------------------------------------- 首次进主界面的一次性引导
+
+-- 标记键：玩家是否已经「被引导选过国家」
+-- 与 HasChosenCountry 的区别：玩家可能被设备地区自动定好国家（player_country 为空），
+-- 但引导弹窗仍应只弹一次 —— 所以单独记一个"已提示过"的标记。
+local GUIDE_DONE_KEY = "country_rank_guide_done"
+
+--- 引导弹窗是否已经弹过（永久，写 PlayerPrefs）
+function CountryRankManager.HasShownGuide()
+    return PlayerPrefs.GetInt(GUIDE_DONE_KEY, 0) == 1
+end
+
+--- 标记引导已弹过（调用后永不再弹）
+function CountryRankManager.MarkGuideShown()
+    if CountryRankManager.HasShownGuide() then
+        return
+    end
+    PlayerPrefs.SetInt(GUIDE_DONE_KEY, 1)
+    PlayerPrefs.Save()
+    Log("[CountryRank] guide done, will never popup again")
+end
+
+--[[
+ * 进主界面后调用：第一次弹出国家旗帜选择，之后永不再弹。
+ *
+ * 用 Timer 延后一小段再弹，避免和主界面开场动画/其他弹窗抢焦点。
+ *]]
+function CountryRankManager.TryShowFirstEnterGuide()
+    if CountryRankManager.HasShownGuide() then
+        return
+    end
+    -- 先落标记再弹窗：即使弹窗过程中玩家强退，也不会下次重复弹
+    CountryRankManager.MarkGuideShown()
+    local timer
+    timer = Timer.New(function()
+        timer:Stop()
+        UIManager.OpenPanel(UIName.CountryFlagSelectPopup, function(code)
+            Log("[CountryRank] first-enter country picked: " .. tostring(code))
+        end)
+    end, 0.6, 1, true)
+    timer:Start()
+end
+
 ---------------------------------------------------------------- 榜单数据
 --- 伪随机（按种子稳定），保证同一玩家每次看到的数值一致
 local function seededScore(seedStr, base, span)

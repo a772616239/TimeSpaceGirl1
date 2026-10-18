@@ -592,6 +592,11 @@ function this:OnShow()
         this._TimeCounter:Start()
     end
 
+    -- 首次进主界面弹一次「选择国家」，之后永不弹（标记写 PlayerPrefs）
+    if CountryRankManager then
+        CountryRankManager.TryShowFirstEnterGuide()
+    end
+
     -- if AdventureManager.drop ~= nil and AdventureManager.offlineTime ~= 0 then
     --     if AdventureManager.isFirstEnterGetReward and #AdventureManager.drop.itemlist > 0 then
     --         UIManager.OpenPanelWithSound(UIName.AdventureProgressPopup)

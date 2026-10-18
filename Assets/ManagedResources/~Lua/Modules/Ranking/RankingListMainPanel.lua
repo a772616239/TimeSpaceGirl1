@@ -1,4 +1,5 @@
 require("Base/BasePanel")
+require("Modules/CountryRank/CountryFlagUtil")
 RankingListMainPanel = Inherit(BasePanel)
 local this = RankingListMainPanel
 local curIndex = 1
@@ -257,7 +258,36 @@ function RankingListMainPanel:OnDestroy()
     rankKingListGo = {}
 end
 
+--[[
+ * 刷新「国家小旗」
+ *
+ * go 是 hero/infoGo，旗帜是它的兄弟节点 hero/countryFlag，所以从父节点取。
+ * 公会榜没有国籍概念 → 隐藏。
+--]]
+function this.UpdateCountryFlag(go, data)
+    if go == nil or IsNull(go) or data == nil then
+        return
+    end
+    local parent = go.transform.parent
+    if parent == nil then
+        return
+    end
+    local flagGo = Util.GetGameObject(parent.gameObject, "countryFlag")
+    if flagGo == nil or IsNull(flagGo) then
+        return
+    end
+    if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
+            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
+        flagGo:SetActive(false)
+        return
+    end
+    flagGo:SetActive(true)
+    CountryFlagUtil.Apply(flagGo, data.uid, data.country)
+end
+
 function this.SetInfoShow(go,data,rankType,nameText)
+    -- 名字后面的国家小旗（节点 bg/panel/ItemPre/hero/countryFlag，见 patch_more_flags.py）
+    this.UpdateCountryFlag(go, data)
     local fight = Util.GetGameObject(go,"fight")
     local warPower = Util.GetGameObject(go,"warPower")
     local trial = Util.GetGameObject(go,"trial")

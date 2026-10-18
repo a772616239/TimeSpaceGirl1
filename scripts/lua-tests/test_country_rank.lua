@@ -239,5 +239,60 @@ do
     check("manager.Initialize() 可调用（复现原崩溃点）", ok2, err2)
 end
 
+print("\n[10] 首次进主界面的一次性引导（只弹一次）")
+do
+    prefs = {}
+    CountryRankManager.Initialize()
+    check("初始未弹过", CountryRankManager.HasShownGuide() == false)
+
+    -- 记录标记后永远不再弹
+    CountryRankManager.MarkGuideShown()
+    check("标记后标记位为真", CountryRankManager.HasShownGuide() == true)
+    check("PlayerPrefs 真的写入了", prefs.country_rank_guide_done == 1,
+            prefs.country_rank_guide_done)
+
+    -- 幂等：重复调用不报错、不重复写
+    CountryRankManager.MarkGuideShown()
+    check("重复 MarkGuideShown 幂等", CountryRankManager.HasShownGuide() == true)
+
+    -- 模拟"玩家已自选国家"也不影响：引导标记是独立维度
+    CountryRankManager.SetPlayerCountry("jp")
+    check("自选国家后仍记得已弹过", CountryRankManager.HasShownGuide() == true)
+
+    -- 模拟全新安装（清空所有 Prefs）→ 应重新可弹
+    prefs = {}
+    check("全新安装后可以再弹", CountryRankManager.HasShownGuide() == false)
+end
+
+print("\n[11] UIConfigExtension 路径（UIManager 会拼 Modules/..script）")
+do
+    IsNull = function(x) return x == nil end
+    BasePanel = BasePanel or {}
+    if type(Inherit) ~= "function" then
+        Inherit = function(b) local o={} setmetatable(o,{__index=b}) o.__index=o return o end
+    end
+    package.preload["Base/BasePanel"] = function() return BasePanel end
+    ConfigName = ConfigName or { UIConfig = "UIConfig" }
+
+    local fakeCfg = setmetatable({}, { __newindex = function() end })  -- 模拟只读元表
+    if not ConfigManager then
+        ConfigManager = { GetConfig = function() return fakeCfg end }
+    end
+    local ext = require("Modules/CountryRank/UIConfigExtension")
+    ext.Register()
+    check("1010 用 rawset 注入成功", rawget(fakeCfg, 1010) ~= nil)
+    check("1011 用 rawset 注入成功", rawget(fakeCfg, 1011) ~= nil)
+    for _, id in ipairs({1010, 1011}) do
+        local cfg = rawget(fakeCfg, id)
+        if cfg then
+            -- 这是本次真实崩溃点：script 里不能再带 Modules/
+            check(("id=%d script 无 Modules/ 前缀"):format(id),
+                    not cfg.script:find("^Modules/"), cfg.script)
+            local ok, mod = pcall(require, "Modules/" .. cfg.script)
+            check(("id=%d 拼出的路径可 require"):format(id), ok and type(mod) == "table")
+        end
+    end
+end
+
 print(string.format("\n==== 通过 %d / 失败 %d ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

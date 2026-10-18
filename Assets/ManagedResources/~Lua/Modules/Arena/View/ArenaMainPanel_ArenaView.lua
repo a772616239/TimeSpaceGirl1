@@ -1,3 +1,4 @@
+require("Modules/CountryRank/CountryFlagUtil")
 local ArenaMainPanel_ArenaView = {}
 local this = ArenaMainPanel_ArenaView
 local rewardBoxBtn = {}
@@ -298,6 +299,9 @@ function this.RefreshEnemyData()
             local btnItemNum = Util.GetGameObject(node, "item/num"):GetComponent("Text")
 
             lv_name.text = SetRobotName(EnemyList[i].personInfo.uid, EnemyList[i].personInfo.name)
+            -- 名字后面的国家小旗（节点 enemy_N/countryFlag，见 patch_more_flags.py）
+            CountryFlagUtil.Apply(Util.GetGameObject(node, "countryFlag"),
+                    EnemyList[i].personInfo.uid, EnemyList[i].personInfo.country)
             integral.text = EnemyList[i].personInfo.score
             level.text = EnemyList[i].personInfo.level
             local str

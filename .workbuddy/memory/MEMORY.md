@@ -69,7 +69,9 @@
 - 巡检默认**只读**（不重启、不改配置），报告要有量化证据并分级 🔴/⚠️。
 - 发版/上线**必须先给用户看并取得明确同意**；打包/构建/校验/提交 git 可自行做；「上传 production + completed」= 提交审核，**先问**。重启生产游戏服（踢线）同理。
 - 🔴 代码改动逐条 commit **并且必须 push**（commit 完不推＝没交付，用户 10-18 明确要求）；中文 `type(scope): 摘要`，**严禁 `git add -A`**；Lua 源码 + LuaBytes 成对。skill/记忆一律写工程内（`.workbuddy/memory/`、`.workbuddy/skills/`）。
-- 🔴 **两个仓库都要管**：客户端 `TimeSpaceGirl1`（分支 `release`）+ 服务端 `TimeSpaceServer/Server_x1tag1.2.2`（分支 `x1-tag-1.2.2`），各自独立 remote；服务端有并行会话会自动 commit，提交只能显式列路径，push 前先看 `origin/<branch>..HEAD` 里混没混别人的提交。
+- 🔴 **两个仓库都要管（用户 10-18 再次强调）**：客户端 `TimeSpaceGirl1`（分支 `release`）+ 服务端 `TimeSpaceServer/Server_x1tag1.2.2`（分支 `x1-tag-1.2.2`），各自独立 remote；服务端有并行会话会自动 commit，提交只能显式列路径，push 前先看 `origin/<branch>..HEAD` 里混没混别人的提交。
+  - 🔴 结构别搞错：**`TimeSpaceServer/` 本身不是仓库**（`git rev-parse` 回主仓 `TimeSpaceGirl1`）。它的 `patches/`、`skzc/` 等 **1970 个文件由主仓跟踪** ⇒ 改这些 = 提交主仓；只有 `TimeSpaceServer/Server_x1tag1.2.2/` 被 `.gitignore:40` 排除、是独立 repo。
+  - ⇒ 判定「是否都推了」的正确口径：`git -C 主仓 rev-list --count origin/release..release` 与 `git -C Server_x1tag1.2.2 rev-list --count origin/x1-tag-1.2.2..x1-tag-1.2.2` 都为 0。
 - 凭据一律 `.secrets/`（700/600、永不入库）。⚠️ 远端是 PUBLIC 仓，4 个 keystore 自 2025-07 已进库，用户 10-13 决定**不处置、不再重提**（`docs/secrets_setup.md` §6）。
 - 🔴 后台长任务（>1 分钟）**不能 `nohup &`/`disown`** ⇒ `subprocess.Popen(..., start_new_session=True, DEVNULL)`，判活放到**下一次**工具调用里 `pgrep`/`lsof`。
 - 🔴 shell 含中文标点时变量写 `${VAR}`；`set -o pipefail` 下早退读端（`| head -1`、`| grep -q`）会造 SIGPIPE 假失败 ⇒ 加 `|| true` 或改内建判定，诊断打**完整**输出。

@@ -42,6 +42,7 @@ message EmptyMessage {
 		optional int32 ride = 22;//坐骑
 		optional int32 rideLevel = 23;//坐骑等级
 		optional int32 sex = 24;//玩家性别 0男1女
+		optional string country = 25;//玩家选择的所属国家 ISO 3166-1 alpha-2 小写(如 cn/jp)，空=未选择
 	}
 
 	 message Privilege{

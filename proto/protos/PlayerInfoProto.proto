@@ -464,6 +464,15 @@ import "CommonProto.proto";
 	    optional int32 designation = 1;
 	}
 
+	//更新玩家所属国家（玩家在「国家旗帜选择」面板里选的）
+	message UpdateUserCountryRequest{
+	    optional string country = 1; //ISO 3166-1 alpha-2 小写，如 cn/jp；空串表示清除
+	}
+	message UpdateUserCountryResponse{
+	    optional int32 resultCode = 1; //0成功，其它失败
+	    optional string country = 2;   //服务端最终保存的值（已规整）
+	}
+
 	//初始化云梦祈福
 	
 	//请求云梦数据

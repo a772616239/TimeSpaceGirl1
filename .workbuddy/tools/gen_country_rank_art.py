@@ -791,14 +791,28 @@ def build_eu(w, h, art):
 
 
 def build_xx(w, h, art):
-    """未知/其他：灰底 + 问号。"""
+    """未选择国家：中立地标图标（地球经纬），不用问号。"""
     d = ImageDraw.Draw(art)
-    d.rectangle([0, 0, w, h], fill=(62, 64, 76))
+    d.rectangle([0, 0, w, h], fill=(58, 62, 78))
+    # 淡淡的对角暗纹，与整体 UI 一致
+    for i in range(-h, w + h, 12):
+        d.line([(i, h), (i + h, 0)], fill=(48, 52, 66), width=3)
     cx, cy = w / 2, h / 2
-    d.arc([cx - h * 0.14, cy - h * 0.3, cx + h * 0.14, cy + h * 0.02], 150, 30,
-          fill=(196, 198, 210), width=5)
-    d.line([(cx, cy + h * 0.02), (cx, cy + h * 0.16)], fill=(196, 198, 210), width=5)
-    d.ellipse([cx - 3, cy + h * 0.24, cx + 3, cy + h * 0.30], fill=(196, 198, 210))
+    r = h * 0.30
+    # 地球：青色细线
+    line = (150, 196, 224)
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=line, width=3)
+    # 经线
+    for k in (0.55, 0.92):
+        d.ellipse([cx - r * k, cy - r, cx + r * k, cy + r], outline=line, width=2)
+    # 纬线
+    for dy in (-0.55, 0.0, 0.55):
+        rr = r * math.sqrt(max(0.0, 1 - dy * dy))
+        d.line([(cx - rr, cy + dy * r), (cx + rr, cy + dy * r)], fill=line, width=2)
+    # 中间加一个小定位针，强调"未选择"
+    px, py = cx + r * 0.45, cy + r * 0.30
+    d.line([(px, py), (px, py - r * 0.42)], fill=(255, 204, 0), width=3)
+    d.ellipse([px - 4, py - r * 0.42 - 8, px + 4, py - r * 0.42], fill=(255, 204, 0))
     return art
 
 

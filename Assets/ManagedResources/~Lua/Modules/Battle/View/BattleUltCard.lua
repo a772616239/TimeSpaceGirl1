@@ -27,6 +27,7 @@ local CARD_SCALE       = 0.22   -- 相对整屏版 HelpHeroShow 的缩放（0.28
 local CARD_MARGIN_X    = 120    -- 卡片中心距左/右边缘的距离（相对技能栏锚点，随屏幕尺寸自适应）
 local CARD_GAP_Y       = 8      -- 卡片顶边与技能栏底边的间隙（参考分辨率像素，CanvasScaler 统一缩放）
 local CARD_CONTENT_TOP = 642.5  -- 卡片内容顶边相对卡片中心（缩放前，Image1 顶边 = pos.y 7 + 高 1271/2）
+local CARD_Y_OFFSET    = 279.35 -- 在「技能栏下沿」基础上的整体竖向微调（正数向上）
 local CARD_FALLBACK_Y  = -520   -- 兜底：找不到技能栏时卡片中心的 Y（相对顶部锚点）
 local CARD_SHOW_TIME   = 2.0    -- 停留时长（对齐特写 CloseupDuration = 2000ms）
 local POP_IN_TIME     = 0.18
@@ -112,16 +113,17 @@ local function ApplyLayout(view, s, rt)
         rt.anchorMin = Vector2.New(ax, 1)
         rt.anchorMax = Vector2.New(ax, 1)
         local dx = ((tonumber(s.camp) or 0) == 0) and CARD_MARGIN_X or -CARD_MARGIN_X
-        rt.anchoredPosition = Vector2.New(dx, CARD_FALLBACK_Y)
+        local dy = CARD_FALLBACK_Y + CARD_Y_OFFSET
+        rt.anchoredPosition = Vector2.New(dx, dy)
         LogRed("[UIFlow] 大招小卡定位兜底：找不到技能栏节点")
-        return { x = dx, y = CARD_FALLBACK_Y }
+        return { x = dx, y = dy }
     end
 
     rt.anchorMin = barRt.anchorMin
     rt.anchorMax = barRt.anchorMax
     -- 技能栏底边（相对其锚点参考点）；pivot.y 通常是 0.5，用配置值算，不写死
     local barBottom = barRt.anchoredPosition.y - barRt.pivot.y * barRt.sizeDelta.y
-    local centerY = barBottom - CARD_GAP_Y - CARD_CONTENT_TOP * CARD_SCALE
+    local centerY = barBottom - CARD_GAP_Y - CARD_CONTENT_TOP * CARD_SCALE + CARD_Y_OFFSET
     local dx = CARD_MARGIN_X
     if (tonumber(s.camp) or 0) ~= 0 then
         dx = -dx

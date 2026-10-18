@@ -85,7 +85,7 @@
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
 | **TS-Pipeline-Overview** | 只读总览：一次看完 8 个环节，失败互不阻断 | `SKIP_PLAY=False` `SKIP_HEALTH=False` | — | 允许 |
-| **TS-Android-Release** | **AAB + APK** 全链路（10 stage），默认打包 + 上传发布 | `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
+| **TS-Android-Release** | **AAB + APK** 全链路（10 stage），默认打包 + 上传发布 | `SERVER_ENV=正式服` `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
 
 > **`BUILD_APK`（默认 True）**：打完 AAB 立刻在同一把 `unity` 锁下再出 **同 versionCode** 的 universal APK
 > （`--no-bump`，绝不二次提号），供直接装机测试。
@@ -94,7 +94,7 @@
 >   ⑦ 的三重校验只针对 AAB —— 不单独校，就是「发出去的装机包没人验过」。
 > - ⚠️ APK 用 upload key，与 Play 的 app signing key 不同 ⇒ **侧载前必须先卸载 Play 版**。
 
-| **TS-Android-TestPackage** | 出测试 APK（universal，upload key 签名） | `BUMP_VERSION=False` `EXPECT_PROFILE=minimal` | — | **禁止** |
+| **TS-Android-TestPackage** | 出测试 APK（universal，upload key 签名） | `SERVER_ENV=测试服` `BUMP_VERSION=False` `EXPECT_PROFILE=minimal` | — | **禁止** |
 
 > **`TS-Android-TestPackage` 的产物就是 APK 本体**（2026-10-17 修正）：构建页「Build Artifacts」
 > 里直接挂着 `artifacts/<版本>_vc<N>_<HHmmss>.apk`，点一下就下载，不用去磁盘上翻 `apks/`。
@@ -148,6 +148,52 @@
 
 > ⚠️ 曾经用 `mkdir` 做锁，被否掉：释放要 `rmdir`，而 `~/Documents` 下 `rmdir` 被沙箱 broker 拦
 > （`Operation not permitted`），结果锁残留 + 后续任务无限排队。
+
+---
+
+### 3.3 打哪个服的包（`SERVER_ENV`，2026-10-18 新增）
+
+出包连哪个服务器**只由 `Assets/Resources/version.txt` 的 `serverUrl` / `resUrl` 决定**，
+而这条链路以前完全没人管它（`CLIBuilder` / `aab_release.sh` / `build_apk.sh` 都不碰这个文件）
+⇒ 只能人肉改文件、还得记得改回来，漏一次就是**发错服**。现在收成一个下拉框：
+
+```
+Jenkins 参数 SERVER_ENV ──┐
+scripts/build_envs.json ──┴─→ scripts/apply_build_env.py apply <env>   （Unity 启动前写盘）
+                                  ↓
+                        Assets/Resources/version.txt  ← 临时改写（首次 apply 自动备份）
+                                  ↓
+                        Unity batchmode 打包
+                                  ↓
+               EXIT trap → apply_build_env.py restore（成功/失败/中断都还原）
+                                  ↓
+        scripts/verify_aab_server_env.py 解包核验（不符就拒绝上传/交付）
+```
+
+| 选项 | serverUrl | 用途 |
+|---|---|---|
+| `正式服` | `http://103.151.173.99:8080/` | 面向玩家的正式包（Release job 默认） |
+| `测试服` | `http://127.0.0.1:8081/` | 本机自测服（Tomcat 8081 + 游戏服 16081，TestPackage 默认） |
+| `现网-129.226.213.65` | `http://129.226.213.65:8080/` | 历史所有包（含上架 Play 的 vc73/vc74）用的那条，留作对照/回滚 |
+
+⚠️ **改地址只改 `scripts/build_envs.json`，不要改脚本**。加新环境时 Job 的 `choices` 要同步（两边都改）。
+
+几条必须知道的：
+
+- 🔴 **注入必须在 Unity 启动之前**：batchmode 一启动就重新导入 Resources 下的 TextAsset，
+  启动后再改文件等于没改 ⇒ 注入落在 shell 层，`CLIBuilder` 一行未改（不重编、不引入新风险）。
+- 🔴 **还原挂在 `EXIT` trap 上**：脚本里有十几处 `fail`，若只写「打完再还原」，失败时会把正式服地址
+  残留在工程里，下一次打包（哪怕没传 `--server-env`）就会静默打出正式服包 —— 比打包失败严重得多。
+- 🔴 **AAB 与 APK 是两次独立 Unity 构建**，Release job 把同一个 `SERVER_ENV` 同时传给
+  `aab_release.sh` 与 `build_apk.sh`；只给一处注入 = 两个包连不同服。
+- `--skip-build` / `REUSE_AAB` 复用旧包时**不注入、只核验**；包内环境与所选不符一律拒绝
+  （逃生门 `--allow-env-mismatch`）。这条专门防「把测试服包传上 production」。
+- 测试服包连 `127.0.0.1`，**真机必须先做端口反向映射**：
+  `adb reverse tcp:8081 tcp:8081` + `adb reverse tcp:16081 tcp:16081`，
+  否则登录一直转圈（TestPackage 的归档说明与构建日志都会打印这段）。
+- 手动核对：`python3 scripts/apply_build_env.py show`（工程当前连哪）、
+  `python3 scripts/verify_aab_server_env.py <aab|apk>`（某个包连哪）、
+  `python3 scripts/apply_build_env.py envs`（列可选环境）。
 
 ---
 

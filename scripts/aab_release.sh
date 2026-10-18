@@ -26,6 +26,15 @@
 # 会直接中止（因为这样打出的 AAB 真机起不来）。确认要发不含 Lua 的包时加
 # --allow-no-lua 强制继续。
 #
+# 🔴 --server-env <环境名>：这个包连哪个服务器（默认不干预，沿用工程现状）
+#    可选值来自 scripts/build_envs.json（现为 正式服 / 测试服 / 现网-129.226.213.65）。
+#    构建前把地址注入 Assets/Resources/version.txt，EXIT 时（含失败/中断）自动还原；
+#    打包后再解包核验 base/assets/Android/Resources/version.txt，不符就拒绝上传。
+#    例：scripts/aab_release.sh --server-env 正式服
+#        scripts/aab_release.sh --server-env 测试服 --upload            # 传 internal 试用
+#    --skip-build 复用旧产物时不做注入，只核验；若包内环境与 --server-env 不符则
+#    拒绝（这时想强行继续加 --allow-env-mismatch）。
+#
 # 说明：
 #   - 默认会先把 AndroidBundleVersionCode +1、bundleVersion 末位 +1（CLI 打包本身
 #     不自增，详见 scripts/bump_version.py 头部注释）。产物名形如
@@ -59,6 +68,11 @@ ALLOW_PUBLISH=0         # 送审/上线放行（--publish）
 DRY_RUN=0
 ASSUME_YES=0
 ALLOW_NO_LUA=0
+# 🔴 打包环境（连哪个服务器）：空 = 不干预（保持工程 Assets/Resources/version.txt 原值）。
+#    非空 = 必须是 scripts/build_envs.json 里的 key；构建前注入、构建后（含失败/中断）还原。
+#    注入由 scripts/apply_build_env.py 完成，CLIBuilder 一行没改（详见该脚本头部说明）。
+SERVER_ENV=""
+ALLOW_ENV_MISMATCH=0    # --skip-build 复用旧包时，允许包内环境与 --server-env 不一致
 
 # --------------------------------------------------------------------------- #
 # 参数解析
@@ -82,6 +96,8 @@ while [[ $# -gt 0 ]]; do
         --no-upload)      DO_UPLOAD=0; shift ;;   # 保留兼容；现已是默认
         --dry-run)        DRY_RUN=1; shift ;;
         --allow-no-lua)   ALLOW_NO_LUA=1; shift ;;
+        --server-env)     SERVER_ENV="$2"; shift 2 ;;     # 正式服 / 测试服 / 现网-… （见 build_envs.json）
+        --allow-env-mismatch) ALLOW_ENV_MISMATCH=1; shift ;;
         --yes|-y)         ASSUME_YES=1; shift ;;
         # 用法段 = 从第 3 行到下一个 `# ===…` 分隔线之前（不要再写死行号）
         -h|--help)        awk 'NR>=3 && /^# =====/{exit} NR>=3{print}' "$0"; exit 0 ;;
@@ -93,6 +109,23 @@ step()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()    { printf '\033[1;32m  ✓ %s\033[0m\n' "$*"; }
 warn()  { printf '\033[1;33m  ! %s\033[0m\n' "$*"; }
 fail()  { printf '\033[1;31m  ✗ %s\033[0m\n' "$*" >&2; exit 1; }
+
+# --------------------------------------------------------------------------- #
+# 打包环境（--server-env）的还原钩子
+#
+# 🔴 为什么用 trap 而不是「打完再还原」：脚本里有十几处 fail（任何一个前置闸门不过
+#    都会 exit）。若只在正常路径末尾还原，失败时就会把「正式服地址」留在
+#    Assets/Resources/version.txt 里，下一次打包（哪怕没传 --server-env）会静默
+#    打出正式服包 —— 这类残留比打包失败严重得多，所以必须在 EXIT 上无条件还原。
+# --------------------------------------------------------------------------- #
+restore_build_env() {
+    if [[ -n "${SERVER_ENV:-}" ]]; then
+        "$VENV_PY" scripts/apply_build_env.py restore >/dev/null 2>&1 || true
+    fi
+}
+if [[ -n "$SERVER_ENV" ]]; then
+    trap restore_build_env EXIT INT TERM
+fi
 
 # --------------------------------------------------------------------------- #
 # 默认发布状态（按轨道推导，仅在未显式给 --status 时生效）
@@ -269,6 +302,26 @@ else
     fi
 
     # ----------------------------------------------------------------------- #
+    # 1.5 注入出包环境（--server-env）
+    #
+    # 出包连哪个服**只由 Assets/Resources/version.txt 的 serverUrl/resUrl 决定**，
+    # 而这条链路以前完全没人管它 ⇒ 只能人肉改文件、还得记得改回来，漏一次就是发错服。
+    # 现在地址收进 scripts/build_envs.json（唯一真源），构建前注入、EXIT 时还原。
+    #
+    # 🔴 必须在 Unity 启动**之前**写盘：batchmode 一启动就会重新导入 Resources 下的
+    #    TextAsset，启动后再改文件，包里拿到的仍是旧值。
+    # ----------------------------------------------------------------------- #
+    step "注入出包环境"
+    if [[ -z "$SERVER_ENV" ]]; then
+        ok "未指定 --server-env，沿用工程当前 Assets/Resources/version.txt"
+        warn "包会连到哪个服取决于该文件现状；要明确指定请加 --server-env 正式服|测试服"
+    else
+        "$VENV_PY" scripts/apply_build_env.py apply "$SERVER_ENV" \
+            || fail "注入打包环境失败（可选环境见 scripts/build_envs.json）"
+        ok "已注入出包环境：${SERVER_ENV}"
+    fi
+
+    # ----------------------------------------------------------------------- #
     # 2. Unity batchmode 打包
     # ----------------------------------------------------------------------- #
     step "Unity batchmode 打包 AAB（约 10-15 分钟）"
@@ -385,11 +438,38 @@ fi
 ok "16KB 硬门槛通过（上面 ⚠️ 列表为 Play 软告警候选，需人工确认）"
 
 # --------------------------------------------------------------------------- #
+# 4.7 包内「连哪个服务器」核验
+#
+# 为什么不能只信 --server-env：
+#   1. apply_build_env.py 只是改磁盘文件，Unity 完全可能读到 Library 里的旧 TextAsset 缓存；
+#   2. --skip-build / --aab 复用旧产物时，根本没走注入这一步，包的环境是既成事实；
+#   3. 手工改过 version.txt 又忘了改回来，是最容易发生的静默错误（发错服）。
+# ⇒ 一律解包读 base/assets/Android/Resources/version.txt 复核。未给 --server-env 时
+#   只报告实际值，判据仍然是「人要不要拿它发版」。
+# --------------------------------------------------------------------------- #
+step "包内服务器环境核验"
+ENV_RC=0
+if [[ -n "$SERVER_ENV" ]]; then
+    "$VENV_PY" scripts/verify_aab_server_env.py "$AAB" --expect-env "$SERVER_ENV" || ENV_RC=$?
+else
+    "$VENV_PY" scripts/verify_aab_server_env.py "$AAB" || ENV_RC=$?
+fi
+if [[ "$ENV_RC" -ne 0 ]]; then
+    if [[ "$ALLOW_ENV_MISMATCH" -eq 1 ]]; then
+        warn "包内环境与期望不符，但已显式给 --allow-env-mismatch，继续（风险自担）"
+    else
+        fail "包连的不是期望的服务器 —— 拒绝上传/交付。确认要传就加 --allow-env-mismatch"
+    fi
+fi
+ok "服务器环境核验通过"
+
+# --------------------------------------------------------------------------- #
 # 5. 上传
 # --------------------------------------------------------------------------- #
 if [[ "$DO_UPLOAD" -eq 0 ]]; then
     step "跳过上传（默认行为；要上传请显式加 --upload）"
     ok "产物就绪：$AAB"
+    ok "出包环境：${SERVER_ENV:-（未指定，沿用工程 version.txt 现状）}"
     ok "下一步（传内部测试轨道 internal，默认）：scripts/aab_release.sh --skip-build --upload --yes"
     ok "（只有要发正式版才需要抬旗：… --skip-build --upload --production --status draft --yes）"
     exit 0
@@ -422,6 +502,7 @@ fi
 
 step "全流程完成"
 ok "AAB: $AAB"
+ok "出包环境：${SERVER_ENV:-（未指定，沿用工程 version.txt 现状）}"
 if [[ "$TRACK" == "internal" ]]; then
     ok "已发布到轨道：internal（内部测试，免常规审核，测试员几分钟内即可安装）"
 elif [[ "$STATUS" == "draft" ]]; then

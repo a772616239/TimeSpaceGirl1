@@ -1,0 +1,32 @@
+{
+  "_readme": [
+    "打包环境地址表 —— Jenkins 的 SERVER_ENV 选项、scripts/aab_release.sh --server-env、",
+    ".jenkins/lib/build_apk.sh --server-env 都只读这一个文件。",
+    "🔴 改服务器地址只改这里，不要改脚本、不要改 Jenkins Job。",
+    "apply_build_env.py 只覆盖下面 ENV_FIELDS 六个字段（serverUrl/resUrl/logUrl/sdkLodingUrl/payUrl/channel），",
+    "其余字段（serverPathType/subChannel/packageVersion/version）原样保留 —— serverPathType 运行时根本不读，",
+    "它只给编辑器 BuildWindow 面板回填，写错枚举名会让那个面板 Enum.Parse 抛异常。",
+    "envs 里的 key 就是 Jenkins 下拉框里的选项文本（含中文没问题，全程走 argv 不拼命令）。"
+  ],
+  "default": "正式服",
+  "envs": {
+    "正式服": {
+      "serverUrl": "http://103.151.173.99:8080/",
+      "resUrl": "http://129.226.213.65:81/",
+      "channel": "pc",
+      "_note": "serverUrl = 用户 2026-10-18 指定的正式服；resUrl 暂沿用现网资源站（热更 AB 实际堆在 129.226.213.65:81）。若正式服也自带资源站，改这一行即可。"
+    },
+    "测试服": {
+      "serverUrl": "http://127.0.0.1:8081/",
+      "resUrl": "http://129.226.213.65:81/",
+      "channel": "pc",
+      "_note": "本机自测服：Tomcat 8081（登录/列表）+ 游戏服 16081；真机要连 127.0.0.1 必须先 adb reverse tcp:8081 tcp:8081（bundle 测试包在 stage 里会自动提示）。"
+    },
+    "现网-129.226.213.65": {
+      "serverUrl": "http://129.226.213.65:8080/",
+      "resUrl": "http://129.226.213.65:81/",
+      "channel": "pc",
+      "_note": "历史所有包（含上架 Play 的 vc73/vc74）用的就是这条，保留作为对照/回滚档。"
+    }
+  }
+}

@@ -1,11 +1,12 @@
 /**@META
 {
-  "description": "出测试用 APK（universal，upload key 签名）：环境预检 → Unity batchmode → 包内三重校验 → **把 APK 本体收成构建产物（构建页可直接下载安装）**。专为「我要拿个包装到手机上测」设计，不做任何上传。侧载前必须先卸载 Play 版（签名不同）。",
+  "description": "出测试用 APK（universal，upload key 签名）：环境预检 → **按 SERVER_ENV 注入连服地址** → Unity batchmode → 包内四重校验（服务器环境/出包口径/16KB/交付）→ **把 APK 本体收成构建产物（构建页可直接下载安装）**。专为「我要拿个包装到手机上测」设计，不做任何上传。侧载前必须先卸载 Play 版（签名不同）。",
   "concurrent": false,
   "keep": [30, 30],
   "artifactKeep": 3,
   "artifactDays": 14,
   "params": [
+    {"name":"SERVER_ENV","type":"choice","choices":["测试服","正式服","现网-129.226.213.65"],"default":"测试服","description":"🔴 这个包连哪个服务器（地址表 scripts/build_envs.json：测试服=本机 127.0.0.1:8081 / 正式服=103.151.173.99 / 现网=历史包用的 129.226.213.65）。构建前注入 Assets/Resources/version.txt，EXIT 时（含失败）自动还原；打包后解包核验，不符则本环节失败。⚠️ 测试服包连 127.0.0.1，真机必须先 adb reverse tcp:8081 tcp:8081 与 tcp:16081 tcp:16081（构建日志会提示）"},
     {"name":"BUMP_VERSION","type":"bool","default":false,"description":"是否把 versionCode +1。测试包一般不用，保持与线上同号便于对照"},
     {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","dev","full"],"default":"minimal","description":"核验口径。CLI/CLIBuilder 固定 minimal（只关 GM）"}
   ]
@@ -36,6 +37,7 @@ pipeline {
           env.STAGE_PROJECT_ROOT = env.PROJ
           env.TS_RUN_DIR    = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
           env.TS_PROFILE    = params.EXPECT_PROFILE
+          env.TS_SERVER_ENV = params.SERVER_ENV
           env.TS_BUMP       = params.BUMP_VERSION.toString()
           env.TS_BUILD_START= (System.currentTimeMillis() / 1000L).toString()
         }
@@ -48,6 +50,7 @@ mkdir -p "$TS_RUN_DIR/logs"
   echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
   echo "口径：$TS_PROFILE（CLIBuilder 固定 minimal）提版本号：$TS_BUMP"
+  echo "出包环境：$TS_SERVER_ENV（连哪个服，见 scripts/build_envs.json）"
   echo "用途：出测试 APK（侧载前须先卸载 Play 版 —— 签名不同）"
   echo "取证：$TS_RUN_DIR"
 } | tee "$TS_RUN_DIR/context.txt"
@@ -101,13 +104,33 @@ set -uo pipefail
 cd "$PROJ"
 BUMP_ARG=""
 [[ "$TS_BUMP" == "true" ]] || BUMP_ARG="--no-bump"
-"$BASH" .jenkins/lib/build_apk.sh $BUMP_ARG --who "$JOB_NAME #$BUILD_NUMBER"
+# 🔴 连服环境由 build_apk.sh 在 Unity 启动前注入、EXIT 时还原（测试服=本机 127.0.0.1）
+ENV_ARGS=()
+[[ -n "${TS_SERVER_ENV:-}" ]] && ENV_ARGS=(--server-env "$TS_SERVER_ENV")
+"$BASH" .jenkins/lib/build_apk.sh $BUMP_ARG "${ENV_ARGS[@]}" --who "$JOB_NAME #$BUILD_NUMBER"
 ''')
       }
     }
 
-    stage('④ 包内三重校验') {
+    stage('④ 包内四重校验') {
       stages {
+        stage('服务器环境（这个包连哪个服）') {
+          steps {
+            sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+APK="$(cat "$TS_RUN_DIR/apk.path")"
+# 解包读 assets/Android/Resources/version.txt。测错环境的包比没有包更浪费时间：
+# 装上去连不上/连到正式服才发现，所以这里做成硬闸门而不是提示。
+# （bash 5 / set -u 下空数组展开安全；SERVER_ENV 留空时脚本只报告不判错）
+ENV_ARGS=()
+[[ -n "${TS_SERVER_ENV:-}" ]] && ENV_ARGS=(--expect-env "$TS_SERVER_ENV")
+"$BASH" .jenkins/lib/run_stage.sh --name "服务器环境核验" \
+  --group "包内校验" --slug server-env --timeout 300 \
+  -- "$PY" scripts/verify_aab_server_env.py "$APK" "${ENV_ARGS[@]}"
+''')
+          }
+        }
         stage('出包口径（isOpenGM 等 12 位开关）') {
           steps {
             sh(script: '''#!/usr/local/bin/bash
@@ -179,6 +202,13 @@ VER="$("$PY" scripts/bump_version.py --show 2>/dev/null | tr '\n' ' ')"
   echo "版本 : $VER"
   echo ""
   echo "侧载：adb install -r \"$APK\""
+  if [[ "${TS_SERVER_ENV:-}" == "测试服" ]]; then
+    echo "🔴 本包连的是本机（serverUrl=127.0.0.1:8081），真机侧载后必须先做端口反向映射，"
+    echo "   否则登录会一直转圈："
+    echo "     adb reverse tcp:8081 tcp:8081    # 登录服 + 区服列表"
+    echo "     adb reverse tcp:16081 tcp:16081  # 游戏服"
+    echo "   并确认本机 start-local.sh status 里 8081/16081 都在 LISTEN。"
+  fi
   echo "🔴 若手机已装 Play 版，必须先卸载 —— 本包用 upload key（beauty.keystore）签名，"
   echo "   与 Play 的 app signing key 不同，签名不匹配会装不上去。"
 } | tee "$TS_RUN_DIR/artifacts/artifact.txt"

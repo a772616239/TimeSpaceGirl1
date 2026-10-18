@@ -13,7 +13,10 @@
 #   3. **产物必须是本次的** —— 配 `.jenkins/lib/find_artifact.py --after <开始时间>`，
 #      构建失败时绝不回退到上一次的旧包（否则校验环节会去校一个旧包并且全绿）。
 #
-# 用法：build_apk.sh [--no-bump] [--who 说明]
+# 用法：build_apk.sh [--no-bump] [--server-env 环境名] [--who 说明]
+#   --server-env 取值见 scripts/build_envs.json（正式服 / 测试服 / 现网-…）。
+#   不传 = 沿用工程 Assets/Resources/version.txt 现状。注入与还原都在本脚本内完成，
+#   还原挂在 EXIT 上（中途失败也会还原），CLIBuilder 不参与。
 # 退出码：0 出包成功；其余 = Unity 的退出码（CLIBuilder 失败时是 1）
 # =============================================================================
 set -uo pipefail
@@ -27,10 +30,12 @@ UNITY="${UNITY:-/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/Mac
 RUN_DIR="${TS_RUN_DIR:-$ROOT/.jenkins/run/$(date +%Y%m%d-%H%M%S)}"
 
 DO_BUMP=1
+SERVER_ENV=""   # 空 = 不干预（沿用 Assets/Resources/version.txt 现状）；非空 = build_envs.json 里的 key
 WHO="$(hostname -s)/$$"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-bump) DO_BUMP=0; shift ;;
+    --server-env) SERVER_ENV="$2"; shift 2 ;;
     --who)     WHO="$2"; shift 2 ;;
     *) echo "build_apk: 未知参数 $1" >&2; exit 2 ;;
   esac
@@ -49,6 +54,26 @@ fi
 
 START=$(date +%s)
 LOG="$RUN_DIR/logs/unity-apk.log"
+
+# ---- 注入出包环境（--server-env）--------------------------------------------
+# 出包连哪个服只由 Assets/Resources/version.txt 决定，必须在 Unity 启动前写盘
+# （batchmode 一启动就重新导入 TextAsset，启动后再改等于没改）。
+# 🔴 还原挂在 EXIT 上：本脚本中途有多处 exit，漏还原会把「正式服地址」留在工程里，
+#    下一次打包（哪怕没传 --server-env）就会静默打出正式服包。
+restore_build_env() {
+  [[ -n "${SERVER_ENV:-}" ]] || return 0
+  "$PY" "$PROJ/scripts/apply_build_env.py" restore >/dev/null 2>&1 || true
+}
+if [[ -n "$SERVER_ENV" ]]; then
+  trap restore_build_env EXIT INT TERM
+  echo "→ 注入出包环境：$SERVER_ENV"
+  "$PY" "$PROJ/scripts/apply_build_env.py" apply "$SERVER_ENV" || {
+    echo "🔴 注入打包环境失败（环境表：$PROJ/scripts/build_envs.json）"
+    exit 2
+  }
+else
+  echo "→ 未指定 --server-env，沿用工程 Assets/Resources/version.txt 现状"
+fi
 
 # 🔴 口径说明：CLIBuilder 里 `kProfile` 硬编码为 MinimalGmOff（只关 GM，其余与线上逐位一致）。
 #    这里不提供口径开关 —— 命令行产物必须与线上口径一致，出别的口径应当是显式改代码的决定，

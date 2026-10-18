@@ -1,8 +1,9 @@
 /**@META
 {
-  "description": "Android 发版全链路（AAB + APK）：发布安全闸门 → 打包环境预检 → 提版本号 → Unity 构建 AAB → **同版本号打出测试 APK** → 包内三重校验 → 归档 → 上传 Play。**默认上传并发布**（UPLOAD=True、AUTO_APPROVE=True、BUILD_APK=True）：默认轨道 internal 内部测试（status=completed，测试员即可安装）；选 production/beta/alpha 时同样上传并发布，其 completed/inProgress 仍需勾 PUBLISH 作为线上最后一道确认。需要停下来点按钮时把 AUTO_APPROVE 设为 False。",
+  "description": "Android 发版全链路（AAB + APK）：发布安全闸门 → 打包环境预检 → 提版本号 → **按 SERVER_ENV 注入连服地址** → Unity 构建 AAB → **同版本号打出测试 APK（同一环境）** → 包内四重校验（服务器环境/出包口径/16KB/交付）→ 归档 → 上传 Play。**默认上传并发布**（UPLOAD=True、AUTO_APPROVE=True、BUILD_APK=True）：默认轨道 internal 内部测试（status=completed，测试员即可安装）；选 production/beta/alpha 时同样上传并发布，其 completed/inProgress 仍需勾 PUBLISH 作为线上最后一道确认。需要停下来点按钮时把 AUTO_APPROVE 设为 False。",
   "concurrent": false,
   "params": [
+    {"name":"SERVER_ENV","type":"choice","choices":["正式服","测试服","现网-129.226.213.65"],"default":"正式服","description":"🔴 这个包连哪个服务器（地址表 scripts/build_envs.json：正式服=103.151.173.99 / 测试服=本机 127.0.0.1:8081 / 现网=历史包用的 129.226.213.65）。构建前注入 Assets/Resources/version.txt，EXIT 时（含失败）自动还原；打包后**解包核验**，包里连的不是所选环境就拒绝上传。要回滚/对照旧包选「现网」"},
     {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","dev","full"],"default":"minimal","description":"核验口径（包内 12 位开关应等于哪一档）。⚠️ CLI 构建固定 minimal（CLIBuilder.kProfile 硬编码），选 dev/full 只应用于配合 REUSE_AAB 核验 GUI/手工出的包"},
     {"name":"BUMP_VERSION","type":"bool","default":true,"description":"构建前把 versionCode +1。CLI 打包不自增；Play 各轨道共享 versionCode 空间，重复号一律被拒"},
     {"name":"BUILD_APK","type":"bool","default":true,"description":"**默认是**：打完 AAB 后接着出一份同 versionCode 的 universal APK（upload key 签名），方便直接装手机测试。APK 失败不阻断 AAB 发版，但会标成关注"},
@@ -43,6 +44,7 @@ pipeline {
           env.TS_RUN_DIR = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
           // 参数转环境变量下发：避免拼命令字符串带来的引号/空格问题（更新说明里可能有空格）
           env.TS_PROFILE   = params.EXPECT_PROFILE
+          env.TS_SERVER_ENV= params.SERVER_ENV
           env.TS_BUMP      = params.BUMP_VERSION.toString()
           env.TS_REUSE     = params.REUSE_AAB.trim()
           env.TS_ALLOWNOLUA= params.ALLOW_NO_LUA.toString()
@@ -62,6 +64,7 @@ mkdir -p "$TS_RUN_DIR/logs"
   echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
   echo "口径：$TS_PROFILE  提版本号：$TS_BUMP  复用 AAB：${TS_REUSE:-（无，将构建）}"
+  echo "出包环境：$TS_SERVER_ENV（连哪个服，见 scripts/build_envs.json）"
   echo "上传：$UPLOAD  轨道：$TS_TRACK  状态：$TS_STATUS  PUBLISH：$TS_PUBLISH  自动放行审批：$TS_AUTOAPPROVE"
   echo "取证：$TS_RUN_DIR"
 } | tee "$TS_RUN_DIR/context.txt"
@@ -153,6 +156,8 @@ if [[ -n "${TS_REUSE:-}" ]]; then
   BUILD_ARGS=(--no-bump --skip-build --aab "$TS_REUSE")
 fi
 [[ "$TS_ALLOWNOLUA" == "true" ]] && BUILD_ARGS+=(--allow-no-lua)
+# 🔴 出包环境：注入 + 打包后解包核验都由 aab_release.sh 负责（--skip-build 复用旧包时只核验）
+[[ -n "${TS_SERVER_ENV:-}" ]] && BUILD_ARGS+=(--server-env "$TS_SERVER_ENV")
 
 echo "→ scripts/aab_release.sh ${BUILD_ARGS[*]}"
 # 🔴 纳入 unity 锁：同一 Unity 工程不能有第二个 batchmode 实例，
@@ -181,9 +186,13 @@ cd "$PROJ"
 #    AAB 刚构建完、锁已释放，这里再拿一次 —— 期间若有人手工开了编辑器，
 #    我们只会等锁（rc=75 超时）而不是把工程搞坏。
 echo "→ build_apk.sh --no-bump（复用 ④ 已提的版本号，与 AAB 保持一致）"
+# 🔴 同一个出包环境，AAB 与 APK 必须一致：两者是两次独立 Unity 构建，
+#    若只给 AAB 注入，APK 会打回工程默认环境 ⇒ 发出去的装机包连错服。
+APK_ARGS=(--no-bump)
+[[ -n "${TS_SERVER_ENV:-}" ]] && APK_ARGS+=(--server-env "$TS_SERVER_ENV")
 "$BASH" .jenkins/lib/run_stage.sh --name "Unity 构建 APK" \
   --group "构建" --slug build-apk --timeout 7000 \
-  -- "$BASH" .jenkins/lib/build_apk.sh --no-bump --who "$JOB_NAME #$BUILD_NUMBER"
+  -- "$BASH" .jenkins/lib/build_apk.sh "${APK_ARGS[@]}" --who "$JOB_NAME #$BUILD_NUMBER"
 ''')
       }
       post {
@@ -239,8 +248,26 @@ ls -la "$AAB" "$AAB.release.json" 2>/dev/null || true
       }
     }
 
-    stage('⑦ 包内三重校验') {
+    stage('⑦ 包内四重校验（服务器环境 / 出包口径 / 16KB / 交付）') {
       stages {
+        stage('服务器环境（这个包连哪个服）') {
+          steps {
+            sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+AAB="$(cat "$TS_RUN_DIR/aab.path")"
+# 解包读 base/assets/Android/Resources/version.txt，与 SERVER_ENV 对应的地址逐字比对。
+# 「注入脚本说改了」不算证据 —— 复用旧包（REUSE_AAB）、手工改过文件忘改回来，
+# 都会在这一步被揪出来；发错服比打包失败严重得多，所以这里必须是硬闸门。
+# （bash 5 / set -u 下空数组展开安全，SERVER_ENV 留空时脚本只报告不判错）
+ENV_ARGS=()
+[[ -n "${TS_SERVER_ENV:-}" ]] && ENV_ARGS=(--expect-env "$TS_SERVER_ENV")
+"$BASH" .jenkins/lib/run_stage.sh --name "服务器环境核验" \
+  --group "包内校验" --slug server-env --timeout 300 \
+  -- "$PY" scripts/verify_aab_server_env.py "$AAB" "${ENV_ARGS[@]}"
+''')
+          }
+        }
         stage('出包口径（isOpenGM 等 12 位开关）') {
           steps {
             sh(script: '''#!/usr/local/bin/bash

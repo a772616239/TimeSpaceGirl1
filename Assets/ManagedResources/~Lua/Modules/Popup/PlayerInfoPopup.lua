@@ -1,3 +1,4 @@
+require("Modules/CountryRank/CountryFlagUtil")
 require("Base/BasePanel")
 local PlayerInfoPopup = Inherit(BasePanel)
 local this = PlayerInfoPopup
@@ -304,19 +305,13 @@ function this.RefreshCountryFlag(data)
     if (uid == nil or uid == 0) and data ~= nil then
         uid = data.uid
     end
-    local code = data and data.country
-    if (code == nil or code == "") and CountryRankManager then
-        local myUid = PlayerManager and PlayerManager.uid or 0
-        if myUid ~= nil and myUid ~= 0 and uid ~= nil and tonumber(uid) == tonumber(myUid) then
-            -- 自己：用本地记录的国家（玩家在旗帜选择面板选的）
-            code = CountryRankManager.GetPlayerCountry()
-        elseif uid ~= nil and tonumber(uid) ~= nil then
-            -- 其他玩家且服务端没下发国家：按 uid 稳定映射（占位策略）
-            local list = CountryConfig.List
-            local idx = tonumber(uid) % (#list - 1) + 1
-            code = list[idx].code
-        end
+    -- 统一走 CountryFlagUtil：服务端有 country 就显示，没有就隐藏（不再按 uid 编造）
+    local code = CountryFlagUtil.ResolveCountry(uid, data and data.country)
+    if code == nil then
+        this.memCountryFlag:SetActive(false)
+        return
     end
+    this.memCountryFlag:SetActive(true)
     this.memCountryFlagImg.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(code))
 end
 

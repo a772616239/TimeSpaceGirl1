@@ -177,12 +177,11 @@ do
     check("国家数量合理(>=20)", #CountryConfig.List >= 20, #CountryConfig.List)
 end
 
-print("\n[8] 通用排行榜的旗帜映射（CountryFlagUtil）")
+print("\n[8] 旗帜只认服务端数据（不再按 uid 编造）")
 do
     IsNull = function(x) return x == nil end
     Util = Util or {}
     Util.LoadSprite = function(n) return n end
-    -- 载入辅助模块（它 require 了 CountryConfig，已在上文载入）
     assert(loadfile(LUA_SRC .. "/Modules/CountryRank/CountryFlagUtil.lua"))()
 
     prefs = { player_country = "jp" }
@@ -191,24 +190,16 @@ do
 
     check("服务端下发的国家优先", CountryFlagUtil.ResolveCountry(777, "br") == "br",
             CountryFlagUtil.ResolveCountry(777, "br"))
-    check("自己的记录用本地国家", CountryFlagUtil.ResolveCountry(777, nil) == "jp",
+    check("自己没有服务端值→用本地选择", CountryFlagUtil.ResolveCountry(777, nil) == "jp",
             CountryFlagUtil.ResolveCountry(777, nil))
-    check("nil uid 落兜底", CountryFlagUtil.ResolveCountry(nil, nil) == "xx")
 
-    -- 其他玩家：同一 uid 必须稳定映射
-    local c1 = CountryFlagUtil.ResolveCountry(12345, nil)
-    local c2 = CountryFlagUtil.ResolveCountry(12345, nil)
-    check("同一 uid 映射稳定", c1 == c2, c1 .. " vs " .. c2)
-    check("映射结果合法", CountryConfig.BY_CODE[c1] ~= nil, c1)
-
-    -- 不同 uid 应分散到多个国家（不是全同一个）
-    local distinct = {}
-    for i = 1, 60 do
-        distinct[CountryFlagUtil.ResolveCountry(1000 + i * 37, nil)] = true
-    end
-    local cnt = 0
-    for _ in pairs(distinct) do cnt = cnt + 1 end
-    check("不同 uid 能分散到多个国家", cnt >= 5, cnt)
+    -- 关键：其他玩家没有服务端数据时必须返回 nil（隐藏旗帜），不能编造
+    check("其他玩家无数据 → nil(隐藏)", CountryFlagUtil.ResolveCountry(12345, nil) == nil,
+            tostring(CountryFlagUtil.ResolveCountry(12345, nil)))
+    check("其他玩家有数据 → 用服务端值", CountryFlagUtil.ResolveCountry(12345, "us") == "us",
+            tostring(CountryFlagUtil.ResolveCountry(12345, "us")))
+    check("uid 为 nil 也不编造", CountryFlagUtil.ResolveCountry(nil, nil) == nil,
+            tostring(CountryFlagUtil.ResolveCountry(nil, nil)))
 end
 
 print("\n[9] 模块 return 约定（Game.InitManagers 靠 require 返回值）")
@@ -294,57 +285,23 @@ do
     end
 end
 
-print("\n[12] 选了国旗仍显示问号（PlayerInfoPopup 取 uid 的坑）")
+print("\n[12] 选了国旗后的解析（PlayerInfoPopup）")
 do
-    -- 复刻 PlayerInfoPopup.RefreshCountryFlag 的解析顺序
-    local function resolve(playerId, data)
-        local uid = playerId
-        if (uid == nil or uid == 0) and data ~= nil then uid = data.uid end
-        local code = data and data.country
-        if (code == nil or code == "") and CountryRankManager then
-            local myUid = PlayerManager and PlayerManager.uid or 0
-            if myUid ~= nil and myUid ~= 0 and uid ~= nil
-                    and tonumber(uid) == tonumber(myUid) then
-                code = CountryRankManager.GetPlayerCountry()
-            elseif uid ~= nil and tonumber(uid) ~= nil then
-                local list = CountryConfig.List
-                code = list[tonumber(uid) % (#list - 1) + 1].code
-            end
-        end
-        return code
-    end
+    local FlagUtil2 = require("Modules/CountryRank/CountryFlagUtil")
 
     prefs = { player_country = "jp" }
     PlayerManager.uid = 10000248
     CountryRankManager.Initialize()
 
-    -- 关键：服务端下发的 teamInfo **没有 uid 字段**，必须靠 _PlayerId
-    local teamInfoNoUid = { name = "夜航星", level = 50 }
-    local code = resolve(10000248, teamInfoNoUid)
-    check("自己（teamInfo 无 uid）解析出所选国家",
-            code == "jp", tostring(code))
-    check("旗帜 sprite 是日本旗不是问号",
-            CountryConfig.GetFlagSprite(code) == "cn2-guoqi_jp",
+    -- 服务端下发的 teamInfo 没有 country 字段 → 自己用本地值
+    local code = FlagUtil2.ResolveCountry(10000248, nil)
+    check("自己（teamInfo 无 country）用本地所选", code == "jp", tostring(code))
+    check("旗帜 sprite 是日本旗", CountryConfig.GetFlagSprite(code) == "cn2-guoqi_jp",
             CountryConfig.GetFlagSprite(code))
 
-    -- 回归：旧写法（只用 data.uid）会退化成问号，这就是用户看到的现象
-    local function resolveOld(data)
-        local c = data and data.country
-        if (c == nil or c == "") and CountryRankManager then
-            local myUid = PlayerManager and PlayerManager.uid or 0
-            if data and data.uid == myUid then
-                c = CountryRankManager.GetPlayerCountry()
-            elseif data and data.uid then
-                local list = CountryConfig.List
-                c = list[(tonumber(data.uid) or 0) % (#list - 1) + 1].code
-            end
-        end
-        return c
-    end
-    local oldCode = resolveOld(teamInfoNoUid)
-    check("旧写法退化为兜底国旗（复现问号 bug）",
-            CountryConfig.GetFlagSprite(oldCode) == "cn2-guoqi_xx",
-            CountryConfig.GetFlagSprite(oldCode))
+    -- 别人没有服务端数据 → nil，由 UI 隐藏，不出现问号
+    local otherCode = FlagUtil2.ResolveCountry(10009999, nil)
+    check("别人无数据 → nil(隐藏，不显示问号)", otherCode == nil, tostring(otherCode))
 end
 
 print(string.format("\n==== 通过 %d / 失败 %d ====", pass, fail))

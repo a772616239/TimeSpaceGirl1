@@ -23,8 +23,8 @@ local REQUIRE_CLOSEUP = false
 -- 敌我都弹，靠角落位置区分：我方左上角、敌方右上角
 local ONLY_MY_CAMP    = false
 
-local CARD_SCALE       = 0.22   -- 相对整屏版 HelpHeroShow 的缩放（0.28 的 0.8 倍 = 0.224）
-local CARD_MARGIN_X    = 120    -- 卡片中心距左/右边缘的距离（相对技能栏锚点，随屏幕尺寸自适应）
+local CARD_SCALE       = 0.26   -- 相对整屏版 HelpHeroShow 的缩放
+local CARD_MARGIN_X    = 140    -- 卡片中心距左/右边缘的距离（0.26 缩放后卡宽 280.8，半宽 140.4，边缘贴齐）
 local CARD_GAP_Y       = 8      -- 卡片顶边与技能栏底边的间隙（参考分辨率像素，CanvasScaler 统一缩放）
 local CARD_CONTENT_TOP = 642.5  -- 卡片内容顶边相对卡片中心（缩放前，Image1 顶边 = pos.y 7 + 高 1271/2）
 local CARD_Y_OFFSET    = 279.35 -- 在「技能栏下沿」基础上的整体竖向微调（正数向上）

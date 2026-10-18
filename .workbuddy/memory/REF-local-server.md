@@ -55,6 +55,21 @@ curl "http://127.0.0.1:8081/tk/getServerList?openId=<openId>&channel=pc&sub_chan
 - 本机已插入一条双语自测公告（title 形如 `10001:中文…|10101:English…`），用于验证多语言解析；
   想恢复「无公告」状态：`mongo x1_cn_test_login --eval 'db.notice_info.deleteMany({})'`。
 
+## 🔴 luafight（服务端战斗校验脚本）—— 只认生产/仓库那份
+`~/home/java/gameserver/luafight/` 是 `CheckFight` 跑的服务端战斗逻辑，**必须整套与生产一致**，不能拿客户端的 `~Lua/Modules/Battle/Logic` 或 `luafight/2/` 顶替。
+
+| 位置 | 状态 | 说明 |
+|---|---|---|
+| `luafight/BattleMain.lua` | ✅ 生产同款（md5 `f098b332…`） | 337/442/449/453 行调用 `BattleLogManager.WriteServerFightDataB` |
+| `luafight/Modules/`（34 lua，含 `Buff/BEffect.lua`） | ✅ 唯一正确版 | ≡ 生产 `gs:/home/java/gameserver/luafight/Modules` ≡ 仓库 `server_game/luafight/Modules` |
+| `luafight/2/`、`Modules.old-20261018`、`Modules.broken-20261018` | ❌ 坏的（33 lua） | `BattleLogManager` 只有 4 个函数、缺 `WriteServerFightData(B)`/`LogCa` ⇒ 主线结算必抛 `BattleMain:449 attempt to call nil` |
+
+- 一行判定：`grep -c "^function this\." luafight/Modules/Battle/Logic/BattleLogManager.lua` = **11** 才对；`4` = 装错版本。
+- 重装（免重启，`require` 每次读盘）：`tar` 从 gs 拉 `luafight` → `rsync -a --delete <prod>/Modules/ Modules/`。
+- `luafight/2/BattleMain.lua`（215 行 Execute）与主 `BattleMain.lua`（309 行）**不是同一份**，`2/` 整体只算调试副本。
+- `CheckFight.getRootPath()` 非 Windows 硬编码 `"../../../"` ⇒ 依赖 `~/luafight -> ~/home/java/gameserver/luafight` 这条软链（17:20 建，删了立刻 `Globals.load` NPE）。
+- 结算失败的通用表现：服务端 `HandlerLogicThread` 兜底发 `errCode=0 / errMsg=""` 的空 ErrorResponse（`HandlerLogicThread.java:232`），客户端 `Network.lua:189` 打 `[Network ERROR DEBUG]`，`MapFightResultRequest` 回调不触发 ⇒ 打完卡在战场不结算。
+
 ## 启动踩坑
 - 🔴 Tomcat/游戏服 lib 都被裁过：Tomcat `lib/` 少 10 个（含 `catalina.jar`）→ `ClassNotFoundException: org.apache.catalina.startup.Catalina`；`webapps/tk/WEB-INF/lib` 少 13 个（含 `mongo-java-driver`）→ `NoClassDefFoundError: com/mongodb/DBObject`。补齐源都在仓里 `TimeSpaceServer/skzc/home/java/...`。
 - 🔴 `webapps/tk.war` 存在时 Tomcat 会**删掉并重建** `webapps/tk` 目录（失败时目录直接消失）⇒ 已把 war 改名 `tk.war.bak-20261018`，用展开目录部署。

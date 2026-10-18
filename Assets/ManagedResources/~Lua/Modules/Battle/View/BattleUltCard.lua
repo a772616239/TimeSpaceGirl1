@@ -23,9 +23,9 @@ local REQUIRE_CLOSEUP = false
 -- 敌我都弹，靠角落位置区分：我方左上角、敌方右上角
 local ONLY_MY_CAMP    = false
 
-local CARD_SCALE      = 0.14  -- 相对整屏版 HelpHeroShow 的缩放（0.28 的一半）
-local CARD_MARGIN_X   = 110   -- 卡片中心距左/右边界的距离（随缩放同步收一半）
-local CARD_MARGIN_TOP = 400   -- 卡片中心距顶边的距离（顶部锚点，向下偏移；300->400 下移）
+local CARD_SCALE      = 0.22  -- 相对整屏版 HelpHeroShow 的缩放（0.28 的 0.8 倍 = 0.224）
+local CARD_MARGIN_X   = 170   -- 卡片中心距左/右边界的距离（随缩放同步放大，保持贴角）
+local CARD_MARGIN_TOP = 500   -- 卡片中心距顶边的距离（顶部锚点，向下偏移；400->500 再下移）
 local CARD_SHOW_TIME  = 2.0   -- 停留时长（对齐特写 CloseupDuration = 2000ms）
 local POP_IN_TIME     = 0.18
 local POP_OUT_TIME    = 0.12

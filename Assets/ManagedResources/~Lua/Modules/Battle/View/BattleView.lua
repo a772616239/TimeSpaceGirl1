@@ -1,6 +1,7 @@
 require("Base/BasePanel")
 require("Modules.Battle.Config.PokemonEffectConfig")
 local FEAConfig = require("Modules/Battle/Config/FightEffectAudioConfig")
+local BattleUltCard = require("Modules.Battle.View.BattleUltCard")
 -- local RoleShowView = require("Modules/Battle/View/BattleRoleShowView")
 local TurretRotationConfig = ConfigManager.GetConfig(ConfigName.TurretRotationConfig)
 local BattleView = {}
@@ -517,6 +518,8 @@ function this.InitBattleData()
     -- 清掉上一场可能残留的「助战英雄展示框待弹」状态，避免跨场串味
     this.pendingHelpHeroShow = false
     this.storyFinishHandler = nil
+    -- 大招小卡：换战斗时重建一份干净的克隆（模板此时还没播过入场动画）
+    BattleUltCard.ResetForBattle(this)
     this.InitBattleEvent()
 end
 

@@ -11,6 +11,7 @@ local SkillLogicConfig = ConfigManager.GetConfig(ConfigName.SkillLogicConfig)
 local BuffEffectConfig = ConfigManager.GetConfig(ConfigName.BuffEffectConfig)
 local TurretEffectRotationConfig = ConfigManager.GetConfig(ConfigName.TurretEffectRotationConfig)
 local Bezier = require("Base.Bezier")
+local BattleUltCard = require("Modules.Battle.View.BattleUltCard")
 local healEffect = "n1_eff_heal"
 local rageEffect = "s_jieling_hs_3006_skeff_casting_buff_nuqi"
 local cdChangedEffect = "c_jz_0002_skeff_slidesk_buff"
@@ -1114,6 +1115,24 @@ function RoleView:SkillCastEnd(skill)
     end
 end
 
+-- 大招入场小卡：缩小版 HelpHeroShow 摆到对应侧边角（我方左下 / 敌方右下），
+-- 与大招攻击同时进行，不额外暂停战斗
+function RoleView:TryShowUltCard(combat)
+    if not BattleUltCard or not BattleUltCard.IsUltSkill(combat) then
+        return
+    end
+    local roleId = self.role and self.role.roleData and self.role.roleData.roleId
+    if not roleId then
+        return
+    end
+    local heroConfig = HeroConfig[roleId]
+    if not heroConfig then
+        return
+    end
+    BattleUltCard.Show(self.RootPanel, heroConfig, self.role.camp,
+        tostring(roleId) .. "_" .. tostring(combat.Id or combat.id))
+end
+
 function RoleView:SkillFireOnce(skill, targetIdx)
     if not skill or not targetIdx then
         return
@@ -1123,6 +1142,9 @@ function RoleView:SkillFireOnce(skill, targetIdx)
     if not combat then
         return
     end
+
+    -- 大招先亮小卡（与攻击动作并行）
+    self:TryShowUltCard(combat)
 
     local funFire = function()
         self.RootPanel.SetRoleHighLight(
@@ -1195,6 +1217,9 @@ function RoleView:SkillFireAll(skill)
     if not combat then
         return
     end
+
+    -- 大招先亮小卡（与攻击动作并行）
+    self:TryShowUltCard(combat)
 
     SkillSumDamagedValue = 0
 

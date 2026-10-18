@@ -28,6 +28,8 @@ this.MapSpeed = 0
 this.MapView = 0
 --性别
 this.sex = 0
+--国家/地区码（服务端下发，排行榜国旗用；空串=服务端还没有记录）
+this.country = ""
 --称号队列
 this.titList = {}
 this.receivedList = {}

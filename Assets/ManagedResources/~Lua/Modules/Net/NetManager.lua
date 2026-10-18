@@ -125,6 +125,11 @@ function this.PlayerInfoRequest(func)
         PlayerManager.ride = msg.player.ride--坐骑
         PlayerManager.rideLevel = msg.player.rideLevel
         PlayerManager.sex = msg.player.sex
+        -- 国家/地区：服务端有值就以服务端为准（换机/重装可恢复），没有则把本地选过的补传上去
+        PlayerManager.country = msg.player.country or ""
+        if CountryRankManager ~= nil then
+            CountryRankManager.OnPlayerInfoLoaded()
+        end
         PlayerManager.isShowVip = msg.showVip
         MyGuildManager.ExitTimeStamp = msg.leaveGuildTime
         if msg.player.sex then
@@ -228,6 +233,31 @@ function this.PlayerInfoRequest(func)
         FormationCenterManager.InitData(msg)
         if func then
             func(msg)
+        end
+    end)
+end
+
+-- 设置玩家国旗/国家地区（服务端持久化，排行榜展示用）
+-- code: 两位小写国家码（cn/us/jp/hk/tw/mo…）；func(resultCode, country) 可选
+function NetManager.SetPlayerCountry(code, func)
+    if not Network or not Network.isConnected then
+        Log("[Country] SetPlayerCountry skipped: network not connected")
+        return
+    end
+    local data = PlayerInfoProto_pb.SetPlayerCountryRequest()
+    data.country = code or ""
+    local msg = data:SerializeToString()
+    Network:SendMessageWithCallBack(MessageTypeProto_pb.SetPlayerCountryRequest, MessageTypeProto_pb.SetPlayerCountryResponse, msg, function(buffer)
+        local dataBytes = buffer:DataByte()
+        local resp = PlayerInfoProto_pb.SetPlayerCountryResponse()
+        resp:ParseFromString(dataBytes)
+        if resp.resultCode ~= 0 then
+            LogError("[Country] SetPlayerCountry rejected, code=" .. tostring(code) .. " resultCode=" .. tostring(resp.resultCode))
+        else
+            Log("[Country] SetPlayerCountry ok, country=" .. tostring(resp.country))
+        end
+        if func then
+            func(resp.resultCode, resp.country)
         end
     end)
 end

@@ -42,7 +42,15 @@ end
 
 ---------------------------------------------------------------- 玩家国家
 --- 玩家当前所属国家码（已规整）
+--- 优先级：服务端记录 > 本地自选 > 设备地区 > 兜底
+--- （服务端有值时以它为准，换机/重装后本地 PlayerPrefs 已经丢了，靠服务端恢复）
 function CountryRankManager.GetPlayerCountry()
+    if PlayerManager ~= nil then
+        local server = PlayerManager.country
+        if server ~= nil and server ~= "" then
+            return CountryConfig.Normalize(server)
+        end
+    end
     local saved = PlayerPrefs.GetString(PLAYER_COUNTRY_KEY, "")
     if saved ~= nil and saved ~= "" then
         return CountryConfig.Normalize(saved)
@@ -56,20 +64,56 @@ end
 
 --- 玩家是否主动选过国家（决定首次进入是否弹选择面板）
 function CountryRankManager.HasChosenCountry()
+    if PlayerManager ~= nil and PlayerManager.country ~= nil and PlayerManager.country ~= "" then
+        return true
+    end
     local saved = PlayerPrefs.GetString(PLAYER_COUNTRY_KEY, "")
     return saved ~= nil and saved ~= ""
 end
 
---- 保存玩家所选国家
-function CountryRankManager.SetPlayerCountry(code)
+--- 保存玩家所选国家（本地 + 上报服务端）
+--- @param code 国家码
+--- @param skipServer 可选；true 时只写本地（内部补调用，避免回环）
+function CountryRankManager.SetPlayerCountry(code, skipServer)
     local normalized = CountryConfig.Normalize(code)
     PlayerPrefs.SetString(PLAYER_COUNTRY_KEY, normalized)
     PlayerPrefs.Save()
+    if PlayerManager ~= nil then
+        PlayerManager.country = normalized
+    end
+    if not skipServer and NetManager ~= nil and NetManager.SetPlayerCountry ~= nil then
+        NetManager.SetPlayerCountry(normalized, function(resultCode, serverCode)
+            if resultCode == 0 and serverCode ~= nil and serverCode ~= "" and serverCode ~= normalized then
+                -- 服务端做了归一（理论上不会），以服务端为准
+                PlayerManager.country = serverCode
+                PlayerPrefs.SetString(PLAYER_COUNTRY_KEY, serverCode)
+                PlayerPrefs.Save()
+            end
+        end)
+    end
     Log("[CountryRank] player_country=" .. normalized)
     -- 榜单里"本国"部分需要重算
     this._localRank = nil
     this._myRankInfo = nil
     return normalized
+end
+
+--- 登录拿到 GetPlayerInfoResponse 后调用：
+--- 服务端没有记录但本地选过 → 补传一次，让历史玩家也进服务端（只补传，不改本地展示）
+function CountryRankManager.OnPlayerInfoLoaded()
+    if PlayerManager ~= nil and PlayerManager.country ~= nil and PlayerManager.country ~= "" then
+        -- 服务端已有记录：把本地缓存对齐（避免两边不一致时面板显示漂移）
+        local serverCode = CountryConfig.Normalize(PlayerManager.country)
+        PlayerPrefs.SetString(PLAYER_COUNTRY_KEY, serverCode)
+        PlayerPrefs.Save()
+        return
+    end
+    local saved = PlayerPrefs.GetString(PLAYER_COUNTRY_KEY, "")
+    if saved ~= nil and saved ~= "" then
+        if NetManager ~= nil and NetManager.SetPlayerCountry ~= nil then
+            NetManager.SetPlayerCountry(CountryConfig.Normalize(saved))
+        end
+    end
 end
 
 ---------------------------------------------------------------- 首次进主界面的一次性引导

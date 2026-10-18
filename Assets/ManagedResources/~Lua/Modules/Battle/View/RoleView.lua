@@ -1148,7 +1148,7 @@ function RoleView:TryShowUltCard(combat)
         return
     end
     BattleUltCard.Show(self.RootPanel, heroConfig, camp,
-        tostring(roleId) .. "_" .. tostring(combat.Id or combat.id))
+        tostring(camp) .. "_" .. tostring(roleId) .. "_" .. tostring(combat.Id or combat.id))
 end
 
 function RoleView:SkillFireOnce(skill, targetIdx)

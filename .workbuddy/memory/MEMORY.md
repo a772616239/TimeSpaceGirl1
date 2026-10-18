@@ -1,7 +1,7 @@
 # TimeSpaceGirl1 项目长期记忆
 
 > 本文件**只做索引**：细节在同目录 REF，当日细节进 `YYYY-MM-DD.md`（append-only）。
-> `REF-server-ops.md`（打包/热补丁/区服寻址）· `REF-shard10002.md`（地服 10002）· `REF-android-release.md`（AAB 管线 + AB + 16KB + 账号）· `REF-config-tables.md`（xlsx→lua→TSV + CRC32）· `REF-server-name-i18n.md` · `REF-jenkins-ci.md`。
+> `REF-server-ops.md`（打包/热补丁/区服寻址）· `REF-local-server.md`（**当前有效的本地自测服**：游戏服 16081 + 登录服 8081 + 免 root 的 `-Dgameserver.root`）· `REF-shard10002.md`（地服 10002，⚠️ 其 `~/ts-shard10002` 目录已不存在，仅历史参考）· `REF-android-release.md`（AAB 管线 + AB + 16KB + 账号）· `REF-config-tables.md`（xlsx→lua→TSV + CRC32）· `REF-server-name-i18n.md` · `REF-jenkins-ci.md`。
 
 ## 客户端 Unity 6000.6.5f1（2026-10-13 升级，编译全绿）
 - `ProjectVersion.txt` = `6000.6.5f1 (3ff58d469c8a)`；🔴 **必须写国际版号**（中国版号串被 UPM 拒绝）。编辑器 `/Applications/Unity/Hub/Editor/6000.6.5f1/...`。
@@ -46,7 +46,9 @@
 - **配置表**：`data_execl/base_data/*.xlsx` 唯一真源，改后必须同步 `DataConfigMD5Record.asset` 的 CRC32 + 客户端 lua + LuaBytes + 服务端 `conf/server/*.txt`。
 - **聊天持久化 Redis 兜底**（10-10）：list `serverId:CHAT_QUEUE:<sys|world|cross>`，「最近 5 条永久 + 其余 7 天」；部署必须 `PERSIST`；**不伪造消息**。补丁 `~/ts-chat-patch-20261010/`。
 - **英雄升星氪金点恢复**（10-10）：`HeroRankupGroup` Id 31–53 的 `IsSameClan`→0、`IsId`→10011…10015；表启动载入内存 ⇒ **必须 restart（踢线）**。
-- 本地新区服 10002 → `REF-shard10002.md`（已上线可登录，内测级）。
+- **敏感词 DFA 树瘦身**（10-18，heap dump 定位）：497MB 活堆 = 74%，元凶是 `SensitiveWordInit` 静态 `sensitiveWordMap`（每字符一个 HashMap，385,376 词 → 254 万节点）。已改 CSR `SensitiveWordTrie`（444.3MB→26.6MB，9.7M 次对拍 0 差异，API 不变）。**只在源码，需重打 jar 才生效**。扫描工具 `scripts/verify/HprofRefScan.java`（可在服务器就地分析大 dump，不必外传）。
+- 本地自测服 → `REF-local-server.md`（**2026-10-18 重建**：游戏服 16081 + Tomcat 登录服 8081 + 本地 Mongo/Redis，单机全栈；免 root 靠 `-Dgameserver.root` 注入路径）。旧 `~/ts-shard10002`（frp + 生产登录库 + token 镜像）目录已被删，仅 `REF-shard10002.md` 留档。
+- 客户端连本地：Editor 的外部版本文件 = `<工程>/AssetBundles/version.txt`，改 `serverUrl` 为 `http://127.0.0.1:8081/`（**跟踪文件，勿提交**）；测试号 `localtest/123456`。
 
 ## Android 发版 / 账号（细节 `REF-android-release.md`）
 - 🔴🔴 **versionCode 只增不减，同一号只能上一次（app 级全局，各轨道共享）**：当前 **69**，下一个 **≥70**。根因：GUI 打包自增、CLI 只读 ⇒ 补洞 `scripts/bump_version.py`。

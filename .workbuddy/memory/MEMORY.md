@@ -1,7 +1,7 @@
 # TimeSpaceGirl1 项目长期记忆
 
 > 本文件**只做索引**：细节在同目录 REF，当日细节进 `YYYY-MM-DD.md`（append-only）。
-> `REF-server-ops.md`（打包/热补丁/区服寻址）· `REF-local-server.md`（**当前有效的本地自测服**：游戏服 16081 + 登录服 8081 + 免 root 的 `-Dgameserver.root`）· `REF-shard10002.md`（地服 10002，⚠️ 其 `~/ts-shard10002` 目录已不存在，仅历史参考）· `REF-android-release.md`（AAB 管线 + AB + 16KB + 账号）· `REF-config-tables.md`（xlsx→lua→TSV + CRC32）· `REF-server-name-i18n.md` · `REF-jenkins-ci.md`。
+> `REF-server-ops.md`（打包/热补丁/区服寻址）· `REF-local-server.md`（**当前有效的本地自测服**：游戏服 16081 + 登录服 8081 + 免 root 的 `-Dgameserver.root`）· `REF-shard10002.md`（地服 10002，⚠️ 其 `~/ts-shard10002` 目录已不存在，仅历史参考）· `REF-android-release.md`（AAB 管线 + AB + 16KB + 账号 + **SERVER_ENV 打正式/测试服包**）· `REF-config-tables.md`（xlsx→lua→TSV + CRC32）· `REF-server-name-i18n.md` · `REF-jenkins-ci.md`。
 
 ## 客户端 Unity 6000.6.5f1（2026-10-13 升级，编译全绿）
 - `ProjectVersion.txt` = `6000.6.5f1 (3ff58d469c8a)`；🔴 **必须写国际版号**（中国版号串被 UPM 拒绝）。编辑器 `/Applications/Unity/Hub/Editor/6000.6.5f1/...`。

@@ -15,6 +15,15 @@
   - 签名 scheme：**仅 v2**（`v1=false` 属正常 —— AGP 在 minSdk ≥ 24 时默认关闭 v1/JAR 签名）。
   - `apks/` 在 `.gitignore:38`；APK 打包日志 `build_log_apk_main.txt` 已由通配规则 `build_log_*_main.txt` 覆盖（`6fd42bd93`）。
 
+## 🔴 打哪个服的包：`SERVER_ENV` / `--server-env`（2026-10-18 新增，`ca3173747`）
+- 包连哪个服**只由 `Assets/Resources/version.txt` 的 `serverUrl`/`resUrl` 决定**（运行时读它；`serverPathType` 字段运行时不读，只给编辑器 BuildWindow 回填，写错枚举名会让那个面板抛异常）。
+- 地址唯一真源 = **`scripts/build_envs.json`**（改地址只改这里）：`正式服`=103.151.173.99:8080 / `测试服`=127.0.0.1:8081 / `现网-129.226.213.65`=历史所有包（含 vc73/vc74）用的那条。resUrl 三个都暂指 `129.226.213.65:81`。
+- 三个脚本：`scripts/apply_build_env.py`（apply/restore/show/envs，首次 apply 自动备份到 `.workbuddy/tmp/build-env/`，restore 字节级还原）、`scripts/verify_aab_server_env.py`（解包读 `base|assets/Android/Resources/version.txt` 复核）。
+- 入口：`aab_release.sh --server-env <名>`、`.jenkins/lib/build_apk.sh --server-env <名>`；Jenkins 两 job 的 `SERVER_ENV` 下拉（Release 默认正式服，TestPackage 默认测试服）。
+- 🔴 注入必须在 **Unity 启动之前**（batchmode 一启动就重新导入 TextAsset）；🔴 还原挂 **EXIT trap**（脚本有十几处 `fail`，否则正式服地址会残留、下次静默打错包）；🔴 **AAB 与 APK 是两次独立构建**，同一个 env 要同时传给两个脚本；🔴 校验链是**硬闸门**，包里环境不符拒绝上传（`--skip-build` 复用旧包时只核验不注入，逃生门 `--allow-env-mismatch`）。
+- 测试服包连 `127.0.0.1`：真机必须先 `adb reverse tcp:8081 tcp:8081` + `adb reverse tcp:16081 tcp:16081`，否则登录转圈。
+- 手动核对：`python3 scripts/apply_build_env.py show` / `python3 scripts/verify_aab_server_env.py <aab|apk>`。文档 `docs/jenkins_ci.md` §3.3。
+
 ## 🔴 versionCode
 - **CLI 打包不自增 versionCode**：`Assets/Editor/CLIBuilder.cs` 只读，自增只在 GUI 的 `BuildWindow.cs:449` ⇒ CLI 反复打包复用同一个号（实测日志 `VersionCode: 62`），传 production 必被拒。
 - `aab_release.sh` 默认调 `bump_version.py --bump` 补上；`play_upload.py` 上传前查轨道现有 versionCode，撞车以退出码 5 拦截。

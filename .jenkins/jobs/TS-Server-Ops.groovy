@@ -29,6 +29,8 @@ pipeline {
     stage('① 参数与影响说明') {
       steps {
         script {
+          // 显式声明工程根，别依赖共享库退回 $PWD（写清楚比靠默契稳）
+          env.STAGE_PROJECT_ROOT = env.PROJ
           env.TS_RUN_DIR = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
           env.TS_ACTION  = params.ACTION
           def disruptive = ['gameserver-restart',

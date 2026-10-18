@@ -29,6 +29,8 @@ pipeline {
     stage('① 准备与取证') {
       steps {
         script {
+          // 显式声明工程根，别依赖共享库退回 $PWD（写清楚比靠默契稳）
+          env.STAGE_PROJECT_ROOT = env.PROJ
           env.TS_RUN_DIR = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
           env.TS_TO      = params.TO.trim()
         }
@@ -68,8 +70,12 @@ set -uo pipefail
 cd "$PROJ"
 MAIL_ARGS=(--json)
 [[ -n "${TS_TO:-}" ]] && MAIL_ARGS+=(--to "$TS_TO")
+# --warn-rc 4：邮件投递失败（脚本 rc=4）只标黄，不阻断后续「④ 趋势与归档」。
+# 巡检本身已经采集成败明确，因为发信链路抖了一下就把整次构建判红，会让
+# 报告/归档一起被 skip（2026-10-18 构建 #6 就是这么丢掉归档的）。
+# rc=2/3（采集失败、取不到 JSON）不在宽限范围，仍然是硬失败。
 "$BASH" .jenkins/lib/run_stage.sh --name "发送巡检邮件" \
-  --group "生产服" --slug mail --timeout 600 \
+  --group "生产服" --slug mail --timeout 600 --warn-rc 4 \
   -- "$PY" scripts/server_health_check.py "${MAIL_ARGS[@]}"
 ''')
       }

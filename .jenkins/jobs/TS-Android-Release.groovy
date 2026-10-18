@@ -30,6 +30,7 @@ pipeline {
     PROJ = '/Users/wangxufeng/Documents/TimeSpaceGirl1'
     PY   = '/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python'
     BASH = '/usr/local/bin/bash'
+    SHARED = '/Users/wangxufeng/Documents/jenkins-shared'
   }
 
   stages {
@@ -37,6 +38,8 @@ pipeline {
     stage('① 准备与取证') {
       steps {
         script {
+          // 显式声明工程根，别依赖共享库退回 $PWD（写清楚比靠默契稳）
+          env.STAGE_PROJECT_ROOT = env.PROJ
           env.TS_RUN_DIR = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
           // 参数转环境变量下发：避免拼命令字符串带来的引号/空格问题（更新说明里可能有空格）
           env.TS_PROFILE   = params.EXPECT_PROFILE
@@ -393,6 +396,27 @@ echo "→ scripts/play_upload.py ${UPLOAD_ARGS[*]}"
         }
       }
     }
+
+    stage('⑩ 发版完成通知') {
+      // 只有真的落地了才发；演练（DRY_RUN）/ 未上传（UPLOAD=false）不发，
+      // 免得收件箱里全是"完成"其实没发。
+      when { expression { params.UPLOAD } }
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+# --warn-rc 4：投递失败（凭据/网络/SMTP 拒收）只标黄，不把已经成功的发版判红。
+# 这是 2026-10-18 巡检那条 job 踩过的教训：发信抖一下就把整次构建判红，得不偿失。
+"$BASH" "$SHARED/lib/run_stage.sh" --name "发版完成邮件" \
+  --group "通知" --slug notify --timeout 300 --warn-rc 4 \
+  -- "$PY" "$SHARED/lib/notify.py" release \
+       --run-dir "$STAGE_RUN_DIR" --job "$JOB_NAME" --build "$BUILD_NUMBER" \
+       --url "$BUILD_URL" --result SUCCESS \
+       --field 轨道 "$TS_TRACK" --field 状态 "$TS_STATUS"
+''')
+      }
+    }
+
   }
 
   post {

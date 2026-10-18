@@ -19,6 +19,7 @@ import os
 import re
 import socket
 import smtplib
+import ssl
 import subprocess
 import sys
 import time
@@ -47,7 +48,11 @@ SSH_KEY = os.environ.get(
 
 # 邮件（与 TD config/config.py 的 email 段一致）
 SMTP_SERVER = 'smtp.qq.com'
-SMTP_PORT = 465
+SMTP_PORT = 465              # SSL 直连（首选）
+SMTP_STARTTLS_PORT = 587     # STARTTLS 回退
+SMTP_TIMEOUT = 20
+SMTP_RETRY_ATTEMPTS = 3      # 仅「传输层故障」重试；口令问题重试无意义
+SMTP_RETRY_BACKOFF = 8       # 秒，退避 8s / 16s
 SENDER_EMAIL = '772616239@qq.com'
 RECIPIENTS = ['772616239@qq.com']
 ENV_CANDIDATES = [
@@ -152,6 +157,29 @@ echo "@@@END"
 '''
 
 
+def _decode(raw):
+    """把 ssh 原始字节按行解码成文本（utf-8 → gbk → replace 逐级降级）。
+
+    2026-10-18 构建 #5 挂在这里：gameserver.log 尾部混有 GBK 编码的中文，
+    `subprocess.run(text=True)` 用 utf-8 严格解码整块输出时会抛
+    UnicodeDecodeError（position 10682, byte 0xe5），巡检被误判成「无法连接 gs」。
+    日志里的乱码只是展示问题，不该让整次巡检失败，所以按行降级解码。
+    """
+    if isinstance(raw, str):
+        return raw
+    out = []
+    for line in (raw or b'').splitlines():
+        for enc in ('utf-8', 'gbk'):
+            try:
+                out.append(line.decode(enc))
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            out.append(line.decode('utf-8', 'replace'))
+    return '\n'.join(out)
+
+
 def run_remote(host, script, timeout=SSH_TIMEOUT):
     """通过 ssh 在服务器上执行 bash 脚本，返回 (rc, stdout, stderr)。"""
     cmd = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
@@ -161,9 +189,10 @@ def run_remote(host, script, timeout=SSH_TIMEOUT):
         cmd += ['-i', SSH_KEY, '-o', 'IdentitiesOnly=yes']
     cmd += [host, 'bash -s']
     try:
-        p = subprocess.run(cmd, input=script, capture_output=True, text=True,
+        p = subprocess.run(cmd, input=script.encode('utf-8'),
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                            timeout=timeout)
-        return p.returncode, p.stdout, p.stderr
+        return p.returncode, _decode(p.stdout), _decode(p.stderr)
     except subprocess.TimeoutExpired:
         return -1, '', 'ssh 连接超时(%ss)' % timeout
     except Exception as e:  # noqa: BLE001
@@ -615,59 +644,98 @@ def load_email_passwords():
 
 
 def _build_msg(subject, targets, body):
+    from email.utils import formatdate, make_msgid
     msg = MIMEMultipart()
     msg['From'] = 'Lily <%s>' % SENDER_EMAIL
     msg['To'] = ', '.join(targets)
     msg['Subject'] = subject
+    msg['Date'] = formatdate(localtime=True)
+    msg['Message-ID'] = make_msgid(domain='qq.com')
     msg.attach(MIMEText(body, 'plain', 'utf-8'))
     return msg
 
 
-def send_email(subject, body, to_email=None):
-    """QQ SMTP SSL 465 发送；逐个候选授权码验证，全失败再回退 587 STARTTLS。
+# 🔴 口令级失败：QQ 对「失效/被回收的授权码」经常**不回 535**，而是直接把连接掐掉
+#    （SMTPServerDisconnected: Connection unexpectedly closed）。这类异常属于「这枚口令
+#    不能用」，不是「网络坏了」，必须换下一枚候选口令继续试。
+# 2026-10-18 构建 #6 就是被这一点坑的：候选 #1（.secrets/health.env，授权码已过期）被掐断后，
+#    旧代码一个 `break` 跳出了整个 465 循环，排在后面的**可用**口令根本没被试到，
+#    于是四个端口/候选全部报 "Connection unexpectedly closed"。
+CRED_ERRORS = (smtplib.SMTPAuthenticationError, smtplib.SMTPServerDisconnected)
+# 链路级失败：换端口 / 退避重试才可能有救
+LINK_ERRORS = (smtplib.SMTPConnectError, ssl.SSLError, socket.timeout, OSError)
 
-    与 TD utils/email_utils.send_email 同构，额外增加了「多候选口令自动跳过失效口令」。
+
+def _send_once(pwd, targets, msg, use_ssl):
+    """一次完整投递：连接 → 登录 → 发送 → 退出。
+
+    异常原样抛给调用方分类；连接必须在 finally 里关掉，否则失败候选口令会
+    积压半开连接（QQ 对同源短时间内的并发连接很敏感）。
+    """
+    srv = None
+    try:
+        if use_ssl:
+            srv = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=SMTP_TIMEOUT)
+        else:
+            srv = smtplib.SMTP(SMTP_SERVER, SMTP_STARTTLS_PORT, timeout=SMTP_TIMEOUT)
+            srv.starttls()
+        srv.login(SENDER_EMAIL, pwd)
+        srv.send_message(msg)
+    finally:
+        if srv is not None:
+            try:
+                srv.quit()
+            except Exception:  # noqa: BLE001
+                try:
+                    srv.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+
+def send_email(subject, body, to_email=None):
+    """QQ SMTP 发送：465 SSL 优先、587 STARTTLS 回退；逐枚候选口令验证，失效口令自动跳过。
+
+    失败分类（这是本函数的关键，别简化回单层 try）：
+      - CRED_ERRORS  → 换下一枚候选口令（错误的口令不该拖垮整次投递）
+      - LINK_ERRORS  → 记下来，换端口；两个端口都不行才退避重试，最多 SMTP_RETRY_ATTEMPTS 次
+      - 全是口令问题   → 立即放弃重试（重试只会让 QQ 风控更严）
     """
     targets = [to_email] if isinstance(to_email, str) else (to_email or RECIPIENTS)
     cands = load_email_passwords()
     if not cands:
         return False, '未找到 EMAIL_PASSWORD（env 与各 .env 均无）'
 
-    errs = []
-    cipher = '（未验证）'
-    # 1) 465 SSL
-    for pwd, src in cands:
-        try:
-            srv = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=20)
-            srv.login(SENDER_EMAIL, pwd)
-            srv.sendmail(SENDER_EMAIL, targets, _build_msg(subject, targets, body).as_string())
-            srv.quit()
-            return True, '已发送至 %s（凭据来源: %s）' % (targets, src)
-        except smtplib.SMTPAuthenticationError:
-            cipher = src
-            errs.append('465 口令失效(%s)' % src)
-            continue
-        except Exception as e:  # noqa: BLE001
-            errs.append('465 %s: %s' % (type(e).__name__, e))
-            break
+    msg = _build_msg(subject, targets, body)
+    errs, seen = [], set()
 
-    # 2) 587 STARTTLS 回退
-    for pwd, src in cands:
-        try:
-            srv = smtplib.SMTP(SMTP_SERVER, 587, timeout=20)
-            srv.starttls()
-            srv.login(SENDER_EMAIL, pwd)
-            srv.send_message(_build_msg(subject, targets, body))
-            srv.quit()
-            return True, '已通过 587 回退发送至 %s（凭据来源: %s）' % (targets, src)
-        except smtplib.SMTPAuthenticationError:
-            errs.append('587 口令失效(%s)' % src)
-            continue
-        except Exception as e:  # noqa: BLE001
-            errs.append('587 %s: %s' % (type(e).__name__, e))
-            break
+    def _note(text):
+        if text not in seen:
+            seen.add(text)
+            errs.append(text)
 
-    return False, '发送失败: ' + ' / '.join(errs) + (('  [最后尝试来源 %s]' % cipher) if cipher != '（未验证）' else '')
+    for attempt in range(1, SMTP_RETRY_ATTEMPTS + 1):
+        link_broken = False
+        for label, use_ssl in (('465 SSL', True), ('587 STARTTLS', False)):
+            for pwd, src in cands:
+                try:
+                    _send_once(pwd, targets, msg, use_ssl)
+                    note = '' if attempt == 1 else '，第 %d 次尝试' % attempt
+                    return True, '已发送至 %s（%s · 凭据来源 %s%s）' % (
+                        ', '.join(targets), label, src, note)
+                except CRED_ERRORS as e:
+                    _note('%s 口令不可用(%s) %s' % (label, src, type(e).__name__))
+                    continue                    # ← 关键：只跳过这枚口令
+                except LINK_ERRORS + (smtplib.SMTPException,) as e:
+                    _note('%s %s: %s' % (label, type(e).__name__, e))
+                    link_broken = True
+                    break                       # ← 链路问题：换端口
+        if not link_broken:
+            break                               # 全是口令问题，重试没意义
+        if attempt < SMTP_RETRY_ATTEMPTS:
+            time.sleep(SMTP_RETRY_BACKOFF * attempt)
+
+    tried = '%d 次尝试' % attempt if attempt > 1 else '1 次尝试'
+    return False, '发送失败（%s）: %s' % (tried, ' / '.join(errs))
 
 
 # ----------------------------------------------------------------------------

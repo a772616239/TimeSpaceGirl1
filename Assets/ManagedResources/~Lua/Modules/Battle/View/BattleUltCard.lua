@@ -25,8 +25,7 @@ local ONLY_MY_CAMP    = false
 
 local CARD_SCALE      = 0.22  -- 相对整屏版 HelpHeroShow 的缩放（0.28 的 0.8 倍 = 0.224）
 local CARD_MARGIN_X   = 170   -- 卡片中心距左/右边界的距离（随缩放同步放大，保持贴角）
-local CARD_MARGIN_TOP = 500   -- 敌方卡片 Y（顶部锚点，向下偏移 500）
-local CARD_MINE_Y     = -1266 -- 我方卡片 Y（顶部锚点，向下偏移 1266，按需求指定）
+local CARD_Y         = -1266 -- 卡片 Y（顶部锚点向下偏移），敌我一致
 local CARD_SHOW_TIME  = 2.0   -- 停留时长（对齐特写 CloseupDuration = 2000ms）
 local POP_IN_TIME     = 0.18
 local POP_OUT_TIME    = 0.12
@@ -96,6 +95,10 @@ local function DestroySlot(s)
     if s.timer then
         s.timer:Stop()
         s.timer = nil
+    end
+    if s.followTimer then
+        s.followTimer:Stop()
+        s.followTimer = nil
     end
     s.tween = nil
     s.lastKey = nil
@@ -182,11 +185,11 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         if camp == 0 then
             rt.anchorMin = Vector2.New(0, 1)
             rt.anchorMax = Vector2.New(0, 1)
-            rt.anchoredPosition = Vector2.New(CARD_MARGIN_X, CARD_MINE_Y)
+            rt.anchoredPosition = Vector2.New(CARD_MARGIN_X, CARD_Y)
         else
             rt.anchorMin = Vector2.New(1, 1)
             rt.anchorMax = Vector2.New(1, 1)
-            rt.anchoredPosition = Vector2.New(-CARD_MARGIN_X, -CARD_MARGIN_TOP)
+            rt.anchoredPosition = Vector2.New(-CARD_MARGIN_X, CARD_Y)
         end
         rt.localScale = Vector3.New(CARD_SCALE * 0.7, CARD_SCALE * 0.7, 1)
     end
@@ -237,12 +240,37 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         this.Hide(camp)
     end, CARD_SHOW_TIME, 1, true)
     s.timer:Start()
+
+    -- 跟随技能栏：技能栏一消失，卡片同步消失（大招表现结束）
+    -- 我方跟 myRect_Skill，敌方跟 enemyRect_Skill，取不到时退回 myRect_Skill
+    local followNode = (camp == 0) and "myRect_Skill" or "enemyRect_Skill"
+    if s.followTimer then
+        s.followTimer:Stop()
+    end
+    s.followTimer = Timer.New(function ()
+        if not IsAlive(s.go) then
+            s.followTimer:Stop()
+            return
+        end
+        local ui = Util.GetGameObject(view.transform, followNode)
+        if not ui then
+            ui = Util.GetGameObject(view.transform, "myRect_Skill")
+        end
+        if not ui or not ui.activeInHierarchy then
+            this.Hide(camp)
+        end
+    end, 0.1, -1, true)
+    s.followTimer:Start()
 end
 
 function this.Hide(camp)
     local s = this.slots[tonumber(camp) or 0]
     if not s or not IsAlive(s.go) then
         return
+    end
+    if s.followTimer then
+        s.followTimer:Stop()
+        s.followTimer = nil
     end
     local go = s.go
     if s.tween then

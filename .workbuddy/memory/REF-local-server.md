@@ -47,6 +47,14 @@ curl "http://127.0.0.1:8081/tk/getServerList?openId=<openId>&channel=pc&sub_chan
 - `getServerList` 的 `server_version` **必须传真版本 `1.26001`**，传 `0` 会被算进 `shenheNum` → 空列表（同生产坑）。
 - `getUserInfo` 首次调用曾抛 `MyMongoDBPool.inc NPE`（`inc_c` 文档 `_id:"inc_k"` 不含计数名），重试即成功；若稳定复现再查。
 
+## 公告（notice_info）——本地必须自己塞数据
+`/tk/getNotice` 从 `x1_cn_test_login.notice_info` 取（按 `grade` 分 0/1/2 桶，**优先 grade=2**，桶内取 `publish_time` 最大），
+集合为空时返回写死的 `title="公告" / content="暂无公告..."`（纯文本、无 `<语言id>:` 前缀）。
+- 🔴 写数据必须 `grade: NumberInt(2)`、`publish_time: NumberLong(毫秒)`。直接写 `grade: 2` 会存成 double，
+  控制器 `Integer.parseInt("2.0")` 抛 `NumberFormatException` → HTTP 200 但 body 为空。
+- 本机已插入一条双语自测公告（title 形如 `10001:中文…|10101:English…`），用于验证多语言解析；
+  想恢复「无公告」状态：`mongo x1_cn_test_login --eval 'db.notice_info.deleteMany({})'`。
+
 ## 启动踩坑
 - 🔴 Tomcat/游戏服 lib 都被裁过：Tomcat `lib/` 少 10 个（含 `catalina.jar`）→ `ClassNotFoundException: org.apache.catalina.startup.Catalina`；`webapps/tk/WEB-INF/lib` 少 13 个（含 `mongo-java-driver`）→ `NoClassDefFoundError: com/mongodb/DBObject`。补齐源都在仓里 `TimeSpaceServer/skzc/home/java/...`。
 - 🔴 `webapps/tk.war` 存在时 Tomcat 会**删掉并重建** `webapps/tk` 目录（失败时目录直接消失）⇒ 已把 war 改名 `tk.war.bak-20261018`，用展开目录部署。

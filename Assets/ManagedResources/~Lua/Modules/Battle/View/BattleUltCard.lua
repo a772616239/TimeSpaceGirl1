@@ -25,7 +25,8 @@ local ONLY_MY_CAMP    = false
 
 local CARD_SCALE      = 0.22  -- 相对整屏版 HelpHeroShow 的缩放（0.28 的 0.8 倍 = 0.224）
 local CARD_MARGIN_X   = 170   -- 卡片中心距左/右边界的距离（随缩放同步放大，保持贴角）
-local CARD_MARGIN_TOP = 500   -- 卡片中心距顶边的距离（顶部锚点，向下偏移；400->500 再下移）
+local CARD_MARGIN_TOP = 500   -- 敌方卡片 Y（顶部锚点，向下偏移 500）
+local CARD_MINE_Y     = -1266 -- 我方卡片 Y（顶部锚点，向下偏移 1266，按需求指定）
 local CARD_SHOW_TIME  = 2.0   -- 停留时长（对齐特写 CloseupDuration = 2000ms）
 local POP_IN_TIME     = 0.18
 local POP_OUT_TIME    = 0.12
@@ -141,6 +142,13 @@ local function EnsureCard(view, s)
     end
 
     go:SetActive(false)
+    -- 层级压到技能栏（myRect_Skill）之下，避免卡片盖住技能释放 UI
+    local skillUI = Util.GetGameObject(view.transform, "myRect_Skill")
+    if skillUI then
+        go.transform:SetSiblingIndex(skillUI.transform:GetSiblingIndex())
+    else
+        LogRed("[UIFlow] 大招小卡排序失败：找不到 myRect_Skill")
+    end
     s.go = go
     return go
 end
@@ -174,7 +182,7 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         if camp == 0 then
             rt.anchorMin = Vector2.New(0, 1)
             rt.anchorMax = Vector2.New(0, 1)
-            rt.anchoredPosition = Vector2.New(CARD_MARGIN_X, -CARD_MARGIN_TOP)
+            rt.anchoredPosition = Vector2.New(CARD_MARGIN_X, CARD_MINE_Y)
         else
             rt.anchorMin = Vector2.New(1, 1)
             rt.anchorMax = Vector2.New(1, 1)

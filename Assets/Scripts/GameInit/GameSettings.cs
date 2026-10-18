@@ -120,6 +120,10 @@ namespace GameLogic {
                     CrashlyticsMgr.Inst.TapEvent("sysLang:" + sysLang.ToString());
                 }
 
+                // 设备地区（ISO 3166-1 alpha-2）写入 PlayerPrefs，供 Lua 侧「国家排行」默认选中使用。
+                // 只在尚未写过时写一次：玩家在「国家旗帜选择面板」里改过之后以玩家选择为准。
+                CountryRegionUtil.EnsureDeviceRegionSaved();
+
                 if (!Application.isEditor)
                 {
                     settingInfo.luaBundleMode = true;

@@ -1407,7 +1407,7 @@ public class UnityEngine_RigidbodyWrap
 		{
 			o = ToLua.ToObject(L, 1);
 			UnityEngine.Rigidbody obj = (UnityEngine.Rigidbody)o;
-			UnityEngine.Vector3 ret = obj.velocity;
+			UnityEngine.Vector3 ret = obj.linearVelocity;
 			ToLua.Push(L, ret);
 			return 1;
 		}
@@ -1445,7 +1445,7 @@ public class UnityEngine_RigidbodyWrap
 		{
 			o = ToLua.ToObject(L, 1);
 			UnityEngine.Rigidbody obj = (UnityEngine.Rigidbody)o;
-			float ret = obj.drag;
+			float ret = obj.linearDamping;
 			LuaDLL.lua_pushnumber(L, ret);
 			return 1;
 		}
@@ -1464,7 +1464,7 @@ public class UnityEngine_RigidbodyWrap
 		{
 			o = ToLua.ToObject(L, 1);
 			UnityEngine.Rigidbody obj = (UnityEngine.Rigidbody)o;
-			float ret = obj.angularDrag;
+			float ret = obj.angularDamping;
 			LuaDLL.lua_pushnumber(L, ret);
 			return 1;
 		}
@@ -1845,7 +1845,7 @@ public class UnityEngine_RigidbodyWrap
 			o = ToLua.ToObject(L, 1);
 			UnityEngine.Rigidbody obj = (UnityEngine.Rigidbody)o;
 			UnityEngine.Vector3 arg0 = ToLua.ToVector3(L, 2);
-			obj.velocity = arg0;
+			obj.linearVelocity = arg0;
 			return 0;
 		}
 		catch(Exception e)
@@ -1883,7 +1883,7 @@ public class UnityEngine_RigidbodyWrap
 			o = ToLua.ToObject(L, 1);
 			UnityEngine.Rigidbody obj = (UnityEngine.Rigidbody)o;
 			float arg0 = (float)LuaDLL.luaL_checknumber(L, 2);
-			obj.drag = arg0;
+			obj.linearDamping = arg0;
 			return 0;
 		}
 		catch(Exception e)
@@ -1902,7 +1902,7 @@ public class UnityEngine_RigidbodyWrap
 			o = ToLua.ToObject(L, 1);
 			UnityEngine.Rigidbody obj = (UnityEngine.Rigidbody)o;
 			float arg0 = (float)LuaDLL.luaL_checknumber(L, 2);
-			obj.angularDrag = arg0;
+			obj.angularDamping = arg0;
 			return 0;
 		}
 		catch(Exception e)

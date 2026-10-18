@@ -2,7 +2,9 @@
  * 国家旗帜选择面板
  *
  * 层级结构见 Assets/ManagedResources/Prefabs/UI/CountryRank/CountryFlagSelectPopup.prefab
- *   board/grid/cellPre   旗帜格子模板（inactive，按需克隆）
+ *   board/scroll/viewport/grid/cellPre   旗帜格子模板（inactive，按需克隆）；
+ *                                        scroll 是 ScrollRect（仅纵向），内容高度
+ *                                        由本文件按行数动态设置
  *   board/current/...    当前选择展示
  *
  * 打开方式：UIManager.OpenPanel(UIName.CountryFlagSelectPopup, onConfirm)
@@ -55,7 +57,11 @@ function CountryFlagSelectPopup:InitComponent()
     this.titleText = Util.GetGameObject(this.board, "title"):GetComponent("Text")
     this.tipText = Util.GetGameObject(this.board, "tip"):GetComponent("Text")
 
-    this.grid = Util.GetGameObject(this.board, "grid")
+    -- ScrollRect 组件在 tolua 未绑定类成员，Lua 侧不直接访问其属性；
+    -- 滚动归位通过把 content（grid）的 anchoredPosition 归零实现（Clamped
+    -- 模式下 ScrollRect 在下次交互时按 content位置重新夹紧）。
+    this.scrollGo = Util.GetGameObject(this.board, "scroll")
+    this.grid = Util.GetGameObject(this.board, "scroll/viewport/grid")
     this.cellPre = Util.GetGameObject(this.grid, "cellPre")
 
     this.curFlag = Util.GetGameObject(this.board, "current/flag"):GetComponent("Image")
@@ -90,6 +96,16 @@ function CountryFlagSelectPopup:OnShow()
     this._selected = CountryRankManager.GetPlayerCountry()
     this:BuildCells()
     this:RefreshSelected()
+    this:SnapToTop()
+end
+
+--- 滚动区回到顶部（每次打开都从头展示）
+function CountryFlagSelectPopup:SnapToTop()
+    if this.grid == nil then
+        return
+    end
+    local rt = this.grid:GetComponent("RectTransform")
+    rt.anchoredPosition = Vector2.New(0, 0)
 end
 
 function CountryFlagSelectPopup:OnClose()
@@ -105,8 +121,11 @@ function CountryFlagSelectPopup:BuildCells()
     local list = CountryConfig.List
     local total = #list
     local rowCount = math.ceil(total / COLUMN_COUNT)
-    local totalH = rowCount * CELL_H
-    local startY = totalH / 2 - CELL_H / 2
+
+    -- 内容高度按行数撑开，ScrollRect 据此算出可滚动范围
+    local gridRt = this.grid:GetComponent("RectTransform")
+    gridRt.sizeDelta = Vector2.New(0, rowCount * CELL_H)
+    local startY = rowCount * CELL_H - CELL_H / 2
 
     for i = 1, total do
         local code = list[i].code

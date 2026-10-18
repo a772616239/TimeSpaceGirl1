@@ -125,8 +125,12 @@ function CountryFlagSelectPopup:BuildCells()
     -- 内容高度按行数撑开，ScrollRect 据此算出可滚动范围
     local gridRt = this.grid:GetComponent("RectTransform")
     gridRt.sizeDelta = Vector2.New(0, rowCount * CELL_H)
-    local startY = rowCount * CELL_H - CELL_H / 2
 
+    -- 🔴 格子锚点钉在 grid 顶部（aMin/aMax.y = 1），位置只按行号往下累加：
+    -- 旧写法用中心锚点 + startY = rowCount*CELL_H - CELL_H/2，实际位置等于「内容顶 + 内容高/2」，
+    -- 比真实内容顶高出 半个内容高度，导致前半部分整体溢出到内容区上方被 viewport 裁掉
+    -- （73 国时前 9 行＝36 国永久看不到，滚到底又是空白）。顶部锚定后与 grid 高度/pivot 解耦。
+    -- 注意 pivot 仍保持 (0.5,0.5)：pivot 一改，格子里的旗/名字会跟着整体偏移。
     for i = 1, total do
         local code = list[i].code
         local col = (i - 1) % COLUMN_COUNT
@@ -136,12 +140,12 @@ function CountryFlagSelectPopup:BuildCells()
         go.transform:SetParent(this.grid.transform, false)
         go:SetActive(true)
         local rt = go:GetComponent("RectTransform")
-        rt.anchorMin = Vector2.New(0.5, 0.5)
-        rt.anchorMax = Vector2.New(0.5, 0.5)
+        rt.anchorMin = Vector2.New(0.5, 1)
+        rt.anchorMax = Vector2.New(0.5, 1)
         rt.pivot = Vector2.New(0.5, 0.5)
         rt.anchoredPosition = Vector2.New(
                 (col - (COLUMN_COUNT - 1) / 2) * CELL_W,
-                startY - row * CELL_H)
+                -(row * CELL_H + CELL_H / 2))
         rt.sizeDelta = Vector2.New(CELL_W, CELL_H)
 
         local view = CellView:New(go)

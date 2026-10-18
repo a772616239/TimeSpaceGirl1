@@ -22,6 +22,10 @@ local timePressStarted
 local curMianTaskData = {}
 -- local canGetMsg = true
 local moveTranList
+--弱引导手指节点在部分版本的 prefab 里已不存在，统一走安全设置，避免 index nil 抛错
+local function setGuideFingerActive(go, active)
+    if go then go:SetActive(active) end
+end
 --当前拖动的游戏物体
 local dragGo = nil
 --local isCanDragMsg = true
@@ -219,8 +223,11 @@ function this:BindEvent()
 
     local scaleV3 = Vector3.New(scale, scale, 0)
     self.bgTran.localScale = scaleV3
-    for i = 1, #moveSceneList do
-        moveTranList[i].localScale = scaleV3
+    -- moveTranList 在 InitComponent 里构建；若前置初始化曾中断则不在这里连带崩掉整个 BindEvent
+    if moveTranList then
+        for i = 1, #moveTranList do
+            moveTranList[i].localScale = scaleV3
+        end
     end
 
     local boundary = (self.bgTran.rect.width * scale - uiRootRectTransform.sizeDelta.x) / 2
@@ -520,14 +527,19 @@ function this:OnSortingOrderChange()
 
     this.BtView:SetOrderStatus({ sortOrder = self.sortingOrder })
 
-    Util.GetGameObject(this.battleGuideFinger,"icon"):GetComponent("Canvas").sortingOrder = self.canvas.sortingOrder + 55
-    Util.SetParticleSortLayer(Util.GetGameObject(this.battleGuideFinger,"icon/ring"), self.canvas.sortingOrder + 55)
-    Util.SetParticleSortLayer(Util.GetGameObject(this.battleGuideFinger,"icon/glow"), self.canvas.sortingOrder + 55)
-    Util.SetParticleSortLayer(Util.GetGameObject(this.battleGuideFinger,"icon/diliang"), self.canvas.sortingOrder + 55)
-    Util.GetGameObject(this.taskGuideFinger,"icon"):GetComponent("Canvas").sortingOrder = self.canvas.sortingOrder + 55
-    Util.SetParticleSortLayer(Util.GetGameObject(this.taskGuideFinger,"icon/ring"), self.canvas.sortingOrder + 55)
-    Util.SetParticleSortLayer(Util.GetGameObject(this.taskGuideFinger,"icon/glow"), self.canvas.sortingOrder + 55)
-    Util.SetParticleSortLayer(Util.GetGameObject(this.taskGuideFinger,"icon/diliang"), self.canvas.sortingOrder + 55)
+    -- 引导手指节点可能随版本从 prefab 中移除，取不到就跳过（否则每次改层级都会抛错中断后续逻辑）
+    if this.battleGuideFinger then
+        Util.GetGameObject(this.battleGuideFinger,"icon"):GetComponent("Canvas").sortingOrder = self.canvas.sortingOrder + 55
+        Util.SetParticleSortLayer(Util.GetGameObject(this.battleGuideFinger,"icon/ring"), self.canvas.sortingOrder + 55)
+        Util.SetParticleSortLayer(Util.GetGameObject(this.battleGuideFinger,"icon/glow"), self.canvas.sortingOrder + 55)
+        Util.SetParticleSortLayer(Util.GetGameObject(this.battleGuideFinger,"icon/diliang"), self.canvas.sortingOrder + 55)
+    end
+    if this.taskGuideFinger then
+        Util.GetGameObject(this.taskGuideFinger,"icon"):GetComponent("Canvas").sortingOrder = self.canvas.sortingOrder + 55
+        Util.SetParticleSortLayer(Util.GetGameObject(this.taskGuideFinger,"icon/ring"), self.canvas.sortingOrder + 55)
+        Util.SetParticleSortLayer(Util.GetGameObject(this.taskGuideFinger,"icon/glow"), self.canvas.sortingOrder + 55)
+        Util.SetParticleSortLayer(Util.GetGameObject(this.taskGuideFinger,"icon/diliang"), self.canvas.sortingOrder + 55)
+    end
 end
 
 function this:OnOpen()
@@ -786,8 +798,10 @@ end
 --设置位置 不会检查边界
 function this:SetPos(v2)
     self.bgTran.anchoredPosition = Vector2.New(v2.x, 0)
-    for i = 1, #moveSceneList do
-        moveTranList[i].anchoredPosition = Vector2.New(v2.x, 0)
+    if moveTranList then
+        for i = 1, #moveTranList do
+            moveTranList[i].anchoredPosition = Vector2.New(v2.x, 0)
+        end
     end
 end
 
@@ -1897,8 +1911,8 @@ end
 
 --弱引导
 function this.ShowGuide()
-    this.taskGuideFinger:SetActive(GuideManager.isShowGuide)
-    this.battleGuideFinger:SetActive(false)
+    setGuideFingerActive(this.taskGuideFinger, GuideManager.isShowGuide)
+    setGuideFingerActive(this.battleGuideFinger, false)
     GuideManager.isShowGuide = false
     if this.guideTimer then
         this.guideTimer:Stop()
@@ -1913,8 +1927,8 @@ function this.ShowGuide()
             end
 
             local task, battle = GuideManager.RefreshGuide()
-            this.taskGuideFinger:SetActive(task)
-            this.battleGuideFinger:SetActive(battle)
+            setGuideFingerActive(this.taskGuideFinger, task)
+            setGuideFingerActive(this.battleGuideFinger, battle)
             GuideManager.isShowGuide = battle
         end
         time = time - 1
@@ -1929,8 +1943,8 @@ function this.ShowGuide()
 end
 --关闭弱引导
 function this.CloseGuide()
-    this.taskGuideFinger:SetActive(false)
-    this.battleGuideFinger:SetActive(false)
+    setGuideFingerActive(this.taskGuideFinger, false)
+    setGuideFingerActive(this.battleGuideFinger, false)
     GuideManager.isShowGuide = false
     if this.guideTimer then
         this.guideTimer:Stop()

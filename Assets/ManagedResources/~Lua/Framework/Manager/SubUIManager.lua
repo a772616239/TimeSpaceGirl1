@@ -28,23 +28,27 @@ function this.Open(config,parent,...)
     end
     local sub = view:New(gameObject)
     sub.assetName = config.assetName
+    -- 生命周期逐个隔离：子界面的错误不能中断父界面的初始化
+    -- （MainPanel 曾因 ChatTipView:OnOpen 抛错，导致 moveTranList/引导节点全部没赋值、
+    --   BindEvent 在拖动缩放处中断，最终整块主界面按钮无响应）
     if sub.Awake then
-        sub:Awake()
+        MyPCall(function() sub:Awake() end)
     end
     if sub.InitComponent then
-        sub:InitComponent()
+        MyPCall(function() sub:InitComponent() end)
     end
     if sub.BindEvent then
-        sub:BindEvent()
+        MyPCall(function() sub:BindEvent() end)
     end
     if sub.AddListener then
-        sub:AddListener()
+        MyPCall(function() sub:AddListener() end)
     end
     if sub.Update then
         UpdateBeat:Add(sub.Update, sub)
     end
     if sub.OnOpen then
-        sub:OnOpen(...)
+        local openArgs = {...}
+        MyPCall(function() sub:OnOpen(unpack(openArgs)) end)
     end
     return sub
 end

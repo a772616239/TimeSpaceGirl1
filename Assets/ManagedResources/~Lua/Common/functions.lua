@@ -1872,6 +1872,7 @@ end
 
 --后台传输多语言数据合并    
 function GetMailConfigDesc(cfg, mailparam)--cfg插入内容，mailparam插入数组
+    mailparam = mailparam or {}
     if #mailparam > 0 then
         local ss = {}
         for i = 1, #mailparam do

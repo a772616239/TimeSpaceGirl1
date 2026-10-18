@@ -489,11 +489,19 @@ function this.RequestSendRedPacket(curIndex,func)
 end
 
 -- 解析世界聊天数据
+-- 协议：msg = "<type>|<content>" 或 "<type>#a#b#...|"（type 见 GLOBAL_CHAT_TYPE）
+-- 兜底：type 缺失/未知（旧版客户端、运营后台直发、历史脏数据）时按普通聊天处理，
+--       否则 chat.content 为 nil，调用方 string.format(...,nil) 会直接抛异常
 function this.AnalysisGlobalChat(msg)
     local chat = {}
+    if msg == nil then
+        chat.type = GLOBAL_CHAT_TYPE.COMMON
+        chat.content = ""
+        return chat
+    end
     local msgList = string.split(msg, "|")
     local headStr = table.remove(msgList, 1)
-    local headList = string.split(headStr, "#")
+    local headList = string.split(headStr or "", "#")
     chat.type = tonumber(headList[1])
 
     if chat.type == GLOBAL_CHAT_TYPE.COMMON then
@@ -515,6 +523,10 @@ function this.AnalysisGlobalChat(msg)
         chat.content = string.format(GetLanguageStrById(10400),chat.nickName,chat.redpackName)
     elseif chat.type == GLOBAL_CHAT_TYPE.GUILD_AID then
         chat.content = headList[2]
+    end
+    if chat.content == nil then
+        chat.type = GLOBAL_CHAT_TYPE.COMMON
+        chat.content = msg
     end
     return chat
 end

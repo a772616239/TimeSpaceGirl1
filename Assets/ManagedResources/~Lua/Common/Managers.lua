@@ -146,6 +146,8 @@ local ManagerNames = {
     "Questionnaire/QuestionnaireManager",
     --排行榜管理器
     "Ranking/RankingManager",
+    --国家排行榜（玩家所属国家 + 榜单数据）
+    "CountryRank/CountryRankManager",
     -- 新关卡管理
     "Fight/FightPointPassManager",
     -- 冒险数据管理

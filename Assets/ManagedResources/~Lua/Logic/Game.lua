@@ -13,6 +13,9 @@ function Game.Initialize()
     Screen.sleepTimeout = U3d.SleepTimeout.NeverSleep
     this.GlobalEvent = EventManager.New()
     this.InitManagers()
+    -- 运行期补充 UI 配置（国家排行等；见 Modules/CountryRank/UIConfigExtension.lua）
+    -- 必须在 InitManagers 之后、第一次 OpenPanel 之前调用
+    require("Modules/CountryRank/UIConfigExtension").Register()
     UIManager.OpenPanelWithNoSound(UIName.LoginPanel)
 end
 

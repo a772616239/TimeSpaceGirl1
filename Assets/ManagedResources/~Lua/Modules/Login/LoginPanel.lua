@@ -51,6 +51,7 @@ function this:InitComponent()
     this.btnNotice = Util.GetGameObject(this.loginPart, "btns/btnNotice") --公告
     this.btnUser = Util.GetGameObject(this.loginPart, "btns/btnUser") --切换账号
     this.btnCustomerService = Util.GetGameObject(this.loginPart, "btns/btnCustomerService") --客服
+    this.btnCountryRank = Util.GetGameObject(this.loginPart, "btns/btnCountryRank") -- 国家排行
     this.LoginPanel_Btn1 = Util.GetGameObject(this.loginPart, "btns/LoginPanel_Btn1") --使用条款
     this.LoginPanel_Btn2 = Util.GetGameObject(this.loginPart, "btns/LoginPanel_Btn2") --个人信息
     -- this.Partical = Util.GetGameObject(self.transform, "BG/Partical")
@@ -236,6 +237,16 @@ function this:BindEvent()
             UIManager.OpenPanel(UIName.CustomerServicePanel)
         end
     )
+
+    -- 国家排行入口（启动页可见；还没选过国家时由面板自己弹选择窗）
+    if this.btnCountryRank and not IsNull(this.btnCountryRank) then
+        Util.AddClick(
+            this.btnCountryRank,
+            function()
+                UIManager.OpenPanel(UIName.CountryRankPanel)
+            end
+        )
+    end
 end
         function this.OpenSelectList()
             if not this.serverList then

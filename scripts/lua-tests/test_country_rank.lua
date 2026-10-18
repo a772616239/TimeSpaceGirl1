@@ -177,5 +177,39 @@ do
     check("国家数量合理(>=20)", #CountryConfig.List >= 20, #CountryConfig.List)
 end
 
+print("\n[8] 通用排行榜的旗帜映射（CountryFlagUtil）")
+do
+    IsNull = function(x) return x == nil end
+    Util = Util or {}
+    Util.LoadSprite = function(n) return n end
+    -- 载入辅助模块（它 require 了 CountryConfig，已在上文载入）
+    assert(loadfile(LUA_SRC .. "/Modules/CountryRank/CountryFlagUtil.lua"))()
+
+    prefs = { player_country = "jp" }
+    PlayerManager.uid = 777
+    CountryRankManager.Initialize()
+
+    check("服务端下发的国家优先", CountryFlagUtil.ResolveCountry(777, "br") == "br",
+            CountryFlagUtil.ResolveCountry(777, "br"))
+    check("自己的记录用本地国家", CountryFlagUtil.ResolveCountry(777, nil) == "jp",
+            CountryFlagUtil.ResolveCountry(777, nil))
+    check("nil uid 落兜底", CountryFlagUtil.ResolveCountry(nil, nil) == "xx")
+
+    -- 其他玩家：同一 uid 必须稳定映射
+    local c1 = CountryFlagUtil.ResolveCountry(12345, nil)
+    local c2 = CountryFlagUtil.ResolveCountry(12345, nil)
+    check("同一 uid 映射稳定", c1 == c2, c1 .. " vs " .. c2)
+    check("映射结果合法", CountryConfig.BY_CODE[c1] ~= nil, c1)
+
+    -- 不同 uid 应分散到多个国家（不是全同一个）
+    local distinct = {}
+    for i = 1, 60 do
+        distinct[CountryFlagUtil.ResolveCountry(1000 + i * 37, nil)] = true
+    end
+    local cnt = 0
+    for _ in pairs(distinct) do cnt = cnt + 1 end
+    check("不同 uid 能分散到多个国家", cnt >= 5, cnt)
+end
+
 print(string.format("\n==== 通过 %d / 失败 %d ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

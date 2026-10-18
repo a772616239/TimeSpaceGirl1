@@ -1,4 +1,5 @@
 require("Base/BasePanel")
+require("Modules/CountryRank/CountryFlagUtil")
 RankingSingleListPanel = Inherit(BasePanel)
 local this = RankingSingleListPanel
 --头像
@@ -737,6 +738,11 @@ end
 
 --设置前三名背景头像
 function this.SetHeadsInfo(data,root,index,name,level)
+    -- 前三名立绘区的国家小旗
+    local headRoot = (index == 1 and this.firsthead) or (index == 2 and this.secondhead) or this.thirdhead
+    if headRoot then
+        CountryFlagUtil.ApplyTo(headRoot, data.uid, data.country)
+    end
     if index == 1 then
         if not this.playerHeadList[root] then
             this.playerHeadList[root]=CommonPool.CreateNode(POOL_ITEM_TYPE.PLAYER_HEAD,Util.GetGameObject(this.firsthead,"Head"))
@@ -807,6 +813,12 @@ function this.SetNotRollingInfo(...)
 
     local topEndName = args[1]      -- 最后一列标题名
     local myRank = args[2]          -- 名次
+
+    -- 底部「我的排名」行的国家小旗：用玩家自己的国家
+    if not (sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
+            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD)) then
+        CountryFlagUtil.ApplyTo(this.record, PlayerManager and PlayerManager.uid or nil, nil)
+    end
 
     this.TextTopEnd.text = topEndName
     if not myRank or myRank < 1 then
@@ -925,7 +937,40 @@ function this.CheckTabCtrlIsLockS(type,des)
     end
 end
 
+--[[
+ * 刷新榜单行的国家小旗
+ *
+ * go 是每行的 infoGo（或 Record 里的 infoGo），countryFlag 是它的兄弟节点，
+ * 所以这里从父节点按名字取，取不到就静默跳过（兼容未打补丁的旧 prefab）。
+--]]
+function this.UpdateCountryFlag(go, data)
+    if go == nil or IsNull(go) or data == nil then
+        return
+    end
+    local parent = go.transform.parent
+    if parent == nil then
+        return
+    end
+    -- 公会榜展示的是公会名，玩家没有对应国家，用公会主体国家不合适 → 隐藏
+    if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
+            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
+        local flagGo = Util.GetGameObject(parent.gameObject, "countryFlag")
+        if flagGo and not IsNull(flagGo) then
+            flagGo:SetActive(false)
+        end
+        return
+    end
+    local flagGo = Util.GetGameObject(parent.gameObject, "countryFlag")
+    if flagGo == nil or IsNull(flagGo) then
+        return
+    end
+    flagGo:SetActive(true)
+    CountryFlagUtil.Apply(flagGo, data.uid, data.country)
+end
+
 function this.SetInfoShow(go,data,rankType,name)
+    -- 国家小旗（与 infoGo 同级；节点由 patch_ranking_flag.py 追加）
+    this.UpdateCountryFlag(go, data)
     local fight = Util.GetGameObject(go,"fight")
     local warPower = Util.GetGameObject(go,"warPower")
     local trial = Util.GetGameObject(go,"trial")

@@ -45,3 +45,15 @@ AddManualTranslation("材料不足且英雄祭品未满", "Insufficient material
 
 -- 区服名（服务端 server_info.name 下发；Language 表中没有区服名的条目，故走手动通道）
 AddManualTranslation("庇护所九号", "Shelter No. 9")
+
+-- 国家排行榜（新增功能；比 Language.xlsx 多走一道 CRC32 + 服务端 TSV 链不划算，
+-- 且这些文案纯客户端使用，故走手动通道。查表用 GetLanguageStrByStr(中文)）
+AddManualTranslation("国家排行", "Country Ranking")
+AddManualTranslation("国家排行榜", "Country Ranking")
+AddManualTranslation("选择国家", "Change Country")
+AddManualTranslation("选择你的国家", "Choose Your Country")
+AddManualTranslation("默认按设备地区自动选择，可随时修改", "Defaulted from your device region, change anytime")
+AddManualTranslation("全服排行", "Global")
+AddManualTranslation("本国排行", "My Country")
+AddManualTranslation("我的排名", "My Rank")
+AddManualTranslation("未上榜", "Unranked")

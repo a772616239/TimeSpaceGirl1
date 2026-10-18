@@ -516,6 +516,8 @@ UIName = {
     ChaosTaskPanel = 1007,                                  -- 混乱之治任务
     UnLockWarOrderPanel = 1008,                             -- 战令购买
     HeroComparePanel = 1009,                                -- 英雄对比
+    CountryRankPanel = 1010,                                -- 国家排行榜
+    CountryFlagSelectPopup = 1011,                          -- 国家旗帜选择
 }
 
 SubUIConfig = {

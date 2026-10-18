@@ -139,7 +139,19 @@ def render(prefab_path, out_path, canvas_size=(1080, 1920), bg_path=None, root_c
     root_name = gos[root_go]['name']
 
     # 根按 stretch 铺满画布（UIManager.CreatePanel 会把 sizeDelta 归零）
-    root_abs = (0.0, 0.0, float(W), float(H))   # (x0, y0（画布像素，左上为准）, w, h)
+    # 根节点：若是 stretch（anchor 0..1），画布即设计分辨率；
+    # 否则取根自身的 sizeDelta 作为画布，保证所见即所得。
+    rrt = rts[root_rt]
+    rx0, ry0 = rrt['amin']
+    rx1, ry1 = rrt['amax']
+    rw, rh = rrt['size']
+    if abs(rx0) < 1e-6 and abs(ry0) < 1e-6 and abs(rx1 - 1) < 1e-6 and abs(ry1 - 1) < 1e-6:
+        # stretch：画布 = 传入尺寸，根铺满
+        root_abs = (0.0, 0.0, float(W), float(H))
+    else:
+        # 固定尺寸根：画布 = 根尺寸
+        root_abs = (0.0, 0.0, float(rw), float(rh))
+        W, H = int(rw), int(rh)
 
     def rect_of(parent_abs, rt):
         """返回子节点在画布像素坐标里的绝对矩形 (x0, y0, w, h)，y 向下。"""

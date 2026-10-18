@@ -92,6 +92,12 @@ function PlayerInfoPopup:InitComponent()
 
     this.memHead = Util.GetGameObject(self.transform, "tipImage/panel/info/head")
     this.memName = Util.GetGameObject(self.transform, "tipImage/panel/info/name"):GetComponent("Text")
+    -- 国家小旗（聊天点开玩家信息时展示；节点由 patch_playerinfo_flag.py 追加）
+    this.memCountryFlag = Util.GetGameObject(self.transform, "tipImage/panel/info/countryFlag")
+    this.memCountryFlagImg = nil
+    if this.memCountryFlag and not IsNull(this.memCountryFlag) then
+        this.memCountryFlagImg = this.memCountryFlag:GetComponent("Image")
+    end
     this.memProfessTip = Util.GetGameObject(self.transform, "tipImage/panel/info/professName"):GetComponent("Text")
     this.memProfess = Util.GetGameObject(self.transform, "tipImage/panel/info/profess"):GetComponent("Text")
 
@@ -276,9 +282,40 @@ function PlayerInfoPopup:SetViewType(viewType)
     this:OnShow()
 end
 
+--[[
+ * 刷新「国家小旗」
+ *
+ * 数据来源优先级：
+ *   1. data.country（服务端将来下发玩家国家时直接用）
+ *   2. 自己 / 没下发时：用本地记录的玩家国家（CountryRankManager）
+ *   3. 其他玩家且服务端没下发：按 uid 稳定映射一个国家，避免所有陌生人都显示"其他地区"
+ *
+ * 注意第 3 条是**占位策略**：协议补上 player.country 之后，这里会自动走第 1 条，
+ * 不需要再改 UI。
+--]]
+function this.RefreshCountryFlag(data)
+    if not this.memCountryFlagImg then
+        return
+    end
+    local code = data and data.country
+    if (code == nil or code == "") and CountryRankManager then
+        local myUid = PlayerManager and PlayerManager.uid or 0
+        if data and data.uid == myUid then
+            code = CountryRankManager.GetPlayerCountry()
+        elseif data and data.uid then
+            -- 占位：按 uid 稳定映射到已支持的国家，保证同一玩家每次看到的一致
+            local list = CountryConfig.List
+            local idx = (tonumber(data.uid) or 0) % (#list - 1) + 1
+            code = list[idx].code
+        end
+    end
+    this.memCountryFlagImg.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(code))
+end
+
 -- 刷新基础信息显示
 function this.RefreshPlayerInfo(data)
     this.memName.text = SetRobotName(data.uid, data.name)
+    this:RefreshCountryFlag(data)
 
     this.memProfessTip.text = GetLanguageStrById(10629)
     if data.guildName ~= "" then

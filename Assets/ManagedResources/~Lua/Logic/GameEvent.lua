@@ -314,6 +314,9 @@ GameEvent = {
         OnRefreshBag = "SoulPrint.OnRefreshBag"
 
     },
+    CountryRank = {
+        OnCountryChanged = "CountryRank.OnCountryChanged",   -- 玩家切换所属国家
+    },
     RankingList = {
         OnWarPowerChange = "RankingList.OnWarPowerChange",
         OnArenaChange = "RankingList.OnArenaChange",

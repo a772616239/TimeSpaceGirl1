@@ -100,19 +100,28 @@ end
  * 用 Timer 延后一小段再弹，避免和主界面开场动画/其他弹窗抢焦点。
  *]]
 function CountryRankManager.TryShowFirstEnterGuide()
-    if CountryRankManager.HasShownGuide() then
-        return
+    -- 整段用 pcall 包住：这是挂在主界面 OnShow 上的附带功能，
+    -- 任何异常都不该影响主界面与角色数据加载。
+    local ok, err = pcall(function()
+        if CountryRankManager.HasShownGuide() then
+            return
+        end
+        -- 先落标记再弹窗：即使弹窗过程中玩家强退，也不会下次重复弹
+        CountryRankManager.MarkGuideShown()
+        local timer
+        timer = Timer.New(function()
+            pcall(function()
+                timer:Stop()
+                UIManager.OpenPanel(UIName.CountryFlagSelectPopup, function(code)
+                    Log("[CountryRank] first-enter country picked: " .. tostring(code))
+                end)
+            end)
+        end, 0.6, 1, true)
+        timer:Start()
+    end)
+    if not ok then
+        LogError("[CountryRank] guide failed, ignored: " .. tostring(err))
     end
-    -- 先落标记再弹窗：即使弹窗过程中玩家强退，也不会下次重复弹
-    CountryRankManager.MarkGuideShown()
-    local timer
-    timer = Timer.New(function()
-        timer:Stop()
-        UIManager.OpenPanel(UIName.CountryFlagSelectPopup, function(code)
-            Log("[CountryRank] first-enter country picked: " .. tostring(code))
-        end)
-    end, 0.6, 1, true)
-    timer:Start()
 end
 
 ---------------------------------------------------------------- 榜单数据

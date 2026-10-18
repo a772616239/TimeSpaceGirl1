@@ -297,15 +297,23 @@ function this.RefreshCountryFlag(data)
     if not this.memCountryFlagImg then
         return
     end
+    -- ⚠️ 关键：data 是服務端下发的 teamInfo，**不保证带 uid 字段**。
+    --    当前正在查看的玩家 id 存在 this._PlayerId（OnOpen 里赋值），
+    --    必须优先用它，否则 uid 取到 nil 会一路落到兜底国（灰问号）。
+    local uid = this._PlayerId
+    if (uid == nil or uid == 0) and data ~= nil then
+        uid = data.uid
+    end
     local code = data and data.country
     if (code == nil or code == "") and CountryRankManager then
         local myUid = PlayerManager and PlayerManager.uid or 0
-        if data and data.uid == myUid then
+        if myUid ~= nil and myUid ~= 0 and uid ~= nil and tonumber(uid) == tonumber(myUid) then
+            -- 自己：用本地记录的国家（玩家在旗帜选择面板选的）
             code = CountryRankManager.GetPlayerCountry()
-        elseif data and data.uid then
-            -- 占位：按 uid 稳定映射到已支持的国家，保证同一玩家每次看到的一致
+        elseif uid ~= nil and tonumber(uid) ~= nil then
+            -- 其他玩家且服务端没下发国家：按 uid 稳定映射（占位策略）
             local list = CountryConfig.List
-            local idx = (tonumber(data.uid) or 0) % (#list - 1) + 1
+            local idx = tonumber(uid) % (#list - 1) + 1
             code = list[idx].code
         end
     end

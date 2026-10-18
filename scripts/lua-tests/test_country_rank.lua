@@ -294,5 +294,58 @@ do
     end
 end
 
+print("\n[12] 选了国旗仍显示问号（PlayerInfoPopup 取 uid 的坑）")
+do
+    -- 复刻 PlayerInfoPopup.RefreshCountryFlag 的解析顺序
+    local function resolve(playerId, data)
+        local uid = playerId
+        if (uid == nil or uid == 0) and data ~= nil then uid = data.uid end
+        local code = data and data.country
+        if (code == nil or code == "") and CountryRankManager then
+            local myUid = PlayerManager and PlayerManager.uid or 0
+            if myUid ~= nil and myUid ~= 0 and uid ~= nil
+                    and tonumber(uid) == tonumber(myUid) then
+                code = CountryRankManager.GetPlayerCountry()
+            elseif uid ~= nil and tonumber(uid) ~= nil then
+                local list = CountryConfig.List
+                code = list[tonumber(uid) % (#list - 1) + 1].code
+            end
+        end
+        return code
+    end
+
+    prefs = { player_country = "jp" }
+    PlayerManager.uid = 10000248
+    CountryRankManager.Initialize()
+
+    -- 关键：服务端下发的 teamInfo **没有 uid 字段**，必须靠 _PlayerId
+    local teamInfoNoUid = { name = "夜航星", level = 50 }
+    local code = resolve(10000248, teamInfoNoUid)
+    check("自己（teamInfo 无 uid）解析出所选国家",
+            code == "jp", tostring(code))
+    check("旗帜 sprite 是日本旗不是问号",
+            CountryConfig.GetFlagSprite(code) == "cn2-guoqi_jp",
+            CountryConfig.GetFlagSprite(code))
+
+    -- 回归：旧写法（只用 data.uid）会退化成问号，这就是用户看到的现象
+    local function resolveOld(data)
+        local c = data and data.country
+        if (c == nil or c == "") and CountryRankManager then
+            local myUid = PlayerManager and PlayerManager.uid or 0
+            if data and data.uid == myUid then
+                c = CountryRankManager.GetPlayerCountry()
+            elseif data and data.uid then
+                local list = CountryConfig.List
+                c = list[(tonumber(data.uid) or 0) % (#list - 1) + 1].code
+            end
+        end
+        return c
+    end
+    local oldCode = resolveOld(teamInfoNoUid)
+    check("旧写法退化为兜底国旗（复现问号 bug）",
+            CountryConfig.GetFlagSprite(oldCode) == "cn2-guoqi_xx",
+            CountryConfig.GetFlagSprite(oldCode))
+end
+
 print(string.format("\n==== 通过 %d / 失败 %d ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

@@ -592,11 +592,6 @@ function this:OnShow()
         this._TimeCounter:Start()
     end
 
-    -- 首次进主界面弹一次「选择国家」，之后永不弹（标记写 PlayerPrefs）
-    if CountryRankManager then
-        CountryRankManager.TryShowFirstEnterGuide()
-    end
-
     -- if AdventureManager.drop ~= nil and AdventureManager.offlineTime ~= 0 then
     --     if AdventureManager.isFirstEnterGetReward and #AdventureManager.drop.itemlist > 0 then
     --         UIManager.OpenPanelWithSound(UIName.AdventureProgressPopup)
@@ -651,6 +646,14 @@ function this:OnShow()
 
     this.btnBattlePass:SetActive(ActTimeCtrlManager.SingleFuncState(107))
     this.ShowGuide()
+
+    -- 首次进主界面弹一次「选择国家」，之后永不弹（标记写 PlayerPrefs）
+    -- ⚠️ 必须放在 OnShow 最后并用 pcall 包住：
+    --    本函数前面还有首充/拍脸/红点/引导等关键刷新，
+    --    这里任何异常都不能把后面的逻辑带崩（曾经放在中段，出问题会整段跳过）。
+    pcall(function()
+        CountryRankManager.TryShowFirstEnterGuide()
+    end)
 end
 
 --界面关闭时调用（用于子类重写）

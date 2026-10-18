@@ -514,6 +514,9 @@ function this.InitBattleData()
     BattleLogic.Type = this.battleType
     -- 新一场战斗：清空战斗内剧情播放标记（同一段剧情本场只弹一次）
     BattleManager.ResetStoryDialogue()
+    -- 清掉上一场可能残留的「助战英雄展示框待弹」状态，避免跨场串味
+    this.pendingHelpHeroShow = false
+    this.storyFinishHandler = nil
     this.InitBattleEvent()
 end
 
@@ -594,19 +597,24 @@ function this.ClearSceneRoles()
     this:ClearRole()
     this.BattleEndClear()
 end
+-- 剧情播完后的收尾动作。nil ⇒ 默认恢复战斗；
+-- 助战英雄入场时改设成「弹助战英雄展示框」（见 ShowHelpHeroAfterDialogue）
+this.storyFinishHandler = nil
+
+-- 返回值：true 表示剧情已真正开始播（回调会被触发），false 表示被跳过（重复/面板不在）
 function this.RoundBeginDialogue(dialogueId)
     if BattleManager.IsInBackBattle() then
         if not UIManager.IsOpen(UIName.BattlePanel) then
-            return
+            return false
         end
     end
 
     -- 同一段剧情本场只播一次：BattleRoundBeginDialogue 有多个派发点
-    -- （BattleLogic 追加单位/无单位参战、助战英雄 3.5s 回调、帧校验回滚重放），
+    -- （BattleLogic 追加单位/无单位参战、助战英雄入场、帧校验回滚重放），
     -- 重复派发会把同一个剧情对话框再弹一遍，表现为「剧情框重复弹出/结算后又弹剧情」
     if BattleManager.IsStoryDialoguePlayed(dialogueId) then
         Log("RoundBeginDialogue 跳过重复剧情 id=" .. tostring(dialogueId))
-        return
+        return false
     end
 
     BattleManager.PauseBattle()
@@ -615,8 +623,16 @@ function this.RoundBeginDialogue(dialogueId)
     Log(string.format("[UIFlow] RoundBeginDialogue 播放剧情 id=%s stack=%s", tostring(dialogueId), tostring(GetUIStackStr and GetUIStackStr() or "?")))
     StoryManager.EventTrigger(dialogueId, function()
         BattleManager.EndStoryDialogue()
-        BattleManager.ResumeBattle()
+        -- 助战英雄入场时由 handler 接手（弹展示框，结束再 ResumeBattle），否则直接恢复战斗
+        local handler = this.storyFinishHandler
+        this.storyFinishHandler = nil
+        if handler then
+            handler()
+        else
+            BattleManager.ResumeBattle()
+        end
     end)
+    return true
 end
 
 --敌军出现的表现
@@ -916,20 +932,9 @@ function this.OnAddRole(data, isHelp,isTibu,isShowMan)
         tbRole[data]:PlaySpineAnim(tbRole[data].RoleLiveGOGraphic, 0, RoleAnimationName.Run, true)
         tbRole[data].RoleLiveGO.transform:DOLocalMove(Vector2.zero,0.6):OnComplete(function()        
             tbRole[data]:PlaySpineAnim(tbRole[data].RoleLiveGOGraphic, 0, RoleAnimationName.Stand, true)
-            this.EnemyPanel:SetActive(false)
-            this.MinePanel:SetActive(false)
-            this.SetHelpHero()
-            this.HelpHeroShow:SetActive(true)
-            Timer.New(function ()
-                this.HelpHeroShow:SetActive(false)
-                if this.helpHeroLive then
-                    UnLoadHerolive(this.helpHeroConfig, this.helpHeroLive)
-                    Util.ClearChild(this.helpLivePos.transform)
-                end
-                this.EnemyPanel:SetActive(true)
-                this.MinePanel:SetActive(true)
-                BattleLogic.Event:DispatchEvent(BattleEventName.BattleRoundBeginDialogue, data.roleData.client_dialogue)
-            end, 3.5):Start()
+            -- 顺序：先剧情对话框（StoryDialoguePanel）→ 播完再弹助战英雄展示框（HelpHeroShow）
+            -- 原来是「展示框 3.5s → 隐藏 → 派发剧情」，所以英雄框总是抢在剧情前面
+            this.ShowHelpHeroAfterDialogue(data and data.roleData and data.roleData.client_dialogue)
         end)
     end
 end
@@ -958,6 +963,107 @@ function this.SetHelpHero()
         end
         this.helpHeroLive = LoadHerolive(this.helpHeroConfig, this.helpLivePos.transform)
     end
+end
+
+--==== 助战英雄入场：先剧情对话框(StoryDialoguePanel)、后英雄展示框(HelpHeroShow) ==========
+-- 原顺序是「展示框 3.5s → 隐藏 → 派发 BattleRoundBeginDialogue 播剧情」，
+-- 表现为英雄框先弹、剧情框后弹。现在倒过来：先播剧情，剧情播完再弹展示框。
+-- pendingHelpHeroShow 是「本次入场还要弹展示框」的闸门，顺带保证只弹一次。
+this.pendingHelpHeroShow = false
+
+-- 弹助战英雄展示框，3.5s 后收尾并恢复战斗
+function this.ShowHelpHeroFrame()
+    this.storyFinishHandler = nil
+    if not this.pendingHelpHeroShow then
+        return
+    end
+    this.pendingHelpHeroShow = false
+
+    if not UIManager.IsOpen(UIName.BattlePanel) then
+        -- 战斗界面已经关了（结算/退出），别再弹也没必要恢复战斗
+        BattleManager.ResumeBattle()
+        return
+    end
+
+    this.SetHelpHero()
+    this.EnemyPanel:SetActive(false)
+    this.MinePanel:SetActive(false)
+    this.HelpHeroShow:SetActive(true)
+    Log(string.format("[UIFlow] HelpHeroShow OPEN stack=%s", tostring(GetUIStackStr and GetUIStackStr() or "?")))
+    Timer.New(function ()
+        this.HelpHeroShow:SetActive(false)
+        Log("[UIFlow] HelpHeroShow CLOSE")
+        if this.helpHeroLive then
+            UnLoadHerolive(this.helpHeroConfig, this.helpHeroLive)
+            Util.ClearChild(this.helpLivePos.transform)
+        end
+        this.EnemyPanel:SetActive(true)
+        this.MinePanel:SetActive(true)
+        BattleManager.ResumeBattle()
+    end, 3.5):Start()
+end
+
+-- 轮询等剧情对话框播完再弹展示框。
+-- 不用 EventTrigger 的回调做唯一驱动：ShowType 不匹配时回调根本不会触发，战斗会一直暂停。
+function this.WaitStoryThenHelpHeroFrame(elapsed)
+    if not this.pendingHelpHeroShow then
+        return
+    end
+    elapsed = elapsed or 0
+    if not UIManager.IsOpen(UIName.BattlePanel) then
+        this.pendingHelpHeroShow = false
+        return
+    end
+
+    if BattleManager.IsStoryDialoguePlaying() then
+        if elapsed >= 300 then
+            LogRed("[UIFlow] 等剧情超时(300s)，强弹助战英雄展示框")
+            this.ShowHelpHeroFrame()
+            return
+        end
+        Timer.New(function ()
+            this.WaitStoryThenHelpHeroFrame(elapsed + 0.2)
+        end, 0.2, 1, true):Start()
+        return
+    end
+
+    Log(string.format("[UIFlow] 剧情已结束，弹助战英雄展示框 elapsed=%.1f", elapsed))
+    this.ShowHelpHeroFrame()
+end
+
+-- 助战英雄入场主流程：有剧情先播剧情，剧情结束（或本场已播过/没剧情）再弹展示框
+function this.ShowHelpHeroAfterDialogue(dialogueId)
+    this.pendingHelpHeroShow = true
+
+    -- 剧情播完的收尾交给展示框（这里不 ResumeBattle，否则战斗会抢在展示框前面继续跑）。
+    -- handler 内部用 pending 兜底：万一被后续剧情复用，也不会把 ResumeBattle 吞掉。
+    this.storyFinishHandler = function ()
+        if this.pendingHelpHeroShow then
+            this.ShowHelpHeroFrame()
+        else
+            BattleManager.ResumeBattle()
+        end
+    end
+
+    local needStory = dialogueId and dialogueId ~= 0 and not BattleManager.IsStoryDialoguePlayed(dialogueId)
+    if needStory then
+        Log(string.format("[UIFlow] 助战英雄入场：先播剧情 id=%s", tostring(dialogueId)))
+        if not this.RoundBeginDialogue(dialogueId) then
+            Log("[UIFlow] 助战英雄入场：剧情被去重跳过")
+        end
+    elseif BattleManager.IsStoryDialoguePlaying() then
+        -- 这段剧情已经被别的派发点（BattleLogic 追加单位）抢先播了，等它播完再弹展示框
+        Log("[UIFlow] 助战英雄入场：剧情已在播放，等其播完后弹展示框")
+    else
+        Log("[UIFlow] 助战英雄入场：无待播剧情，直接弹展示框")
+        this.ShowHelpHeroFrame()
+        return
+    end
+
+    -- 兜底轮询：剧情面板没弹出来、或关闭时没走回调，也能收尾
+    Timer.New(function ()
+        this.WaitStoryThenHelpHeroFrame(0)
+    end, 0.2, 1, true):Start()
 end
 
 --设置主角技能 --this.icon.sprite = Util.LoadSprite(GetResourcePath(this.skillData.skillConfig.Icon))

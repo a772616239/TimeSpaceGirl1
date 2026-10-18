@@ -1,6 +1,9 @@
 local SettingInfo = quick_class("SettingInfo")
 local this = SettingInfo
 
+require("Modules/CountryRank/CountryConfig")
+require("Modules/CountryRank/CountryRankManager")
+
 local dropDownList = {}
 
 function SettingInfo:ctor(mainPanel, gameObject)
@@ -51,6 +54,9 @@ function SettingInfo:InitComponent(gameObject)
     --显隐VIP
     this.showVip = Util.GetGameObject(gameObject, "playerInfo/showVip/yes")
     this.noShowVip = Util.GetGameObject(gameObject, "playerInfo/showVip/no")
+
+    --国家旗帜（点击打开国家选择面板；节点见 SettingPanel.prefab playerInfo/name/countryFlag）
+    this.countryFlag = Util.GetGameObject(gameObject, "playerInfo/name/countryFlag")
 end
 
 --绑定事件（用于子类重写）
@@ -130,6 +136,15 @@ function SettingInfo:BindEvent()
         UIManager.OpenPanel(UIName.HeadChangePopup)
     end)
 
+    --国家旗帜：打开选择面板，选完通过 OnCountryChanged 事件刷新显示
+    if this.countryFlag then
+        Util.AddClick(this.countryFlag, function()
+            UIManager.OpenPanel(UIName.CountryFlagSelectPopup, function(code)
+                Log("[SettingInfo] country changed from SettingPanel: " .. tostring(code))
+            end)
+        end)
+    end
+
     Util.AddClick(this.btnChangeName, function()
         UIManager.OpenPanel(UIName.CreateNamePopup)
     end)
@@ -191,6 +206,7 @@ function SettingInfo:AddListener()
     Game.GlobalEvent:AddEvent(GameEvent.Player.OnHeadFrameChange, this.RefreshPlayerInfoShow)
     Game.GlobalEvent:AddEvent(GameEvent.Player.OnHeadChange, this.RefreshPlayerInfoShow)
     Game.GlobalEvent:AddEvent(GameEvent.Player.OnChangeName, this.RefreshPlayerInfoShow)
+    Game.GlobalEvent:AddEvent(GameEvent.CountryRank.OnCountryChanged, this.RefreshCountryFlag)
 end
 
 --移除事件监听（用于子类重写）
@@ -198,6 +214,7 @@ function SettingInfo:RemoveListener()
     Game.GlobalEvent:RemoveEvent(GameEvent.Player.OnHeadFrameChange, this.RefreshPlayerInfoShow)
     Game.GlobalEvent:RemoveEvent(GameEvent.Player.OnHeadChange, this.RefreshPlayerInfoShow)
     Game.GlobalEvent:RemoveEvent(GameEvent.Player.OnChangeName, this.RefreshPlayerInfoShow)
+    Game.GlobalEvent:RemoveEvent(GameEvent.CountryRank.OnCountryChanged, this.RefreshCountryFlag)
 end
 
 --界面打开时调用（用于子类重写）
@@ -259,10 +276,25 @@ function this.RefreshPlayerInfoShow()
     this.guildText.text = guildData == nil and GetLanguageStrById(10094) or guildData.name
     this.gridText.text = PlayerManager.level
 
+    this.RefreshCountryFlag()
+
     -- this.exp.value = PlayerManager.exp / PlayerManager.userLevelData[PlayerManager.level].Exp
     -- this.expText.text = PlayerManager.exp .. "/" .. PlayerManager.userLevelData[PlayerManager.level].Exp
     -- this.idText.text = AppConst.OpenId or LoginManager.openId
     -- this.serverText.text = PlayerManager.serverInfo.name
+end
+
+--刷新个人面板的国家旗帜显示（自己永远显示本地所选，与 CountryFlagUtil 的「他人无数据显示问号」规则区分开）
+function this.RefreshCountryFlag()
+    if this.countryFlag == nil or IsNull(this.countryFlag) then
+        return
+    end
+    local img = this.countryFlag:GetComponent("Image")
+    if img == nil then
+        return
+    end
+    local code = CountryRankManager.GetPlayerCountry()
+    img.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(code))
 end
 
 --是否显示VIP

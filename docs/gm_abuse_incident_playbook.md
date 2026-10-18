@@ -403,13 +403,66 @@ redis-cli -n 0 ZRANGE "10001:HERO_FORCE_RANK:" 0 -1 | grep "^10000240:"
 redis-cli -n 0 ZREM "10001:HERO_FORCE_RANK:" "10000240:10000240010017917911100000"
 ```
 
-**删号后必须清理的三类引用**（缺一个就 NPE）：
+**删号后必须清理的五类引用**（缺一个就 NPE —— 2026-10-18 第二轮实测补到 5 类）：
 
 | 类型 | 位置 | 清理方式 |
 |---|---|---|
 | ZSET 排行成员 | Redis 全部 `*RANK*` 等 zset，成员可能为 `<uid>` 或 `<uid>:<heroId>` | 扫 `ZRANGE` 后逐个 `ZREM` |
 | **Mongo 排行表** | `supremacyInfo` 的 `uid` 字段（**最容易漏！**） | 置为 `uid: 0` 保留空位，或删整条 |
-| 其他业务引用 | `guildInfo`/`supremacyInfo`/任务/邮件等 `uid`/`targetUid`/`rootId` | 全库扫描确认 |
+| **🔴 排行榜奖励数据** | Redis hash `10001:{1,2,3,4}:RANKING_DATA`，field 是榜位 id，value 是 JSON `{"时间戳":uid,...}` | 用 Python `json.loads` 逐条剔除已删 uid 后写回（**不能用 sed 拼字符串，会弄坏 JSON**） |
+| **🔴 公会成员/会长位** | Mongo `guildInfo.members`，结构是 `{职位: [uid...]}`，职位 `1` = 会长 | `$pull` 掉该 uid；**若会长位被清空必须补一个有效会长，否则 `iterator().next()` 抛异常** |
+| 其他业务引用 | `guildInfo`/任务/邮件/好友/竞技场记录 等 `uid`/`targetUid`/`rootId` | 全库扫描确认 |
+
+**新增的两类是本轮真实踩到的**（第一轮只清前 3 类，重启后排行榜**仍然**报错）：
+
+```
+# 第二轮实测：仍是 getUser null，但调用点变了
+59 × GuildForceRank.getFirst(GuildForceRank.java:101)     ← 公会战力榜（主因）
+ 3 × GuildLogic.getFamilyInfo(GuildLogic.java:154)        ← 公会信息
+ 2 × PlayerLogic.getUserTeamOneInfo / GuildHelpGetAll
+```
+
+**公会战力榜 `10001:GUILD_FORCE_RANK:` 的特殊坑**：
+它是 **zset，成员是 guildId 不是 uid**。若里面残留了已删公会（本次是 `0`/`2`/`5`，
+现存只有 `1`/`3`/`4`），`getFirst()` 拿 `guildInfoMap.get(guildId)` 得 null 后会
+**直接 `return builder`（113 行有保护）**，但接着取 `members.get(1)` 拿会长：
+
+```java
+GuildInfo g = GuilidManager.guildInfoMap.get(guildId);
+if (g == null) return builder;                 // ← 公会缺失有保护
+Set<Integer> leaders = g.getMembers().get(1);  // ← 会长位
+int leaderUid = leaders.iterator().next();     // ← 会长位为空则 NoSuchElementException
+User u = UserManager.getUser(leaderUid);       // ← 会长已删则 null，下一行 getPlayerInfoManager() NPE
+```
+
+### ⚠️ 本轮我的操作失误（必须记住）
+
+清理 `guildInfo` 时，我用 `$pull` 把已删的 Mozart 从**会长位**移除了，
+结果会长位变成 `[]` 空数组 —— **等于制造了一个新的崩溃点**，
+`GuildForceRank.getFirst` 的 `iterator().next()` 直接抛异常。
+
+**正确做法**：从会长位移除已删账号后，**必须立刻检查该职位是否变空**；
+若变空，从其他职位里挑一个存活成员补上（本次让创建时间最早的 Sakuya `10000017` 接任）。
+
+```bash
+# 检查所有公会的会长位是否为空或指向已删账号
+ssh gs 'mongo --quiet m5_x1_game_10001 --eval "
+db.guildInfo.find().forEach(function(g){
+  var m1 = g.members ? g.members[\"1\"] : null;
+  var first = (m1 && m1.length) ? m1[0] : null;
+  var ok = first ? db.user.count({_id:first}) : -1;
+  if (ok !== 1) print(\"BAD guild \"+g._id+\" members.1=\"+JSON.stringify(m1)+\" exists=\"+ok);
+});"'
+```
+
+**另一个坑：Redis 改了不等于生效。** 下面三处都是**启动时一次性加载进内存**，
+改完 Redis/Mongo 必须**重启**才生效：
+
+| 类 | 缓存字段 | 加载时机 |
+|---|---|---|
+| `RankingRewardLogic` | `rankingDataMap` | `loadRankingDataMap()`，`loadRankingData` 标志位为 true 就直接 return |
+| `GuilidManager` | `guildInfoMap` | 启动加载 |
+| `GuildLogic.getFamilyInfo` | 读 `GuilidManager.guildInfoMap` | 同上 |
 
 **一键清理脚本**（本仓已用于本次事故，清了 74 个残留成员）：
 

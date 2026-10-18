@@ -779,14 +779,426 @@ def build_ae(w, h, art):
     return art
 
 
-def build_eu(w, h, art):
+# ---------------------------------------------------------------- 欧洲逐国 / 补充国家
+# 背景：最早只画了一面「欧洲其他(eu)」代表整个欧洲，玩家无法表达自己是哪国人。
+# 这里按国家逐个补旗。132x88 的尺寸下细节不可辨，一律用「色块 + 关键符号」的简化画法，
+# 与既有旗帜（gb/us/br 等）保持同一抽象层级。
+
+def ratio_bands(colors, ratios, vertical=False):
+    """按比例分条（用于拉脱维亚 2:1:2、哥伦比亚 2:1:1 这类非等分旗）。"""
+    def build(w, h, art):
+        d = ImageDraw.Draw(art)
+        tot = float(sum(ratios))
+        acc = 0.0
+        for col, r in zip(colors, ratios):
+            if vertical:
+                d.rectangle([w * acc / tot, 0, w * (acc + r) / tot, h], fill=col)
+            else:
+                d.rectangle([0, h * acc / tot, w, h * (acc + r) / tot], fill=col)
+            acc += r
+        return art
+    return build
+
+
+def nordic(bg, cross, inner=None, vx=0.36, t=0.26, it=0.13):
+    """北欧十字旗；inner 再叠一层内十字（挪威 / 冰岛）。"""
+    def build(w, h, art):
+        d = ImageDraw.Draw(art)
+        d.rectangle([0, 0, w, h], fill=bg)
+        bt = t * h
+        d.rectangle([0, h / 2 - bt / 2, w, h / 2 + bt / 2], fill=cross)
+        d.rectangle([vx * w - bt / 2, 0, vx * w + bt / 2, h], fill=cross)
+        if inner is not None:
+            bi = it * h
+            d.rectangle([0, h / 2 - bi / 2, w, h / 2 + bi / 2], fill=inner)
+            d.rectangle([vx * w - bi / 2, 0, vx * w + bi / 2, h], fill=inner)
+        return art
+    return build
+
+
+def shield(d, cx, cy, sw, sh, fill, edge=None):
+    """盾牌形（下方收尖），东欧三国旗上放国徽用。"""
+    pts = [(cx - sw / 2, cy - sh / 2), (cx + sw / 2, cy - sh / 2),
+           (cx + sw / 2, cy + sh * 0.08), (cx, cy + sh / 2), (cx - sw / 2, cy + sh * 0.08)]
+    d.polygon(pts, fill=fill)
+    if edge is not None:
+        d.line(pts + [pts[0]], fill=edge, width=1)
+
+
+def crescent(d, cx, cy, r, fill, bg):
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=fill)
+    d.ellipse([cx - r * 0.72, cy - r, cx + r * 1.28, cy + r], fill=bg)
+
+
+def build_gr(w, h, art):
+    """希腊：蓝白 9 条 + 左上蓝底白十字。"""
     d = ImageDraw.Draw(art)
-    d.rectangle([0, 0, w, h], fill=(0, 51, 153))
+    blue, white = (13, 94, 175), (250, 250, 250)
+    n = 9
+    d.rectangle([0, 0, w, h], fill=blue)
+    for i in range(1, n, 2):
+        d.rectangle([0, h * i / n, w, h * (i + 1) / n], fill=white)
+    cw, ch = w * 0.37, h * 5 / 9
+    d.rectangle([0, 0, cw, ch], fill=blue)
+    t = ch / 5 * 1.6
+    d.rectangle([0, ch / 2 - t / 2, cw, ch / 2 + t / 2], fill=white)
+    d.rectangle([cw / 2 - t / 2, 0, cw / 2 + t / 2, ch], fill=white)
+    return art
+
+
+def build_nl(w, h, art):
+    return hbands([(174, 28, 40), (250, 250, 250), (33, 70, 139)])(w, h, art)
+
+
+def build_be(w, h, art):
+    return vbands([(20, 20, 20), (253, 218, 36), (239, 51, 64)])(w, h, art)
+
+
+def build_lu(w, h, art):
+    return hbands([(239, 51, 64), (250, 250, 250), (0, 161, 222)])(w, h, art)
+
+
+def build_ch(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(213, 43, 30))
+    t = h * 0.22
+    d.rectangle([w / 2 - t / 2, h * 0.16, w / 2 + t / 2, h * 0.84], fill=(250, 250, 250))
+    d.rectangle([w * 0.30, h / 2 - t / 2, w * 0.70, h / 2 + t / 2], fill=(250, 250, 250))
+    return art
+
+
+def build_at(w, h, art):
+    return hbands([(237, 41, 57), (250, 250, 250), (237, 41, 57)])(w, h, art)
+
+
+def build_se(w, h, art):
+    return nordic((0, 106, 167), (254, 204, 0))(w, h, art)
+
+
+def build_no(w, h, art):
+    return nordic((186, 12, 47), (250, 250, 250), inner=(0, 32, 91), t=0.30, it=0.15)(w, h, art)
+
+
+def build_dk(w, h, art):
+    return nordic((200, 16, 46), (250, 250, 250), t=0.22)(w, h, art)
+
+
+def build_fi(w, h, art):
+    return nordic((250, 250, 250), (0, 53, 128), t=0.24)(w, h, art)
+
+
+def build_is(w, h, art):
+    return nordic((2, 82, 156), (250, 250, 250), inner=(215, 40, 40), t=0.30, it=0.15)(w, h, art)
+
+
+def build_pl(w, h, art):
+    return hbands([(250, 250, 250), (220, 20, 60)])(w, h, art)
+
+
+def build_pt(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(218, 41, 28))
+    d.rectangle([0, 0, w * 0.40, h], fill=(0, 102, 0))
+    cx, cy = w * 0.40, h / 2
+    r = h * 0.26
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(255, 204, 0), width=max(2, int(h * 0.06)))
+    d.rectangle([cx - r * 0.42, cy - r * 0.45, cx + r * 0.42, cy + r * 0.45], fill=(250, 250, 250))
+    d.rectangle([cx - r * 0.42, cy - r * 0.14, cx + r * 0.42, cy + r * 0.14], fill=(206, 17, 38))
+    return art
+
+
+def build_ie(w, h, art):
+    return vbands([(22, 155, 98), (250, 250, 250), (255, 136, 62)])(w, h, art)
+
+
+def build_cz(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(250, 250, 250))
+    d.rectangle([0, h / 2, w, h], fill=(215, 20, 26))
+    d.polygon([(0, 0), (w * 0.46, h / 2), (0, h)], fill=(17, 69, 126))
+    return art
+
+
+def build_hu(w, h, art):
+    return hbands([(206, 41, 57), (250, 250, 250), (67, 111, 77)])(w, h, art)
+
+
+def build_ro(w, h, art):
+    return vbands([(0, 43, 127), (252, 209, 22), (206, 17, 38)])(w, h, art)
+
+
+def build_bg(w, h, art):
+    return hbands([(250, 250, 250), (0, 150, 110), (214, 38, 42)])(w, h, art)
+
+
+def build_ua(w, h, art):
+    return hbands([(0, 87, 183), (255, 215, 0)])(w, h, art)
+
+
+def build_sk(w, h, art):
+    d = ImageDraw.Draw(art)
+    hbands([(250, 250, 250), (11, 78, 162), (238, 28, 37)])(w, h, art)
+    shield(d, w * 0.38, h * 0.52, w * 0.22, h * 0.58, (238, 28, 37), edge=(250, 250, 250))
+    d.rectangle([w * 0.36, h * 0.34, w * 0.40, h * 0.68], fill=(250, 250, 250))
+    d.rectangle([w * 0.32, h * 0.44, w * 0.44, h * 0.48], fill=(250, 250, 250))
+    return art
+
+
+def build_si(w, h, art):
+    d = ImageDraw.Draw(art)
+    hbands([(250, 250, 250), (0, 92, 163), (238, 28, 37)])(w, h, art)
+    shield(d, w * 0.38, h * 0.50, w * 0.20, h * 0.54, (0, 92, 163), edge=(250, 250, 250))
+    d.polygon([(w * 0.38, h * 0.34), (w * 0.46, h * 0.62), (w * 0.30, h * 0.62)],
+              fill=(250, 250, 250))
+    return art
+
+
+def build_hr(w, h, art):
+    d = ImageDraw.Draw(art)
+    hbands([(255, 0, 0), (250, 250, 250), (0, 45, 161)])(w, h, art)
+    cx, cy, sw, sh = w * 0.38, h * 0.52, w * 0.20, h * 0.56
+    shield(d, cx, cy, sw, sh, (250, 250, 250), edge=(255, 0, 0))
+    # 红白棋盘格（简化为 4x4）
+    cell = sw / 4
+    for r_ in range(4):
+        for c_ in range(4):
+            if (r_ + c_) % 2 == 0:
+                d.rectangle([cx - sw / 2 + c_ * cell, cy - sh / 2 + r_ * cell * 0.9,
+                             cx - sw / 2 + (c_ + 1) * cell, cy - sh / 2 + (r_ + 1) * cell * 0.9],
+                            fill=(255, 0, 0))
+    return art
+
+
+def build_rs(w, h, art):
+    d = ImageDraw.Draw(art)
+    hbands([(198, 54, 60), (12, 64, 118), (250, 250, 250)])(w, h, art)
+    shield(d, w * 0.38, h * 0.50, w * 0.20, h * 0.54, (198, 54, 60), edge=(250, 250, 250))
+    d.rectangle([w * 0.36, h * 0.36, w * 0.40, h * 0.64], fill=(250, 250, 250))
+    d.rectangle([w * 0.33, h * 0.44, w * 0.43, h * 0.47], fill=(250, 250, 250))
+    return art
+
+
+def build_lt(w, h, art):
+    return hbands([(253, 185, 19), (0, 106, 68), (193, 39, 45)])(w, h, art)
+
+
+def build_lv(w, h, art):
+    return ratio_bands([(157, 34, 53), (250, 250, 250), (157, 34, 53)], [2, 1, 2])(w, h, art)
+
+
+def build_ee(w, h, art):
+    return hbands([(0, 114, 206), (20, 20, 20), (250, 250, 250)])(w, h, art)
+
+
+def build_by(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(0, 170, 60))
+    d.rectangle([0, 0, w, h * 0.66], fill=(204, 0, 0))
+    # 左侧织带（红底白菱形）
+    sw = w * 0.14
+    d.rectangle([0, 0, sw, h], fill=(250, 250, 250))
+    step = h / 5
+    for i in range(5):
+        y = i * step + step / 2
+        d.polygon([(sw / 2, y - step * 0.34), (sw * 0.86, y), (sw / 2, y + step * 0.34),
+                   (sw * 0.14, y)], fill=(204, 0, 0))
+    return art
+
+
+def build_md(w, h, art):
+    d = ImageDraw.Draw(art)
+    vbands([(0, 70, 174), (247, 212, 0), (204, 9, 47)])(w, h, art)
+    shield(d, w / 2, h * 0.52, w * 0.16, h * 0.46, (247, 212, 0), edge=(120, 80, 30))
+    d.ellipse([w / 2 - 4, h * 0.46, w / 2 + 4, h * 0.56], fill=(120, 80, 30))
+    return art
+
+
+def build_al(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(229, 0, 20))
     cx, cy = w / 2, h / 2
-    for i in range(12):
-        a = math.radians(-90 + i * 30)
-        px, py = cx + h * 0.28 * math.cos(a), cy + h * 0.28 * math.sin(a)
-        d.polygon(star_points(px, py, 4.2, 1.7), fill=(255, 204, 0))
+    d.polygon([(cx - 2, cy - h * 0.20), (cx - w * 0.20, cy - h * 0.30),
+               (cx - w * 0.13, cy + h * 0.04), (cx - 2, cy + h * 0.02)], fill=(20, 20, 20))
+    d.polygon([(cx + 2, cy - h * 0.20), (cx + w * 0.20, cy - h * 0.30),
+               (cx + w * 0.13, cy + h * 0.04), (cx + 2, cy + h * 0.02)], fill=(20, 20, 20))
+    d.polygon([(cx - w * 0.06, cy - h * 0.18), (cx + w * 0.06, cy - h * 0.18),
+               (cx, cy + h * 0.22)], fill=(20, 20, 20))
+    return art
+
+
+def build_ba(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(0, 31, 120))
+    d.polygon([(w * 0.16, 0), (w * 0.74, 0), (w * 0.16, h)], fill=(247, 207, 0))
+    for i in range(6):
+        f = i / 6.0
+        x = w * 0.16 + (w * 0.58) * f + w * 0.06
+        y = h * f
+        d.polygon(star_points(x, y, 5, 2.2), fill=(250, 250, 250))
+    return art
+
+
+def build_mk(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(214, 0, 0))
+    cx, cy = w / 2, h / 2
+    d.ellipse([cx - h * 0.22, cy - h * 0.22, cx + h * 0.22, cy + h * 0.22], fill=(247, 224, 0))
+    for i in range(8):
+        a = math.radians(i * 45)
+        d.line([(cx + h * 0.18 * math.cos(a), cy + h * 0.18 * math.sin(a)),
+                (cx + h * 0.95 * math.cos(a), cy + h * 0.95 * math.sin(a))],
+               fill=(247, 224, 0), width=max(2, int(h * 0.09)))
+    return art
+
+
+def build_ge(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(250, 250, 250))
+    t = h * 0.16
+    d.rectangle([0, h / 2 - t / 2, w, h / 2 + t / 2], fill=(255, 0, 0))
+    d.rectangle([w / 2 - t / 2, 0, w / 2 + t / 2, h], fill=(255, 0, 0))
+    for fx, fy in ((0.22, 0.24), (0.78, 0.24), (0.22, 0.76), (0.78, 0.76)):
+        cx, cy = w * fx, h * fy
+        s = h * 0.10
+        d.rectangle([cx - s, cy - h * 0.028, cx + s, cy + h * 0.028], fill=(255, 0, 0))
+        d.rectangle([cx - w * 0.03, cy - s, cx + w * 0.03, cy + s], fill=(255, 0, 0))
+    return art
+
+
+def build_am(w, h, art):
+    return hbands([(217, 0, 18), (0, 51, 160), (242, 168, 0)])(w, h, art)
+
+
+def build_az(w, h, art):
+    d = ImageDraw.Draw(art)
+    hbands([(0, 151, 195), (227, 19, 51), (0, 151, 57)])(w, h, art)
+    cx, cy = w * 0.44, h / 2
+    crescent(d, cx, cy, h * 0.13, (250, 250, 250), (227, 19, 51))
+    d.polygon(star_points(cx + h * 0.17, cy, h * 0.075, h * 0.030), fill=(250, 250, 250))
+    return art
+
+
+def build_mt(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(250, 250, 250))
+    d.rectangle([w / 2, 0, w, h], fill=(207, 20, 43))
+    cx, cy, s = w * 0.24, h * 0.26, h * 0.09
+    d.rectangle([cx - s / 2, cy - s, cx + s / 2, cy + s], fill=(150, 150, 150))
+    d.rectangle([cx - s, cy - s / 2, cx + s, cy + s / 2], fill=(150, 150, 150))
+    return art
+
+
+def build_cy(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(250, 250, 250))
+    d.polygon([(w * 0.40, h * 0.30), (w * 0.56, h * 0.34), (w * 0.62, h * 0.52),
+               (w * 0.44, h * 0.58), (w * 0.34, h * 0.44)], fill=(78, 145, 60))
+    d.line([(w * 0.32, h * 0.70), (w * 0.44, h * 0.66)], fill=(78, 145, 60), width=2)
+    d.line([(w * 0.56, h * 0.66), (w * 0.68, h * 0.70)], fill=(78, 145, 60), width=2)
+    return art
+
+
+def build_nz(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(0, 36, 125))
+    for x, y in ((w * 0.66, h * 0.40), (w * 0.84, h * 0.60), (w * 0.72, h * 0.80), (w * 0.58, h * 0.64)):
+        d.polygon(star_points(x, y, 6.4, 2.6), fill=(250, 250, 250))
+        d.polygon(star_points(x, y, 4.4, 1.8), fill=(200, 16, 46))
+    d.rectangle([0, 0, w * 0.42, h * 0.5], fill=(0, 36, 125))
+    d.line([(0, 0), (w * 0.42, h * 0.5)], fill=(250, 250, 250), width=3)
+    d.line([(w * 0.42, 0), (0, h * 0.5)], fill=(250, 250, 250), width=3)
+    return art
+
+
+def build_za(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h * 0.5], fill=(224, 60, 49))
+    d.rectangle([0, h * 0.5, w, h], fill=(0, 35, 149))
+    # 中央 Y 形绿带（白/金描边）
+    d.rectangle([0, h * 0.5 - h * 0.20, w, h * 0.5 + h * 0.20], fill=(250, 250, 250))
+    d.rectangle([0, h * 0.5 - h * 0.155, w, h * 0.5 + h * 0.155], fill=(255, 184, 28))
+    d.rectangle([0, h * 0.5 - h * 0.12, w, h * 0.5 + h * 0.12], fill=(0, 122, 77))
+    # 左侧三角（白/金/绿）
+    d.polygon([(0, 0), (w * 0.40, h / 2), (0, h)], fill=(250, 250, 250))
+    d.polygon([(0, h * 0.06), (w * 0.36, h / 2), (0, h * 0.94)], fill=(255, 184, 28))
+    d.polygon([(0, h * 0.12), (w * 0.32, h / 2), (0, h * 0.88)], fill=(0, 122, 77))
+    return art
+
+
+def build_eg(w, h, art):
+    d = ImageDraw.Draw(art)
+    hbands([(206, 17, 38), (250, 250, 250), (20, 20, 20)])(w, h, art)
+    cx, cy = w / 2, h / 2
+    d.polygon([(cx, cy - h * 0.14), (cx + w * 0.05, cy + h * 0.06),
+               (cx - w * 0.05, cy + h * 0.06)], fill=(196, 150, 30))
+    d.rectangle([cx - w * 0.09, cy + h * 0.02, cx + w * 0.09, cy + h * 0.07], fill=(196, 150, 30))
+    return art
+
+
+def build_il(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(250, 250, 250))
+    blue = (0, 56, 184)
+    d.rectangle([0, h * 0.10, w, h * 0.22], fill=blue)
+    d.rectangle([0, h * 0.78, w, h * 0.90], fill=blue)
+    cx, cy, r = w / 2, h / 2, h * 0.20
+    up = [(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a)))
+          for a in (-90, 30, 150, -90)]
+    dn = [(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a)))
+          for a in (90, 210, 330, 90)]
+    d.line(up, fill=blue, width=2)
+    d.line(dn, fill=blue, width=2)
+    return art
+
+
+def build_cl(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(250, 250, 250))
+    d.rectangle([0, h * 0.5, w, h], fill=(218, 41, 28))
+    d.rectangle([0, 0, w * 0.34, h * 0.5], fill=(0, 57, 166))
+    d.polygon(star_points(w * 0.17, h * 0.25, h * 0.13, h * 0.052), fill=(250, 250, 250))
+    return art
+
+
+def build_co(w, h, art):
+    return ratio_bands([(252, 209, 22), (0, 56, 147), (206, 17, 38)], [2, 1, 1])(w, h, art)
+
+
+def build_pe(w, h, art):
+    return vbands([(217, 16, 35), (250, 250, 250), (217, 16, 35)])(w, h, art)
+
+
+def build_pk(w, h, art):
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(1, 65, 28))
+    d.rectangle([0, 0, w * 0.26, h], fill=(250, 250, 250))
+    crescent(d, w * 0.58, h / 2, h * 0.22, (250, 250, 250), (1, 65, 28))
+    d.polygon(star_points(w * 0.68, h * 0.42, h * 0.09, h * 0.036), fill=(250, 250, 250))
+    return art
+
+
+def build_mo(w, h, art):
+    """中国澳门：绿底 + 白色三瓣莲花 + 桥/水纹 + 五角星。
+
+    132x88 下只能表达「绿底 + 白花 + 金星」这个识别特征，花瓣用三片高椭圆，
+    彼此留空隙（否则糊成一个白团），桥面用一条细横线带过。
+    """
+    d = ImageDraw.Draw(art)
+    d.rectangle([0, 0, w, h], fill=(0, 120, 90))
+    cx, base = w / 2, h * 0.72
+    # (中心偏移, 半宽, 高度)
+    for dx, rx, hh in ((-0.155, 0.058, 0.30), (0.0, 0.070, 0.38), (0.155, 0.058, 0.30)):
+        px = cx + w * dx
+        d.ellipse([px - w * rx, base - h * hh, px + w * rx, base], fill=(250, 250, 250))
+    # 桥面 + 水纹
+    d.line([(cx - w * 0.28, base + h * 0.06), (cx + w * 0.28, base + h * 0.06)],
+           fill=(250, 250, 250), width=3)
+    d.line([(cx - w * 0.18, base + h * 0.15), (cx + w * 0.18, base + h * 0.15)],
+           fill=(250, 250, 250), width=2)
+    # 五角星（一大 + 两侧小）
+    d.polygon(star_points(cx, h * 0.16, h * 0.080, h * 0.032), fill=(255, 222, 0))
+    for dx in (-0.135, 0.135):
+        d.polygon(star_points(cx + w * dx, h * 0.24, h * 0.048, h * 0.019), fill=(255, 222, 0))
     return art
 
 
@@ -809,12 +1221,25 @@ def build_xx(w, h, art):
 
 
 FLAGS = {
-    "cn": build_cn, "tw": build_tw, "hk": build_hk, "jp": build_jp, "kr": build_kr,
-    "us": build_us, "gb": build_gb, "de": build_de, "fr": build_fr, "it": build_it,
-    "es": build_es, "ru": build_ru, "br": build_br, "ca": build_ca, "au": build_au,
-    "mx": build_mx, "ar": build_ar, "sg": build_sg, "th": build_th, "vn": build_vn,
-    "id": build_id, "my": build_my, "ph": build_ph, "in": build_in, "tr": build_tr,
-    "sa": build_sa, "ae": build_ae, "eu": build_eu, "xx": build_xx,
+    "cn": build_cn, "tw": build_tw, "hk": build_hk, "mo": build_mo, "jp": build_jp,
+    "kr": build_kr, "us": build_us, "gb": build_gb, "de": build_de, "fr": build_fr,
+    "it": build_it, "es": build_es, "ru": build_ru, "br": build_br, "ca": build_ca,
+    "au": build_au, "mx": build_mx, "ar": build_ar, "sg": build_sg, "th": build_th,
+    "vn": build_vn, "id": build_id, "my": build_my, "ph": build_ph, "in": build_in,
+    "tr": build_tr, "sa": build_sa, "ae": build_ae,
+    # 欧洲逐国（取代原先的「欧洲其他 eu」）
+    "gr": build_gr, "nl": build_nl, "be": build_be, "lu": build_lu, "ch": build_ch,
+    "at": build_at, "se": build_se, "no": build_no, "dk": build_dk, "fi": build_fi,
+    "is": build_is, "ie": build_ie, "pt": build_pt, "pl": build_pl, "cz": build_cz,
+    "hu": build_hu, "ro": build_ro, "bg": build_bg, "ua": build_ua, "sk": build_sk,
+    "si": build_si, "hr": build_hr, "rs": build_rs, "lt": build_lt, "lv": build_lv,
+    "ee": build_ee, "by": build_by, "md": build_md, "al": build_al, "ba": build_ba,
+    "mk": build_mk, "ge": build_ge, "am": build_am, "az": build_az, "mt": build_mt,
+    "cy": build_cy,
+    # 其他常见国家/地区
+    "nz": build_nz, "za": build_za, "eg": build_eg, "il": build_il, "cl": build_cl,
+    "co": build_co, "pe": build_pe, "pk": build_pk,
+    "xx": build_xx,
 }
 
 
@@ -826,26 +1251,27 @@ def save(img, name):
     return path
 
 
-def generate():
+def generate(flags_only=False):
     ensure_dir(OUT_DIR)
-    print("生成面板件：")
-    save(make_panel_board(), "cn2-x1_guojiapaihang_diban")
-    save(make_select_board(), "cn2-x1_guojiapaihang_xuanze_diban")
-    save(make_flag_selected(), "cn2-x1_guojiapaihang_qizhi_xuanzhong")
-    save(make_title_banner(), "cn2-x1_guojiapaihang_biaoti")
-    save(make_row_plate(kind="normal"), "cn2-x1_guojiapaihang_tiaomu")
-    save(make_row_plate(kind="self"), "cn2-x1_guojiapaihang_tiaomu_ziji")
-    save(make_row_plate(kind="top1"), "cn2-x1_guojiapaihang_tiaomu_1")
-    save(make_row_plate(kind="top2"), "cn2-x1_guojiapaihang_tiaomu_2")
-    save(make_row_plate(kind="top3"), "cn2-x1_guojiapaihang_tiaomu_3")
-    save(make_self_plate(), "cn2-x1_guojiapaihang_wode")
-    save(make_tab_chip(state="on"), "cn2-x1_guojiapaihang_yetan_xuanzhong")
-    save(make_tab_chip(state="normal"), "cn2-x1_guojiapaihang_yetan_weixuanzhong")
-    save(make_entry_icon(), "cn2-x1_guojiapaihang_rukou")
-    save(make_close_button(), "cn2-x1_guojiapaihang_guanbi")
-    for n in (1, 2, 3):
-        save(make_rank_badge(n), "cn2-x1_guojiapaihang_paiming_%02d" % n)
-    save(make_rank_badge(0), "cn2-x1_guojiapaihang_paiming_00")
+    if not flags_only:
+        print("生成面板件：")
+        save(make_panel_board(), "cn2-x1_guojiapaihang_diban")
+        save(make_select_board(), "cn2-x1_guojiapaihang_xuanze_diban")
+        save(make_flag_selected(), "cn2-x1_guojiapaihang_qizhi_xuanzhong")
+        save(make_title_banner(), "cn2-x1_guojiapaihang_biaoti")
+        save(make_row_plate(kind="normal"), "cn2-x1_guojiapaihang_tiaomu")
+        save(make_row_plate(kind="self"), "cn2-x1_guojiapaihang_tiaomu_ziji")
+        save(make_row_plate(kind="top1"), "cn2-x1_guojiapaihang_tiaomu_1")
+        save(make_row_plate(kind="top2"), "cn2-x1_guojiapaihang_tiaomu_2")
+        save(make_row_plate(kind="top3"), "cn2-x1_guojiapaihang_tiaomu_3")
+        save(make_self_plate(), "cn2-x1_guojiapaihang_wode")
+        save(make_tab_chip(state="on"), "cn2-x1_guojiapaihang_yetan_xuanzhong")
+        save(make_tab_chip(state="normal"), "cn2-x1_guojiapaihang_yetan_weixuanzhong")
+        save(make_entry_icon(), "cn2-x1_guojiapaihang_rukou")
+        save(make_close_button(), "cn2-x1_guojiapaihang_guanbi")
+        for n in (1, 2, 3):
+            save(make_rank_badge(n), "cn2-x1_guojiapaihang_paiming_%02d" % n)
+        save(make_rank_badge(0), "cn2-x1_guojiapaihang_paiming_00")
 
     print("生成国家旗帜：")
     for iso, builder in sorted(FLAGS.items()):
@@ -1007,7 +1433,7 @@ def ImageFontLoader(size=34):
 
 
 def main():
-    generate()
+    generate(flags_only="--flags-only" in sys.argv)
     if "--preview" in sys.argv:
         out = os.path.join(ROOT, "_output/country_rank_preview.jpg")
         ensure_dir(os.path.dirname(out))

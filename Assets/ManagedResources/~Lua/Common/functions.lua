@@ -2458,3 +2458,21 @@ function GetChannerConfig()
     -- )
     return channelConfig
 end
+-- [UIFlow] 诊断：把当前 UI 栈（含固定层）里已打开的面板 id 串起来，便于核对弹框先后顺序
+function GetUIStackStr()
+    local ids = {}
+    local function collect(list)
+        if not list then
+            return
+        end
+        for i = 1, #list do
+            local item = list[i]
+            if item and item.isOpened and item.uiConfig and item.uiConfig.id then
+                ids[#ids + 1] = tostring(item.uiConfig.assetName or item.uiConfig.id)
+            end
+        end
+    end
+    collect(UIManager and UIManager.stackList)
+    collect(UIManager and UIManager.fixedList)
+    return table.concat(ids, ">")
+end

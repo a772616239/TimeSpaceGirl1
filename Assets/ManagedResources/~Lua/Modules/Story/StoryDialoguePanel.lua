@@ -117,6 +117,9 @@ end
 --界面打开时调用（用于子类重写）
 function StoryDialoguePanel:OnOpen(...)
     local data = {...}
+    Log(string.format("[UIFlow] StoryDialoguePanel OPEN eventId=%s firstOpen=%s hasCB=%s stack=%s",
+        tostring(data[1]), tostring(data[2]), tostring(data[3] ~= nil),
+        tostring(GetUIStackStr and GetUIStackStr() or "?")))
     if data then
         local eventId = data[1]
 
@@ -640,6 +643,7 @@ end
 
 --界面关闭时调用（用于子类重写）
 function StoryDialoguePanel:OnClose()
+    Log(string.format("[UIFlow] StoryDialoguePanel CLOSE hasCB=%s stack=%s", tostring(static_callBack ~= nil), tostring(GetUIStackStr and GetUIStackStr() or "?")))
     -- 界面关闭，配音音效关闭
     SoundManager.StopSoundByChannel(10)
 end

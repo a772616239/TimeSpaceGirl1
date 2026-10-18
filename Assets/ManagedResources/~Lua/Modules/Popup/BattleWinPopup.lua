@@ -62,6 +62,7 @@ function BattleWinPopup:WaitStoryDialogue()
         return
     end
     storyWaited = 0
+    Log("[UIFlow] 结算挂起：等待剧情对话框关闭后再弹英雄/奖励框 stack=" .. tostring(GetUIStackStr and GetUIStackStr() or "?"))
     -- unscaled 计时：战斗暂停时 timeScale 可能为 0，用 deltaTime 会永远走不动
     storyWaitTimer = Timer.New(function()
         storyWaited = storyWaited + STORY_WAIT_STEP
@@ -71,6 +72,7 @@ function BattleWinPopup:WaitStoryDialogue()
         if storyWaited >= STORY_WAIT_LIMIT then
             LogRed("BattleWinPopup: 等待剧情对话超时，强制继续结算")
         end
+        Log(string.format("[UIFlow] 等待结束(%.1fs)，继续结算 stack=%s", storyWaited, tostring(GetUIStackStr and GetUIStackStr() or "?")))
         self:StopWaitStoryDialogue()
         self:NextStep()
     end, STORY_WAIT_STEP, -1, true)
@@ -130,7 +132,18 @@ end
 
 -- 
 function BattleWinPopup:NextStep()
-    if not hadClick and IsStoryDialogueShowing() then
+    -- [UIFlow] 诊断：结算这一刻的弹框顺序（stack 里 id 从左到右＝从栈底到栈顶）
+    local storyPlaying = IsStoryDialogueShowing()
+    Log(
+        string.format(
+            "[UIFlow] BattleWinPopup.NextStep fightType=%s hadClick=%s storyPlaying=%s stack=%s",
+            tostring(m_fightType),
+            tostring(hadClick),
+            tostring(storyPlaying),
+            GetUIStackStr and GetUIStackStr() or "?"
+        )
+    )
+    if not hadClick and storyPlaying then
         -- 先弹剧情对话框：战斗内剧情还没播完，挂起结算等它关闭
         self:WaitStoryDialogue()
         return

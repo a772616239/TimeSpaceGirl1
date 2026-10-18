@@ -35,6 +35,7 @@ function this.EventTrigger(eventId, callBack)
         local showType = chapterDataConfig[eventId].ShowType
         local showValues = GetLanguageStrById(chapterDataConfig[eventId].ShowValues)
         local options = chapterDataConfig[eventId].Option
+        Log(string.format("[UIFlow] StoryTrigger id=%s showType=%s stack=%s", tostring(eventId), tostring(showType), tostring(GetUIStackStr and GetUIStackStr() or "?")))
 
         if showType and showValues and options then
             -- 如果是第一次打开，则打开开幕界面
@@ -84,6 +85,7 @@ function this.DialogueTrigger(eventId, callback)
 
         local showType = chapterDataConfig[eventId].ShowType
     
+        Log(string.format("[UIFlow] DialogueTrigger id=%s showType=%s stack=%s", tostring(eventId), tostring(showType), tostring(GetUIStackStr and GetUIStackStr() or "?")))
         --- 对话弹窗
         if showType == 13 then 
             if callback then 
@@ -341,6 +343,13 @@ end
 -- 播放特效方法
 local preLayer = 10
 function this.PlayEffect(setData, effectRoot, dialoguePanel)
+    -- 剧情配置缺失（dialogueSetData[setId] 为 nil）时 setData 会是 nil，原来直接崩在 DOTween 回调里
+    -- （日志：DOTween :: An error inside a tween callback ... StoryManager:344 attempt to index local 'setData'），
+    -- 崩掉会把入场动画回调链后面的 inagefun 一起跳过，导致剧情表现不完整。这里兜底直接放过。
+    if not setData then
+        Log("[UIFlow] PlayEffect 跳过：剧情表现配置缺失")
+        return
+    end
     local effectData = string.split(setData.isPlayEffect, "#")
     local isPlay = tonumber(effectData[1])
     if isPlay == 1 then

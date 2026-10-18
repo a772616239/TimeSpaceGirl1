@@ -42,6 +42,7 @@ end
 
 
 function this:OnOpen(heroTId, damageValue, allDamage, func, _func2, isShowStatistic)
+    Log(string.format("[UIFlow] BattleBestPopup OPEN heroTId=%s stack=%s", tostring(heroTId), tostring(GetUIStackStr and GetUIStackStr() or "?")))
     if UIManager.IsOpen(UIName.PublicGetHeroPanel) then
         UIManager.ClosePanel(UIName.PublicGetHeroPanel)
     end
@@ -80,6 +81,7 @@ end
 
 --界面关闭时调用（用于子类重写）
 function this:OnClose()
+    Log(string.format("[UIFlow] BattleBestPopup CLOSE stack=%s", tostring(GetUIStackStr and GetUIStackStr() or "?")))
     if this.liveNode then
         UnLoadHerolive(heroTData, this.liveNode)
         this.liveNode = nil

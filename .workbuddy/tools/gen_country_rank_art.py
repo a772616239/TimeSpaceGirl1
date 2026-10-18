@@ -791,28 +791,20 @@ def build_eu(w, h, art):
 
 
 def build_xx(w, h, art):
-    """未选择国家：中立地标图标（地球经纬），不用问号。"""
+    """未选择国家：灰底问号旗（占位，避免名字旁空一块）。"""
     d = ImageDraw.Draw(art)
-    d.rectangle([0, 0, w, h], fill=(58, 62, 78))
-    # 淡淡的对角暗纹，与整体 UI 一致
-    for i in range(-h, w + h, 12):
-        d.line([(i, h), (i + h, 0)], fill=(48, 52, 66), width=3)
+    d.rectangle([0, 0, w, h], fill=(62, 64, 76))
+    # 斜向暗纹，与整体 UI 一致
+    for i in range(-h, w + h, 14):
+        d.line([(i, h), (i + h, 0)], fill=(52, 54, 66), width=3)
     cx, cy = w / 2, h / 2
-    r = h * 0.30
-    # 地球：青色细线
-    line = (150, 196, 224)
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=line, width=3)
-    # 经线
-    for k in (0.55, 0.92):
-        d.ellipse([cx - r * k, cy - r, cx + r * k, cy + r], outline=line, width=2)
-    # 纬线
-    for dy in (-0.55, 0.0, 0.55):
-        rr = r * math.sqrt(max(0.0, 1 - dy * dy))
-        d.line([(cx - rr, cy + dy * r), (cx + rr, cy + dy * r)], fill=line, width=2)
-    # 中间加一个小定位针，强调"未选择"
-    px, py = cx + r * 0.45, cy + r * 0.30
-    d.line([(px, py), (px, py - r * 0.42)], fill=(255, 204, 0), width=3)
-    d.ellipse([px - 4, py - r * 0.42 - 8, px + 4, py - r * 0.42], fill=(255, 204, 0))
+    q = (196, 198, 210)
+    lw = 5
+    # 问号：上半弧 + 竖笔 + 圆点
+    d.arc([cx - h * 0.17, cy - h * 0.34, cx + h * 0.17, cy + h * 0.04],
+          150, 30, fill=q, width=lw)
+    d.line([(cx, cy + h * 0.04), (cx, cy + h * 0.20)], fill=q, width=lw)
+    d.ellipse([cx - 4, cy + h * 0.28, cx + 4, cy + h * 0.36], fill=q)
     return art
 
 

@@ -305,14 +305,12 @@ function this.RefreshCountryFlag(data)
     if (uid == nil or uid == 0) and data ~= nil then
         uid = data.uid
     end
-    -- 统一走 CountryFlagUtil：服务端有 country 就显示，没有就隐藏（不再按 uid 编造）
+    -- 统一走 CountryFlagUtil：服务端有 country 就显示；
+    -- 没有则显示问号占位旗（用户要求名字旁不留空）
     local code = CountryFlagUtil.ResolveCountry(uid, data and data.country)
-    if code == nil then
-        this.memCountryFlag:SetActive(false)
-        return
-    end
     this.memCountryFlag:SetActive(true)
-    this.memCountryFlagImg.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(code))
+    this.memCountryFlagImg.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(
+            code or CountryConfig.FALLBACK_CODE))
 end
 
 -- 刷新基础信息显示

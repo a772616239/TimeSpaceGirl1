@@ -9,9 +9,10 @@
  *   1. data.country —— 服务端记录，玩家自己选的
  *   2. 自己 && 服务端还没下发 → 用本地记录（刚选完、响应还没回来的短暂窗口）
  *
- * ⚠️ 刻意**没有**「按 uid 随机映射」兜底：
- *    那样会让每个玩家看起来都有国旗，但全是假的。需求是「玩家自己选 → 服务器记录
- *    → 才显示」，所以取不到就**隐藏旗帜**，不显示问号、也不编造。
+ * 显示规则（用户 2026-10-18 确认）：
+ *    - 有国家（服务端记录 / 自己本地已选）→ 显示对应国旗
+ *    - 没有国家数据 → 显示 cn2-guoqi_xx「问号旗」占位，避免名字旁空白
+ *    - ⚠️ 刻意**没有**「按 uid 随机映射」：那会让人人都有真旗，但全是编的
 --]]
 
 CountryFlagUtil = {}
@@ -24,7 +25,7 @@ if not CountryConfig then
     return
 end
 
---- 解析某个玩家应显示的国家码；取不到返回 nil（= 不显示旗帜）
+--- 解析某个玩家应显示的国家码；取不到返回 nil（= 由调用方决定占位/隐藏）
 -- @param uid     玩家 uid（可为 nil）
 -- @param country 服务端下发的国家码（可为 nil / ""）
 function CountryFlagUtil.ResolveCountry(uid, country)
@@ -44,12 +45,12 @@ function CountryFlagUtil.ResolveCountry(uid, country)
         end
     end
 
-    -- 3. 其他玩家且服务端没记录 → 不显示，绝不编造
+    -- 3. 其他玩家且服务端没记录 → nil（调用方显示问号占位旗）
     return nil
 end
 
 --- 给一个 Image 设置国旗 sprite
--- 取不到国家码时**把节点隐藏**（不显示问号占位）
+-- 取不到国家码时显示 cn2-guoqi_xx 问号旗占位（名字旁不空一块）
 -- @param go   countryFlag 节点的 GameObject
 -- @param uid  玩家 uid
 -- @param country 服务端国家码（可选）
@@ -59,8 +60,12 @@ function CountryFlagUtil.Apply(go, uid, country)
     end
     local code = CountryFlagUtil.ResolveCountry(uid, country)
     if code == nil then
-        -- 没有真实数据：直接隐藏，避免"人人一面假旗 / 整屏问号"
-        go:SetActive(false)
+        -- 没有真实数据：显示问号占位旗（用户 2026-10-18 要求，不要留空）
+        go:SetActive(true)
+        local img = go:GetComponent("Image")
+        if img ~= nil then
+            img.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(CountryConfig.FALLBACK_CODE))
+        end
         return
     end
     local img = go:GetComponent("Image")

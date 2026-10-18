@@ -193,9 +193,29 @@ do
     check("自己没有服务端值→用本地选择", CountryFlagUtil.ResolveCountry(777, nil) == "jp",
             CountryFlagUtil.ResolveCountry(777, nil))
 
-    -- 关键：其他玩家没有服务端数据时必须返回 nil（隐藏旗帜），不能编造
-    check("其他玩家无数据 → nil(隐藏)", CountryFlagUtil.ResolveCountry(12345, nil) == nil,
+    -- 其他玩家没有服务端数据时解析层返回 nil（调用方显示问号占位旗）
+    check("其他玩家无数据 → nil(占位语义)", CountryFlagUtil.ResolveCountry(12345, nil) == nil,
             tostring(CountryFlagUtil.ResolveCountry(12345, nil)))
+    -- Apply 层：nil → 显示问号占位旗（cn2-guoqi_xx），名字旁不留空
+    local shown = { active = nil, sprite = nil }
+    local img = { sprite = nil }   -- 模拟 Image 组件，sprite 可直接赋值
+    local fakeGo = setmetatable({}, {
+        __index = {
+            GetComponent = function(_, t)
+                if t == "Image" then return img end
+                return nil
+            end,
+            SetActive = function(_, on) shown.active = on end,
+        },
+    })
+    -- Util.LoadSprite 已被桩为返回 "SPRITE:"..name
+    CountryFlagUtil.Apply(fakeGo, 12345, nil)
+    check("无数据时显示占位旗(节点激活)", shown.active == true, tostring(shown.active))
+    check("占位旗是问号(cn2-guoqi_xx)",
+            img.sprite == "cn2-guoqi_xx", tostring(img.sprite))
+    -- 有数据时显示真实国旗
+    CountryFlagUtil.Apply(fakeGo, 12345, "us")
+    check("有数据时显示真旗", img.sprite == "cn2-guoqi_us", tostring(img.sprite))
     check("其他玩家有数据 → 用服务端值", CountryFlagUtil.ResolveCountry(12345, "us") == "us",
             tostring(CountryFlagUtil.ResolveCountry(12345, "us")))
     check("uid 为 nil 也不编造", CountryFlagUtil.ResolveCountry(nil, nil) == nil,
@@ -299,9 +319,11 @@ do
     check("旗帜 sprite 是日本旗", CountryConfig.GetFlagSprite(code) == "cn2-guoqi_jp",
             CountryConfig.GetFlagSprite(code))
 
-    -- 别人没有服务端数据 → nil，由 UI 隐藏，不出现问号
+    -- 别人没有服务端数据 → nil，UI 层显示问号占位旗（名字旁不留空）
     local otherCode = FlagUtil2.ResolveCountry(10009999, nil)
-    check("别人无数据 → nil(隐藏，不显示问号)", otherCode == nil, tostring(otherCode))
+    check("别人无数据 → nil(占位语义)", otherCode == nil, tostring(otherCode))
+    check("占位旗为问号版本", CountryConfig.GetFlagSprite(CountryConfig.FALLBACK_CODE)
+            == "cn2-guoqi_xx", CountryConfig.GetFlagSprite(CountryConfig.FALLBACK_CODE))
 end
 
 print(string.format("\n==== 通过 %d / 失败 %d ====", pass, fail))

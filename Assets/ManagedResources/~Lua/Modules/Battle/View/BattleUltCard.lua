@@ -15,7 +15,10 @@ local this = BattleUltCard
 
 -- 触发范围：true  = 只有「带特写」的大招（CombatControl.Closeup 有值的技能，目前是主角大招）；
 --           false = 所有英雄的技能（CombatControl.SkillType == 2，普攻 SkillType == 1 不算）。
-local REQUIRE_CLOSEUP = true
+local REQUIRE_CLOSEUP = false
+
+-- 只给我方英雄弹卡（敌方也弹会让屏幕两侧同时出现卡片，噪音大）
+local ONLY_MY_CAMP   = true
 
 local CARD_SCALE     = 0.28  -- 相对整屏版 HelpHeroShow 的缩放
 local CARD_MARGIN_X  = 180   -- 卡片中心距左/右边界的距离
@@ -36,16 +39,19 @@ local function IsAlive(go)
     return go ~= nil and not IsNull(go)
 end
 
--- 该技能是否算「大招」
-function this.IsUltSkill(combat)
+-- 该技能是否算「大招」；camp 传 nil 时不做阵营过滤
+function this.IsUltSkill(combat, camp)
     if not combat then
         return false
     end
-    if REQUIRE_CLOSEUP then
-        local closeup = combat.Closeup
-        return closeup ~= nil and closeup ~= 0 and closeup ~= "" and closeup ~= "0"
+    if ONLY_MY_CAMP and camp ~= nil and camp ~= 0 then
+        return false
     end
-    return combat.SkillType == 2
+    if REQUIRE_CLOSEUP then
+        local closeup = tonumber(combat.Closeup)
+        return closeup ~= nil and closeup ~= 0
+    end
+    return tonumber(combat.SkillType) == 2
 end
 
 local function GetTemplate(view)
@@ -138,6 +144,7 @@ function this.Show(view, heroConfig, camp, dedupeKey)
 
     local go = this.EnsureCard(view)
     if not go then
+        LogRed("[UIFlow] 大招小卡创建失败：找不到 HelpHeroShow 模板")
         return
     end
 

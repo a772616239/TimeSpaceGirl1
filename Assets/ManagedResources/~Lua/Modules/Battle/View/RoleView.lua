@@ -1117,19 +1117,37 @@ end
 
 -- 大招入场小卡：缩小版 HelpHeroShow 摆到对应侧边角（我方左下 / 敌方右下），
 -- 与大招攻击同时进行，不额外暂停战斗
+local _ultDbgCount = 0
 function RoleView:TryShowUltCard(combat)
-    if not BattleUltCard or not BattleUltCard.IsUltSkill(combat) then
+    if not BattleUltCard then
         return
     end
     local roleId = self.role and self.role.roleData and self.role.roleData.roleId
+    local camp = self.camp or (self.role and self.role.camp) or 0
+    local dbg = _ultDbgCount < 40
+    if dbg then
+        _ultDbgCount = _ultDbgCount + 1
+    end
+
+    if not BattleUltCard.IsUltSkill(combat, camp) then
+        if dbg then
+            Log(string.format("[UIFlow] 小卡跳过(非大招) camp=%s roleId=%s combatId=%s SkillType=%s Closeup=%s",
+                tostring(camp), tostring(roleId),
+                tostring(combat and combat.Id), tostring(combat and combat.SkillType),
+                tostring(combat and combat.Closeup)))
+        end
+        return
+    end
     if not roleId then
+        if dbg then Log("[UIFlow] 小卡跳过(无 roleId) camp=" .. tostring(camp)) end
         return
     end
     local heroConfig = HeroConfig[roleId]
     if not heroConfig then
+        if dbg then Log("[UIFlow] 小卡跳过(无 HeroConfig) roleId=" .. tostring(roleId)) end
         return
     end
-    BattleUltCard.Show(self.RootPanel, heroConfig, self.role.camp,
+    BattleUltCard.Show(self.RootPanel, heroConfig, camp,
         tostring(roleId) .. "_" .. tostring(combat.Id or combat.id))
 end
 

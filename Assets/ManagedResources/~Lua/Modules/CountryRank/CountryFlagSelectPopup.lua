@@ -155,3 +155,5 @@ function CountryFlagSelectPopup:RefreshSelected()
     this.curFlag.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(this._selected))
     this.curName.text = CountryConfig.GetName(this._selected)
 end
+
+return CountryFlagSelectPopup

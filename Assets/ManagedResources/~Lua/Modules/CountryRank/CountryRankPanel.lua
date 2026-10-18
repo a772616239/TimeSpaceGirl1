@@ -258,3 +258,5 @@ function CountryRankPanel.FormatScore(score)
     out = out:gsub("^,", "")
     return out
 end
+
+return CountryRankPanel

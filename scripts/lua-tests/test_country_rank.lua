@@ -211,5 +211,33 @@ do
     check("不同 uid 能分散到多个国家", cnt >= 5, cnt)
 end
 
+print("\n[9] 模块 return 约定（Game.InitManagers 靠 require 返回值）")
+do
+    -- 项目里所有 Modules/*.lua 都以 return <表> 结尾；漏掉会让 require 返回 true，
+    -- 进而 InitManagers 里 manager.Initialize() 报 "attempt to index local 'manager'"
+    local expected = {
+        ["Modules/CountryRank/CountryConfig"] = "CountryConfig",
+        ["Modules/CountryRank/CountryRankManager"] = "CountryRankManager",
+        ["Modules/CountryRank/CountryFlagUtil"] = "CountryFlagUtil",
+        ["Modules/CountryRank/UIConfigExtension"] = "UIConfigExtension",
+    }
+    for mod, name in pairs(expected) do
+        local ok, ret = pcall(require, mod)
+        check(mod .. " 返回表", ok and type(ret) == "table", type(ret))
+    end
+    -- 面板类模块需要 BasePanel，这里只做静态检查：文件末尾必须有 return
+    for _, f in ipairs({"CountryRankPanel", "CountryFlagSelectPopup"}) do
+        local path = LUA_SRC .. "/Modules/CountryRank/" .. f .. ".lua"
+        local fh = io.open(path, "r")
+        local tail = fh and fh:read("*a") or ""
+        if fh then fh:close() end
+        check(f .. ".lua 末尾有 return", tail:match("return%s+" .. f .. "%s*$") ~= nil)
+    end
+    -- 真正模拟 InitManagers 的那一行
+    local mgr = require("Modules/CountryRank/CountryRankManager")
+    local ok2, err2 = pcall(function() mgr.Initialize() end)
+    check("manager.Initialize() 可调用（复现原崩溃点）", ok2, err2)
+end
+
 print(string.format("\n==== 通过 %d / 失败 %d ====", pass, fail))
 os.exit(fail == 0 and 0 or 1)

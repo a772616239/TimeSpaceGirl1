@@ -72,3 +72,5 @@ function CountryFlagUtil.ApplyTo(parent, uid, country)
     local go = Util.GetGameObject(parent, "countryFlag")
     CountryFlagUtil.Apply(go, uid, country)
 end
+
+return CountryFlagUtil

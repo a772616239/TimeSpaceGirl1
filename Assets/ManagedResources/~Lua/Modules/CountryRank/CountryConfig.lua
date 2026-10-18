@@ -106,3 +106,5 @@ function CountryConfig.GetName(code)
     end
     return info.zh or info.en or c
 end
+
+return CountryConfig

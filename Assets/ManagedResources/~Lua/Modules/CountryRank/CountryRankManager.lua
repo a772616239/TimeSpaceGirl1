@@ -226,3 +226,5 @@ function CountryRankManager.GetRowMetrics()
 end
 
 CountryRankManager.Initialize()
+
+return CountryRankManager

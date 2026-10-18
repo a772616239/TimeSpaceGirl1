@@ -24,7 +24,7 @@ local REQUIRE_CLOSEUP = false
 local ONLY_MY_CAMP    = false
 
 local CARD_SCALE      = 0.22  -- 相对整屏版 HelpHeroShow 的缩放（0.28 的 0.8 倍 = 0.224）
-local CARD_MARGIN_X   = 170   -- 卡片中心距左/右边界的距离（随缩放同步放大，保持贴角）
+local CARD_MARGIN_X   = 125   -- 卡片中心距左/右边界的距离（0.22 缩放后卡宽 237.6，半宽 118.8，故边缘留 ~6px）
 local CARD_Y         = -1266 -- 卡片 Y（顶部锚点向下偏移），敌我一致
 local CARD_SHOW_TIME  = 2.0   -- 停留时长（对齐特写 CloseupDuration = 2000ms）
 local POP_IN_TIME     = 0.18

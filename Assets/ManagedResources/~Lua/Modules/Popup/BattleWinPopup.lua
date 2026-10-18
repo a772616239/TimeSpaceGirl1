@@ -11,6 +11,20 @@ local orginLayer
 local m_callBack
 local hadClick = false
 
+-- 战斗内剧情对话（回合开始剧情，BattleView.RoundBeginDialogue 弹出）优先于结算弹框：
+-- 剧情对话框还在播时不往下走结算，避免「本场最佳英雄」盖在剧情对话框上面（顺序反掉）
+local STORY_WAIT_STEP = 0.2   -- 轮询间隔
+local STORY_WAIT_LIMIT = 60   -- 兜底等待上限（秒），防止剧情异常没关闭把结算卡死
+local storyWaitTimer = nil
+local storyWaited = 0
+
+local function IsStoryDialogueShowing()
+    if not BattleManager.IsStoryDialoguePlaying then
+        return false
+    end
+    return BattleManager.IsStoryDialoguePlaying()
+end
+
 --初始化组件（用于子类重写）
 function BattleWinPopup:InitComponent()
     orginLayer = 0
@@ -33,6 +47,36 @@ function BattleWinPopup:OnSortingOrderChange()
     orginLayer = self.sortingOrder
 end
 
+-- 停掉等剧情对话框的轮询
+function BattleWinPopup:StopWaitStoryDialogue()
+    storyWaited = 0
+    if storyWaitTimer then
+        storyWaitTimer:Stop()
+        storyWaitTimer = nil
+    end
+end
+
+-- 剧情对话框没播完前先挂起结算，播完（或超时兜底）后再继续
+function BattleWinPopup:WaitStoryDialogue()
+    if storyWaitTimer then
+        return
+    end
+    storyWaited = 0
+    -- unscaled 计时：战斗暂停时 timeScale 可能为 0，用 deltaTime 会永远走不动
+    storyWaitTimer = Timer.New(function()
+        storyWaited = storyWaited + STORY_WAIT_STEP
+        if IsStoryDialogueShowing() and storyWaited < STORY_WAIT_LIMIT then
+            return
+        end
+        if storyWaited >= STORY_WAIT_LIMIT then
+            LogRed("BattleWinPopup: 等待剧情对话超时，强制继续结算")
+        end
+        self:StopWaitStoryDialogue()
+        self:NextStep()
+    end, STORY_WAIT_STEP, -1, true)
+    storyWaitTimer:Start()
+end
+
 --界面打开时调用（用于子类重写）
 function BattleWinPopup:OnOpen(battlePanel, isBack, fightType, result, showRecord, backPanel, func)
     if UIManager.IsOpen(UIName.PublicGetHeroPanel) then
@@ -40,6 +84,7 @@ function BattleWinPopup:OnOpen(battlePanel, isBack, fightType, result, showRecor
     end
     
     hadClick = false
+    self:StopWaitStoryDialogue()
     if battlePanel then
         m_battlePanel = battlePanel
     end
@@ -76,6 +121,7 @@ end
 
 --界面关闭时调用（用于子类重写）
 function BattleWinPopup:OnClose()
+    self:StopWaitStoryDialogue()
 end
 
 --界面销毁时调用（用于子类重写）
@@ -84,6 +130,11 @@ end
 
 -- 
 function BattleWinPopup:NextStep()
+    if not hadClick and IsStoryDialogueShowing() then
+        -- 先弹剧情对话框：战斗内剧情还没播完，挂起结算等它关闭
+        self:WaitStoryDialogue()
+        return
+    end
     if not hadClick then -- 避免重复结算
         hadClick = true
         if m_isBack then

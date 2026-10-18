@@ -600,7 +600,10 @@ function this.RoundBeginDialogue(dialogueId)
     end
 
     BattleManager.PauseBattle()
+    -- 标记战斗中剧情开始：结算弹框会等这段剧情播完再弹（先剧情对话框、后英雄显示框）
+    BattleManager.BeginStoryDialogue()
     StoryManager.EventTrigger(dialogueId, function()
+        BattleManager.EndStoryDialogue()
         BattleManager.ResumeBattle()
     end)
 end

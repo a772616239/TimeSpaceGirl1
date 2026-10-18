@@ -12,6 +12,43 @@ local FormationConfig = ConfigManager.GetConfig(ConfigName.FormationConfig)
 local MotherShipPlaneConfig =ConfigManager.GetConfig(ConfigName.MotherShipPlaneConfig)
 this.IsEndBattle=false
 
+--==== 战斗内剧情对话（回合开始剧情）状态 =====================================
+-- 结算弹框（BattleWinPopup → 本场最佳英雄 BattleBestPopup）要等战斗中剧情对话框播完再弹，
+-- 保证顺序是「先剧情对话框、后英雄显示框」，不会被结算弹框抢在前面。
+this.storyDialogueBeginTime = nil  -- 剧情触发时刻（Time.realtimeSinceStartup），nil 表示当前没有待播剧情
+this.storyDialogueShown = false    -- 剧情面板是否已经真正弹出来过
+
+-- 战斗内剧情对话框开始播放（BattleView.RoundBeginDialogue 调用）
+function this.BeginStoryDialogue()
+    this.storyDialogueBeginTime = Time.realtimeSinceStartup
+    this.storyDialogueShown = false
+end
+
+-- 战斗内剧情对话框结束（剧情跳转结束/面板关闭时调用）
+function this.EndStoryDialogue()
+    this.storyDialogueBeginTime = nil
+    this.storyDialogueShown = false
+end
+
+-- 战斗内剧情对话框是否还没播完（true 时结算要继续等待）
+function this.IsStoryDialoguePlaying()
+    if not this.storyDialogueBeginTime then
+        return false
+    end
+    local storyPanelId = UIName and UIName.StoryDialoguePanel
+    if storyPanelId and UIManager.IsOpen(storyPanelId) then
+        this.storyDialogueShown = true
+        return true
+    end
+    -- 面板是异步创建的：刚触发还没弹出来时给一小段宽限，避免英雄框抢先弹出
+    if not this.storyDialogueShown and Time.realtimeSinceStartup - this.storyDialogueBeginTime < 2 then
+        return true
+    end
+    -- 面板已经播完关闭（或压根没弹出来）：清掉状态，别再拦结算
+    this.EndStoryDialogue()
+    return false
+end
+
 local function pairsByKeys(t)
     local a = {}
     for n in pairs(t) do

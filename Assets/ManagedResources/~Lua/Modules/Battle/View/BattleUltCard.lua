@@ -23,10 +23,12 @@ local REQUIRE_CLOSEUP = false
 -- 敌我都弹，靠角落位置区分：我方左上角、敌方右上角
 local ONLY_MY_CAMP    = false
 
-local CARD_SCALE      = 0.22  -- 相对整屏版 HelpHeroShow 的缩放（0.28 的 0.8 倍 = 0.224）
-local CARD_MARGIN_X   = 120   -- 卡片中心距左/右边界的距离（0.22 缩放后卡宽 237.6，半宽 118.8，故边缘留 ~1px）
-local CARD_Y         = -1266 -- 卡片 Y（顶部锚点向下偏移），敌我一致
-local CARD_SHOW_TIME  = 2.0   -- 停留时长（对齐特写 CloseupDuration = 2000ms）
+local CARD_SCALE       = 0.22   -- 相对整屏版 HelpHeroShow 的缩放（0.28 的 0.8 倍 = 0.224）
+local CARD_MARGIN_X    = 120    -- 卡片中心距左/右边缘的距离（相对技能栏锚点，随屏幕尺寸自适应）
+local CARD_GAP_Y       = 8      -- 卡片顶边与技能栏底边的间隙（参考分辨率像素，CanvasScaler 统一缩放）
+local CARD_CONTENT_TOP = 642.5  -- 卡片内容顶边相对卡片中心（缩放前，Image1 顶边 = pos.y 7 + 高 1271/2）
+local CARD_FALLBACK_Y  = -520   -- 兜底：找不到技能栏时卡片中心的 Y（相对顶部锚点）
+local CARD_SHOW_TIME   = 2.0    -- 停留时长（对齐特写 CloseupDuration = 2000ms）
 local POP_IN_TIME     = 0.18
 local POP_OUT_TIME    = 0.12
 
@@ -79,6 +81,53 @@ local function GetTemplate(view)
         end
     end
     return nil
+end
+
+-- 技能栏节点：我方 myRect_Skill（贴左），敌方 enemyRect_Skill（贴右）
+local function GetSkillBar(view, camp)
+    if not view or not IsAlive(view.transform) then
+        return nil
+    end
+    local nodeName = (tonumber(camp) or 0) == 0 and "myRect_Skill" or "enemyRect_Skill"
+    local ui = Util.GetGameObject(view.transform, nodeName)
+    if not IsAlive(ui) then
+        ui = Util.GetGameObject(view.transform, "myRect_Skill")
+    end
+    if not IsAlive(ui) then
+        return nil
+    end
+    return ui
+end
+
+-- 卡片定位：跟随技能栏，不用屏幕绝对坐标，否则换分辨率/宽高比就会乱
+--   锚点直接复制技能栏的（我方 left、敌方 right），X 只给「距边距离」；
+--   Y = 技能栏底边 - 间隙 - 卡片内容半高，全部在技能栏的锚点空间里算
+local function ApplyLayout(view, s, rt)
+    local bar = GetSkillBar(view, s.camp)
+    local barRt = bar and bar:GetComponent("RectTransform")
+    rt.pivot = Vector2.New(0.5, 0.5)
+    if not barRt then
+        -- 兜底：拿不到技能栏才退回屏幕顶角绝对定位
+        local ax = ((tonumber(s.camp) or 0) == 0) and 0 or 1
+        rt.anchorMin = Vector2.New(ax, 1)
+        rt.anchorMax = Vector2.New(ax, 1)
+        local dx = ((tonumber(s.camp) or 0) == 0) and CARD_MARGIN_X or -CARD_MARGIN_X
+        rt.anchoredPosition = Vector2.New(dx, CARD_FALLBACK_Y)
+        LogRed("[UIFlow] 大招小卡定位兜底：找不到技能栏节点")
+        return { x = dx, y = CARD_FALLBACK_Y }
+    end
+
+    rt.anchorMin = barRt.anchorMin
+    rt.anchorMax = barRt.anchorMax
+    -- 技能栏底边（相对其锚点参考点）；pivot.y 通常是 0.5，用配置值算，不写死
+    local barBottom = barRt.anchoredPosition.y - barRt.pivot.y * barRt.sizeDelta.y
+    local centerY = barBottom - CARD_GAP_Y - CARD_CONTENT_TOP * CARD_SCALE
+    local dx = CARD_MARGIN_X
+    if (tonumber(s.camp) or 0) ~= 0 then
+        dx = -dx
+    end
+    rt.anchoredPosition = Vector2.New(dx, centerY)
+    return { x = dx, y = centerY }
 end
 
 local function DestroySlot(s)
@@ -146,8 +195,8 @@ local function EnsureCard(view, s)
 
     go:SetActive(false)
     -- 层级压到技能栏（myRect_Skill）之下，避免卡片盖住技能释放 UI
-    local skillUI = Util.GetGameObject(view.transform, "myRect_Skill")
-    if skillUI then
+    local skillUI = GetSkillBar(view, 0)
+    if IsAlive(skillUI) then
         go.transform:SetSiblingIndex(skillUI.transform:GetSiblingIndex())
     else
         LogRed("[UIFlow] 大招小卡排序失败：找不到 myRect_Skill")
@@ -178,19 +227,11 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         return
     end
 
-    -- 我方 -> 左上角；敌方 -> 右上角（顶部锚点，y 用负值向下偏移）
+    -- 定位：紧贴技能栏下沿（相对技能栏锚点，换分辨率不跑偏）
     local rt = go:GetComponent("RectTransform")
+    local pos = nil
     if rt then
-        rt.pivot = Vector2.New(0.5, 0.5)
-        if camp == 0 then
-            rt.anchorMin = Vector2.New(0, 1)
-            rt.anchorMax = Vector2.New(0, 1)
-            rt.anchoredPosition = Vector2.New(CARD_MARGIN_X, CARD_Y)
-        else
-            rt.anchorMin = Vector2.New(1, 1)
-            rt.anchorMax = Vector2.New(1, 1)
-            rt.anchoredPosition = Vector2.New(-CARD_MARGIN_X, CARD_Y)
-        end
+        pos = ApplyLayout(view, s, rt)
         rt.localScale = Vector3.New(CARD_SCALE * 0.7, CARD_SCALE * 0.7, 1)
     end
     go:SetActive(true)
@@ -229,8 +270,11 @@ function this.Show(view, heroConfig, camp, dedupeKey)
     end
     s.tween = go.transform:DOScale(Vector3.New(CARD_SCALE, CARD_SCALE, 1), POP_IN_TIME):SetEase(Ease.OutBack)
 
-    Log(string.format("[UIFlow] 大招小卡 OPEN hero=%s camp=%s side=%s",
-        tostring(heroConfig.Id), tostring(camp), (camp == 0) and "Mine-LeftTop" or "Enemy-RightTop"))
+    Log(string.format("[UIFlow] 大招小卡 OPEN hero=%s camp=%s bar=%s pos=(%s,%s)",
+        tostring(heroConfig.Id), tostring(camp),
+        (camp == 0) and "myRect_Skill" or "enemyRect_Skill",
+        pos and string.format("%.0f", pos.x) or "?",
+        pos and string.format("%.0f", pos.y) or "?"))
 
     -- 停留后收起
     if s.timer then
@@ -242,8 +286,6 @@ function this.Show(view, heroConfig, camp, dedupeKey)
     s.timer:Start()
 
     -- 跟随技能栏：技能栏一消失，卡片同步消失（大招表现结束）
-    -- 我方跟 myRect_Skill，敌方跟 enemyRect_Skill，取不到时退回 myRect_Skill
-    local followNode = (camp == 0) and "myRect_Skill" or "enemyRect_Skill"
     if s.followTimer then
         s.followTimer:Stop()
     end
@@ -252,11 +294,8 @@ function this.Show(view, heroConfig, camp, dedupeKey)
             s.followTimer:Stop()
             return
         end
-        local ui = Util.GetGameObject(view.transform, followNode)
-        if not ui then
-            ui = Util.GetGameObject(view.transform, "myRect_Skill")
-        end
-        if not ui or not ui.activeInHierarchy then
+        local ui = GetSkillBar(view, s.camp)
+        if not IsAlive(ui) or not ui.activeInHierarchy then
             this.Hide(camp)
         end
     end, 0.1, -1, true)

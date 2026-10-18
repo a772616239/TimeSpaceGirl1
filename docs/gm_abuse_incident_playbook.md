@@ -541,7 +541,7 @@ print(\"Mozart itemLog: \"+db.itemLog.count({uid:10000013}));"'
 |---|---|---|
 | `GMRequestHandler` 无身份鉴权 | 一旦 `debug` 被误开，任何玩家可刷 | 加 GM 账号 UID 白名单 + IP 白名单双条件 |
 | **`server.debug` 定义在 3 处，jar 内置那份优先级最高** | 只改 `config/logicSrv.properties` **无效** | 必须在 `config/application.properties` 覆盖，并按 §4 用 `ServerProperties` 日志验证 |
-| `ADVENTURE_REWARD type=2` 无频次校验 | 可无限连领远征奖励 | 已打补丁（`patches/adventure_reward_guard/`），但需转正到源码 |
+| `ADVENTURE_REWARD type=2` 无频次校验 | 可无限连领远征奖励 | ✅ **已转正到源码**（`77402068`）：`patch/AdventureRewardGuard` + `CombatLogic` 的 `type==2` 分支入口；重打包不再丢 |
 | `HeroLogic.upHeroLevel` 忽略 `targetLevel` | 所有玩家英雄卡 4 级 | 按目标等级循环升级或直接计算消耗 |
 | `fightResDiffLog` 只覆盖 UID ≤10000140 | 高 UID 改战斗结果检测不到 | 扩大到全部 UID |
 | `playerManager.ip` 恒为空 | 游戏库查不到登录 IP | 在游戏服侧记录 `session.getIp()` |
@@ -577,7 +577,9 @@ print(\"Mozart itemLog: \"+db.itemLog.count({uid:10000013}));"'
 `amount=-999` 免金额校验、`isGM=true` 跳过 billno 去重，且 **141 个商品 `Limit=0` 完全不限购**。
 裸开门禁 = 对全服开放免费无限刷钻石。
 
-**处置**：`patches/pay_gate_whitelist/`（Javassist 补丁），把 debug 硬门禁换成三档开关：
+**处置**：`patches/pay_gate_whitelist/`（Javassist 补丁，⚠️ **已转正到源码** `77402068`：
+`patch/PayGateGuard` + `TestBuyGiftGoodsHandler` 直接调用，重打包不再丢）。
+把 debug 硬门禁换成三档开关：
 
 | 模式 | 行为 |
 |---|---|

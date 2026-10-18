@@ -3,6 +3,15 @@
 > 创建：2026-10-18
 > 关联事故：玩家 Mozart（UID `10000013`）利用该漏洞 1 分钟连领 35 次，钻石刷到 1.25 亿
 > 关联手册：`../../docs/gm_abuse_incident_playbook.md`
+>
+> 🔴 **状态（2026-10-18 15:00）：已转正到源码，本文档仅留作事故存档。**
+> 逻辑已合入 `Server_x1tag1.2.2` 源码（提交 `77402068`）：
+> - `serverlogic/.../com/ljsd/jieling/patch/AdventureRewardGuard.java`（新类）
+> - `serverlogic/.../com/ljsd/jieling/logic/fight/CombatLogic.java`（`type == 2` 分支入口调用）
+>
+> 重新打包 jar 后依然生效，**不要再重复注入**。字节码注入版与源码版已用 javap
+> 逐条比对（行集合完全一致，仅方法声明顺序不同）。下方 §3/§4 的注入流程仅在
+> 「手头只有 jar、没有源码」时作为应急手段保留。
 
 ---
 
@@ -110,8 +119,9 @@ javap -c /tmp/cl.class | grep -c "AdventureRewardGuard.checkAndMark"   # 应为 
 
 ## 4. 注意事项
 
-1. **这份补丁是打补丁，不是源码改造。** 下次重新编译 `gameSrv` 时会丢失。
-   长期方案应把这套校验写进 `CombatLogic` 源码，或给 `type=2` 迁移到带次数的配置表。
+1. **本补丁已转正到源码**（见文首状态）。源码版与这里的字节码注入版逻辑等价，
+   重新编译 jar 不会再丢；若某天又只拿到 jar（无源码），才回到本文流程。
+   长期方案仍是把 `type=2` 迁移到带次数的配置表。
 2. **重启会丢补丁吗？** 不会——补丁已进 jar 文件，重启只是重新加载。
    **但重新打包/替换 jar 会丢。**
 3. **`server.debug` 与本补丁独立。** 前者管 GM 指令通道，后者管领奖频次，两个都要管。

@@ -3,6 +3,15 @@
 > 创建：2026-10-18
 > 关联事故：关闭 `server.debug` 后全服内购失效（Sakuya uid 10000017 连点 5 次全被拒）
 > 关联手册：`../../docs/gm_abuse_incident_playbook.md`
+>
+> 🔴 **状态（2026-10-18 15:00）：已转正到源码，本文档仅留作事故存档。**
+> 逻辑已合入 `Server_x1tag1.2.2` 源码（提交 `77402068`）：
+> - `serverlogic/.../com/ljsd/jieling/patch/PayGateGuard.java`（新类）
+> - `serverlogic/.../com/ljsd/jieling/handler/store/TestBuyGiftGoodsHandler.java`
+>   （`process()` 里直接调 `PayGateGuard.check`，不再依赖 Javassist 改写）
+>
+> 字节码注入版与源码版的 `PayGateGuard` 已用 javap 逐条比对：**700 行指令完全一致**。
+> 重新打包 jar 后依然生效，**不要再重复注入**；§5/§6 的注入流程仅在「手头只有 jar」时应急用。
 
 ---
 
@@ -200,7 +209,8 @@ ssh gs 'grep -a "GM_REQUEST" /data/srvlog/gameserver.log | tail -3'
    （它是线上单独注入的）。拿仓库 jar 替换上去会把 Mozart 的远征刷奖漏洞一起放回来。
    已核对：线上 jar = 仓库 jar + `AdventureRewardGuard`。
 
-2. **这是热补丁，重新打包 jar 会丢。** 长期要写进 `gameSrv` 源码或改成真实支付验单。
+2. **已转正到源码**（见文首状态）：`TestBuyGiftGoodsHandler` 直接调
+   `PayGateGuard.check`，重新打包 jar 不会丢。长期仍要接真实支付验单（§9）。
 
 3. **`server.debug` 不要开回来。** 它与 GM 通道共用；本补丁正是为了把「内购」和
    「GM 调试」这两件事解耦，不必再靠开 debug 换内购。

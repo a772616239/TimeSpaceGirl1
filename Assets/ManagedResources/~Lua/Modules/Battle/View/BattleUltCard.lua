@@ -7,18 +7,18 @@
 
   🔴 为什么是「正上方」而不是「左侧 / 右侧」：
      技能栏 anchor(0,0.5) + pivot(0,0.5) 贴在屏幕【左边缘】（我方）/ 右边缘（敌方），
-     外侧根本没有空间；卡片 280x330 摆在同一个 x 上就会整块压住技能底板 Image(280x90)
-     与 SkillName 文字（实测 canvas: 技能栏 [-540,-269]-[95,-161]，卡片 [-540,-298]-[-260,32]）。
+     外侧根本没有空间；卡片 224x264 摆在同一个 x 上就会整块压住技能底板 Image(280x90)
+     与 SkillName 文字（0.26 时代实测 canvas: 技能栏 [-540,-269]-[95,-161]，卡片 [-540,-298]-[-260,32]）。
      卡片以前画在技能栏【下面】所以看不出来，改成子节点后 z 序在上 ⇒ 直接盖住技能名。
      所以落点改为：水平贴技能栏外缘（与技能底板同宽、左/右对齐），
      垂直方向卡片【底边】顶在技能栏【上沿】之上 GAP_Y，完全不与技能栏矩形相交。
 
   不新增 prefab 节点：直接克隆 BattlePanel 下的 HelpHeroShow（含立绘挂点 live、
-  卡片框 Image1、底板 Image、名字 name、地点 location），缩放到 26% 后作为技能栏的子节点挂上去。
+  卡片框 Image1、底板 Image、名字 name、地点 location），缩放到 20.8% 后作为技能栏的子节点挂上去。
 
   🔴 卡面装饰件（底板 Image + 名字 name + 地点 location）只在【新手引导动画】里显示：
      教学关（GuideBattlePanel）要借这张卡交代「这是谁、从哪来」，名字/地点是教学内容；
-     正常战斗里卡片只有 26% 大，700x225 的名字、410x116 的地点缩完根本读不出来，
+     正常战斗里卡片只有 20.8% 大，700x225 的名字、410x116 的地点缩完根本读不出来，
      底板还会实打实压住战斗画面 ⇒ 非引导场景一律 SetActive(false)，只留立绘 + 卡片框。
      判定见 IsGuideScene()（view == GuideBattlePanel 或强制引导进行中），
      临时要改口径用 this.forceDecor = true/false 覆盖，不用动这里。
@@ -48,8 +48,12 @@ local REQUIRE_CLOSEUP = false
 -- 敌我都弹，靠角落位置区分：我方贴 myRect_Skill、敌方贴 enemyRect_Skill
 local ONLY_MY_CAMP    = false
 
-local CARD_SCALE       = 0.26    -- 相对整屏版 HelpHeroShow 的缩放
-local CARD_MARGIN_X    = 140     -- 卡片中心距技能栏外侧边缘的水平距离（0.26 缩放后卡宽 280.8，半宽 140.4，边缘贴齐）
+-- 缩放：原 0.26，按需求再缩到 0.8 倍 ⇒ 0.208（整屏版 HelpHeroShow 的 20.8%）
+--   CARD_MARGIN_X 必须跟着缩放走：它等于卡片【半宽】，边缘才能与技能底板贴齐；
+--   写死 140 是 0.26 时代的半宽，缩小后会把卡片往外推一截、与技能栏错开。
+local CARD_SCALE       = 0.26 * 0.8
+local CARD_W           = 1080 * CARD_SCALE   -- 224.64：卡片框（整屏版 Image1 宽 1080）缩放后的实际宽度
+local CARD_MARGIN_X    = CARD_W * 0.5        -- 112.32：卡片中心距技能栏外缘 = 半宽 ⇒ 边缘贴齐
 local CARD_GAP_Y       = 8       -- 卡片【底边】与技能栏【上沿】的间隙（参考分辨率像素，CanvasScaler 统一缩放）
 local CARD_BOTTOM_HALF = 628.5   -- 卡片内容底边相对卡片中心（缩放前，Image1 底边 = pos.y 7 - 高 1271/2）
 local CARD_FALLBACK_Y  = -211    -- 兜底：找不到技能栏时卡片中心的 Y（相对顶部锚点，沿用改版前的观感）
@@ -331,7 +335,7 @@ local function EnsureCard(view, s)
         anim:Stop()
         anim.enabled = false
     end
-    -- 整屏粒子缩到 26% 会糊成一片，关掉
+    -- 整屏粒子缩到 20.8% 会糊成一片，关掉
     local effect = Util.GetGameObject(go, "effect")
     if effect then
         effect:SetActive(false)

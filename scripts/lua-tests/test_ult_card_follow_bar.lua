@@ -179,11 +179,13 @@ end
 local HERO = { Id = 1001, ReadingName = 0, HeroLocation = 0 }
 
 -- 面板像素量纲 ⇒ 世界单位（面板缩放为 1 时相等）
-local MARGIN_X_W = 140
-local CARD_HALF_W = 140.4                          -- 0.26 缩放后卡宽 280.8 的一半
-local CARD_HALF_H = 628.5 * 0.26                   -- 163.41：卡片中心到底边的距离
+-- 卡片缩放 = 0.26 * 0.8 = 0.208（本轮按需求再缩到 0.8 倍）
+local SCALE = 0.26 * 0.8
+local CARD_HALF_W = 540 * SCALE                    -- 112.32：0.208 缩放后卡宽 224.64 的一半
+local MARGIN_X_W = CARD_HALF_W                     -- 卡片中心距技能栏外缘 = 半宽（边缘贴齐）
+local CARD_HALF_H = 628.5 * SCALE                  -- 130.728：卡片中心到底边的距离
 local GAP_Y = 8                                    -- 卡片底边与技能栏上沿的间隙
-local LIFT_W = GAP_Y + CARD_HALF_H                 -- 171.41：卡片中心相对技能栏【上沿】的高度
+local LIFT_W = GAP_Y + CARD_HALF_H                 -- 138.728：卡片中心相对技能栏【上沿】的高度
 
 local failures = 0
 local function Check(name, cond, detail)
@@ -237,10 +239,10 @@ do
     local left = myBar.transform.position.x + myBar.transform.lossyScale.x * myBar.rt.rect.xMin   -- 0
     local top  = myBar.transform.position.y + myBar.transform.lossyScale.y * myBar.rt.rect.yMax   -- -206
     local wx, wy = CardWorld(s.go)
-    Check("X = 技能栏左边界 + 140", Near(wx, left + MARGIN_X_W), string.format("wx=%.2f want=%.2f", wx, left + MARGIN_X_W))
-    Check("Y = 技能栏上沿 + 171.41", Near(wy, top + LIFT_W), string.format("wy=%.2f want=%.2f", wy, top + LIFT_W))
+    Check("X = 技能栏左边界 + 半宽 112.32", Near(wx, left + MARGIN_X_W), string.format("wx=%.2f want=%.2f", wx, left + MARGIN_X_W))
+    Check("Y = 技能栏上沿 + 138.73", Near(wy, top + LIFT_W), string.format("wy=%.2f want=%.2f", wy, top + LIFT_W))
     -- 本地坐标同样对得上（子节点位置口径）
-    Check("本地 localPosition.x = 140/1.2", Near(s.go.rt.localPosition.x, 140 / 1.2, 0.01),
+    Check("本地 localPosition.x = 112.32/1.2", Near(s.go.rt.localPosition.x, MARGIN_X_W / 1.2, 0.01),
         string.format("lp.x=%.4f", s.go.rt.localPosition.x))
     -- 关键：卡片底边必须落在技能栏上沿之上（否则会盖住技能底板 280x90 与 SkillName）
     local cardBottom = wy - CARD_HALF_H
@@ -256,23 +258,23 @@ do
     BattleUltCard.ResetForBattle(view)
     BattleUltCard.Show(view, HERO, 0, "c0")
     local mine = BattleUltCard.slots[0]
-    Check("我方卡本地缩放 = 0.26/1.2", Near(mine.go.rt.localScale.x, 0.26 / 1.2, 0.001),
+    Check("我方卡本地缩放 = 0.208/1.2", Near(mine.go.rt.localScale.x, SCALE / 1.2, 0.001),
         string.format("scale=%.4f", mine.go.rt.localScale.x))
-    Check("我方卡世界缩放 = 0.26", Near(math.abs(mine.go.rt.localScale.x * myBar.transform.lossyScale.x), 0.26, 0.001))
+    Check("我方卡世界缩放 = 0.208", Near(math.abs(mine.go.rt.localScale.x * myBar.transform.lossyScale.x), SCALE, 0.001))
 
     BattleUltCard.Show(view, HERO, 1, "c1")
     local enemy = BattleUltCard.slots[1]
     Check("敌方卡挂在 enemyRect_Skill 下", CardBar(enemy) == enemyBar.transform)
     Check("敌方卡本地缩放 x 为负（抵消父节点镜像）", enemy.go.rt.localScale.x < 0,
         string.format("scale.x=%.4f", enemy.go.rt.localScale.x))
-    Check("敌方卡世界缩放 |x| = 0.26（没被翻转/放大）",
-        Near(math.abs(enemy.go.rt.localScale.x * enemyBar.transform.lossyScale.x), 0.26, 0.001))
+    Check("敌方卡世界缩放 |x| = 0.208（没被翻转/放大）",
+        Near(math.abs(enemy.go.rt.localScale.x * enemyBar.transform.lossyScale.x), SCALE, 0.001))
     -- 敌方那条 localScale.x 是负的，右边界要取两个角的世界坐标里大的那个（= 1080）
     local ex0 = enemyBar.transform.position.x + enemyBar.transform.lossyScale.x * enemyBar.rt.rect.xMin
     local ex1 = enemyBar.transform.position.x + enemyBar.transform.lossyScale.x * enemyBar.rt.rect.xMax
     local right = math.max(ex0, ex1)
     local ex = CardWorld(enemy.go)
-    Check("敌方卡 X = 技能栏右边界 - 140", Near(ex, right - MARGIN_X_W),
+    Check("敌方卡 X = 技能栏右边界 - 半宽", Near(ex, right - MARGIN_X_W),
         string.format("ex=%.2f want=%.2f", ex, right - MARGIN_X_W))
     -- 敌方那条上沿与 Y 同口径，镜像只影响 x，竖向必须在技能栏上方
     local eTop = enemyBar.transform.position.y + enemyBar.transform.lossyScale.y * enemyBar.rt.rect.yMax
@@ -343,10 +345,10 @@ do
     local s = BattleUltCard.slots[0]
     local top = -200 + 1.44 * 45                        -- -135.2
     local wx, wy = CardWorld(s.go)
-    Check("X 仍是外侧 +140（世界单位）", Near(wx, 140), string.format("wx=%.2f", wx))
+    Check("X 仍是外侧 + 半宽 112.32（世界单位）", Near(wx, MARGIN_X_W), string.format("wx=%.2f", wx))
     Check("Y 跟随新的上沿", Near(wy, top + LIFT_W), string.format("wy=%.2f want=%.2f", wy, top + LIFT_W))
     Check("换缩放后卡片仍不压技能栏", wy - CARD_HALF_H >= top, string.format("bottom=%.2f top=%.2f", wy - CARD_HALF_H, top))
-    Check("本地缩放按新父链缩放反算 = 0.26/1.44", Near(s.go.rt.localScale.x, 0.26 / 1.44, 0.001),
+    Check("本地缩放按新父链缩放反算 = 0.208/1.44", Near(s.go.rt.localScale.x, SCALE / 1.44, 0.001),
         string.format("scale=%.4f", s.go.rt.localScale.x))
 end
 

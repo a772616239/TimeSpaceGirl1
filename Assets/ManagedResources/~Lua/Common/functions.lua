@@ -2476,3 +2476,88 @@ function GetUIStackStr()
     collect(UIManager and UIManager.fixedList)
     return table.concat(ids, ">")
 end
+
+--============================================================================
+-- 诱导评分（Google Play 内评价）—— 关键关卡领奖后弹窗
+--
+-- 底层能力：
+--   Assets/Scripts/Review/ReviewMgr.cs（Google.Play.Review：RequestReviewFlow
+--   + LaunchReviewFlow），Lua 侧唯一入口就是 ReviewMgr:AllInOneFlowClick()。
+-- 本模块只负责「什么时候弹」，与战斗结算面板 BattleBestPopup 那套
+--   PassTimes1 / ShowReviewPTimes 计数**互不干扰**（两套配额各自独立）。
+--
+-- 弹出条件（三条同时满足才会弹）：
+--   1. 同一条关键关卡只弹一次（key 由调用方给，如 "climb_tower_10"）；
+--   2. 距上次弹出 >= APP_REVIEW_COOLDOWN_SEC（默认 24 小时）；
+--   3. 本账号累计弹出次数 < APP_REVIEW_MAX_TIMES（默认 3 次）。
+-- 计数落在 PlayerPrefs，键前缀带 uid，避免同机换号串数据；
+-- 冷却用服务器时间（PlayerManager.serverTime），改设备时间绕不过去。
+--============================================================================
+local APP_REVIEW_MAX_TIMES = 3
+local APP_REVIEW_COOLDOWN_SEC = 24 * 3600
+
+local function AppReviewPrefKey(suffix)
+    local uid = 0
+    if PlayerManager and PlayerManager.uid then
+        uid = PlayerManager.uid
+    end
+    return "AppReview_" .. tostring(uid) .. "_" .. suffix
+end
+
+local function AppReviewNow()
+    if PlayerManager and PlayerManager.serverTime and PlayerManager.serverTime > 0 then
+        return math.floor(PlayerManager.serverTime)
+    end
+    return os.time()
+end
+
+-- 该关键关卡是否已经弹过评分
+function AppReview_IsKeyLevelDone(key)
+    if not key then
+        return false
+    end
+    return PlayerPrefs.GetInt(AppReviewPrefKey("Key_" .. tostring(key)), 0) == 1
+end
+
+-- 关键关卡领奖后调用，返回 true 表示本次真的发起了内评价弹窗
+function AppReview_TryShowOnKeyLevel(key)
+    if not key then
+        return false
+    end
+    if not ReviewMgr then
+        Log("[AppReview] skip: ReviewMgr not ready")
+        return false
+    end
+    -- 非 Android 没有 Google Play 内评价，直接跳过（Editor 也走这里）
+    if UnityEngine.Application.platform ~= UnityEngine.RuntimePlatform.Android then
+        Log("[AppReview] skip: platform is not Android")
+        return false
+    end
+    if AppReview_IsKeyLevelDone(key) then
+        Log("[AppReview] skip: key level already prompted, key=" .. tostring(key))
+        return false
+    end
+
+    local times = PlayerPrefs.GetInt(AppReviewPrefKey("Times"), 0)
+    if times >= APP_REVIEW_MAX_TIMES then
+        Log("[AppReview] skip: total prompt times reached " .. tostring(times))
+        return false
+    end
+
+    local now = AppReviewNow()
+    local last = tonumber(PlayerPrefs.GetString(AppReviewPrefKey("LastTime"), "0")) or 0
+    if last > 0 and (now - last) < APP_REVIEW_COOLDOWN_SEC then
+        Log(string.format("[AppReview] skip: cooldown, %d sec left", APP_REVIEW_COOLDOWN_SEC - (now - last)))
+        return false
+    end
+
+    -- 先落盘再弹：Google 侧有设备配额，可能不显示，这里不做重试
+    PlayerPrefs.SetInt(AppReviewPrefKey("Key_" .. tostring(key)), 1)
+    PlayerPrefs.SetInt(AppReviewPrefKey("Times"), times + 1)
+    PlayerPrefs.SetString(AppReviewPrefKey("LastTime"), tostring(now))
+    PlayerPrefs.Save()
+
+    Log(string.format("[AppReview] show in-app review, key=%s times=%d", tostring(key), times + 1))
+    ReviewMgr:AllInOneFlowClick()
+    return true
+end

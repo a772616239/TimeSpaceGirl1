@@ -264,8 +264,17 @@ function ClimbTowerRewardPopup:FillItem(go, data)
                 type = TaskTypeDef.ClimbTowerVipTask
             end
             NetManager.TakeMissionRewardRequest(type, data.data.Condition, function(msg)
+                -- 关键关卡领奖 ⇒ 诱导评分（Google Play 内评价）
+                -- 本弹窗两个页签的条目全部来自 VirtualTargetReward（Condition 就是里程碑层 5/10/20/30…），
+                -- 因此「领取成功」本身就等于完成了关键关卡的领奖；具体弹不弹由 AppReview_TryShowOnKeyLevel 控频。
+                local reviewKey = "climb_tower_" .. tostring(data.data.Condition)
                 if msg.drop then
-                    UIManager.OpenPanel(UIName.RewardItemPopup, msg.drop, 1)
+                    UIManager.OpenPanel(UIName.RewardItemPopup, msg.drop, 1, function()
+                        -- 等奖励面板关掉再弹，避免内评价盖在领奖动画上
+                        AppReview_TryShowOnKeyLevel(reviewKey)
+                    end)
+                else
+                    AppReview_TryShowOnKeyLevel(reviewKey)
                 end
 
                 TaskManager.SetTypeTaskState(type, data.data.Condition, 2)  -- 客户端即时刷新数据 后端推送有延迟

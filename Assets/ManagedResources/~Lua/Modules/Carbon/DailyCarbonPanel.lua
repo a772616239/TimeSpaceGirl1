@@ -42,6 +42,22 @@ local qualityBg = {
 
 local itemList = {}--奖励容器
 
+--该副本类型下 Id 最大的一关（难度最高）＝整条副本线的最后一关，作为「关键关卡」
+--口径按 DailyChallengeConfig 现算，不写死 Id
+local function IsLastDungeonOfType(data)
+    if not data then
+        return false
+    end
+    local list = ConfigManager.GetAllConfigsDataByKey(ConfigName.DailyChallengeConfig, "Type", data.Type)
+    local maxId = 0
+    for i = 1, #list do
+        if list[i].Id > maxId then
+            maxId = list[i].Id
+        end
+    end
+    return data.Id == maxId
+end
+
 --每日副本服务器数据
 local buyTime = 0--购买次数
 local freeTime = 0--免费次数
@@ -432,6 +448,13 @@ function this.SetData(root, data, ldata)
                             this.SetScroll()
                             isGoBattle = false
                         elseif result.result == 1 then
+                            -- 关键关卡领奖 ⇒ 诱导评分（Google Play 内评价）
+                            -- 关键关卡＝该副本线（Type）最后一关的**首次通关**；
+                            -- 必须在 AddDailyChallengeInfo 之前判首通，否则本地首通标记已经被写掉了
+                            local reviewKey = nil
+                            if not CarbonManager.IsDailyCarbonPass(data.Id) and IsLastDungeonOfType(data) then
+                                reviewKey = "daily_carbon_" .. tostring(data.Type)
+                            end
                             UIManager.OpenPanel(UIName.RewardItemPopup,msg.drop,1,function()
                                 PrivilegeManager.RefreshPrivilegeUsedTimes(data.PrivilegeId[2],1)
                                 CarbonManager.AddDailyChallengeInfo(data.Id)
@@ -440,6 +463,8 @@ function this.SetData(root, data, ldata)
                                 this:RefreshRedPotShow()
                                 this.SetScroll()
                                 isGoBattle = false
+                                -- 等奖励面板关掉再弹，避免内评价盖在领奖动画上
+                                AppReview_TryShowOnKeyLevel(reviewKey)
                             end)
                         end
                     end)

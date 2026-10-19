@@ -370,12 +370,17 @@ function this.SetArenaInfo()
         return
     end
     --local dt,db = RankingManager.CutDate(arenaData)
+    -- ⚠️ rankInfos 的元素是 ArenaEnemy（只有 personInfo/team/title），
+    --    玩家本身在 personInfo 里；早先二/三名传了包装对象 ⇒ uid/country 为 nil，
+    --    国旗只能是问号旗，name/level 也是 nil（"LV." .. nil 会被 xpcall 吞掉）
     this.SetHeadsInfo(arenaData[1].personInfo,this.firstHeadinfoGo,1,arenaData[1].personInfo.name,arenaData[1].personInfo.level)   
     if #arenaData >= 2 then
-        this.SetHeadsInfo(arenaData[2],this.secondHeadinfoGo,2,arenaData[2].name,arenaData[2].level)
+        local info = arenaData[2].personInfo or arenaData[2]
+        this.SetHeadsInfo(info,this.secondHeadinfoGo,2,info.name,info.level)
     end
     if #arenaData >= 3 then
-        this.SetHeadsInfo(arenaData[3],this.thirdHeadinfoGo,3,arenaData[3].name,arenaData[3].level)
+        local info = arenaData[3].personInfo or arenaData[3]
+        this.SetHeadsInfo(info,this.thirdHeadinfoGo,3,info.name,info.level)
     end
 
     --设置滚动区信息
@@ -736,13 +741,59 @@ function this.ShowGoldExperGuildSortInfo(root,data,myRankData)
     end
 end
 
+--[[
+ * 前三名立绘区的国家小旗
+ *
+ * ⚠️ 小旗是挂在立绘节点（firstHead/secondHead/thirdHead）上的**长驻**节点，
+ *   不会随名次数据自动清空。只要某条渲染路径漏写它，画面就会保留上一次
+ *   （别的榜单 / 上一次打开）画上去的国旗 —— 头像和名字换了、旗子还是旧的，
+ *   看起来正是「前三国籍不对」。所以：
+ *     · 显示前三名的每条路径都必须显式调用 SetHeadFlag；
+ *     · 没有这个名次、或公会榜（展示公会名，没有玩家国籍）→ 隐藏，而不是不管。
+--]]
+local function HeadGoOf(index)
+    if index == 1 then return this.firsthead end
+    if index == 2 then return this.secondhead end
+    if index == 3 then return this.thirdhead end
+    return nil
+end
+
+local function HideHeadFlag(index)
+    local headRoot = HeadGoOf(index)
+    if headRoot == nil or IsNull(headRoot) then
+        return
+    end
+    local flagGo = Util.GetGameObject(headRoot, "countryFlag")
+    if flagGo ~= nil and not IsNull(flagGo) then
+        flagGo:SetActive(false)
+    end
+end
+
+--- 给第 index 名画国旗；data 必须是**这个名次对应的那个玩家**的记录
+function this.SetHeadFlag(index, data)
+    if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
+            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
+        HideHeadFlag(index)
+        return
+    end
+    if data == nil then
+        HideHeadFlag(index)
+        return
+    end
+    local headRoot = HeadGoOf(index)
+    if headRoot == nil or IsNull(headRoot) then
+        return
+    end
+    CountryFlagUtil.ApplyTo(headRoot, data.uid, data.country)
+end
+
 --设置前三名背景头像
 function this.SetHeadsInfo(data,root,index,name,level)
-    -- 前三名立绘区的国家小旗
-    local headRoot = (index == 1 and this.firsthead) or (index == 2 and this.secondhead) or this.thirdhead
-    if headRoot then
-        CountryFlagUtil.ApplyTo(headRoot, data.uid, data.country)
-    end
+    -- 前三名立绘区的国家小旗（与列表行走同一套口径，见 SetHeadFlag）
+    this.SetHeadFlag(index, data)
+    -- 名次数据缺名字/等级时不要拼出 nil（arena 曾因此静默中断整条渲染）
+    name = name or ""
+    level = level or 0
     if index == 1 then
         if not this.playerHeadList[root] then
             this.playerHeadList[root]=CommonPool.CreateNode(POOL_ITEM_TYPE.PLAYER_HEAD,Util.GetGameObject(this.firsthead,"Head"))
@@ -1188,6 +1239,8 @@ end
 
 --设置前三名背景头像
 function this.SetHeadsHeroInfo(data,root,index,name,level)   
+    -- 英雄榜的前三立绘走的是 HeroHead，但小旗是同一批节点 ⇒ 同样必须显式刷
+    this.SetHeadFlag(index, data)
     if index == 1 then
         if not this.playerHeroListHead[root] then          
             this.playerHeroListHead[root]=SubUIManager.Open(SubUIConfig.ItemView, Util.GetGameObject(this.firsthead,"HeroHead").transform)
@@ -1287,6 +1340,8 @@ function this.SetHeroNotRollingInfo(...)
     local data = args[3]                      -- 我的英雄数据
     local length = args[4]+OffsetTop+1        -- 未设缓存列表为当前最大长度
     this.TextTopEnd.text = topEndName
+    -- 英雄榜不走 SetNotRollingInfo，「我的排名」行的旗要自己刷，否则留着上一屏的
+    this.RefreshMyRankFlag()
     if not myRank or myRank < 1 then
         this.myRank.text = GetLanguageStrById(10041)
         this.MyRankHeroHead:SetActive(false)

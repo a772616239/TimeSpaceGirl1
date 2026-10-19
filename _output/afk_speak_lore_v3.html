@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>挂机气泡 · 全量台词改成世界观 + 英雄传记梗</title>
+<style>
+:root{--ink:#1b1b1e;--sub:#6d6a66;--line:#e5e2db;--bg:#f5f3ef;--warn:#b45309;--ok:#15803d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);line-height:1.5;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:44px 26px 70px}
+h1{font-size:25px;margin:0 0 6px;letter-spacing:-.2px}
+.sub{color:var(--sub);font-size:14px;margin-bottom:16px}
+.meta{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 26px}
+.chip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12.5px;color:var(--sub)}
+.chip b{color:var(--ink)}
+h2{font-size:13px;letter-spacing:.6px;color:var(--sub);font-weight:600;text-transform:uppercase;margin:30px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.world{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 22px;font-size:13.5px;color:#3d3a35}
+.world b{color:#1b1b1e}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+th{text-align:left;font-size:11.5px;color:var(--sub);letter-spacing:.5px;padding:10px 12px;background:#faf8f4;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:10px 12px;border-bottom:1px solid #f1eee8;vertical-align:top;font-size:13px}
+tr:last-child td{border-bottom:none}
+.id{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#a8a49c}
+.nm{width:104px;font-weight:600}
+.hk{width:186px;color:#6f6b63;font-size:12.5px}
+.en{font-weight:600}
+.zh{color:#454138;margin-top:1px}
+.jp{color:#a5a096;font-size:12px;margin-top:1px}
+.fit{width:56px;text-align:right;font-size:11.5px;color:var(--ok);font-variant-numeric:tabular-nums}
+.foot{margin-top:22px;color:var(--sub);font-size:12.5px;line-height:1.7}
+.foot code{background:#eae6de;padding:1.5px 5px;border-radius:4px;font-size:11.5px}
+</style></head><body><div class="wrap">
+<h1>挂机气泡 · 全量改成世界观 + 英雄传记梗</h1>
+<div class="sub">106 条全换：20 条通用池讲世界（城邦／荒野／腐化者），86 条英雄专属从各自传记里挑梗</div>
+<div class="meta">
+  <div class="chip">出现时机 <b>寻敌跑动 2.5s</b></div>
+  <div class="chip">文本盒 <b>280×78</b></div>
+  <div class="chip">实测 <b>全部 2 行 74px</b></div>
+  <div class="chip">语言 <b>中/英/日</b></div>
+</div>
+
+<h2>这次用的世界观口径</h2>
+<div class="world">
+台词里反复出现的设定，都从 <code>HeroConfig.HeroStory</code> 与主线文案里校对过：
+<b>旧历／新历</b>（腐化者之战前后）、<b>九大城邦</b>（大都会、第二城邦、第八城邦、比基尔斯）、
+<b>荒野</b>（城邦外的三不管地带，黑帮与恶棍出没）、<b>腐化者</b>（旧历的敌人，新历后大减但没绝）、
+<b>异化之海</b>（海里仍有腐化生物）、<b>机械／体术／神秘</b>三阵营、<b>联邦</b>与<b>特勤局</b>。
+所以通用池不再说「升级加伤害」，而是「新历了，我还是弱」「城邦的墙真远」「腐化者身上没东西掉」。
+</div>
+
+<h2>通用池（Type=0，任何英雄都会说）</h2>
+<table><thead><tr><th>语言 ID</th><th>EN / 中 / 日</th><th>排版</th></tr></thead><tbody>
+<tr><td class="id">63010089</td><td><div class="en">They never end. Food first.</div><div class="zh">腐化者跑不完，先吃饭。</div><div class="jp">腐敗者は尽きない。飯だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010090</td><td><div class="en">Charge! More wasteland ahead.</div><div class="zh">冲！前面还是荒野。</div><div class="jp">突撃！また荒野だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010091</td><td><div class="en">Smells like the wild. Or blood.</div><div class="zh">荒野味。也许是血。</div><div class="jp">荒野の匂い。血かも。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010092</td><td><div class="en">New Era. Same weak me.</div><div class="zh">新历了，我还是弱。</div><div class="jp">新暦になっても弱いまま。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010093</td><td><div class="en">Who&#x27;s farming my star mats?</div><div class="zh">升星材料，谁去刷？</div><div class="jp">星素材、誰が集めるんだ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010094</td><td><div class="en">Those city walls feel far.</div><div class="zh">城邦的墙真远。</div><div class="jp">城邦の壁は遠いな。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010095</td><td><div class="en">No delivery in the wild.</div><div class="zh">荒野没有外卖。</div><div class="jp">荒野に配達はない。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010096</td><td><div class="en">Guardians? City toys.</div><div class="zh">守护是城邦的玩意。</div><div class="jp">守護は城邦の道具だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010097</td><td><div class="en">Nine cities. Nine bosses.</div><div class="zh">九大城邦，九个老板。</div><div class="jp">九つの城邦、九人の支配者。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010098</td><td><div class="en">My legs are done. Truly.</div><div class="zh">腿要断了，真的。</div><div class="jp">足が限界。本当に。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010099</td><td><div class="en">Ruins are below. Not in fog.</div><div class="zh">遗迹在地下，不在雾里。</div><div class="jp">遺跡は地下だ。霧ではない。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010100</td><td><div class="en">City gives chips. I give life.</div><div class="zh">芯片城邦出，命我自己出。</div><div class="jp">チップは城邦、命は俺。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010101</td><td><div class="en">Real goods are in the wild.</div><div class="zh">真货都在荒野。</div><div class="jp">本物は荒野にある。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010102</td><td><div class="en">Tower of God: endless stairs.</div><div class="zh">神之塔：楼梯没尽头。</div><div class="jp">神の塔：終わらない階段。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010103</td><td><div class="en">Camp fine print is a trap.</div><div class="zh">契约小字是陷阱。</div><div class="jp">契約の小さい字は罠だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010104</td><td><div class="en">Pioneers lead. We follow.</div><div class="zh">先驱在前面，我们跟。</div><div class="jp">先駆者が先、俺らは後。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010105</td><td><div class="en">HR doesn&#x27;t care about the wild.</div><div class="zh">人事处不管荒野死活。</div><div class="jp">人事部は荒野を知らん。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010106</td><td><div class="en">Corrupted drop nothing. Nothing.</div><div class="zh">腐化者身上没东西掉。</div><div class="jp">腐敗者は何も落とさない。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010107</td><td><div class="en">Bad map. The wild is straighter.</div><div class="zh">这图谁画的？荒野更直。</div><div class="jp">誰が描いた地図だ。荒野の方がまし。</div></td><td class="fit">74px</td></tr>
+<tr><td class="id">63010108</td><td><div class="en">Star reset? Old Era rules.</div><div class="zh">星级重置？旧历的规矩。</div><div class="jp">星リセット？旧暦の掟か。</div></td><td class="fit">74px</td></tr>
+</tbody></table>
+
+<h2>英雄专属（Type=英雄 id，从各自传记里挑的梗）</h2>
+<table><thead><tr><th>英雄</th><th>传记钩子</th><th>EN / 中 / 日</th><th>排版</th></tr></thead><tbody>
+<tr><td class="nm">莫扎特<div class="id">10001</div></td><td class="hk">宫廷乐师，懒得看同行</td>
+<td><div class="en">Peers? Not even close.</div><div class="zh">同行这些，差得远。</div><div class="jp">同業者？桁が違う。</div></td><td class="fit">px</td></tr>
+<tr><td class="nm">西蒙海耶<div class="id">10002</div></td><td class="hk">荒野独行，拒了城邦邀请</td>
+<td><div class="en">The wild beats any city.</div><div class="zh">荒野比城邦安静。</div><div class="jp">荒野は城邦より静かだ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">巴顿<div class="id">10003</div></td><td class="hk">超级战士，一夜端掉黑帮</td>
+<td><div class="en">Gang dens? Clearing tonight.</div><div class="zh">黑帮据点，今晚全清。</div><div class="jp">ギャングの拠点、今夜全部潰す。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">爱迪生<div class="id">10004</div></td><td class="hk">城邦的机器多半出自她手</td>
+<td><div class="en">That machine? I built it.</div><div class="zh">这台机器，我发明的。</div><div class="jp">その機械、私の発明だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">德雷克<div class="id">10005</div></td><td class="hk">海盗，混异化之海</td>
+<td><div class="en">The Corrupted Sea is mine.</div><div class="zh">异化之海，我说了算。</div><div class="jp">異化の海は俺のもんだ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">特斯拉<div class="id">10006</div></td><td class="hk">与爱迪生同代的另一极</td>
+<td><div class="en">Edison? Barely a rival.</div><div class="zh">爱迪生？勉强算同行。</div><div class="jp">エジソン？ただの好敵手。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">瓦特<div class="id">10007</div></td><td class="hk">战力全押在机甲上</td>
+<td><div class="en">Mech&#x27;s out of power. Wait.</div><div class="zh">机甲没电了，等我。</div><div class="jp">機甲の充電が切れた。待て。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">爱因斯坦<div class="id">10008</div></td><td class="hk">眼里只有人类，没有城邦</td>
+<td><div class="en">No cities. Just people.</div><div class="zh">没有城邦，只有人类。</div><div class="jp">城邦ではなく、人類だけ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">诺贝尔<div class="id">10009</div></td><td class="hk">炸弹狂人</td>
+<td><div class="en">One blast short? Make it two.</div><div class="zh">一发不够，就两发。</div><div class="jp">一発で足りない？二発だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">丹妮莉丝<div class="id">10010</div></td><td class="hk">机械龙只有一米五</td>
+<td><div class="en">Dragon&#x27;s 1.5m. Don&#x27;t laugh.</div><div class="zh">我的龙一米五，别笑。</div><div class="jp">うちの竜は1.5m。笑うな。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">居里夫人<div class="id">10011</div></td><td class="hk">放射性研究第一名</td>
+<td><div class="en">Do not touch my samples.</div><div class="zh">别碰我的样品。</div><div class="jp">私のサンプルに触るな。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">俾斯麦<div class="id">10012</div></td><td class="hk">被劝去体术营的电磁剑手</td>
+<td><div class="en">Brawlers? They fear this sword.</div><div class="zh">体术派？他们怕这剑。</div><div class="jp">体術派？この剣を恐れてる。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">弗兰肯斯坦<div class="id">10013</div></td><td class="hk">来源不明的人造人</td>
+<td><div class="en">Who made me? No one knows.</div><div class="zh">谁造的我？没人知道。</div><div class="jp">誰が私を作った？誰も知らぬ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">亚森罗宾<div class="id">10014</div></td><td class="hk">只偷为富不仁的</td>
+<td><div class="en">Borrowing a rich man&#x27;s wallet.</div><div class="zh">富人的钱包，借一下。</div><div class="jp">金持ちの財布、少し借りる。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">乔<div class="id">10015</div></td><td class="hk">幻想西部小镇的牛仔迷</td>
+<td><div class="en">This city&#x27;s too clean for me.</div><div class="zh">这城邦太干净了。</div><div class="jp">この城邦は綺麗すぎる。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">胡克<div class="id">10016</div></td><td class="hk">比基尔斯最大杂货铺老板</td>
+<td><div class="en">Need something? My shop has it.</div><div class="zh">缺什么？我店里都有。</div><div class="jp">何が要る？店に全部ある。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">嘻哈青年<div class="id">10017</div></td><td class="hk">说唱没人愿意听</td>
+<td><div class="en">This city never plays my tracks.</div><div class="zh">这城邦不放我的歌。</div><div class="jp">この城邦、俺の曲を流さない。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">伐木工<div class="id">10018</div></td><td class="hk">木匠，肌肉大叔</td>
+<td><div class="en">Chopping wood? Warm-up first.</div><div class="zh">砍树？先热身。</div><div class="jp">木を切る？まず準備運動だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">真田幸村<div class="id">10019</div></td><td class="hk">运动全能，伤后觉醒</td>
+<td><div class="en">Court? Let me warm up first.</div><div class="zh">篮球场？先热身。</div><div class="jp">コート？まず準備運動から。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">关羽<div class="id">10020</div></td><td class="hk">武痴，见强手就上</td>
+<td><div class="en">Worth fighting? Then stay.</div><div class="zh">值得一战的，别跑。</div><div class="jp">戦う価値がある奴、逃げるな。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">亚历山大<div class="id">10021</div></td><td class="hk">御姐外表，民俗爱好者</td>
+<td><div class="en">This district? Conquered.</div><div class="zh">这片区域，我征了。</div><div class="jp">この区域、征服した。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">拉拉<div class="id">10022</div></td><td class="hk">纯速度流，篮球天皇粉丝</td>
+<td><div class="en">Being fast is enough.</div><div class="zh">跑得快就够了。</div><div class="jp">速ければ十分だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">服部半藏<div class="id">10023</div></td><td class="hk">硕果仅存的忍者</td>
+<td><div class="en">Ninjas are a dying trade.</div><div class="zh">忍者这行，快没了。</div><div class="jp">忍の稼業も、もう終わりだ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">韩信<div class="id">10024</div></td><td class="hk">传记待定，沿用偷马梗</td>
+<td><div class="en">Zhao Yun&#x27;s horse? Mine soon.</div><div class="zh">赵云的马，迟早我的。</div><div class="jp">趙雲の馬、いつか頂く。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">李白<div class="id">10025</div></td><td class="hk">九大城邦的酒都他供</td>
+<td><div class="en">Nine cities drink my wine.</div><div class="zh">九大城邦都喝我的酒。</div><div class="jp">九つの城邦が俺の酒を飲む。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">阿喀琉斯<div class="id">10026</div></td><td class="hk">防御天花板，还会打球</td>
+<td><div class="en">I hit one over the wall.</div><div class="zh">这球我打飞过城墙。</div><div class="jp">城壁の向こうまで打った。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">成吉思汗<div class="id">10027</div></td><td class="hk">兽语，养了只头铁的鸟</td>
+<td><div class="en">My eagle&#x27;s trash-talking again.</div><div class="zh">我的鹰又在骂人。</div><div class="jp">うちの鷹がまた悪口を言う。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">威廉基德<div class="id">10028</div></td><td class="hk">传记待定，末世与水</td>
+<td><div class="en">Apocalypse done. Still no water.</div><div class="zh">末日过了，还是没水。</div><div class="jp">終末は過ぎた。水はまだだ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">佐罗<div class="id">10029</div></td><td class="hk">孤儿院听侠客故事长大</td>
+<td><div class="en">Mask stays on. House rule.</div><div class="zh">面罩不摘，规矩。</div><div class="jp">マスクは外さない。掟だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">斯巴达<div class="id">10030</div></td><td class="hk">腐化者少了，转战竞技场</td>
+<td><div class="en">The arena is where I live.</div><div class="zh">竞技场才叫活着。</div><div class="jp">闘技場でこそ生きている。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">土方岁三<div class="id">10031</div></td><td class="hk">武士道信条，严于律己</td>
+<td><div class="en">A blade rusts without blood.</div><div class="zh">刀不沾血就生锈。</div><div class="jp">血を浴びねば刀は錆びる。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">花木兰<div class="id">10032</div></td><td class="hk">哥哥失踪，加入特勤局</td>
+<td><div class="en">Missing person? I&#x27;m on it.</div><div class="zh">找人？这活我接。</div><div class="jp">人探し？引き受けた。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">齐格飞<div class="id">10033</div></td><td class="hk">泡腐化兽血，坚称是龙血</td>
+<td><div class="en">It was dragon blood. Drop it.</div><div class="zh">那是龙血，别争了。</div><div class="jp">竜の血だ。もういい。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">运动员<div class="id">10034</div></td><td class="hk">杀人橄榄球被开除</td>
+<td><div class="en">That was a foul? Really?</div><div class="zh">这算犯规？认真的？</div><div class="jp">今のが反則？本気か。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">农夫<div class="id">10035</div></td><td class="hk">种地最好，旧历起无饥荒</td>
+<td><div class="en">No famine since I started.</div><div class="zh">我种地以来没饥荒。</div><div class="jp">俺が始めてから飢饉はない。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">示巴女王<div class="id">10036</div></td><td class="hk">最护短的城主，比基尔斯</td>
+<td><div class="en">Bikirsi is under my wing.</div><div class="zh">比基尔斯，我护着。</div><div class="jp">ビキルスは私が守る。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">克娄帕特拉<div class="id">10037</div></td><td class="hk">文娱行业的先行者</td>
+<td><div class="en">Show business? I came first.</div><div class="zh">娱乐业？我先来的。</div><div class="jp">娯楽業？先に始めたのは私。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">贝奥武夫<div class="id">10038</div></td><td class="hk">武馆时代的拳手</td>
+<td><div class="en">The glove protects you.</div><div class="zh">拳套是保护你的。</div><div class="jp">グローブはお前を守る。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">荷马<div class="id">10039</div></td><td class="hk">腐化之战亲历者，身体带伤</td>
+<td><div class="en">I remember that war.</div><div class="zh">那场战争，我记着。</div><div class="jp">あの戦争を覚えている。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">拉斐尔<div class="id">10040</div></td><td class="hk">上流宴会常客</td>
+<td><div class="en">No party without me.</div><div class="zh">没我的宴会不算宴会。</div><div class="jp">私のいない宴会は宴会でない。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">赫拉克勒斯<div class="id">10041</div></td><td class="hk">医学世家，十二试炼</td>
+<td><div class="en">Twelve trials? All cleared.</div><div class="zh">十二试炼？全过了。</div><div class="jp">十二の試練？全部クリアだ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">但丁<div class="id">10042</div></td><td class="hk">邪教祭坛上捡到的孩子</td>
+<td><div class="en">My right eye sees demons.</div><div class="zh">右眼能看见恶魔。</div><div class="jp">右目に悪魔が見える。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">亚瑟<div class="id">10043</div></td><td class="hk">第八城邦名义城主，剑看不见</td>
+<td><div class="en">City Eight? Nominally mine.</div><div class="zh">第八城邦，名义上的。</div><div class="jp">第八城邦？名目上だけだ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">薛定谔<div class="id">10044</div></td><td class="hk">第二城邦猫咖啡店长</td>
+<td><div class="en">Is the cat here? Don&#x27;t ask.</div><div class="zh">猫在不在？别问。</div><div class="jp">猫はいるのか？聞くな。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">格林<div class="id">10045</div></td><td class="hk">阴阳眼，灵异研究大师</td>
+<td><div class="en">There is a shadow behind you.</div><div class="zh">你身后有个黑影。</div><div class="jp">後ろに黒い影がいる。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">茜茜公主<div class="id">10046</div></td><td class="hk">异能做的化妆品</td>
+<td><div class="en">This mask? Made with powers.</div><div class="zh">这面膜，异能做的。</div><div class="jp">このパック、異能製よ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">弗洛伊德<div class="id">10047</div></td><td class="hk">纯技术派魔术师，拒绝异能</td>
+<td><div class="en">No powers. That is the trick.</div><div class="zh">不用异能，这是规矩。</div><div class="jp">異能は使わない。それが流儀。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">雨果<div class="id">10048</div></td><td class="hk">黑渡鸦织情报网</td>
+<td><div class="en">No secrets in this city.</div><div class="zh">这城邦没有秘密。</div><div class="jp">この城邦に秘密はない。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">肖邦<div class="id">10049</div></td><td class="hk">音乐狂人，为音乐打架</td>
+<td><div class="en">One wrong note. I heard it.</div><div class="zh">错一个音，我听得见。</div><div class="jp">一音外した。聞こえたぞ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">玛利亚<div class="id">10050</div></td><td class="hk">只能控剪刀，做了把巨剪</td>
+<td><div class="en">Scissors can be person-sized.</div><div class="zh">剪刀也能一人高。</div><div class="jp">ハサミも人ほどに大きくなる。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">唐吉坷德<div class="id">10051</div></td><td class="hk">骑士精神，但保命第一</td>
+<td><div class="en">Even knights want to live.</div><div class="zh">骑士也得先活着。</div><div class="jp">騎士だって生きていたい。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">海明威<div class="id">10052</div></td><td class="hk">伤痕文学作家，也能打</td>
+<td><div class="en">This wound? A whole chapter.</div><div class="zh">这伤，够写一章。</div><div class="jp">この傷は一章分だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">服务员<div class="id">10053</div></td><td class="hk">全能家政，专治实验室</td>
+<td><div class="en">The lab is a mess. Again.</div><div class="zh">实验室又乱了。</div><div class="jp">実験室、また散らかってる。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">护士<div class="id">10054</div></td><td class="hk">优生优育倡导者</td>
+<td><div class="en">Needles fix kids fast.</div><div class="zh">针头专治小孩。</div><div class="jp">注射針は子供に効く。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">赵云<div class="id">10057</div></td><td class="hk">保镖行业顶点，零失手</td>
+<td><div class="en">Nothing I guard gets lost.</div><div class="zh">我保的东西没丢过。</div><div class="jp">俺が守るものは失われない。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">布伦谢尔德<div class="id">10058</div></td><td class="hk">特别行动组，伤亡惊人</td>
+<td><div class="en">The wild sends back bodies.</div><div class="zh">荒野只送尸体回来。</div><div class="jp">荒野から戻るのは遺体だけ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">海伦<div class="id">10059</div></td><td class="hk">阴谋家：你也许血赚，我不亏</td>
+<td><div class="en">You may win. I never lose.</div><div class="zh">你也许赚，我不亏。</div><div class="jp">君は勝つかも。私は負けない。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">南丁格尔<div class="id">10060</div></td><td class="hk">护理天花板</td>
+<td><div class="en">Don&#x27;t die. I&#x27;m on shift.</div><div class="zh">别死，我还没下班。</div><div class="jp">死ぬな。まだ勤務中だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">凯撒<div class="id">10061</div></td><td class="hk">把濒散棒球队救活</td>
+<td><div class="en">Team falling apart? I&#x27;ll fix it.</div><div class="zh">球队散了？我来带。</div><div class="jp">チームが崩れる？私が立て直す。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">赫克托耳<div class="id">10062</div></td><td class="hk">守城专家，旧历战功</td>
+<td><div class="en">Holding walls is my job.</div><div class="zh">守城墙，我熟。</div><div class="jp">城壁を守るのが俺の仕事。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">雅典娜<div class="id">10063</div></td><td class="hk">复原遗迹里的艺术</td>
+<td><div class="en">I restored those ruins.</div><div class="zh">遗迹的画，我修的。</div><div class="jp">遺跡の絵は私が直した。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">李舜臣<div class="id">10064</div></td><td class="hk">要夺回海洋，造船</td>
+<td><div class="en">The sea is ours, not theirs.</div><div class="zh">海是人类的，不是它们的。</div><div class="jp">海は人類のものだ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">贞德<div class="id">10065</div></td><td class="hk">促成联邦统一阵线</td>
+<td><div class="en">I got the alliance signed.</div><div class="zh">统一阵线，我谈成的。</div><div class="jp">連合をまとめたのは私だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">瓦尔基里<div class="id">10066</div></td><td class="hk">启明星科技定制装备</td>
+<td><div class="en">Custom gear from Daystar.</div><div class="zh">这身装备，启明星定制。</div><div class="jp">この装備、明星科技の特注。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">帕里斯<div class="id">10067</div></td><td class="hk">只当评委不上台</td>
+<td><div class="en">I do not perform. I judge.</div><div class="zh">我不演，我只打分。</div><div class="jp">演じない。採点する。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">拿破仑<div class="id">10068</div></td><td class="hk">想当联邦第一位女将军</td>
+<td><div class="en">First female general. Mine.</div><div class="zh">联邦第一位女将军。</div><div class="jp">連邦初の女将軍は私だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">哥白尼<div class="id">10069</div></td><td class="hk">摇滚歌手+天体研究</td>
+<td><div class="en">The stars? I sing them.</div><div class="zh">星空的事，唱给你听。</div><div class="jp">星の話は歌にする。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">毕达哥拉斯<div class="id">10070</div></td><td class="hk">两边阵营都来求的数学家</td>
+<td><div class="en">Math broke? They call me.</div><div class="zh">算式错了都找我。</div><div class="jp">計算で困ると皆が呼ぶ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">罗宾汉<div class="id">10071</div></td><td class="hk">慈善家，贫民声望</td>
+<td><div class="en">Time to fund the shelters.</div><div class="zh">基金会又该拨款了。</div><div class="jp">そろそろ基金を回さないと。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">织田信长<div class="id">10072</div></td><td class="hk">混沌&quot;魔王&quot;，察觉太顺</td>
+<td><div class="en">Chaos is going too smoothly.</div><div class="zh">混沌那边太顺了。</div><div class="jp">混沌、うまく行きすぎだ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">哈桑<div class="id">10073</div></td><td class="hk">孩子王，资助孤儿院</td>
+<td><div class="en">The snacks? For the kids.</div><div class="zh">零食？给孩子的。</div><div class="jp">この菓子は子供にやる。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">布鲁图斯<div class="id">10074</div></td><td class="hk">半睡不醒统领大都会</td>
+<td><div class="en">I&#x27;m awake. Mostly.</div><div class="zh">我醒着，别怕。</div><div class="jp">起きてる。たぶん。</div></td><td class="fit">37px</td></tr>
+<tr><td class="nm">所罗门<div class="id">10075</div></td><td class="hk">大都会城主，三无</td>
+<td><div class="en">The capital answers to me.</div><div class="zh">大都会，我说了算。</div><div class="jp">大都会は私の裁量だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">嬴政<div class="id">10076</div></td><td class="hk">统一家乡后被驱逐</td>
+<td><div class="en">Someone has to keep order.</div><div class="zh">秩序，得有人定。</div><div class="jp">秩序を保つ者が要る。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">卑弥呼<div class="id">10079</div></td><td class="hk">传记待定</td>
+<td><div class="en">You said my name right?</div><div class="zh">我的名字，念对了？</div><div class="jp">私の名、正しく読めた？</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">白起<div class="id">10080</div></td><td class="hk">结果大于一切，戴面具</td>
+<td><div class="en">Right result. Any method.</div><div class="zh">结果对，手段随便。</div><div class="jp">結果が正しければ手段は問わぬ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">弗拉德<div class="id">10081</div></td><td class="hk">名门千金，迷恋穿环刺青</td>
+<td><div class="en">Hold still. New piercing.</div><div class="zh">别动，给你穿个环。</div><div class="jp">動くな。ピアスを開ける。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">明智光秀<div class="id">10082</div></td><td class="hk">身世成谜，不被完全信任</td>
+<td><div class="en">Don&#x27;t ask about my past.</div><div class="zh">我的事，问不得。</div><div class="jp">私の過去は聞くな。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">伊丽莎白<div class="id">10085</div></td><td class="hk">拷问官，乐在其中</td>
+<td><div class="en">Talking yet? I have time.</div><div class="zh">招不招？我有耐心。</div><div class="jp">話すか？時間はある。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">血腥玛丽<div class="id">10086</div></td><td class="hk">传记待定</td>
+<td><div class="en">The mirror is not me.</div><div class="zh">镜子里的不是我。</div><div class="jp">鏡の中のそれは私じゃない。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">弑君者詹姆<div class="id">10087</div></td><td class="hk">荒野恶棍，处处通缉令</td>
+<td><div class="en">Only one bounty poster?</div><div class="zh">通缉令贴太少了。</div><div class="jp">手配書が一枚だけか。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">开膛手杰克<div class="id">10088</div></td><td class="hk">把人类当腐化者</td>
+<td><div class="en">Corrupted? They are everywhere.</div><div class="zh">腐化者？到处都是。</div><div class="jp">腐敗者？そこら中にいる。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">尼禄<div class="id">10089</div></td><td class="hk">操偶师，自己躲在暗处</td>
+<td><div class="en">The puppet fights. I watch.</div><div class="zh">人偶在打，我看着。</div><div class="jp">人形が戦う。私は後ろで。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">霍恩海姆<div class="id">10090</div></td><td class="hk">被当成骗子的炼金术师</td>
+<td><div class="en">Not a scam. Alchemy.</div><div class="zh">这不是骗术，是炼金。</div><div class="jp">詐欺じゃない。錬金術だ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">超能DNA<div class="id">20000</div></td><td class="hk">升星替代材料</td>
+<td><div class="en">Short a hero? Use me.</div><div class="zh">没人可用？拿我填。</div><div class="jp">英雄が足りない？俺で埋めろ。</div></td><td class="fit">74px</td></tr>
+<tr><td class="nm">梦魇<div class="id">30001</div></td><td class="hk">暗影梦魔，还没名字</td>
+<td><div class="en">I still have no name.</div><div class="zh">我还没有名字。</div><div class="jp">俺にはまだ名前がない。</div></td><td class="fit">74px</td></tr>
+</tbody></table>
+
+<div class="foot">
+落盘：<code>Language.xlsx</code>（316 格，逐格比对无其他改动）· <code>Language.lua</code> · <code>Config_Data_Language_64.bytes</code>（<code>--check</code> 绿）。<br>
+说明：<code>AfkSpeak.xlsx</code> 只改文本指向的语言 id 内容，行数没变——新增台词行要过 Unity「变化导表」重打包（<code>__indexs</code> 是压缩格式），
+这一步会重写所有配置 lua，和并行会话有冲突风险，所以这次没做；需要的话单独跑。
+</div>
+</div></body></html>

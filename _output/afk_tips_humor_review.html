@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>挂机气泡对白 · 重写（AfkSpeak Type 0）</title>
+<style>
+:root{--ink:#1b1b1e;--sub:#6d6a66;--line:#e5e2db;--bg:#f5f3ef;--card:#fff;--warn:#b45309;--ok:#15803d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);line-height:1.55;
+font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:46px 26px 70px}
+h1{font-size:25px;margin:0 0 6px;letter-spacing:-.2px}
+.sub{color:var(--sub);font-size:14px;margin-bottom:18px}
+.meta{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:30px}
+.chip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12.5px;color:var(--sub)}
+.chip b{color:var(--ink)}
+h2{font-size:13.5px;letter-spacing:.6px;color:var(--sub);font-weight:600;text-transform:uppercase;margin:34px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:8px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.stat .k{font-size:11.5px;color:var(--sub);letter-spacing:.4px}
+.stat .v{font-size:19px;font-weight:650;margin-top:3px;font-variant-numeric:tabular-nums}
+.stat .v.bad{color:var(--warn)} .stat .v.good{color:var(--ok)}
+.stat .n{font-size:12px;color:var(--sub);margin-top:2px}
+/* 气泡 */
+.bubbles{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+.bw{display:flex;flex-direction:column;gap:8px}
+.cap{font-size:11.5px;color:var(--sub)}
+.balloon{position:relative;width:303px;height:109px;background:#fffdf6;border:1.5px solid #cfc9bb;border-radius:16px;
+box-shadow:0 1px 0 #e9e5da inset}
+.balloon:after{content:"";position:absolute;left:34px;bottom:-9px;width:16px;height:16px;background:#fffdf6;
+border-right:1.5px solid #cfc9bb;border-bottom:1.5px solid #cfc9bb;transform:rotate(45deg)}
+.box{position:absolute;left:11px;top:11px;width:280px;overflow:hidden;font-size:28px;line-height:37px;
+color:#2a2620;font-family:"OPPOSans-M-2","PingFang SC","Helvetica Neue",Arial,sans-serif}
+.box.old{height:37px} .box.new{height:78px}
+/* 表格 */
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+th{text-align:left;font-size:11.5px;color:var(--sub);letter-spacing:.5px;padding:11px 13px;background:#faf8f4;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:12px 13px;border-bottom:1px solid #f1eee8;vertical-align:top;font-size:13.5px}
+tr:last-child td{border-bottom:none}
+.id{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--sub);width:86px}
+.old .en{color:#a39e96;text-decoration:line-through;text-decoration-color:#dcd8cf}
+.old .zh{color:#b3aea6;font-size:12.5px;margin-top:2px;text-decoration:line-through;text-decoration-color:#e2ded6}
+.new .en{font-weight:600}
+.new .zh{color:#454138;margin-top:2px}
+.new .jp{color:#a5a096;font-size:12px;margin-top:2px}
+.fit{width:110px;font-size:11.5px;font-variant-numeric:tabular-nums}
+.was{color:var(--warn)}
+.now{color:var(--ok);margin-top:2px}
+.foot{margin-top:24px;color:var(--sub);font-size:12.5px;line-height:1.7}
+.foot code{background:#eae6de;padding:1.5px 5px;border-radius:4px;font-size:11.5px}
+</style></head><body><div class="wrap">
+<h1>挂机气泡对白重写</h1>
+<div class="sub">AfkSpeak 表 Type=0 通用池 · 20 条 · 任意英雄随机吐一句，所以写成「角色吐槽」而不是说明书</div>
+<div class="meta">
+  <div class="chip">Language.xlsx / Language.lua / LuaBytes 已同步</div>
+  <div class="chip">文本盒 <b>280×37 → 280×78</b></div>
+  <div class="chip">字号 <b>28</b> · Wrap + Truncate</div>
+</div>
+
+<h2>先说坏消息：旧文案根本显示不全</h2>
+<div class="stats">
+  <div class="stat"><div class="k">旧文案平均需要</div><div class="v bad">142 px</div><div class="n">文本框只有 37 px（1 行 ≈ 15 字符）</div></div>
+  <div class="stat"><div class="k">最严重一条</div><div class="v bad">8 行 / 296 px</div><div class="n">迷雾遗迹那条，玩家只看得到开头十几个字</div></div>
+  <div class="stat"><div class="k">新文案最坏</div><div class="v good">2 行 / 74 px</div><div class="n">盒子加到 78 px，全部一屏读完</div></div>
+</div>
+<div class="card" style="margin-top:14px">
+<div class="bubbles">
+  <div class="bw"><div class="cap">旧：盒子 37 px，第 2 行起被 Truncate 截掉</div>
+    <div class="balloon"><div class="box old">There are mysterious remains hidden in the fog, and those who are lucky enough to find them have gained great wealth.</div></div></div>
+  <div class="bw"><div class="cap">新：盒子 78 px，两行全露</div>
+    <div class="balloon"><div class="box new">Relics in the fog. Get rich.</div></div></div>
+</div>
+</div>
+
+<h2>逐条对照（行数 / 所需高度为 Unity TextGenerator 实测）</h2>
+<table>
+<thead><tr><th>ID</th><th>原来</th><th>现在</th><th>排版</th></tr></thead>
+<tbody><tr>
+  <td class="id">63010089</td>
+  <td class="old"><div class="en">A little hungry...</div><div class="zh">有点饿了…</div></td>
+  <td class="new"><div class="en">Hungry? Only for that dragon.</div><div class="zh">饿？只对那条龙有胃口。</div><div class="jp">空腹？あの竜になら。</div></td>
+  <td class="fit"><div class="was">1行 / 37px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010090</td>
+  <td class="old"><div class="en">Charge forward! ! ! !</div><div class="zh">向前冲锋！！！！</div></td>
+  <td class="new"><div class="en">CHARGE! ...That&#x27;s the plan?</div><div class="zh">冲啊！……计划就这？</div><div class="jp">突撃！…作戦はこれだけ？</div></td>
+  <td class="fit"><div class="was">1行 / 37px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010091</td>
+  <td class="old"><div class="en">I smell the treasure!</div><div class="zh">我闻到宝藏的味道了！</div></td>
+  <td class="new"><div class="en">Treasure smell. Or just feet.</div><div class="zh">一股宝藏味。可能是脚。</div><div class="jp">宝の匂い。足の匂いかも。</div></td>
+  <td class="fit"><div class="was">1行 / 37px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010092</td>
+  <td class="old"><div class="en">The increase in hero level can greatly improve combat effectiveness!</div><div class="zh">英雄等级提升可大幅度提高战斗力！</div></td>
+  <td class="new"><div class="en">Level up. More damage. Enjoy.</div><div class="zh">升级，伤害更高。享受吧。</div><div class="jp">レベル上げで火力増。どうぞ。</div></td>
+  <td class="fit"><div class="was">5行 / 185px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010093</td>
+  <td class="old"><div class="en">Heroes can enhance hero skills by upgrading stars.</div><div class="zh">英雄升星可强化英雄技能。</div></td>
+  <td class="new"><div class="en">Star up. Skills hit meaner.</div><div class="zh">升星，技能更狠。</div><div class="jp">星上げでスキルが凶悪に。</div></td>
+  <td class="fit"><div class="was">3行 / 111px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010094</td>
+  <td class="old"><div class="en">Pairing a good ring and ability skills will have unexpected effects.</div><div class="zh">搭配好戒指和能力技能会有意想不到的效果。</div></td>
+  <td class="new"><div class="en">Ring + skill, right pairing.</div><div class="zh">戒指配技能，讲究搭配。</div><div class="jp">リングとスキルは相性次第。</div></td>
+  <td class="fit"><div class="was">4行 / 148px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010095</td>
+  <td class="old"><div class="en">Gu..., my stomach is protesting</div><div class="zh">咕……,肚子在抗议了</div></td>
+  <td class="new"><div class="en">Stomach filing a complaint.</div><div class="zh">我的胃在提交投诉。</div><div class="jp">胃が正式に抗議中。</div></td>
+  <td class="fit"><div class="was">2行 / 74px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010096</td>
+  <td class="old"><div class="en">I heard that guardians can strengthen hero attributes!</div><div class="zh">听说守护可强化英雄属性！</div></td>
+  <td class="new"><div class="en">Guardians buff you. Allegedly.</div><div class="zh">守护能强化属性。据说。</div><div class="jp">ガーディアンで属性アップ。噂。</div></td>
+  <td class="fit"><div class="was">4行 / 148px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010097</td>
+  <td class="old"><div class="en">Clubs can select camps to recruit heroes.</div><div class="zh">俱乐部可以指定阵营招募英雄。</div></td>
+  <td class="new"><div class="en">Club picks a camp. Recruits.</div><div class="zh">俱乐部选阵营，招人。</div><div class="jp">クラブでキャンプ指定、募集。</div></td>
+  <td class="fit"><div class="was">3行 / 111px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010098</td>
+  <td class="old"><div class="en">Clubs can exchange different heroes.</div><div class="zh">俱乐部可以交换不同的英雄。</div></td>
+  <td class="new"><div class="en">Trade heroes. No refunds.</div><div class="zh">交换英雄。概不退换。</div><div class="jp">ヒーロー交換。返品不可。</div></td>
+  <td class="fit"><div class="was">3行 / 111px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010099</td>
+  <td class="old"><div class="en">There are mysterious remains hidden in the fog, and those who are lucky enough to find them have gained great wealth.</div><div class="zh">迷雾中隐藏着神秘的遗迹，有幸找到的人获得了巨大的财富。</div></td>
+  <td class="new"><div class="en">Relics in the fog. Get rich.</div><div class="zh">雾里有遗迹。暴富去吧。</div><div class="jp">霧に遺跡。一攫千金へ。</div></td>
+  <td class="fit"><div class="was">8行 / 296px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010100</td>
+  <td class="old"><div class="en">The chip can enhance the hero attributes and collect a set of new features.</div><div class="zh">芯片可强化英雄属性，集齐一套可获得新特性。</div></td>
+  <td class="new"><div class="en">Chips boost stats. Full set!</div><div class="zh">芯片强化属性，凑满套。</div><div class="jp">チップで属性アップ。揃えば更に。</div></td>
+  <td class="fit"><div class="was">5行 / 185px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010101</td>
+  <td class="old"><div class="en">There is a lot of discounted goods sold in the black market.</div><div class="zh">传闻黑市里有大量打折商品出售。</div></td>
+  <td class="new"><div class="en">Black market: no receipts.</div><div class="zh">黑市大促，不开发票。</div><div class="jp">闇市セール。領収書なし。</div></td>
+  <td class="fit"><div class="was">4行 / 148px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010102</td>
+  <td class="old"><div class="en">Challenge the Tower of God to gain a lot of hero experience and gold coins.</div><div class="zh">挑战神之塔可获得大量英雄经验和金币。</div></td>
+  <td class="new"><div class="en">Tower of God: EXP and gold.</div><div class="zh">神之塔：经验和金币。</div><div class="jp">神の塔：経験値と金貨。</div></td>
+  <td class="fit"><div class="was">5行 / 185px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010103</td>
+  <td class="old"><div class="en">The combat power of the heroes in the corresponding camp can be improved by signing contracts with each camp.</div><div class="zh">可通过与各大阵营签订契约提高对应阵营英雄的战力。</div></td>
+  <td class="new"><div class="en">Sign a camp deal. Fine print.</div><div class="zh">签约阵营，看清小字。</div><div class="jp">キャンプ契約。小さな字を読め。</div></td>
+  <td class="fit"><div class="was">7行 / 259px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010104</td>
+  <td class="old"><div class="en">Every pioneer has the ability to help the team improve their combat effectiveness.</div><div class="zh">每一位先驱都有通天之能，可辅助小队提高小队战斗力。</div></td>
+  <td class="new"><div class="en">Pioneers carry the squad.</div><div class="zh">先驱扛着全队走。</div><div class="jp">先駆者が部隊を背負う。</div></td>
+  <td class="fit"><div class="was">5行 / 185px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010105</td>
+  <td class="old"><div class="en">The Personnel Department can dismiss useless heroes.</div><div class="zh">人事处可以遣散无用的英雄。</div></td>
+  <td class="new"><div class="en">HR fires your bad heroes.</div><div class="zh">人事处专治废柴英雄。</div><div class="jp">人事部はポンコツを解雇。</div></td>
+  <td class="fit"><div class="was">4行 / 148px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010106</td>
+  <td class="old"><div class="en">The institute can synthesize some equipment to improve the hero&#x27;s combat effectiveness.</div><div class="zh">研究所可以合成一些装备，来提高英雄的战斗力。</div></td>
+  <td class="new"><div class="en">Institute gear hits harder.</div><div class="zh">研究所装备，真的疼。</div><div class="jp">研究所の装備はよく刺さる。</div></td>
+  <td class="fit"><div class="was">6行 / 222px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010107</td>
+  <td class="old"><div class="en">The superpower laboratory can speed up heroes.</div><div class="zh">异能实验室可以更快的升星英雄。</div></td>
+  <td class="new"><div class="en">Lab star-ups, but faster.</div><div class="zh">实验室升星，更快。</div><div class="jp">ラボなら星上げが速い。</div></td>
+  <td class="fit"><div class="was">3行 / 111px</div><div class="now">2行 / 74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010108</td>
+  <td class="old"><div class="en">The hospital can reset the hero&#x27;s star rating.</div><div class="zh">医院可以重置英雄的星级。</div></td>
+  <td class="new"><div class="en">Stars reset. Don&#x27;t ask why.</div><div class="zh">星级重置，别问原因。</div><div class="jp">星リセット。理由は聞くな。</div></td>
+  <td class="fit"><div class="was">3行 / 111px</div><div class="now">2行 / 74px</div></td>
+</tr></tbody></table>
+
+<div class="foot">
+落盘：<code>Language.xlsx</code>（真源，XML 层只改 60 格）· <code>Language.lua</code> · <code>Config_Data_Language_64.bytes</code>（已重编）·
+<code>FightPointPassMainPanel.prefab</code>（9 个气泡 Text 盒 37→78，位置 -39.5→-46，diff 只有 18 行）。<br>
+韩语走另一张表 <code>data_execl/Language韩语去掉前.xlsx</code>，这 20 条还没补，需要的话可以一起给。
+</div>
+</div></body></html>

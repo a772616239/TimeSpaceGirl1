@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>挂机气泡 · 场景吐槽池（按地图）</title>
+<style>
+:root{--ink:#1b1b1e;--sub:#6d6a66;--line:#e5e2db;--bg:#f5f3ef;--ok:#15803d;--accent:#b45309}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);line-height:1.5;
+font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:44px 26px 72px}
+h1{font-size:25px;margin:0 0 6px;letter-spacing:-.2px}
+.sub{color:var(--sub);font-size:14px;margin-bottom:16px}
+.meta{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 28px}
+.chip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12.5px;color:var(--sub)}
+.chip b{color:var(--ink)}
+h2{font-size:13px;letter-spacing:.6px;color:var(--sub);font-weight:600;text-transform:uppercase;
+margin:34px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.step{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 15px}
+.step .k{font-size:11px;color:var(--sub);letter-spacing:.5px}
+.step .v{font-size:13.5px;margin-top:5px;line-height:1.45}
+.step code{background:#efece6;border-radius:4px;padding:1px 5px;font-size:11.5px}
+.map{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:18px}
+.mv{position:relative;height:132px;background-repeat:no-repeat;background-color:#0d1017}
+.mtag{position:absolute;left:14px;top:12px;background:rgba(10,12,18,.72);color:#fff;
+font-size:11.5px;letter-spacing:.4px;padding:3px 9px;border-radius:999px;backdrop-filter:blur(3px)}
+.mttl{position:absolute;left:14px;bottom:12px;color:#fff;font-size:17px;font-weight:650;
+text-shadow:0 1px 8px rgba(0,0,0,.75)}
+.mbody{padding:14px 18px 18px}
+.msub{color:var(--sub);font-size:12.5px;margin-bottom:10px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;color:var(--sub);font-weight:600;letter-spacing:.4px;
+padding:7px 8px;border-bottom:1px solid var(--line)}
+td{padding:8px;border-bottom:1px solid #f2efe9;vertical-align:top;font-size:13px}
+tr:last-child td{border-bottom:none}
+.n{width:22px;color:#bdb9b1;font-variant-numeric:tabular-nums}
+.en{width:38%;font-weight:600}
+.zh{width:26%;color:#454138}
+.jp{width:28%;color:#8c8880;font-size:12.5px}
+.fit{width:66px;text-align:right;color:var(--ok);font-size:11px;font-variant-numeric:tabular-nums}
+.check{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;font-size:13.5px}
+.check li{margin:5px 0}
+.check code{background:#efece6;border-radius:4px;padding:1px 5px;font-size:12px}
+.foot{margin-top:26px;color:var(--sub);font-size:12.5px;line-height:1.75}
+</style></head><body><div class="wrap">
+<h1>挂机气泡：按地图说话的「场景吐槽池」</h1>
+<div class="sub">原来只有「通用池 + 英雄专属」两级；现在加了第三级——当前站在哪张图，就说哪张图的坏话</div>
+<div class="meta">
+  <div class="chip">新增 <b>40 条</b> · 5 张地图各 8 条</div>
+  <div class="chip">语言 <b>中 / 英 / 日</b></div>
+  <div class="chip">命中率 <b>40%</b>，其余仍走英雄 + 通用</div>
+  <div class="chip">实测 <b>全部 ≤2 行 / 74px</b></div>
+</div>
+
+<h2>它怎么知道你在哪张图</h2>
+<div class="flow">
+  <div class="step"><div class="k">1. 地图来源</div><div class="v"><code>MainLevelConfig[curOpenFight].BG</code><br>挂机面板本来就用它建 3D 场景</div></div>
+  <div class="step"><div class="k">2. 传进挂机视图</div><div class="v"><code>UpdateMap(map, mapName)</code><br>顺手把地图名记下来</div></div>
+  <div class="step"><div class="k">3. 换成池编号</div><div class="v"><code>Map2 → 9902</code><br>非 MapN 形态（公会 / 矿战）返回 nil</div></div>
+  <div class="step"><div class="k">4. 抽台词</div><div class="v">40% 用场景池；<br>池为空自动退回通用池</div></div>
+</div>
+
+<h2>五张地图 · 各 8 条</h2>
+<section class="map">
+  <div class="mv" style="background-image:url('../Assets/Art/Scence/texture/cn2-Scence_tex_002.png');background-size:200% 100%;background-position:0% 45%">
+    <div class="mtag">Map1 · Type 9901</div>
+    <div class="mttl">霓虹都市夜景</div>
+  </div>
+  <div class="mbody">
+    <div class="msub">霓虹都市夜景 · 广告牌 / 警察剪影 / 月亮</div>
+    <table>
+      <thead><tr><th></th><th>English</th><th>中文</th><th>日本語</th><th>排版</th></tr></thead>
+      <tbody><tr>
+  <td class="n">1</td>
+  <td class="en">Neon everywhere. Still blind.</td>
+  <td class="zh">到处霓虹，还是看不见。</td>
+  <td class="jp">ネオンだらけで見えない。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">2</td>
+  <td class="en">Nobody reads signs at 3 a.m.</td>
+  <td class="zh">凌晨三点谁看广告牌？</td>
+  <td class="jp">深夜に看板を読む奴。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">3</td>
+  <td class="en">Cops on every corner. Great.</td>
+  <td class="zh">每个街角都有警察。真好。</td>
+  <td class="jp">角ごとに警官。最高。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">4</td>
+  <td class="en">City lights. Nobody home.</td>
+  <td class="zh">灯全亮着，一个人没有。</td>
+  <td class="jp">街は光る。人はいない。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">5</td>
+  <td class="en">My shadow looks better than me.</td>
+  <td class="zh">我的影子比我上镜。</td>
+  <td class="jp">影の方がマシだ。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">6</td>
+  <td class="en">Rain, neon, bad decisions.</td>
+  <td class="zh">雨、霓虹、糟糕的决定。</td>
+  <td class="jp">雨、ネオン、悪い判断。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">7</td>
+  <td class="en">This street never dries.</td>
+  <td class="zh">这条路从来没干过。</td>
+  <td class="jp">この道は乾かない。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">8</td>
+  <td class="en">Somebody turn off one sign.</td>
+  <td class="zh">谁能关掉一块招牌。</td>
+  <td class="jp">看板を一つ消してくれ。</td>
+  <td class="fit">1行/74px</td>
+</tr></tbody>
+    </table>
+  </div>
+</section><section class="map">
+  <div class="mv" style="background-image:url('../Assets/Art/Scence/texture/cn2-Scence_tex_001.png');background-size:210% 210%;background-position:0% 100%">
+    <div class="mtag">Map2 · Type 9902</div>
+    <div class="mttl">雪地废墟</div>
+  </div>
+  <div class="mbody">
+    <div class="msub">雪地废墟 · 积雪路面 / 松树 / 冰冷天际线</div>
+    <table>
+      <thead><tr><th></th><th>English</th><th>中文</th><th>日本語</th><th>排版</th></tr></thead>
+      <tbody><tr>
+  <td class="n">1</td>
+  <td class="en">Cold. My boots gave up.</td>
+  <td class="zh">冷。靴子先投降了。</td>
+  <td class="jp">寒い。ブーツが降参。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">2</td>
+  <td class="en">Can&#x27;t feel my face. Fine.</td>
+  <td class="zh">脸没知觉了。挺好。</td>
+  <td class="jp">顔の感覚がない。まあいい。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">3</td>
+  <td class="en">Snow again. Who ordered it?</td>
+  <td class="zh">又下雪。谁点的？</td>
+  <td class="jp">また雪。誰の注文だ。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">4</td>
+  <td class="en">I hate white. All of it.</td>
+  <td class="zh">我讨厌白色。全部。</td>
+  <td class="jp">白が嫌いだ。全部。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">5</td>
+  <td class="en">Whoever mapped this froze.</td>
+  <td class="zh">画这图的人先冻死了。</td>
+  <td class="jp">地図を描いた奴が凍った。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">6</td>
+  <td class="en">Nice ice. Would not recommend.</td>
+  <td class="zh">冰不错。不推荐。</td>
+  <td class="jp">いい氷だ。勧めない。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">7</td>
+  <td class="en">My fingers filed a complaint.</td>
+  <td class="zh">我的手指投诉了。</td>
+  <td class="jp">指が苦情を出した。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">8</td>
+  <td class="en">This weather is not my job.</td>
+  <td class="zh">这天气不归我管。</td>
+  <td class="jp">天気は担当外だ。</td>
+  <td class="fit">1行/74px</td>
+</tr></tbody>
+    </table>
+  </div>
+</section><section class="map">
+  <div class="mv" style="background-image:url('../Assets/Art/Scence/texture/cn2-Scence_tex_006.png');background-size:100% 100%;background-position:50% 50%">
+    <div class="mtag">Map5 · Type 9905</div>
+    <div class="mttl">机械基地</div>
+  </div>
+  <div class="mbody">
+    <div class="msub">机械基地 · 钢构 / 管线 / 冷蓝灯带</div>
+    <table>
+      <thead><tr><th></th><th>English</th><th>中文</th><th>日本語</th><th>排版</th></tr></thead>
+      <tbody><tr>
+  <td class="n">1</td>
+  <td class="en">Everything here hums.</td>
+  <td class="zh">这里什么都嗡嗡响。</td>
+  <td class="jp">ここは全部唸ってる。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">2</td>
+  <td class="en">OSHA would cry right now.</td>
+  <td class="zh">安全员看到会哭。</td>
+  <td class="jp">安全担当が泣くぞ。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">3</td>
+  <td class="en">Who puts stairs here? Nobody.</td>
+  <td class="zh">谁在这装楼梯？没道理。</td>
+  <td class="jp">なぜここに階段を。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">4</td>
+  <td class="en">Oil on the floor. Free slide.</td>
+  <td class="zh">地上有油。免费滑梯。</td>
+  <td class="jp">床に油。無料滑り台。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">5</td>
+  <td class="en">This tower has too many towers.</td>
+  <td class="zh">这塔的塔也太多了。</td>
+  <td class="jp">この塔、塔が多すぎる。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">6</td>
+  <td class="en">The union would love this.</td>
+  <td class="zh">工会会喜欢这地方。</td>
+  <td class="jp">労組が喜びそうだ。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">7</td>
+  <td class="en">Rail to nowhere. Classic.</td>
+  <td class="zh">铁轨通向没有。经典。</td>
+  <td class="jp">行き止まりの線路。定番。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">8</td>
+  <td class="en">Not my oil, not my problem.</td>
+  <td class="zh">不归我管，也不是我的油。</td>
+  <td class="jp">俺の油じゃない。知らん。</td>
+  <td class="fit">2行/74px</td>
+</tr></tbody>
+    </table>
+  </div>
+</section><section class="map">
+  <div class="mv" style="background-image:url('../Assets/Art/Scence/texture/cn2-Scence_tex_009.png');background-size:100% 100%;background-position:50% 0%">
+    <div class="mtag">Map7 · Type 9907</div>
+    <div class="mttl">古树森林</div>
+  </div>
+  <div class="mbody">
+    <div class="msub">古树森林 · 巨木 / 藤蔓 / 石砖地</div>
+    <table>
+      <thead><tr><th></th><th>English</th><th>中文</th><th>日本語</th><th>排版</th></tr></thead>
+      <tbody><tr>
+  <td class="n">1</td>
+  <td class="en">This tree is older than the map.</td>
+  <td class="zh">这树比地图还老。</td>
+  <td class="jp">この木は地図より古い。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">2</td>
+  <td class="en">Roots. Every step. Roots.</td>
+  <td class="zh">树根。每一步都是树根。</td>
+  <td class="jp">根ばかり。一歩ごとに根。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">3</td>
+  <td class="en">Bugs have a union here.</td>
+  <td class="zh">这里的虫子有工会。</td>
+  <td class="jp">虫に労組があるらしい。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">4</td>
+  <td class="en">Stone floor, zero furniture.</td>
+  <td class="zh">石头地板，一件家具没有。</td>
+  <td class="jp">石の床。家具はゼロ。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">5</td>
+  <td class="en">Who mows this? Nobody.</td>
+  <td class="zh">谁来修剪这林子？没人。</td>
+  <td class="jp">誰が手入れしてる。誰も。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">6</td>
+  <td class="en">I stepped on something alive.</td>
+  <td class="zh">我踩到活的东西了。</td>
+  <td class="jp">生き物を踏んだ気がする。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">7</td>
+  <td class="en">Nature. My least favorite boss.</td>
+  <td class="zh">大自然。我最怕的老板。</td>
+  <td class="jp">自然。苦手な上司だ。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">8</td>
+  <td class="en">Shade everywhere. Suspicious.</td>
+  <td class="zh">到处是树荫。可疑。</td>
+  <td class="jp">日陰だらけ。怪しい。</td>
+  <td class="fit">1行/74px</td>
+</tr></tbody>
+    </table>
+  </div>
+</section><section class="map">
+  <div class="mv" style="background-image:url('../Assets/Art/Scence/texture/cn2-Scence_tex_010.png');background-size:100% 100%;background-position:50% 50%">
+    <div class="mtag">Map8 · Type 9908</div>
+    <div class="mttl">室内实验室</div>
+  </div>
+  <div class="mbody">
+    <div class="msub">室内实验室 · 屏幕 / 卷帘门 / 紫光</div>
+    <table>
+      <thead><tr><th></th><th>English</th><th>中文</th><th>日本語</th><th>排版</th></tr></thead>
+      <tbody><tr>
+  <td class="n">1</td>
+  <td class="en">Indoors. Finally. Still creepy.</td>
+  <td class="zh">进屋了。终于。还是瘆人。</td>
+  <td class="jp">屋内だ。やっと。まだ不気味。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">2</td>
+  <td class="en">Who set the AC to arctic?</td>
+  <td class="zh">谁把空调调到北极？</td>
+  <td class="jp">誰が空調を北極にした。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">3</td>
+  <td class="en">This hallway smells like bleach.</td>
+  <td class="zh">走廊一股漂白水味。</td>
+  <td class="jp">廊下が漂白剤の匂いだ。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">4</td>
+  <td class="en">Monitors on. Nobody watching.</td>
+  <td class="zh">屏幕都亮着，没人看。</td>
+  <td class="jp">画面は点く。誰も見ない。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">5</td>
+  <td class="en">Nine doors. None of them open.</td>
+  <td class="zh">九扇门，一扇都不开。</td>
+  <td class="jp">扉が九つ。どれも開かない。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">6</td>
+  <td class="en">Lab coats would help. Once.</td>
+  <td class="zh">发件白大褂吧。就一次。</td>
+  <td class="jp">白衣をくれ。一度だけ。</td>
+  <td class="fit">2行/74px</td>
+</tr><tr>
+  <td class="n">7</td>
+  <td class="en">All blinking. I don&#x27;t trust it.</td>
+  <td class="zh">全在闪。我信不过。</td>
+  <td class="jp">全在点滅。信用しない。</td>
+  <td class="fit">1行/74px</td>
+</tr><tr>
+  <td class="n">8</td>
+  <td class="en">Purple light. Bad vibes.</td>
+  <td class="zh">紫光。不祥。</td>
+  <td class="jp">紫の光。嫌な予感。</td>
+  <td class="fit">1行/74px</td>
+</tr></tbody>
+    </table>
+  </div>
+</section>
+
+<h2>验证</h2>
+<div class="check">
+<ul>
+  <li>导表器可信度：用官方 <code>DataToOptimizeLuaExporter</code> 对未改动的 Language 表重跑一次，输出与原文件 <b>字节完全相同</b>，才敢接着追加行</li>
+  <li>配置解码：用游戏自己的 <code>GameDataBase.SheetBase.Init</code> 读回 —— AfkSpeak <b>146</b> 行、Language <b>17659</b> 行；Type 0=20 条、9901/9902/9905/9907/9908 各 <b>8</b> 条，40 条三语 <b>0 缺失</b></li>
+  <li>逻辑：<code>scripts/lua-tests/test_afk_map_talk.lua</code> <b>24 项全过</b>（含 40% 边界、未知地图回退、雪地池不混霓虹台词）</li>
+  <li>旧回归：<code>test_fightpoint_panel_lifecycle.lua</code> 全过（<code>UpdateMap(nil)</code>、已销毁 map 仍安全）</li>
+  <li>排版：120 条（40×3）逐条跑 Unity <code>TextGenerator</code>，最坏 2 行 74px（文本框 280×78）</li>
+  <li>字节码：4 个改动文件 <code>lua-bytes-sync --check</code> 全部「已同步」</li>
+</ul>
+</div>
+
+<div class="foot">
+上一批 106 条（20 通用 + 86 英雄）此前已同步中/英/日，这次没有改动它们，只在末尾追加了 40 条新的语言 Id（<code>63010109~63010148</code>）。<br>
+新增的 Type 约定写进了代码注释：<code>0</code>=通用、<code>英雄Id</code>=专属、<code>9900+地图号</code>=场景池。
+</div>
+</div></body></html>

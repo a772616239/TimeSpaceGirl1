@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>挂机气泡对白 · 第二版（贴场景 + 牢骚）</title>
+<style>
+:root{--ink:#1b1b1e;--sub:#6d6a66;--line:#e5e2db;--bg:#f5f3ef;--warn:#b45309;--ok:#15803d;--gr:#b45309;--sys:#3f6d8f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);line-height:1.55;
+font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:46px 26px 70px}
+h1{font-size:25px;margin:0 0 6px;letter-spacing:-.2px}
+.sub{color:var(--sub);font-size:14px;margin-bottom:18px}
+.meta{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:28px}
+.chip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12.5px;color:var(--sub)}
+.chip b{color:var(--ink)}
+h2{font-size:13px;letter-spacing:.6px;color:var(--sub);font-weight:600;text-transform:uppercase;margin:32px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px}
+/* 气泡：303x109，文本框 280x78，字号 28 / 行高 37 —— 与预制体一致 */
+.bubbles{display:flex;gap:24px;flex-wrap:wrap}
+.bw{display:flex;flex-direction:column;gap:7px}
+.cap{font-size:11.5px;color:var(--sub)}
+.balloon{position:relative;width:303px;height:109px;background:#fffdf6;border:1.5px solid #cfc9bb;border-radius:16px;box-shadow:0 1px 0 #e9e5da inset}
+.balloon:after{content:"";position:absolute;left:34px;bottom:-9px;width:16px;height:16px;background:#fffdf6;
+border-right:1.5px solid #cfc9bb;border-bottom:1.5px solid #cfc9bb;transform:rotate(45deg)}
+.box{position:absolute;left:11.5px;top:7px;width:280px;overflow:hidden;font-size:28px;line-height:37px;color:#2a2620;font-weight:600}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+th{text-align:left;font-size:11.5px;color:var(--sub);letter-spacing:.5px;padding:11px 13px;background:#faf8f4;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:12px 13px;border-bottom:1px solid #f1eee8;vertical-align:top;font-size:13.5px}
+tr:last-child td{border-bottom:none}
+.id{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--sub);width:96px}
+.bdg{margin-top:5px}
+.bg{font-size:10.5px;padding:1.5px 6px;border-radius:5px;border:1px solid}
+.bg.gr{color:var(--gr);border-color:#e8d3b8;background:#fdf6ec}
+.bg.sys{color:var(--sys);border-color:#d5e2ec;background:#f2f7fa}
+.old .en{color:#a39e96;text-decoration:line-through;text-decoration-color:#dcd8cf}
+.old .zh{color:#b3aea6;font-size:12.5px;margin-top:2px;text-decoration:line-through;text-decoration-color:#e2ded6}
+.new .en{font-weight:600}
+.new .zh{color:#454138;margin-top:2px}
+.new .jp{color:#a5a096;font-size:12px;margin-top:2px}
+.fit{width:64px;font-size:11.5px;color:var(--ok);text-align:right;font-variant-numeric:tabular-nums}
+.fit .d{color:var(--sub);font-size:11px}
+.foot{margin-top:24px;color:var(--sub);font-size:12.5px;line-height:1.7}
+.foot code{background:#eae6de;padding:1.5px 5px;border-radius:4px;font-size:11.5px}
+</style></head><body><div class="wrap">
+<h1>挂机气泡对白 · 第二版</h1>
+<div class="sub">上一版是「把规则改短」，这一版是「让队伍真的像在跑图」：20 条里 10 条是路上发的牢骚，另外 10 条把系统当笑话讲</div>
+<div class="meta">
+  <div class="chip">出现时机 <b>寻敌跑动时 2.5s</b></div>
+  <div class="chip">文本盒 <b>280×78 / 字号 28</b></div>
+  <div class="chip">实测最坏 <b>2 行 74px</b></div>
+  <div class="chip">语言 <b>中 / 英 / 日</b></div>
+</div>
+
+<h2>真实说话场景</h2>
+<div class="card">
+<div class="bubbles">
+  <div class="bw"><div class="cap">跑图没怪（牢骚）</div><div class="balloon"><div class="box" style="height:74px">Still hungry. Still no monsters.</div></div></div>
+  <div class="bw"><div class="cap">队伍边走边怀疑人生（牢骚）</div><div class="balloon"><div class="box" style="height:74px">Do we fight, or just run?</div></div></div>
+  <div class="bw"><div class="cap">系统梗（不再是说明书）</div><div class="balloon"><div class="box" style="height:74px">HR fires the dead weight.</div></div></div>
+</div>
+<div class="cap" style="margin-top:16px;color:#6d6a66">FightPointMapOnHook.startFindEnemy → HeroTalk：角色左右跑动、随机 1~2 个位置冒气泡、2.5 秒后播放散的动画。所以文案必须「一眼读完」，且得像赶路时嘴里嘟囔的话。</div>
+</div>
+
+<h2>20 条逐条对照</h2>
+<table>
+<thead><tr><th>ID / 类型</th><th>上一版</th><th>这一版（EN / 中 / 日）</th><th>排版</th></tr></thead>
+<tbody><tr>
+  <td class="id">63010089<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">Hungry? Only for that dragon.</div><div class="zh">饿？只对那条龙有胃口。</div></td>
+  <td class="new"><div class="en">Still hungry. Still no monsters.</div><div class="zh">还是饿。还是没怪。</div><div class="jp">まだ腹ペコ。敵はまだ。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010090<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">CHARGE! ...That&#x27;s the plan?</div><div class="zh">冲啊！……计划就这？</div></td>
+  <td class="new"><div class="en">Charge! ...Into more fog.</div><div class="zh">冲！……又是雾。</div><div class="jp">突撃！…また霧か。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010091<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">Treasure smell. Or just feet.</div><div class="zh">一股宝藏味。可能是脚。</div></td>
+  <td class="new"><div class="en">Treasure smell? That&#x27;s my boots.</div><div class="zh">宝气味？那是靴子味。</div><div class="jp">宝の匂い？それ、ブーツだ。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010092<div class="bdg"><span class="bg sys">系统梗</span></div></td>
+  <td class="old"><div class="en">Level up. More damage. Enjoy.</div><div class="zh">升级，伤害更高。享受吧。</div></td>
+  <td class="new"><div class="en">Level up. Less useless now.</div><div class="zh">升了级，没那么废了。</div><div class="jp">レベル上げ。少しマシに。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010093<div class="bdg"><span class="bg sys">系统梗</span></div></td>
+  <td class="old"><div class="en">Star up. Skills hit meaner.</div><div class="zh">升星，技能更狠。</div></td>
+  <td class="new"><div class="en">Star up. Skills hit meaner.</div><div class="zh">升星，技能更凶了。</div><div class="jp">星上げ。スキルが凶暴に。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010094<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">Ring + skill, right pairing.</div><div class="zh">戒指配技能，讲究搭配。</div></td>
+  <td class="new"><div class="en">Do we fight, or just run?</div><div class="zh">我们到底打不打？</div><div class="jp">戦うのか、走るだけか。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010095<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">Stomach filing a complaint.</div><div class="zh">我的胃在提交投诉。</div></td>
+  <td class="new"><div class="en">Stomach&#x27;s on strike. Again.</div><div class="zh">胃又罢工了。</div><div class="jp">胃がまたストライキ。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010096<div class="bdg"><span class="bg sys">系统梗</span></div></td>
+  <td class="old"><div class="en">Guardians buff you. Allegedly.</div><div class="zh">守护能强化属性。据说。</div></td>
+  <td class="new"><div class="en">Guardians buff you. Allegedly.</div><div class="zh">守护能加属性。据说。</div><div class="jp">守護で属性アップ。噂だが。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010097<div class="bdg"><span class="bg sys">系统梗</span></div></td>
+  <td class="old"><div class="en">Club picks a camp. Recruits.</div><div class="zh">俱乐部选阵营，招人。</div></td>
+  <td class="new"><div class="en">Pick a camp, then recruit.</div><div class="zh">先挑阵营，再招人。</div><div class="jp">陣営を選んで募集。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010098<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">Trade heroes. No refunds.</div><div class="zh">交换英雄。概不退换。</div></td>
+  <td class="new"><div class="en">My feet are done with this.</div><div class="zh">我的腿已经不想走了。</div><div class="jp">もう足が限界だ。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010099<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">Relics in the fog. Get rich.</div><div class="zh">雾里有遗迹。暴富去吧。</div></td>
+  <td class="new"><div class="en">Fog everywhere. Relic? Sure.</div><div class="zh">到处是雾。遗迹？呵呵。</div><div class="jp">霧だらけ。遺跡？ああ、はい。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010100<div class="bdg"><span class="bg sys">系统梗</span></div></td>
+  <td class="old"><div class="en">Chips boost stats. Full set!</div><div class="zh">芯片强化属性，凑满套。</div></td>
+  <td class="new"><div class="en">Chips boost stats. Full set.</div><div class="zh">芯片加属性。凑满套。</div><div class="jp">チップで強化。セットで。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010101<div class="bdg"><span class="bg sys">系统梗</span></div></td>
+  <td class="old"><div class="en">Black market: no receipts.</div><div class="zh">黑市大促，不开发票。</div></td>
+  <td class="new"><div class="en">Black market. No receipts.</div><div class="zh">黑市。不开发票。</div><div class="jp">闇市。領収書なし。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010102<div class="bdg"><span class="bg sys">系统梗</span></div></td>
+  <td class="old"><div class="en">Tower of God: EXP and gold.</div><div class="zh">神之塔：经验和金币。</div></td>
+  <td class="new"><div class="en">Tower of God: EXP and gold.</div><div class="zh">神之塔：经验和金币。</div><div class="jp">神の塔：経験値と金貨。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010103<div class="bdg"><span class="bg sys">系统梗</span></div></td>
+  <td class="old"><div class="en">Sign a camp deal. Fine print.</div><div class="zh">签约阵营，看清小字。</div></td>
+  <td class="new"><div class="en">Camp deal. Read small print.</div><div class="zh">阵营契约。看清小字。</div><div class="jp">陣営契約。小さい字を読め。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010104<div class="bdg"><span class="bg sys">系统梗</span></div></td>
+  <td class="old"><div class="en">Pioneers carry the squad.</div><div class="zh">先驱扛着全队走。</div></td>
+  <td class="new"><div class="en">Pioneers carry this squad.</div><div class="zh">全队都靠先驱扛着。</div><div class="jp">部隊は先駆者頼み。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010105<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">HR fires your bad heroes.</div><div class="zh">人事处专治废柴英雄。</div></td>
+  <td class="new"><div class="en">HR fires the dead weight.</div><div class="zh">人事处清理混子。</div><div class="jp">人事部が足手まといを切る。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010106<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">Institute gear hits harder.</div><div class="zh">研究所装备，真的疼。</div></td>
+  <td class="new"><div class="en">Loot, or it didn&#x27;t happen.</div><div class="zh">有掉落才算打了怪。</div><div class="jp">ドロップなしは戦闘じゃない。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010107<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">Lab star-ups, but faster.</div><div class="zh">实验室升星，更快。</div></td>
+  <td class="new"><div class="en">Who even drew this map?</div><div class="zh">这地图是谁画的？</div><div class="jp">この地図、誰が描いた？</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr>
+<tr>
+  <td class="id">63010108<div class="bdg"><span class="bg gr">牢骚</span></div></td>
+  <td class="old"><div class="en">Stars reset. Don&#x27;t ask why.</div><div class="zh">星级重置，别问原因。</div></td>
+  <td class="new"><div class="en">Stars reset. Don&#x27;t ask why.</div><div class="zh">星级重置。别问原因。</div><div class="jp">星リセット。理由は聞くな。</div></td>
+  <td class="fit">2行<div class="d">74px</div></td>
+</tr></tbody></table>
+
+<div class="foot">
+落盘：<code>Language.xlsx</code>（XML 层只改 53 格，其余逐格比对无变化）· <code>Language.lua</code> · <code>Config_Data_Language_64.bytes</code>（已重编，<code>--check</code> 绿）。<br>
+这一版没有动预制体：文本盒上一版已经是 280×78，60 条实测全部 ≤2 行、74px。
+</div>
+</div></body></html>

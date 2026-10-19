@@ -15,9 +15,9 @@ namespace GameEditor.FrameTool
     public enum ServerPathType
     {
         /// <summary>
-        /// Trunk、Tag开发服
+        /// 本地自测服（原开发服 120.92.119.145 已弃用，2026-10-19 改指本机）
         /// </summary>
-        [ServerPathTypeValue("http://120.92.119.145:8080/", "http://120.92.119.145/game_res/", null, "http://120.92.119.145:8081/idip/sfzb/sdk", "http://120.92.119.145:8081/idip/sfzb", "dev")]
+        [ServerPathTypeValue("http://127.0.0.1:8081/", "http://129.226.213.65:81/")]
         开发服 = 0,
 
         /// <summary>

@@ -295,6 +295,28 @@ do
     Check("同阵营只复用一个卡节点", cardCount >= 1)
 end
 
+-- ⑥ 位置锁定（ParentConstraint 的等价语义）：卡片存活期间技能栏位置一变，卡片跟着走
+print("== ⑥ 卡片位置锁在技能栏上（存活期间跟着重算） ==")
+do
+    BeginBlock()
+    local view, bar = NewView()
+    BattleUltCard.ResetForBattle(view)
+
+    RAt(0.00, function() BattleUltCard.Show(view, HERO, 0, "f") end)
+    RAt(0.00, function() bar.activeInHierarchy = true end)
+    RAt(3.00, function() bar.activeInHierarchy = false end)
+
+    RTo(0.50)
+    local y0 = BattleUltCard.slots[0].go.rt.anchoredPosition.y
+    -- 技能栏整体上移 100（换分辨率 / 面板位移都会这样）
+    RAt(1.00, function() bar.rt.anchoredPosition = Vector2.New(bar.rt.anchoredPosition.x, bar.rt.anchoredPosition.y + 100) end)
+    RTo(1.60)
+    local y1 = BattleUltCard.slots[0].go.rt.anchoredPosition.y
+    Check("技能栏上移 100 后卡片跟着上移 100", math.abs((y1 - y0) - 100) < 1,
+        string.format("y0=%.1f y1=%.1f", y0, y1))
+    Check("卡片仍在显示", CardActive(0))
+end
+
 print("")
 if failures == 0 then
     print("ALL PASS")

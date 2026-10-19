@@ -12,6 +12,9 @@
   🔴 定位规则：跟随技能栏（myRect_Skill / enemyRect_Skill）——卡片纵向落在技能栏那一带，
   不是在屏幕顶角；X 贴左右边缘。位置全部在技能栏的锚点空间里算，所以技能栏怎么锚
   卡片就怎么跟，不再自己揣一套绝对坐标。
+  🔴 位置是「绑定」而不是「算一次」：卡片存活期间每 0.1s 跟着技能栏重算一次
+  （等同 ParentConstraint 的锁定位置语义，但不动父子关系、不动层级、不跟技能栏的
+  SetActive 联动 —— 见文件末尾 LockToSkillBar 注释）。
 
   注意：每个阵营各持一张卡（slots[camp]），敌我可能同时放大招，
   共用一张会互相覆盖、位置乱跳。
@@ -121,6 +124,8 @@ end
 --   🔴 位置口径按昨晚定稿：卡片纵向落在技能栏那一带（屏幕中部略偏下），不是贴屏幕顶角。
 --   直接复制技能栏的锚点（我方 (0,0.5)、敌方 (1,0.5)），X 只给「距边距离」；
 --   Y = 技能栏底边 - 间隙 - 卡片内容半高 + 固定微调，全部在技能栏的锚点空间里算。
+--   🔴 纯函数、可重复调用：Show 时算一次，存活期间跟随 tick 再算一次，
+--      两次口径完全一致，所以不会出现「弹出时对齐、之后漂走」。
 local function ApplyLayout(view, s, rt)
     local bar = GetSkillBar(view, s.camp)
     local barRt = bar and bar:GetComponent("RectTransform")
@@ -319,6 +324,13 @@ function this.Show(view, heroConfig, camp, dedupeKey)
             -- 技能栏亮着 → 卡片必须是活的
             s.barSeen = true
             s.followMiss = 0
+            -- 位置锁定：等同 ParentConstraint 的「锁定位置」，但只锁位置 ——
+            -- 卡片仍是 BattlePanel 的子节点（层级压技能栏之下），也不跟技能栏的 SetActive 联动
+            -- （特写前摇里技能栏是灭的，卡片必须还能显示）。
+            -- 用同一套 ApplyLayout 重算，弹出时和存活期间位置口径一致。
+            if rt then
+                ApplyLayout(view, s, rt)
+            end
         elseif s.barSeen and lived >= CARD_MIN_LIVE_TIME then
             -- 技能栏亮过又灭了 → 防抖几次再收，约 0.2s 内跟上技能栏
             s.followMiss = (s.followMiss or 0) + 1

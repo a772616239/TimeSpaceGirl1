@@ -348,8 +348,17 @@ end
 
 -- 聊天节点数据匹配
 function this.ChatItemAdapter(node, data, isShowTime, isShowServerName)
+    -- 数据在滚动刷新之间被裁掉时 dataIndex 可能已经越界，直接跳过这一行
+    if data == nil then
+        return
+    end
     local right = Util.GetGameObject(node, "rightchat")
     local left = Util.GetGameObject(node, "leftchat")
+    -- 模板节点缺失时直接跳过，避免战斗/挂机界面每个滚动 tick 都抛异常把客户端拖住
+    if right == nil or left == nil then
+        LogError("BattleChatPanel 聊天模板缺少 leftchat/rightchat 节点，请检查 BattlePanel.prefab 的 content/chat")
+        return
+    end
     local isMyChat = data.senderId == PlayerManager.uid
     right:SetActive(isMyChat)
     left:SetActive(not isMyChat)

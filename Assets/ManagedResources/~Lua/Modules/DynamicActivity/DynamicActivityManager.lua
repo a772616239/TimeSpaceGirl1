@@ -97,6 +97,31 @@ function this.SheJiCheckRedPoint()
     end
 end
 
+--- 易经宝库层数兜底
+--- 服务器用 SubRewardPoolInfo.lay(默认0) 下发 missionId=100 的 progress，活动未初始化时该值为 0 或整条缺失。
+--- 不兜底时 BasicPoolId[0]/BasicPoolId[nil] 取到 nil，该层奖池查空 → initCardDatas 为空 → 界面初始化时索引 nil 崩溃。
+--- @param rawLevel number|nil 服务器下发的层数
+--- @param blessingConfigNew table BlessingConfigNew 配置项
+--- @param activityId number|nil 活动Id，仅用于日志
+--- @return number 收敛到 [1, #BasicPoolId] 的层数
+local function SafeBaoKuLevel(rawLevel, blessingConfigNew, activityId)
+    local maxLevel = 1
+    if blessingConfigNew and blessingConfigNew.BasicPoolId and #blessingConfigNew.BasicPoolId > 0 then
+        maxLevel = #blessingConfigNew.BasicPoolId
+    end
+    local level = tonumber(rawLevel) or 0
+    if level < 1 then
+        level = 1
+    elseif level > maxLevel then
+        level = maxLevel
+    end
+    if level ~= (tonumber(rawLevel) or 0) then
+        LogRed(string.format("[YiJingBaoKu] 层数异常，按第%d层展示 activityId=%s progress=%s",
+                level, tostring(activityId), tostring(rawLevel)))
+    end
+    return level
+end
+
 function this.GetBaoKuData()
 
     local actData={}--全部数据
@@ -134,8 +159,9 @@ function this.GetBaoKuData()
             local v = ActInfo.mission[i]
             if v.missionId == 100 then
                 
-                actData.curLevel = v.progress
-                curBasicPool = BlessingConfigNew.BasicPoolId[v.progress]
+                local level = SafeBaoKuLevel(v.progress, BlessingConfigNew, ActInfo.activityId)
+                actData.curLevel = level
+                curBasicPool = BlessingConfigNew.BasicPoolId[level]
                 curFinalPool = BlessingConfigNew.FinalPoolId
             elseif v.missionId > 1000 then
                 local data = {}

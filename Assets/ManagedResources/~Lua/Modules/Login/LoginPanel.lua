@@ -693,8 +693,33 @@ function this.OnReceiveLogin(str)
                 local json = require "cjson"
                 local data = json.decode(str)
                 if data.uid and data.token and not LoginManager.IsLogin then
-                    AppConst.UserId = data.uid
-                    AppConst.Token = data.token
+                    --GM「以UID重登」：用服务端签发的 uid#token 覆盖本次登录身份（一次性，用完即删）
+                    local gmUid = PlayerPrefs.GetString(LoginManager.GM_SWITCH_UID_KEY, "")
+                    local gmToken = PlayerPrefs.GetString(LoginManager.GM_SWITCH_TOKEN_KEY, "")
+                    local gmTime = tonumber(PlayerPrefs.GetString(LoginManager.GM_SWITCH_TIME_KEY, "0")) or 0
+                    local switchUid = tonumber(gmUid)
+                    local switchToken = tonumber(gmToken)
+                    local notExpired = (os.time() - gmTime) <= LoginManager.GM_SWITCH_TTL
+                    if switchUid and switchToken and switchUid > 0 and notExpired then
+                        PlayerPrefs.DeleteKey(LoginManager.GM_SWITCH_UID_KEY)
+                        PlayerPrefs.DeleteKey(LoginManager.GM_SWITCH_TOKEN_KEY)
+                        PlayerPrefs.DeleteKey(LoginManager.GM_SWITCH_TIME_KEY)
+                        PlayerPrefs.Save()
+                        AppConst.UserId = switchUid
+                        AppConst.Token = switchToken
+                        PopupTipPanel.ShowTip("GM重登：当前身份UID " .. switchUid)
+                        Log(string.format("GM switch login: server uid=%s token=%s -> switch uid=%s", tostring(data.uid), tostring(data.token), tostring(switchUid)))
+                    else
+                        if gmUid ~= "" or gmToken ~= "" then
+                            --标记已过期：清掉，避免以后误用
+                            PlayerPrefs.DeleteKey(LoginManager.GM_SWITCH_UID_KEY)
+                            PlayerPrefs.DeleteKey(LoginManager.GM_SWITCH_TOKEN_KEY)
+                            PlayerPrefs.DeleteKey(LoginManager.GM_SWITCH_TIME_KEY)
+                            PlayerPrefs.Save()
+                        end
+                        AppConst.UserId = data.uid
+                        AppConst.Token = data.token
+                    end
                     local openId = AppConst.isSDKLogin and AppConst.OpenId or PlayerPrefs.GetString(openIdkey)
                     NetManager.LoginRequest(
                         openId,

@@ -6,6 +6,11 @@ this.token = nil
 this.IsLogin = false
 this.pt_pId = ""
 this.pt_gId = ""
+--「GM以UID重登」跨重启传递的一次性凭据（GMPanel 写入，LoginPanel.OnReceiveLogin 消费）
+this.GM_SWITCH_UID_KEY = "gm_switch_uid"
+this.GM_SWITCH_TOKEN_KEY = "gm_switch_token"
+this.GM_SWITCH_TIME_KEY = "gm_switch_time"
+this.GM_SWITCH_TTL = 300--凭据有效期(秒)，过期作废，避免残留标记影响以后的正常登录
 
 local LoginRoot_Url = VersionManager:GetVersionInfo("serverUrl")
 -- local LoginRoot_PackageVersion = VersionManager:GetVersionInfo("sdkLodingUrl")

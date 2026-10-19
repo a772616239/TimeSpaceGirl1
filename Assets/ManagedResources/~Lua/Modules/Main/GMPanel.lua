@@ -19,6 +19,7 @@ local GMType = {
     HeterodoxWar = 30,--异端之战
     AbyssTrial = 31,--深渊试炼
     FogBattle = 32,--迷雾之战
+    LoginByUid = 40,--以指定玩家uid重登（后端签发登录token）
 
     --与后端命令无关
     Guide = 997,--引导
@@ -52,6 +53,7 @@ local GmLeft = {
     [13] = {parfab = "mail", GMType = GMType.SendMail},
     [14] = {parfab = "fakeBattle", GMType = GMType.TestBattle},
     [15] = {parfab = "guide", GMType = GMType.Guide},
+    [16] = {parfab = "uidLogin", GMType = GMType.LoginByUid},
 }
 local GmBtn = {
     [1] = {parfab = "btnGenerateFiveHero", GMType = GMType.GetFiveHero},
@@ -156,6 +158,41 @@ function GMPanel:BindEvent()
                 elseif tonumber(strs[1]) == 2 then
                     GuideManager.OnFunctionOpen(tonumber(strs[2]))
                 end
+                return
+            elseif type == GMType.LoginByUid then
+                local targetUid = tonumber(txt)
+                if not targetUid or targetUid <= 0 then
+                    PopupTipPanel.ShowTip("请输入正确的玩家UID")
+                    return
+                end
+                --后端在 debug 环境给该 uid 签发登录token，返回 "uid#token"
+                NetManager.GMEvent(string.format("%s#%s#%s", GMType.LoginByUid, targetUid, 0), function(msg)
+                    local info = msg and msg.info
+                    if not info or info == "" then
+                        PopupTipPanel.ShowTip("未拿到登录凭据，请确认服务端GM已开启")
+                        return
+                    end
+                    local strs = string.split(info, "#")
+                    if #strs < 2 then
+                        --服务端回的是错误文案（如「玩家不存在:xxx」）
+                        PopupTipPanel.ShowTip(tostring(info))
+                        return
+                    end
+                    local uid = tonumber(strs[1])
+                    local token = tonumber(strs[2])
+                    if not uid or not token or uid ~= targetUid then
+                        PopupTipPanel.ShowTip("登录凭据异常：" .. tostring(info))
+                        return
+                    end
+                    PlayerPrefs.SetString(LoginManager.GM_SWITCH_UID_KEY, tostring(uid))
+                    PlayerPrefs.SetString(LoginManager.GM_SWITCH_TOKEN_KEY, tostring(token))
+                    PlayerPrefs.SetString(LoginManager.GM_SWITCH_TIME_KEY, tostring(os.time()))
+                    PlayerPrefs.Save()
+                    PopupTipPanel.ShowTip("将以UID " .. uid .. " 重登（该号若在线会被顶下线）...")
+                    Framework.Dispose()
+                    SocketManager.Disconnect(SocketType.LOGIN)
+                    App.Instance:ReStart()
+                end)
                 return
             end
             local str = string.format("%s#%s#%s", type, value1, value2)

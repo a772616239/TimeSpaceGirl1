@@ -89,3 +89,6 @@
 - 🔴 改系统级状态（`/home`、挂载点、`synthetic.conf`、launchd、`/etc/*`）必须当场验证并标注**重启后是否有效**。
 - 聊天消息气泡已挂国旗：`ChatInfo.country=28`（服务端 `CBean2Proto` 填、客户端 `ChatProto_pb.lua` 手工补字段）+ prefab 节点 `countryFlag`（`patch_chat_flag.py`）；系统消息隐藏、`senderId>0` 才画，未下发 country 走问号占位旗。
 - 🔴 `unity_bridge.py` 探测端口**不能先开试探连接再关**（会被 StdioBridgeHost 判 stale client 连带 Close 新连接，现象=发帧后 0.00s 断）；握手后必须 sleep 0.3s。
+- 聊天国旗三处模板必须分别打：`ChatPanel.prefab:content/chat`、`BattlePanel.prefab:ChatPanel/content/chat`、`FightPointPassMainPanel.prefab:Bg/ChatPanel/content/chat`（`patch_chat_flag.py --prefab --chat`）。🔴 BattlePanel/FightPoint 是**独立副本不是嵌套 prefab**。
+- 🔴 `BattlePanel.prefab` 的工作区副本会被 Unity 重写成 13.8 万行（HEAD 19.5 万行）⇒ 打补丁前先 `git show HEAD:path` 到临时文件，别在脏副本上改，否则 diff 爆炸。
+- 聊天历史消息 country 为空 ⇒ 旗显示不一致：客户端 `ChatManager.PlayerCountryCache`（uid→country，`GetPlayerCountry`）兜底 + 服务端 `ChatLogic.fillSenderCountry` 下发时按当前国籍补。

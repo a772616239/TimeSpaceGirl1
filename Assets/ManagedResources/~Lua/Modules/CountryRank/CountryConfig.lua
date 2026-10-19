@@ -143,6 +143,19 @@ function CountryConfig.GetFlagSprite(code)
     return "cn2-guoqi_" .. c
 end
 
+--- 取英文名（**不看当前语言**）
+-- 用途：点击国旗时的提示语。用户 2026-10-19 要求这里固定显示英文，
+-- 这样中/日/韩玩家点开看到的是同一个拼写，便于跨服交流。
+function CountryConfig.GetEnglishName(code)
+    local c = CountryConfig.Normalize(code)
+    local info = CountryConfig.BY_CODE[c]
+    if not info then
+        return ""
+    end
+    -- en 是配置里的必填字段；万一缺了退回 zh，再退回国家码本身
+    return info.en or info.zh or c
+end
+
 --- 按当前语言取显示名
 function CountryConfig.GetName(code)
     local c = CountryConfig.Normalize(code)

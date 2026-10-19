@@ -98,6 +98,11 @@ function PlayerInfoPopup:InitComponent()
     this.memCountryFlagImg = nil
     if this.memCountryFlag and not IsNull(this.memCountryFlag) then
         this.memCountryFlagImg = this.memCountryFlag:GetComponent("Image")
+        -- 点小旗弹出该国家的英文名（用户 2026-10-19 需求）
+        -- 用 provider 而不是把 code 传死：面板复用后国家会换，点击要取当前那次刷新的值
+        CountryFlagUtil.MakeClickable(this.memCountryFlag, function()
+            return this._CountryCode
+        end)
     end
     this.memProfessTip = Util.GetGameObject(self.transform, "tipImage/panel/info/professName"):GetComponent("Text")
     this.memProfess = Util.GetGameObject(self.transform, "tipImage/panel/info/profess"):GetComponent("Text")
@@ -308,9 +313,18 @@ function this.RefreshCountryFlag(data)
     -- 统一走 CountryFlagUtil：服务端有 country 就显示；
     -- 没有则显示问号占位旗（用户要求名字旁不留空）
     local code = CountryFlagUtil.ResolveCountry(uid, data and data.country)
+    -- 记住当前旗帜对应的国家码：点击提示是异步的，不能在那时重新解析
+    this._CountryCode = code
     this.memCountryFlag:SetActive(true)
     this.memCountryFlagImg.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(
             code or CountryConfig.FALLBACK_CODE))
+    -- 自愈：面板实例是复用的，升级前就创建好的旧实例不会重跑 InitComponent，
+    -- 这里按「有没有 Button」判断是否已绑过，没绑就补一次（幂等，不会重复弹提示）
+    if this.memCountryFlag:GetComponent("Button") == nil then
+        CountryFlagUtil.MakeClickable(this.memCountryFlag, function()
+            return this._CountryCode
+        end)
+    end
 end
 
 -- 刷新基础信息显示

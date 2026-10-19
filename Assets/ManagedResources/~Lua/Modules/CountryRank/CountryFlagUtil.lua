@@ -85,4 +85,47 @@ function CountryFlagUtil.ApplyTo(parent, uid, country)
     CountryFlagUtil.Apply(go, uid, country)
 end
 
+--[[
+ * 让「国家小旗」可点击：点一下弹出该国家的**英文名**提示
+ *
+ * 为什么不是绑死一个 code：
+ *   同一个旗子节点会被复用（面板复用 / 列表滚动），每次刷新国家都变，
+ *   所以这里接一个 codeProvider，点击时再取「当前显示的那个国家」。
+ *
+ * ⚠️ 两个坑（都不报错，只会"点了没反应"）：
+ *   1. 旗帜的 Image 在 prefab 里 m_RaycastTarget=0，必须打开，否则 Button 收不到射线；
+ *   2. Util.AddClick 遇到没有 Button 的节点会**静默 return**，必须自己补一个。
+--]]
+-- @param go            countryFlag 的 GameObject
+-- @param codeProvider  function() -> 当前国家码（可为 nil）
+function CountryFlagUtil.MakeClickable(go, codeProvider)
+    if go == nil or IsNull(go) then
+        return
+    end
+
+    local img = go:GetComponent("Image")
+    if img ~= nil then
+        -- raycastTarget 有绑定就用绑定，没有也不影响（prefab 里已置 1）
+        pcall(function()
+            img.raycastTarget = true
+        end)
+    end
+
+    if go:GetComponent("Button") == nil then
+        go:AddComponent(typeof(UnityEngine.UI.Button))
+    end
+
+    -- AddOnceClick：面板复用时会重复进这里，先清旧监听避免叠加多次弹提示
+    Util.AddOnceClick(go, function()
+        local code = nil
+        if codeProvider ~= nil then
+            code = codeProvider()
+        end
+        local nameEn = CountryConfig.GetEnglishName(code)
+        if nameEn ~= "" and PopupTipPanel ~= nil then
+            PopupTipPanel.ShowTip(nameEn)
+        end
+    end)
+end
+
 return CountryFlagUtil

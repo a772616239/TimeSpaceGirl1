@@ -81,10 +81,10 @@ newObjToParent = function(a, b) return a end
 
 -- ---- 假 GameObject ----
 local function newGO(name)
-    local go = { name = name, _children = {}, _comps = {}, active = true }
+    local go = { name = name, _children = {}, _comps = {}, active = true, activeSelf = true }
     go.gameObject = go
     go.transform = { parent = nil, parentGO = nil }
-    function go:SetActive(v) self.active = v end
+    function go:SetActive(v) self.active = v; self.activeSelf = v end
     function go.GetComponent(self, cls)
         -- 桩：任意组件都返回一个惰性占位（sprite / text / anchoredPosition 随便写）
         local c = self._comps[cls]
@@ -298,6 +298,19 @@ local info3 = enemy3.personInfo or enemy3
 P.SetHeadsInfo(info3, "a3", 3, info3.name, info3.level)
 check("第三名 = es（取 personInfo 而不是包装）", spriteOf(3) == "cn2-guoqi_es", spriteOf(3))
 check("包装对象本身没有 country（proto 事实）", enemy3.country == nil and enemy3.uid == nil)
+
+-- ============ 7. 空榜（NoneImage 显示）============
+print("\n[7] 空榜：NoneImage 显示时「我的排名」旗必须跟着隐藏")
+P.noneImage = newGO("NoneImage")
+P.noneImage:SetActive(true)   -- 模拟空榜
+P.SetHeroNotRollingInfo("战力", 0, { heroTemplateId = 1, heroLevel = 30, heroStar = 5, userName = "我" }, 0)
+check("空榜时我的排名旗隐藏", myFlag.active == false)
+P.noneImage:SetActive(false)  -- 数据恢复
+P.SetHeroNotRollingInfo("战力", 7, { heroTemplateId = 1, heroLevel = 30, heroStar = 5, userName = "我" }, 20)
+check("数据恢复后我的排名旗重新可见", myFlag.active ~= false)
+check("恢复后旗 sprite = 自己的国家 cn",
+    myFlag._comps["Image"].sprite == "cn2-guoqi_cn", myFlag._comps["Image"].sprite)
+P.noneImage = nil  -- 还原桩，避免影响后续用例
 
 print(string.format("\n结果：%d 通过，%d 失败", pass, fail))
 os.exit(fail == 0 and 0 or 1)

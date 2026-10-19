@@ -880,6 +880,14 @@ function this.RefreshMyRankFlag()
         flagGo:SetActive(false)
         return
     end
+    -- 空榜（NoneImage 显示）时本行没有可展示的名次，小旗要跟着 NoneImage 一起隐藏，
+    -- 否则空榜画面上还挂着一面自己的国旗。
+    -- 时序依据：所有 Set*Info 路径都是先设 noneImage 再调 SetNotRollingInfo/SetHeroNotRollingInfo，
+    -- 所以这里读 noneImage.activeSelf 拿到的一定是本次刷新的最新口径。
+    if this.noneImage ~= nil and not IsNull(this.noneImage) and this.noneImage.activeSelf then
+        flagGo:SetActive(false)
+        return
+    end
     flagGo:SetActive(true)
     CountryFlagUtil.ApplySelf(flagGo)
 end

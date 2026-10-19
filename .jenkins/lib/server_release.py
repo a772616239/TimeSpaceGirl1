@@ -353,7 +353,7 @@ h1{font-size:22px;margin:0 0 4px;letter-spacing:.2px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:18px 0 22px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
 .kpi .k{color:var(--dim);font-size:12px;margin-bottom:6px}
-.kpi .v{font-size:24px;font-weight:650;line-height:1.15}
+.kpi .v{font-size:22px;font-weight:650;line-height:1.15}
 .kpi .n{color:var(--dim);font-size:12px;margin-top:4px}
 .kpi.ok .v{color:var(--ok)}.kpi.warn .v{color:var(--warn)}.kpi.bad .v{color:var(--bad)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:16px 0}
@@ -438,7 +438,7 @@ def cmd_html(args) -> int:
     H.append("<div class='kpis'>")
     H.append("<div class='kpi %s'><div class='k'>结论</div><div class='v'>%s</div><div class='n'>%d 环节 · 通过 %d / 关注 %d / 失败 %d</div></div>"
              % (vclass, esc(verdict), len(stages), n_pass, n_warn, n_fail))
-    H.append("<div class='kpi'><div class='k'>release 分支</div><div class='v mono' style='font-size:15px'>%s</div><div class='n'>源提交 <code>%s</code></div></div>"
+    H.append("<div class='kpi'><div class='k'>release 分支</div><div class='v mono' style='font-size:13px'>%s</div><div class='n'>源提交 <code>%s</code></div></div>"
              % (esc((meta.get("release_branch") or "-").replace("release/", "")),
                 esc((meta.get("source_commit") or "-")[:8])))
     H.append("<div class='kpi'><div class='k'>将注入条目</div><div class='v'>%d</div><div class='n'>变更 %d · 新增 %d · 仅线上 %d</div></div>"
@@ -448,6 +448,15 @@ def cmd_html(args) -> int:
              % ("ok" if meta.get("deployed") else "",
                 "已上线" if meta.get("deployed") else "未上线",
                 esc(meta.get("restart", "-"))))
+    # 记录去向：分支与 tag 是否已在 origin 上（2026-10-19 起打包成功就推，不再等真上线）
+    if meta.get("pushed"):
+        H.append("<div class='kpi ok'><div class='k'>发布记录</div><div class='v'>已推送</div>"
+                 "<div class='n'>origin · %s</div></div>"
+                 % esc(meta.get("pushed_tag") or meta.get("record_commit") or "-"))
+    elif meta.get("record_commit"):
+        H.append("<div class='kpi warn'><div class='k'>发布记录</div><div class='v'>仅本地</div>"
+                 "<div class='n'>提交 <code>%s</code> · 未推 origin</div></div>"
+                 % esc(meta.get("record_commit") or "-"))
     H.append("</div>")
 
     # 环节流水线

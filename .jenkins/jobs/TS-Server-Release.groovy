@@ -16,7 +16,7 @@
     {"name":"EXCLUDE_CLASSES","type":"string","default":"","description":"额外排除的 glob（逗号分隔）。留空使用默认排除：META-INF/*、application*.properties、*.properties、*.xml（这些**永不**自动注入）"},
     {"name":"RESTART","type":"choice","choices":["gameserver","none","all"],"default":"gameserver","description":"注入后重启什么。gameserver=只重启游戏服（会踢线，约 40s）；none=只落地不生效（等下次重启）；all=另外拉起 chatserver（该服默认没跑，谨慎）"},
     {"name":"ALLOW_DIRTY","type":"bool","default":false,"description":"主工作区有未提交改动时是否继续。默认否（发布必须基于一次明确提交）。勾上后脏改动**不参与构建**，只在记录里列出来"},
-    {"name":"PUSH_BRANCH","type":"bool","default":true,"description":"真上线时把 release 分支 + 发布记录 + tag 推到 origin。演练一律不推（不留垃圾分支）"},
+    {"name":"PUSH_BRANCH","type":"bool","default":true,"description":"打包成功后把 release 分支 + 发布记录 + tag 一次原子推到 origin（演练也推：记录要能追溯）。连跑多次演练嫌远端分支多时关掉"},
     {"name":"ROLLBACK_DIR","type":"string","default":"","description":"ACTION=rollback 时指定备份目录（如 /home/java/gameserver/deploy-staging/20261019-2013/backup）。留空 = 取生产上最新的那个"},
     {"name":"NOTES","type":"string","default":"","description":"本次发布说明（会写进发布记录、构建描述与看板）"},
     {"name":"SEND_MAIL","type":"bool","default":false,"description":"是否在结束后发一封完成邮件（默认不发）"}
@@ -103,7 +103,7 @@ MODE="演练（只构建+比对+记录）"
   echo "注入口径   ：ONLY='${SR_ONLY:-全部差异}' EXCLUDE='${SR_EXCLUDE:-默认排除}'"
   echo "重启范围   ：$SR_RESTART"
   echo "审批       ：AUTO_APPROVE=$SR_AUTO_APPROVE  DEPLOY=$SR_DEPLOY"
-  echo "推送分支   ：$SR_PUSH"
+  echo "推送记录   ：$SR_PUSH（打包成功即推分支+tag，不区分演练/上线）"
   echo "说明       ：${SR_NOTES:-（空）}"
   echo "证据目录   ：$SR_RUN_DIR"
 } | tee "$SR_RUN_DIR/context.txt"
@@ -125,8 +125,8 @@ else
   cat <<'EOS'
 
   ----------------------------------------------------------------------------
-   演练模式（DEPLOY=false）：只切 release 分支、编译、与线上比对、写记录。
-   生产服 /home/java 不会被写入；不会在远端产生 release 分支。
+   演练模式（DEPLOY=false）：只切 release 分支、编译、与线上比对、写记录并推送。
+   生产服 /home/java 不会被写入；release 分支 + 记录 + tag 会推到 origin（PUSH_BRANCH=false 则不推）。
   ----------------------------------------------------------------------------
 
 EOS
@@ -410,11 +410,19 @@ cd "$PROJ" 2>/dev/null || true
 "$PY" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('selected_total','?'))" \
   "$SR_RUN_DIR/release/meta.json" 2>/dev/null || echo "?"
 ''').trim()
+        def pushed = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
+cd "$PROJ" 2>/dev/null || true
+"$PY" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('pushed',''))" \
+  "$SR_RUN_DIR/release/meta.json" 2>/dev/null || true
+''').trim()
         def state = params.DEPLOY ? '🔴 已上线' : '演练'
         def marks = []
         if (br)    { marks << br }
         if (params.ACTION == 'release') { marks << "注入 ${sel} 条" }
         marks << state
+        // 记录去向要写进描述：光有分支名不够，得知道它在不在远端
+        if (pushed == 'True' || pushed == 'true') { marks << '记录已推 origin' }
+        else if (params.PUSH_BRANCH) { marks << '记录仅本地' }
         if (params.NOTES?.trim()) { marks << params.NOTES.trim() }
         currentBuild.description = (desc ? "${desc} | " : "") + marks.join(' · ')
 

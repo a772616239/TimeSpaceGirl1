@@ -749,21 +749,33 @@ cmd_record() {
     warn "记录提交失败（可能无变化）"
   fi
 
-  # 推送只在真上线时做（演练不该在远端留一堆分支）；推送失败只标黄
-  if [[ "$SR_DEPLOY" == "true" && "$SR_PUSH" == "true" ]]; then
-    info "推送 release 分支与标签到 origin"
-    if git -C "$wt" push -q -u origin "$br" 2>&1 | sed 's/^/   /'; then
+  # 推送策略（2026-10-19 口径变更）：**打包成功就推一次**，不等真上线。
+  #   理由：演练与真上线的差别是「有没有动生产」，不该连「记录是否可追溯」也一起差别对待 ——
+  #   只在本地留分支，三天后没人知道那次演练到底注入了什么。所以分支 + tag 一起推。
+  #   连跑多次演练嫌远端分支多时，把 PUSH_BRANCH 设为 false（那就只在本地留证据）。
+  #   推送失败只标黄（记录已经在本地提交好了，不该因为网络把整条流水线判红）。
+  if [[ "$SR_PUSH" == "true" ]]; then
+    info "推送 release 分支与标签到 origin（一次原子推送）"
+    # 🔴 `--atomic`：分支与 tag 要么都成功要么都不动。分两次推的话，
+    #    分支推上去而 tag 失败会留下「有分支没标签」的半截状态，回滚与追溯都要靠猜。
+    if git -C "$wt" push -q --atomic -u origin "$br" "rel-$stamp" 2>&1 | sed 's/^/   /'; then
+      meta_set "pushed=true" "pushed_branch=$br" "pushed_tag=rel-$stamp"
+      echo "   已推送：$br + rel-$stamp"
+    elif git -C "$wt" push -q -u origin "$br" 2>&1 | sed 's/^/   /'; then
+      # 远端不支持 atomic（或钩子拒了 tag）时退回逐条推，别让记录卡在这
+      warn "原子推送不支持 → 已退回逐条推送（分支已推）"
+      meta_set "pushed_branch=$br"
       if git -C "$wt" push -q origin "rel-$stamp" 2>&1 | sed 's/^/   /'; then
-        meta_set "pushed=true"
-        echo "   已推送：$br / rel-$stamp"
+        meta_set "pushed=true" "pushed_tag=rel-$stamp"
+        echo "   已推送标签：rel-$stamp"
       else
         warn "标签推送失败（分支已推；可手工 git push origin rel-${stamp}）"
       fi
     else
-      warn "分支推送失败（网络/凭据？分支与标签已在本地，可手工 push）"
+      warn "分支推送失败（网络/凭据？分支与标签已在本地，可手工 git push origin ${br} rel-${stamp}）"
     fi
   else
-    echo "   跳过推送（DEPLOY=${SR_DEPLOY} / PUSH=${SR_PUSH}）：记录在本地分支与证据目录里"
+    echo "   跳过推送（PUSH=${SR_PUSH}）：记录只在本地分支与证据目录里"
   fi
   return 0
 }

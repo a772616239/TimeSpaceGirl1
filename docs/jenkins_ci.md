@@ -245,7 +245,11 @@ scripts/build_envs.json ──┴─→ scripts/apply_build_env.py apply <env>  
   - `server_game/deploy/releases/<stamp>.json` —— 机器看的：完整 diff 计数、`backup_dir`、健康检查
   - `server_game/deploy/releases/INDEX.md` —— 台账，每次**从 JSON 全量重建**（追加写法在重跑时会写重）
 - tag：`rel-<stamp>`（annotated，message 带本次提交摘要）。
-- 推送策略：**只有真上线（`DEPLOY=true`）才 push 分支与 tag**；演练一律不推，免得远端堆一串垃圾分支。
+- 推送策略：**打包成功就推，一次原子推送**（`git push --atomic origin <branch> rel-<stamp>`）。
+  演练也推 —— 演练与真上线的差别是「有没有动生产」，不该连「记录能不能追溯」也一起差别对待；
+  三天后没人说得清那次演练注入了哪 58 个条目。嫌远端分支多时把 `PUSH_BRANCH` 设为 false。
+  - 用 `--atomic` 而不是推两次：分支推上去而 tag 失败会留下「有分支没标签」的半截状态，回滚时只能靠猜。
+    远端不支持 atomic 时自动退回逐条推（并标黄提示）。
 - 提交只 `git add` 这三个路径 —— 🔴 绝不 `git add -A`（这个仓有并行会话在改源码，`-A` 会把别人的 WIP 卷进来）。
 
 #### 三道闸门（默认「什么都不做」）
@@ -271,7 +275,8 @@ scripts/build_envs.json ──┴─→ scripts/apply_build_env.py apply <env>  
 - **发布看板**：`evidence/release/release-report.html`（自包含、无外链），一页看完
   结论 KPI / 环节流水线 / 环节明细（含耗时）/ 每个 jar 的差异条形图与包分布 / 上线自检表。
   另拷贝到固定地址 **`http://localhost:8080/userContent/TS-Server-Release-latest.html`**（可收藏）。
-- 构建描述形如：`✅ 7 个环节全部通过 | x1-1.2.2-20261019-2030 · 注入 58 条 · 演练`。
+- 构建描述形如：`✅ 7 个环节全部通过 | x1-1.2.2-20261019-2120 · 注入 58 条 · 演练 · 记录已推 origin`。
+  「记录已推 origin / 记录仅本地」这一项是刻意加的：光有分支名说明不了它到底推没推上去。
 
 #### 球的颜色语义（别把告警当噪音）
 
@@ -294,24 +299,33 @@ scripts/build_envs.json ──┴─→ scripts/apply_build_env.py apply <env>  
 - ✅ `#4` 演练（长连接告警语义修正后）：`SUCCESS`，255s，描述
   `✅ 7 个环节全部通过 | x1-1.2.2-20261019-2056 · 注入 58 条 · 演练`；产物 29 个（**无 jar**，
   证据目录从 34M 压到 152K）；看板 `userContent` 已刷新。
+- ✅ `#5` 演练（**推送策略改为「打包成功即推」**）：`SUCCESS`，185s，描述
+  `✅ 7 个环节全部通过 | x1-1.2.2-20261019-2120 · 注入 58 条 · 演练 · 记录已推 origin`。
+  实测远端核验：`origin` 上出现 `release/x1-1.2.2-20261019-2120` 与 annotated tag
+  `rel-20261019-2120`（都指向 `99aea56`，即记录提交），`meta.json` 里
+  `pushed=true / pushed_branch / pushed_tag` 齐备；看板多一格「发布记录 · 已推送」。
 - ✅ 注入机制在**生产 staging 副本**上验证过（不动线上）：抽取 2 个 class → `tar` → `zip -u` 分批 →
   `unzip -t` OK → 逐条目 CRC 与本地编译产物**完全相同**；复核的失败分支（清单里混入不存在的条目）会 rc=1。
 - 🔴 **`DEPLOY=true` 尚未实跑**（会重启生产、踢线）⇒ 首次真上线必须由用户点头；
   建议先拿一次「只注 1~2 个类」的小范围热修（`ONLY_CLASSES`）走通全链路。
 
-#### 演练分支要清理（否则攒一堆）
+#### 演练分支要清理（否则本地 + 远端都攒）
 
-演练每次都会切一条 `release/x1-...-<stamp>` 分支 + tag，但**只有真上线才 push**，本地攒多了会碍眼：
+每次构建都会切一条 `release/x1-...-<stamp>` 分支 + tag，并且**打包成功就推 origin**：
 
 ```bash
 cd TimeSpaceServer/Server_x1tag1.2.2
-git branch --list 'release/*'                     # 先看有哪些
-git branch -D release/x1-1.2.2-20261019-2030      # 删分支
-git tag -d rel-20261019-2030                      # 删对应 tag
+git ls-remote --heads origin 'release/*'          # 远端有哪些
+git branch --list 'release/*'                     # 本地有哪些
+# 删远端 + 本地 + tag（一条一条来，别用通配批量删）
+git push origin --delete release/x1-1.2.2-20261019-2030
+git branch -D release/x1-1.2.2-20261019-2030
+git tag -d rel-20261019-2030 && git push origin --delete rel-20261019-2030
 ```
 
-记录（`deploy/releases/*.md`）随分支一起去掉是**设计如此**：演练不产生发布事实；
-真上线的记录在推上去的 release 分支里，且 Jenkins 侧还留一份（`record.md` / `record.json` 产物 + 看板）。
+🔴 **别对 `release/*` 通配批量删**：真上线的分支混在里面，删错就没有那次发布的事实记录了。
+判断依据：记录里的 `deployed` 字段 —— `false` 是演练可删，`true` 必须留。
+演练记录被删是**设计如此**（演练不产生发布事实）；Jenkins 侧还各留一份 `record.md` / `record.json` + 看板。
 
 
 #### 排障

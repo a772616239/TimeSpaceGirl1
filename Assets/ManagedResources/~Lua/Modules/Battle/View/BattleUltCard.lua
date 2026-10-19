@@ -2,19 +2,20 @@
   大招入场小卡（缩小版 HelpHeroShow）
   ==========================================================================
   英雄释放大招的瞬间，把助战英雄展示框 HelpHeroShow 的缩小副本摆到对应角落：
-  我方 camp 0 -> 左上角，敌方 camp 1 -> 右上角，随后大招攻击照常播放。
-  按需求：卡片与攻击同时进行，不额外暂停战斗。
+  我方 camp 0 -> myRect_Skill 左侧，敌方 camp 1 -> enemyRect_Skill 右侧，
+  随后大招攻击照常播放。按需求：卡片与攻击同时进行，不额外暂停战斗。
 
   不新增 prefab 节点：直接克隆 BattlePanel 下的 HelpHeroShow（含立绘挂点 live、
-  名字 name、地点 location），缩放到 26% 后重挂锚点。立绘走 LoadHerolive，
-  与助战英雄入场展示框同一套资源链路。
+  名字 name、地点 location），缩放到 26% 后挂到技能栏下面。
 
-  🔴 定位规则：跟随技能栏（myRect_Skill / enemyRect_Skill）——卡片纵向落在技能栏那一带，
-  不是在屏幕顶角；X 贴左右边缘。位置全部在技能栏的锚点空间里算，所以技能栏怎么锚
-  卡片就怎么跟，不再自己揣一套绝对坐标。
-  🔴 位置是「绑定」而不是「算一次」：卡片存活期间由生命周期计时器每 0.02s（50Hz）重算一次
-  （等同 ParentConstraint 的锁定位置语义，但不动父子关系、不动层级、不跟技能栏的
-  SetActive 联动 —— 见文件末尾 LockToSkillBar 注释）。
+  🔴 卡片是技能栏的【子节点】，生成时就挂进 myRect_Skill / enemyRect_Skill：
+     - 位置：Show 时按技能栏【当前的世界坐标】算一次，落到技能栏外侧下沿；
+       之后技能栏怎么动（入场动画滑 anchoredPosition、换分辨率重排）卡片都自动跟着，
+       不再需要每帧重算（旧实现用 50Hz 计时器模拟 ParentConstraint，现在父子关系天然跟随）。
+     - 缩放：技能栏自己带 1.2 缩放，敌方那条还是 -1.2 的镜像副本；
+       子节点必须按父链缩放反算，否则卡片凭空放大 1.2 倍、敌方那张还会左右翻转。
+     - 显隐：技能栏 SetActive(false) 一关，卡片作为子节点跟着一起消失，
+       所以卡片不再自己隐藏（旧实现那套 3 秒 / 2 秒 / 防抖判定全部删掉）。
 
   注意：每个阵营各持一张卡（slots[camp]），敌我可能同时放大招，
   共用一张会互相覆盖、位置乱跳。
@@ -27,33 +28,18 @@ local this = BattleUltCard
 --           false = 所有英雄的技能（CombatControl.SkillType == 2，普攻 SkillType == 1 不算）。
 local REQUIRE_CLOSEUP = false
 
--- 敌我都弹，靠角落位置区分：我方左上角、敌方右上角
+-- 敌我都弹，靠角落位置区分：我方贴 myRect_Skill、敌方贴 enemyRect_Skill
 local ONLY_MY_CAMP    = false
 
 local CARD_SCALE       = 0.26   -- 相对整屏版 HelpHeroShow 的缩放
-local CARD_MARGIN_X    = 140    -- 卡片中心距左/右边缘的距离（0.26 缩放后卡宽 280.8，半宽 140.4，边缘贴齐）
+local CARD_MARGIN_X    = 140    -- 卡片中心距技能栏外侧边缘的距离（0.26 缩放后卡宽 280.8，半宽 140.4，边缘贴齐）
 local CARD_GAP_Y       = 8      -- 卡片顶边与技能栏底边的间隙（参考分辨率像素，CanvasScaler 统一缩放）
 local CARD_CONTENT_TOP = 642.5  -- 卡片内容顶边相对卡片中心（缩放前，Image1 顶边 = pos.y 7 + 高 1271/2）
 local CARD_Y_OFFSET    = 309.35 -- 在「技能栏下沿」基础上的整体竖向微调（正数向上）
 local CARD_FALLBACK_Y  = -520   -- 兜底：找不到技能栏时卡片中心的 Y（相对顶部锚点）
 local POP_IN_TIME     = 0.18
-local POP_OUT_TIME    = 0.12
 
--- 生命周期计时器参数：卡片只活一次大招，这段时间里「位置 + 收场」都由同一个计时器推
--- 🔴 卡片不再自己拍一个固定时长。技能栏亮 3 秒（BattlePanel.RECT_SKILL_SHOW_TIME，unscaled），
---    以前卡片写死 2.0s（对齐 CloseupDuration）⇒ 卡片必然比技能栏早 1 秒消失。
---    放大招带特写时更糟：前摇 0.5s + CloseupDuration 这段里战斗是暂停的，技能栏还没亮，
---    卡片的 2 秒却照走不误，等技能栏亮起来时卡片早就收掉了。
--- 计时器每 FOLLOW_TICK 跑一次（真实时间），判定分三种情况：
---   ① 技能栏亮着              → 卡片留着（barSeen = true）并重算一次位置（跟着移动）；
---   ② 技能栏亮过、现在灭了     → 持续 FOLLOW_HIDE_DELAY 才收，防瞬时隐藏把卡片闪退；
---   ③ 技能栏还没亮（特写前摇） → 只等，不算消失，等它亮起来再跟。
-local FOLLOW_TICK        = 0.02 -- 位置跟随节拍：50Hz，技能栏动起来卡片是连续跟的（0.1s 会顿挫）
-local FOLLOW_HIDE_DELAY  = 0.2  -- 技能栏灭掉后延迟这么久才收卡片（真实秒）
-local CARD_MIN_LIVE_TIME = 1.2  -- 弹出后这段时间内不吃「技能栏消失」的信号（真实秒）
-local CARD_MAX_LIFE_TIME = 6.0  -- 兜底：技能栏计时异常（一直不灭/一直不亮）时卡片的上限
-
--- [camp] = { go, live, hero, tween, lastKey, lastTime, showTime, barSeen, barGoneAt }
+-- [camp] = { go, live, hero, tween, lastKey, lastTime }
 this.slots = {}
 this.view = nil
 
@@ -105,7 +91,6 @@ local function GetTemplate(view)
 end
 
 -- 技能栏节点：我方 myRect_Skill（贴左），敌方 enemyRect_Skill（贴右）
--- 定位、跟随消失、压层级三处都用它，是卡片唯一的参照物
 local function GetSkillBar(view, camp)
     if not view or not IsAlive(view.transform) then
         return nil
@@ -121,39 +106,103 @@ local function GetSkillBar(view, camp)
     return ui
 end
 
--- 卡片定位：跟随技能栏（我方 myRect_Skill / 敌方 enemyRect_Skill）
---   🔴 位置口径按昨晚定稿：卡片纵向落在技能栏那一带（屏幕中部略偏下），不是贴屏幕顶角。
---   直接复制技能栏的锚点（我方 (0,0.5)、敌方 (1,0.5)），X 只给「距边距离」；
---   Y = 技能栏底边 - 间隙 - 卡片内容半高 + 固定微调，全部在技能栏的锚点空间里算。
---   🔴 纯函数、可重复调用：Show 时算一次，存活期间跟随 tick 再算一次，
---      两次口径完全一致，所以不会出现「弹出时对齐、之后漂走」。
+-- 技能栏【当前世界坐标】下的几何：左右下边界 + 父链缩放
+--   🔴 必须读运行时的 position / lossyScale / rect：
+--      技能栏自带入场动画会改 anchoredPosition，换分辨率后 rect 也会变，
+--      拿 prefab 里的数字写死（anchoredPosition=(0,-215)、size 529x90）迟早错位。
+local function GetBarGeom(bar)
+    if not IsAlive(bar) or not IsAlive(bar.transform) then
+        return nil
+    end
+    local rt = bar:GetComponent("RectTransform")
+    if not rt then
+        return nil
+    end
+    local tr = bar.transform
+    local pos = tr.position
+    local lossy = tr.lossyScale
+    local rect = rt.rect
+    if not pos or not rect then
+        return nil
+    end
+    -- 敌方那条技能栏 localScale.x 是 -1.2（横向镜像），符号必须保留，后面要靠它把卡片翻回来
+    local sx = (lossy and lossy.x and lossy.x ~= 0) and lossy.x or 1
+    local sy = (lossy and lossy.y and lossy.y ~= 0) and lossy.y or 1
+    local ax = pos.x + sx * rect.xMin
+    local bx = pos.x + sx * rect.xMax
+    local ay = pos.y + sy * rect.yMin
+    local by = pos.y + sy * rect.yMax
+    return {
+        pos = pos,
+        sx = sx,
+        sy = sy,
+        left = math.min(ax, bx),
+        right = math.max(ax, bx),
+        bottom = math.min(ay, by),
+        top = math.max(ay, by),
+    }
+end
+
+-- 面板（卡片原来的父节点）的缩放：CARD_* 这些像素量纲都是按面板空间调的，
+-- 换到世界坐标时要乘上它；卡片换父节点后缩放也要按它反算。
+local function GetPanelScale(view)
+    if view and IsAlive(view.transform) then
+        local s = view.transform.lossyScale
+        if s and s.x and s.x ~= 0 then
+            return math.abs(s.x)
+        end
+    end
+    return 1
+end
+
+-- 卡片定位：落在技能栏外侧下沿（我方左边缘 / 敌方右边缘），全部按技能栏当前世界坐标算
+--   🔴 只在 Show 时算一次：卡片已经是技能栏的子节点，之后技能栏移动卡片跟着移动，
+--      不需要也不应该每帧重算。
+--   返回 卡片本地缩放 (lx, ly) 和落点世界坐标 (wx, wy)
 local function ApplyLayout(view, s, rt)
     local bar = GetSkillBar(view, s.camp)
-    local barRt = bar and bar:GetComponent("RectTransform")
+    local geom = bar and GetBarGeom(bar)
+    local px = GetPanelScale(view)
+
     rt.pivot = Vector2.New(0.5, 0.5)
-    if not barRt then
-        -- 兜底：拿不到技能栏才退回顶部锚点绝对定位
+    rt.anchorMin = Vector2.New(0.5, 0.5)
+    rt.anchorMax = Vector2.New(0.5, 0.5)
+
+    if not geom then
+        -- 兜底：拿不到技能栏（正常不会走到）⇒ 还挂在面板下，退回「贴屏幕顶角」的绝对定位
         local ax = ((tonumber(s.camp) or 0) == 0) and 0 or 1
         rt.anchorMin = Vector2.New(ax, 1)
         rt.anchorMax = Vector2.New(ax, 1)
         local dx = ((tonumber(s.camp) or 0) == 0) and CARD_MARGIN_X or -CARD_MARGIN_X
         local dy = CARD_FALLBACK_Y + CARD_Y_OFFSET
         rt.anchoredPosition = Vector2.New(dx, dy)
+        rt.localScale = Vector3.New(CARD_SCALE, CARD_SCALE, 1)
         LogRed("[UIFlow] 大招小卡定位兜底：找不到技能栏节点")
-        return { x = dx, y = dy }
+        return CARD_SCALE, CARD_SCALE, dx, dy
     end
 
-    rt.anchorMin = barRt.anchorMin
-    rt.anchorMax = barRt.anchorMax
-    -- 技能栏底边（相对其锚点参考点）；pivot.y 通常是 0.5，用配置值算，不写死
-    local barBottom = barRt.anchoredPosition.y - barRt.pivot.y * barRt.sizeDelta.y
-    local centerY = barBottom - CARD_GAP_Y - CARD_CONTENT_TOP * CARD_SCALE + CARD_Y_OFFSET
-    local dx = CARD_MARGIN_X
-    if (tonumber(s.camp) or 0) ~= 0 then
-        dx = -dx
+    -- X：贴技能栏外侧（我方取左边界、敌方取右边界），距离按面板像素量纲折成世界单位
+    local margin = CARD_MARGIN_X * px
+    local wx
+    if (tonumber(s.camp) or 0) == 0 then
+        wx = geom.left + margin
+    else
+        wx = geom.right - margin
     end
-    rt.anchoredPosition = Vector2.New(dx, centerY)
-    return { x = dx, y = centerY }
+    -- Y：技能栏下沿往上（- 间隙 - 卡片内容半高 + 竖向微调）
+    local lift = (CARD_Y_OFFSET - CARD_GAP_Y - CARD_CONTENT_TOP * CARD_SCALE) * px
+    local wy = geom.bottom + lift
+
+    -- 🔴 世界坐标 -> 技能栏本地坐标。技能栏的 lossyScale 可能带负号（敌方是镜像副本），
+    --    除以它同时完成「换算到本地单位」和「把镜像翻回来」两件事。
+    rt.localPosition = Vector3.New((wx - geom.pos.x) / geom.sx, (wy - geom.pos.y) / geom.sy, 0)
+
+    -- 缩放反算：父链 1.2 倍缩放（敌方 x 还是 -1.2）=> 本地缩放除回去，
+    -- 卡片的世界尺寸才等于面板下 0.26 的观感，且敌方那张不会被左右翻转。
+    local lx = CARD_SCALE * px / geom.sx
+    local ly = CARD_SCALE * px / geom.sy
+    rt.localScale = Vector3.New(lx, ly, 1)
+    return lx, ly, wx, wy
 end
 
 local function DestroySlot(s)
@@ -167,16 +216,9 @@ local function DestroySlot(s)
     end
     s.go = nil
     s.hero = nil
-    if s.followTimer then
-        s.followTimer:Stop()
-        s.followTimer = nil
-    end
     s.tween = nil
     s.lastKey = nil
     s.lastTime = 0
-    s.showTime = 0
-    s.barSeen = false
-    s.barGoneAt = nil
 end
 
 -- 清掉全部卡片（换战斗时重建，保证是从「没被入场动画改过」的模板克隆的）
@@ -203,29 +245,31 @@ local function EnsureCard(view, s)
         return nil
     end
 
-    local go = GameObject.Instantiate(tpl, view.transform)
+    -- 🔴 直接生成成技能栏的子节点：位置/缩放/显隐全交给父节点，
+    --    不再像旧实现那样挂在面板下、靠每帧重算位置模拟「锁在技能栏上」。
+    local bar = GetSkillBar(view, s.camp)
+    local parent = view.transform
+    if bar and IsAlive(bar.transform) then
+        parent = bar.transform
+    else
+        LogRed("[UIFlow] 大招小卡没挂到技能栏下：找不到 myRect_Skill / enemyRect_Skill")
+    end
+
+    local go = GameObject.Instantiate(tpl, parent)
     go.name = (s.camp == 0) and "HelpHeroMiniCard_Mine" or "HelpHeroMiniCard_Enemy"
 
-    -- 整屏版自带的入场动画会驱动根节点位移/缩放，会把角落定位改回全屏，必须停掉
+    -- 整屏版自带的入场动画会驱动根节点位移/缩放，会把定位改回全屏，必须停掉
     local anim = go:GetComponent("Animation")
     if anim then
         anim:Stop()
         anim.enabled = false
     end
-    -- 整屏粒子缩到 28% 会糊成一片，关掉
+    -- 整屏粒子缩到 26% 会糊成一片，关掉
     local effect = Util.GetGameObject(go, "effect")
     if effect then
         effect:SetActive(false)
     end
 
-    go:SetActive(false)
-    -- 层级压到技能栏（myRect_Skill）之下，避免卡片盖住技能释放 UI
-    local skillUI = GetSkillBar(view, 0)
-    if IsAlive(skillUI) then
-        go.transform:SetSiblingIndex(skillUI.transform:GetSiblingIndex())
-    else
-        LogRed("[UIFlow] 大招小卡排序失败：找不到 myRect_Skill")
-    end
     s.go = go
     return go
 end
@@ -245,10 +289,6 @@ function this.Show(view, heroConfig, camp, dedupeKey)
     end
     s.lastKey = dedupeKey
     s.lastTime = now
-    -- 记录弹出时刻 + 清零跟随状态：跟随技能栏的那套判定从这里重新起算
-    s.showTime = now
-    s.barSeen = false
-    s.barGoneAt = nil
 
     local go = EnsureCard(view, s)
     if not go then
@@ -256,12 +296,11 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         return
     end
 
-    -- 定位：跟随技能栏（相对技能栏锚点，换分辨率不跑偏）
+    -- 定位：按技能栏当前世界坐标算一次，之后由父子关系跟随
     local rt = go:GetComponent("RectTransform")
-    local pos = nil
+    local sx, sy, wx, wy = CARD_SCALE, CARD_SCALE, nil, nil
     if rt then
-        pos = ApplyLayout(view, s, rt)
-        rt.localScale = Vector3.New(CARD_SCALE * 0.7, CARD_SCALE * 0.7, 1)
+        sx, sy, wx, wy = ApplyLayout(view, s, rt)
     end
     go:SetActive(true)
 
@@ -297,85 +336,33 @@ function this.Show(view, heroConfig, camp, dedupeKey)
     if s.tween then
         s.tween:Kill()
     end
-    s.tween = go.transform:DOScale(Vector3.New(CARD_SCALE, CARD_SCALE, 1), POP_IN_TIME):SetEase(Ease.OutBack)
+    if rt then
+        rt.localScale = Vector3.New(sx * 0.7, sy * 0.7, 1)
+        s.tween = go.transform:DOScale(Vector3.New(sx, sy, 1), POP_IN_TIME):SetEase(Ease.OutBack)
+    end
 
-    Log(string.format("[UIFlow] 大招小卡 OPEN hero=%s camp=%s bar=%s pos=(%s,%s)",
+    Log(string.format("[UIFlow] 大招小卡 OPEN hero=%s camp=%s 挂点=%s pos=(%s,%s)",
         tostring(heroConfig.Id), tostring(camp),
         (camp == 0) and "myRect_Skill" or "enemyRect_Skill",
-        pos and string.format("%.0f", pos.x) or "?",
-        pos and string.format("%.0f", pos.y) or "?"))
-
-    -- 生命周期计时器：从弹出到收起只跑这一个 Timer，位置跟随 + 收场都挂在它上面
-    -- 🔴 这里不再有「停留 N 秒」的独立定时器：一旦卡片和技能栏各持一个时钟，
-    --    两者时长对不上（3.0s vs 2.0s）就必然出现「卡片比技能栏先消失」，
-    --    宁可只留技能栏一个时钟，卡片只做跟随 + 兜底上限。
-    if s.followTimer then
-        s.followTimer:Stop()
-    end
-    s.followTimer = Timer.New(function ()
-        if not IsAlive(s.go) then
-            s.followTimer:Stop()
-            return
-        end
-        local lived = Time.realtimeSinceStartup - (s.showTime or 0)
-        local ui = GetSkillBar(view, s.camp)
-        local barOn = IsAlive(ui) and ui.activeInHierarchy
-
-        if barOn then
-            -- 技能栏亮着 → 卡片必须是活的，并且跟着它移动
-            s.barSeen = true
-            s.barGoneAt = nil
-            -- 位置锁定：等同 ParentConstraint 的「锁定位置」，但只锁位置 ——
-            -- 卡片仍是 BattlePanel 的子节点（层级压技能栏之下），也不跟技能栏的 SetActive 联动
-            -- （特写前摇里技能栏是灭的，卡片必须还能显示）。
-            -- 用同一套 ApplyLayout 重算，弹出时和存活期间位置口径一致。
-            if rt then
-                ApplyLayout(view, s, rt)
-            end
-        elseif s.barSeen and lived >= CARD_MIN_LIVE_TIME then
-            -- 技能栏亮过又灭了 → 持续 FOLLOW_HIDE_DELAY 才收（防瞬时隐藏把卡片闪退）
-            s.barGoneAt = s.barGoneAt or Time.realtimeSinceStartup
-            if Time.realtimeSinceStartup - s.barGoneAt >= FOLLOW_HIDE_DELAY then
-                Log(string.format("[UIFlow] 大招小卡跟随技能栏收起 camp=%s（技能栏已隐藏）", tostring(camp)))
-                this.Hide(camp)
-                return
-            end
-        end
-        -- ③ 技能栏还没亮（放大招前摇 + 特写期间战斗暂停）→ 什么都不做，继续等
-
-        if lived >= CARD_MAX_LIFE_TIME then
-            Log(string.format("[UIFlow] 大招小卡兜底收起 camp=%s（技能栏 %.1fs 内没收场）",
-                tostring(camp), CARD_MAX_LIFE_TIME))
-            this.Hide(camp)
-        end
-    end, FOLLOW_TICK, -1, true)
-    s.followTimer:Start()
+        wx and string.format("%.0f", wx) or "?",
+        wy and string.format("%.0f", wy) or "?"))
 end
 
+-- 手动清场（正常流程不需要：卡片是技能栏的子节点，技能栏一关就跟着隐藏了）
 function this.Hide(camp)
     local s = this.slots[tonumber(camp) or 0]
-    if not s or not IsAlive(s.go) then
+    if not s then
         return
     end
-    if s.followTimer then
-        s.followTimer:Stop()
-        s.followTimer = nil
-    end
-    -- 🔴 卡片只有一个时钟（followTimer），收起后就没了；
-    --    以前还给卡片挂过一个「停留 2 秒」的定时器，提前收起后它照样到点再 Hide 一次，
-    --    正好把同一阵营下一次弹出的卡片按上一个时间点切掉。
-    local go = s.go
     if s.tween then
         s.tween:Kill()
+        s.tween = nil
     end
-    s.tween = go.transform:DOScale(Vector3.New(CARD_SCALE * 0.8, CARD_SCALE * 0.8, 1), POP_OUT_TIME)
-        :SetEase(Ease.InQuad)
-        :OnComplete(function ()
-            if IsAlive(go) then
-                go:SetActive(false)
-                Log("[UIFlow] 大招小卡 CLOSE camp=" .. tostring(camp))
-            end
-        end)
+    if IsAlive(s.go) then
+        s.go:SetActive(false)
+    end
+    s.lastKey = nil
+    s.lastTime = 0
 end
 
 return BattleUltCard

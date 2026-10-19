@@ -1,22 +1,24 @@
--- 大招小卡（HelpHeroMiniCard_Mine）与技能名条（myRect_Skill）收场时序回归测试
+-- 大招小卡（HelpHeroMiniCard_Mine）挂到技能栏子节点下的回归测试
 --
 -- 用法：
 --   cd LuaEncoder/luajit_mac/64
 --   TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_ult_card_follow_bar.lua
 --
--- 覆盖的回归点：卡片不许比技能栏先消失。历史 bug 是卡片自带一个 2.0s 定时器、
--- 技能栏亮 3.0s，于是卡片稳定早 1 秒收掉；带特写的大招更严重——前摇 0.5s +
--- CloseupDuration（战斗暂停）这段里技能栏根本没亮，卡片的 2 秒却照走，等技能栏
--- 亮起来时卡片已经没了。现在卡片只有一个时钟：跟随技能栏。
+-- 覆盖的回归点（本轮改动）：
+--   ① 卡片生成时直接是 myRect_Skill / enemyRect_Skill 的子节点，不再挂面板下；
+--   ② 落点按「技能栏当前世界坐标」算：外侧边缘 + 140、下沿往上 134.3（面板像素量纲）；
+--   ③ 技能栏 1.2 缩放 / 敌方 -1.2 镜像必须被反算，否则卡片放大 1.2 倍、敌方左右翻转；
+--   ④ 父子关系天然跟随：技能栏一动卡片世界坐标就跟着动，不需要（也不再创建）每帧重算计时器；
+--   ⑤ 卡片不再自己隐藏：技能栏灭掉由父节点带走，卡片 activeSelf 不动。
+--
+-- 历史 bug（上一版，已删除的实现）：卡片自带 2.0s 定时器而技能栏亮 3.0s，卡片必然早 1 秒消失；
+-- 靠 50Hz 计时器重算位置模拟 ParentConstraint，技能栏一动就顿挫。
 
 local ROOT = os.getenv("TS_ROOT") or "../../.."
 local LUA_SRC = ROOT .. "/Assets/ManagedResources/~Lua"
 
--- ---- 虚拟时钟 ----
+-- ---- 环境桩 ----
 local now = 0
-local timers = {}
-local events = {}   -- { t = 触发时刻, fn = 回调 }
-
 Time = setmetatable({}, {
     __index = function(_, k)
         if k == "realtimeSinceStartup" then return now end
@@ -26,59 +28,17 @@ Time = setmetatable({}, {
     end,
 })
 
+-- 计时器：本次改动后模块不该再创建任何计时器，这里只负责计数
+local timerCount = 0
 Timer = {}
 function Timer.New(func, duration, loop, unscaled)
-    local t = {
-        func = func, duration = duration, time = duration,
-        loop = loop or 1, unscaled = unscaled and true or false, running = false,
-    }
-    function t:Start() self.running = true; timers[#timers + 1] = self end
-    function t:Stop() self.running = false end
+    timerCount = timerCount + 1
+    local t = {}
+    function t:Start() end
+    function t:Stop() end
     return t
 end
 
-local function Step()
-    local dt = 0.01
-    now = now + dt
-    for _, e in ipairs(events) do
-        if not e.done and now + 1e-9 >= e.t then
-            e.done = true
-            e.fn()
-        end
-    end
-    local alive = {}
-    for _, t in ipairs(timers) do
-        if t.running then
-            t.time = t.time - (t.unscaled and dt or dt)
-            if t.time <= 0 then
-                t.func()
-                if t.loop > 0 then
-                    t.loop = t.loop - 1
-                    t.time = t.time + t.duration
-                end
-                if t.loop == 0 then
-                    t:Stop()
-                elseif t.loop < 0 then
-                    t.time = t.time + t.duration
-                end
-            end
-            if t.running then alive[#alive + 1] = t end
-        end
-    end
-    timers = alive
-end
-
-local function AdvanceTo(target) while now + 1e-9 < target do Step() end end
-local function Advance(sec) AdvanceTo(now + sec) end
-local function At(t, fn) events[#events + 1] = { t = t, fn = fn } end
-
--- 每个用例都以自己开始的时刻为 0，避免用例之间共享绝对时间
-local blockStart = 0
-local function BeginBlock() blockStart = now; events = {} end
-local function RAt(dt, fn) At(blockStart + dt, fn) end
-local function RTo(dt) AdvanceTo(blockStart + dt) end
-
--- ---- 最小环境桩 ----
 Log = function() end
 LogRed = Log
 LogError = Log
@@ -88,20 +48,22 @@ function IsNull(o) return o == nil or o.__null == true end
 Vector2 = { New = function(x, y) return { x = x, y = y } end }
 Vector3 = { New = function(x, y, z) return { x = x, y = y, z = z } end }
 Ease = { OutBack = 1, InQuad = 2 }
-
 function GetLanguageStrById(id) return tostring(id) end
 
 local function NewTween()
     local tw = {}
     function tw:SetEase() return self end
     function tw:Kill() end
-    -- 直接结算：测试里只关心「收起后节点是否关掉」，不等补间时长
-    function tw:OnComplete(cb) cb(); return self end
+    function tw:OnComplete(cb) if cb then cb() end; return self end
     return tw
 end
 
+local function NewRect(xmin, xmax, ymin, ymax)
+    return { xMin = xmin, xMax = xmax, yMin = ymin, yMax = ymax }
+end
+
 local function NewGo(name)
-    local go = { name = name, activeSelf = false, links = {}, sibling = 0 }
+    local go = { name = name, activeSelf = true, links = {}, parent = nil }
     function go:SetActive(v) self.activeSelf = v end
     function go:GetComponent(kind)
         if kind == "RectTransform" then return self.rt end
@@ -109,14 +71,19 @@ local function NewGo(name)
     end
     go.transform = {
         gameObject = go,
-        DOScale = function() return NewTween() end,
-        SetSiblingIndex = function(_, i) go.sibling = i end,
-        GetSiblingIndex = function() return go.sibling end,
+        -- DOScale 在测试里直接结算成目标缩放（只关心最终值，不等补间时长）
+        DOScale = function(self, v)
+            if go.rt then go.rt.localScale = v end
+            return NewTween()
+        end,
+        SetParent = function(_, p) go.parent = p end,
+        SetSiblingIndex = function() end,
+        GetSiblingIndex = function() return 0 end,
     }
     return go
 end
 
--- 卡片根节点（能取到 RectTransform）
+local cardCount = 0
 local function NewCardGo()
     local go = NewGo("HelpHeroMiniCard_Mine")
     go.rt = {
@@ -125,18 +92,20 @@ local function NewCardGo()
         anchorMin = Vector2.New(0, 0),
         anchorMax = Vector2.New(0, 0),
         anchoredPosition = Vector2.New(0, 0),
+        localPosition = Vector3.New(0, 0, 0),
         localScale = Vector3.New(1, 1, 1),
     }
-    go.links["live"] = (function()
-        local l = NewGo("live")
-        return l
-    end)()
+    go.links["live"] = NewGo("live")
     return go
 end
 
-local cardCount = 0
 GameObject = {
-    Instantiate = function() cardCount = cardCount + 1; return NewCardGo() end,
+    Instantiate = function(tpl, parent)
+        cardCount = cardCount + 1
+        local go = NewCardGo()
+        go.parent = parent
+        return go
+    end,
     Destroy = function(go) if go then go.__null = true end end,
 }
 
@@ -155,15 +124,15 @@ UnLoadHerolive = function() end
 -- ---- 被测模块 ----
 local BattleUltCard = assert(loadfile(LUA_SRC .. "/Modules/Battle/View/BattleUltCard.lua"))()
 
--- ---- 假视图：技能栏 myRect_Skill ----
-local function NewView()
-    local bar = { name = "myRect_Skill", activeInHierarchy = false }
+-- ---- 假视图：技能栏（世界坐标 + 父链缩放 + 本地矩形）----
+local function NewBar(name, worldPos, lossy)
+    local bar = { name = name, activeInHierarchy = false }
     bar.rt = {
+        -- pivot (0, 0.5)、size 529x90 ⇒ 本地矩形 x 0..529 / y -45..45（与 prefab 一致）
+        rect = NewRect(0, 529, -45, 45),
         pivot = Vector2.New(0, 0.5),
-        sizeDelta = Vector2.New(400, 120),
-        anchoredPosition = Vector2.New(30, -480),
-        anchorMin = Vector2.New(0, 0.5),
-        anchorMax = Vector2.New(0, 0.5),
+        sizeDelta = Vector2.New(529, 90),
+        anchoredPosition = Vector2.New(0, -215),
     }
     function bar:GetComponent(kind)
         if kind == "RectTransform" then return self.rt end
@@ -171,22 +140,39 @@ local function NewView()
     end
     bar.transform = {
         gameObject = bar,
+        position = worldPos,
+        lossyScale = lossy,
         GetSiblingIndex = function() return 5 end,
     }
+    return bar
+end
 
-    local tpl = NewGo("HelpHeroShow")
+local function NewView()
     local viewGo = NewGo("BattlePanel")
-    viewGo.links["myRect_Skill"] = bar
+    viewGo.transform.lossyScale = Vector3.New(1, 1, 1)
+    viewGo.transform.position = Vector3.New(540, 960, 0)
+    local tpl = NewGo("HelpHeroShow")
+
+    local myBar = NewBar("myRect_Skill", Vector3.New(0, -260, 0), Vector3.New(1.2, 1.2, 1))
+    -- 敌方那条是镜像副本：localScale.x = -1.2，锚在右边，pivot 在右边缘
+    local enemyBar = NewBar("enemyRect_Skill", Vector3.New(1080, -260, 0), Vector3.New(-1.2, 1.2, 1))
+
+    viewGo.links["myRect_Skill"] = myBar
+    viewGo.links["enemyRect_Skill"] = enemyBar
 
     local view = {
         gameObject = viewGo,
-        transform = { gameObject = viewGo },
+        transform = viewGo.transform,
         HelpHeroShow = tpl,
     }
-    return view, bar
+    return view, myBar, enemyBar
 end
 
 local HERO = { Id = 1001, ReadingName = 0, HeroLocation = 0 }
+
+-- 面板像素量纲 ⇒ 世界单位（面板缩放为 1 时相等）
+local MARGIN_X_W = 140
+local LIFT_W = 309.35 - 8 - 642.5 * 0.26      -- 134.3：卡片中心相对技能栏下沿的高度
 
 local failures = 0
 local function Check(name, cond, detail)
@@ -198,132 +184,164 @@ local function Check(name, cond, detail)
     end
 end
 
-local function CardActive(camp)
-    local s = BattleUltCard.slots[camp]
-    return s ~= nil and s.go ~= nil and s.go.activeSelf == true
+local function Near(a, b, eps) return math.abs(a - b) <= (eps or 0.5) end
+
+-- 子节点本地坐标 -> 世界坐标（无旋转，纯缩放 + 平移）
+local function CardWorld(go)
+    local bar = go.parent
+    assert(bar ~= nil, "卡片没有父节点")
+    local s = bar.lossyScale
+    local p = bar.position
+    local lp = go.rt.localPosition
+    return p.x + lp.x * s.x, p.y + lp.y * s.y
 end
 
--- ① 常规：卡片和技能栏同帧亮起，技能栏亮 3 秒 → 卡片不许先走
-print("== ① 技能栏亮 3 秒：卡片跟到底，不许早于技能栏消失 ==")
-do
-    BeginBlock()
-    BattleUltCard.ResetForBattle(NewView())
-    local view, bar = NewView()
-    BattleUltCard.ResetForBattle(view)
-
-    RAt(0.00, function() BattleUltCard.Show(view, HERO, 0, "a") end)
-    RAt(0.00, function() bar.activeInHierarchy = true end)   -- ShowRect_Skill 同帧亮条
-    RAt(3.00, function() bar.activeInHierarchy = false end)  -- 技能栏 3 秒到点
-
-    RTo(2.90)
-    Check("t=2.9 卡片仍在（旧逻辑 t=2.0 就没了）", CardActive(0))
-    RTo(3.35)
-    Check("t=3.35 卡片已跟随技能栏收起", not CardActive(0))
+local function CardBar(slot)
+    return slot and slot.go and slot.go.parent or nil
 end
 
--- ② 带特写的大招：卡片先于技能栏 2.5 秒弹出（前摇 0.5 + 特写 2.0）
-print("== ② 特写前摇：技能栏晚 2.5 秒才亮，卡片照样等它 ==")
+-- ① 生成即挂到技能栏下
+print("== ① 生成时直接是技能栏的子节点 ==")
 do
-    BeginBlock()
-    local view, bar = NewView()
+    local view, myBar = NewView()
     BattleUltCard.ResetForBattle(view)
+    timerCount = 0
 
-    RAt(0.00, function() BattleUltCard.Show(view, HERO, 0, "b") end)
-    RAt(2.50, function() bar.activeInHierarchy = true end)
-    RAt(5.50, function() bar.activeInHierarchy = false end)
-
-    RTo(1.50)
-    Check("t=1.5 卡片仍在（技能栏还没亮，不能算消失）", CardActive(0))
-    RTo(2.60)
-    Check("t=2.6 技能栏亮起后卡片仍在", CardActive(0))
-    RTo(5.40)
-    Check("t=5.4 卡片仍在（技能栏还亮着）", CardActive(0))
-    RTo(5.80)
-    Check("t=5.8 卡片跟随技能栏收起", not CardActive(0))
+    BattleUltCard.Show(view, HERO, 0, "a")
+    local s = BattleUltCard.slots[0]
+    Check("卡片父节点 = myRect_Skill", CardBar(s) == myBar.transform)
+    Check("卡片父节点不是面板根节点", CardBar(s) ~= view.gameObject)
+    Check("没有创建任何计时器（不再自己计时）", timerCount == 0, "timerCount=" .. timerCount)
+    Check("卡片处于显示状态", s.go.activeSelf == true)
 end
 
--- ③ 技能栏被别处提前关掉 → 卡片跟着早点收（跟随时序，不是自己的固定时长）
-print("== ③ 技能栏提前关掉：卡片跟着一起收 ==")
+-- ② 落点按技能栏当前世界坐标算
+print("== ② 落点 = 技能栏外侧 + 下沿往上（世界坐标） ==")
 do
-    BeginBlock()
-    local view, bar = NewView()
+    local view, myBar = NewView()
     BattleUltCard.ResetForBattle(view)
+    BattleUltCard.Show(view, HERO, 0, "b")
+    local s = BattleUltCard.slots[0]
 
-    RAt(0.00, function() BattleUltCard.Show(view, HERO, 0, "c") end)
-    RAt(0.00, function() bar.activeInHierarchy = true end)
-    RAt(1.50, function() bar.activeInHierarchy = false end)
-
-    RTo(1.45)
-    Check("t=1.45 卡片仍在", CardActive(0))
-    RTo(1.90)
-    Check("t=1.9 卡片已跟随收起", not CardActive(0))
+    local left = myBar.transform.position.x + myBar.transform.lossyScale.x * myBar.rt.rect.xMin   -- 0
+    local bottom = myBar.transform.position.y + myBar.transform.lossyScale.y * myBar.rt.rect.yMin -- -314
+    local wx, wy = CardWorld(s.go)
+    Check("X = 技能栏左边界 + 140", Near(wx, left + MARGIN_X_W), string.format("wx=%.2f want=%.2f", wx, left + MARGIN_X_W))
+    Check("Y = 技能栏下沿 + 134.3", Near(wy, bottom + LIFT_W), string.format("wy=%.2f want=%.2f", wy, bottom + LIFT_W))
+    -- 本地坐标同样对得上（子节点位置口径）
+    Check("本地 localPosition.x = 140/1.2", Near(s.go.rt.localPosition.x, 140 / 1.2, 0.01),
+        string.format("lp.x=%.4f", s.go.rt.localPosition.x))
 end
 
--- ④ 技能栏始终不亮（极端情况）→ 兜底上限收场，不能挂死
-print("== ④ 技能栏一直不亮：走兜底上限 ==")
+-- ③ 缩放反算：技能栏 1.2 / 敌方 -1.2 镜像
+print("== ③ 子节点缩放反算（1.2 放大、敌方镜像翻回来） ==")
 do
-    BeginBlock()
-    local view, bar = NewView()
+    local view, myBar, enemyBar = NewView()
     BattleUltCard.ResetForBattle(view)
-    bar.activeInHierarchy = false
+    BattleUltCard.Show(view, HERO, 0, "c0")
+    local mine = BattleUltCard.slots[0]
+    Check("我方卡本地缩放 = 0.26/1.2", Near(mine.go.rt.localScale.x, 0.26 / 1.2, 0.001),
+        string.format("scale=%.4f", mine.go.rt.localScale.x))
+    Check("我方卡世界缩放 = 0.26", Near(math.abs(mine.go.rt.localScale.x * myBar.transform.lossyScale.x), 0.26, 0.001))
 
-    RAt(0.00, function() BattleUltCard.Show(view, HERO, 0, "d") end)
-
-    RTo(5.80)
-    Check("t=5.8 兜底前仍在", CardActive(0))
-    RTo(6.30)
-    Check("t=6.3 兜底收起", not CardActive(0))
+    BattleUltCard.Show(view, HERO, 1, "c1")
+    local enemy = BattleUltCard.slots[1]
+    Check("敌方卡挂在 enemyRect_Skill 下", CardBar(enemy) == enemyBar.transform)
+    Check("敌方卡本地缩放 x 为负（抵消父节点镜像）", enemy.go.rt.localScale.x < 0,
+        string.format("scale.x=%.4f", enemy.go.rt.localScale.x))
+    Check("敌方卡世界缩放 |x| = 0.26（没被翻转/放大）",
+        Near(math.abs(enemy.go.rt.localScale.x * enemyBar.transform.lossyScale.x), 0.26, 0.001))
+    -- 敌方那条 localScale.x 是负的，右边界要取两个角的世界坐标里大的那个（= 1080）
+    local ex0 = enemyBar.transform.position.x + enemyBar.transform.lossyScale.x * enemyBar.rt.rect.xMin
+    local ex1 = enemyBar.transform.position.x + enemyBar.transform.lossyScale.x * enemyBar.rt.rect.xMax
+    local right = math.max(ex0, ex1)
+    local ex = CardWorld(enemy.go)
+    Check("敌方卡 X = 技能栏右边界 - 140", Near(ex, right - MARGIN_X_W),
+        string.format("ex=%.2f want=%.2f", ex, right - MARGIN_X_W))
 end
 
--- ⑤ 同一阵营连放大招：第二次重新计时，不能被第一次的时钟提前切掉
-print("== ⑤ 同一阵营连放两次大招：第二次重新起算 ==")
+-- ④ 父子关系天然跟随：技能栏一动卡片就动，不需要重算
+print("== ④ 技能栏移动 → 卡片跟着动（无每帧重算） ==")
 do
-    BeginBlock()
-    local view, bar = NewView()
+    local view, myBar = NewView()
     BattleUltCard.ResetForBattle(view)
+    timerCount = 0
+    BattleUltCard.Show(view, HERO, 0, "d")
+    local s = BattleUltCard.slots[0]
+    local x0, y0 = CardWorld(s.go)
 
-    RAt(0.00, function() BattleUltCard.Show(view, HERO, 0, "e1") end)
-    RAt(0.00, function() bar.activeInHierarchy = true end)
-    RAt(1.00, function() BattleUltCard.Show(view, HERO, 0, "e2") end)  -- 第二个英雄的大招
-    RAt(1.00, function() bar.activeInHierarchy = true end)             -- 技能栏重新计时
-    RAt(3.90, function() bar.activeInHierarchy = false end)            -- 第二次的 3 秒
-
-    RTo(2.10)
-    Check("t=2.1 第二次的卡片仍在（不被第一次的 3 秒切掉）", CardActive(0))
-    RTo(4.30)
-    Check("t=4.3 已跟随收起", not CardActive(0))
-    Check("同阵营只复用一个卡节点", cardCount >= 1)
+    -- 入场动画把技能栏整体推上去 100、右移 30（改世界坐标，不改子节点）
+    myBar.transform.position = Vector3.New(myBar.transform.position.x + 30, myBar.transform.position.y + 100, 0)
+    local x1, y1 = CardWorld(s.go)
+    Check("技能栏右移 30，卡片世界 X 也 +30", Near(x1 - x0, 30), string.format("dx=%.2f", x1 - x0))
+    Check("技能栏上移 100，卡片世界 Y 也 +100", Near(y1 - y0, 100), string.format("dy=%.2f", y1 - y0))
+    Check("跟随过程中没有起任何计时器", timerCount == 0, "timerCount=" .. timerCount)
 end
 
--- ⑥ 位置锁定（ParentConstraint 的等价语义）：卡片存活期间技能栏位置一变，卡片跟着走
-print("== ⑥ 卡片位置锁在技能栏上（存活期间跟着重算） ==")
+-- ⑤ 不再自己隐藏：技能栏灭掉由父节点带走
+print("== ⑤ 卡片不再自己隐藏 ==")
 do
-    BeginBlock()
-    local view, bar = NewView()
+    local view, myBar = NewView()
     BattleUltCard.ResetForBattle(view)
+    BattleUltCard.Show(view, HERO, 0, "e")
+    local s = BattleUltCard.slots[0]
+    myBar.activeInHierarchy = true
+    myBar.activeInHierarchy = false      -- 技能栏 3 秒到点自己关掉
+    now = now + 5                        -- 再怎么等，模块都不会去 SetActive(false)
+    Check("技能栏灭掉后卡片 activeSelf 仍为 true（跟随父节点隐藏）", s.go.activeSelf == true)
+    Check("卡片仍挂在技能栏下", CardBar(s) == myBar.transform)
+end
 
-    RAt(0.00, function() BattleUltCard.Show(view, HERO, 0, "f") end)
-    RAt(0.00, function() bar.activeInHierarchy = true end)
-    RAt(3.00, function() bar.activeInHierarchy = false end)
+-- ⑥ 同一阵营复用同一节点 + 同发大招去重
+print("== ⑥ 同阵营复用 / 同发大招去重 ==")
+do
+    local view = NewView()
+    BattleUltCard.ResetForBattle(view)
+    cardCount = 0
+    BattleUltCard.Show(view, HERO, 0, "f")
+    local first = BattleUltCard.slots[0].go
+    BattleUltCard.Show(view, HERO, 0, "f")          -- 同一发（多段技能重复调用）
+    Check("同一发大招不重复建卡", cardCount == 1, "cardCount=" .. cardCount)
+    Check("复用同一节点", BattleUltCard.slots[0].go == first)
+    BattleUltCard.Show(view, HERO, 0, "f2")         -- 下一次大招
+    Check("下一次大招仍复用节点", BattleUltCard.slots[0].go == first and cardCount == 1)
+end
 
-    RTo(0.50)
-    local y0 = BattleUltCard.slots[0].go.rt.anchoredPosition.y
-    -- 技能栏整体上移 100（换分辨率 / 面板位移都会这样）
-    RAt(1.03, function() bar.rt.anchoredPosition = Vector2.New(bar.rt.anchoredPosition.x, bar.rt.anchoredPosition.y + 100) end)
-    -- 50Hz（0.02s）跟随：移动后 0.04s 内卡片必须已经跟到位；
-    -- 旧节拍 0.1s 时下一次 tick 在 1.10，这里会读不到（就是「跟着移动」要修的那种顿挫）
-    RTo(1.07)
-    local y1 = BattleUltCard.slots[0].go.rt.anchoredPosition.y
-    Check("技能栏上移 100 后 0.04s 内卡片跟着上移 100", math.abs((y1 - y0) - 100) < 1,
-        string.format("y0=%.1f y1=%.1f", y0, y1))
-    Check("卡片仍在显示", CardActive(0))
+-- ⑦ 技能栏几何变了（换分辨率/换缩放）→ 下一次 Show 按新几何重算
+print("== ⑦ 技能栏几何变化后下一次 Show 重算 ==")
+do
+    local view, myBar = NewView()
+    BattleUltCard.ResetForBattle(view)
+    BattleUltCard.Show(view, HERO, 0, "g1")
 
-    -- 继续移动也要继续跟（不是只在第一次重算）
-    RAt(1.20, function() bar.rt.anchoredPosition = Vector2.New(bar.rt.anchoredPosition.x, bar.rt.anchoredPosition.y - 40) end)
-    RTo(1.30)
-    local y2 = BattleUltCard.slots[0].go.rt.anchoredPosition.y
-    Check("再次下移 40 后卡片继续跟着走", math.abs((y2 - y0) - 60) < 1,
-        string.format("y0=%.1f y2=%.1f", y0, y2))
+    -- 换成另一套分辨率：整体缩放 1.44、位置也变
+    myBar.transform.lossyScale = Vector3.New(1.44, 1.44, 1)
+    myBar.transform.position = Vector3.New(0, -200, 0)
+    BattleUltCard.Show(view, HERO, 0, "g2")
+
+    local s = BattleUltCard.slots[0]
+    local bottom = -200 + 1.44 * (-45)                  -- -264.8
+    local wx, wy = CardWorld(s.go)
+    Check("X 仍是外侧 +140（世界单位）", Near(wx, 140), string.format("wx=%.2f", wx))
+    Check("Y 跟随新的下沿", Near(wy, bottom + LIFT_W), string.format("wy=%.2f want=%.2f", wy, bottom + LIFT_W))
+    Check("本地缩放按新父链缩放反算 = 0.26/1.44", Near(s.go.rt.localScale.x, 0.26 / 1.44, 0.001),
+        string.format("scale=%.4f", s.go.rt.localScale.x))
+end
+
+-- ⑧ 找不到技能栏：兜底挂在面板下，不崩
+print("== ⑧ 找不到技能栏时的兜底 ==")
+do
+    local viewGo = NewGo("BattlePanel")
+    viewGo.transform.lossyScale = Vector3.New(1, 1, 1)
+    viewGo.transform.position = Vector3.New(540, 960, 0)
+    local tpl = NewGo("HelpHeroShow")
+    local view = { gameObject = viewGo, transform = viewGo.transform, HelpHeroShow = tpl }
+    BattleUltCard.ResetForBattle(view)
+    BattleUltCard.Show(view, HERO, 0, "h")
+    local s = BattleUltCard.slots[0]
+    Check("兜底：卡片挂在面板下", s.go.parent == viewGo.transform)
+    Check("兜底：给了 anchoredPosition", s.go.rt.anchoredPosition ~= nil)
+    Check("兜底：卡片可见", s.go.activeSelf == true)
 end
 
 print("")

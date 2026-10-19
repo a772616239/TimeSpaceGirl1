@@ -1,6 +1,6 @@
 ---
 name: afk-dialogue-authoring
-description: 给 TimeSpaceGirl1 的挂机面板（FightPointPassMainPanel/Bg/talk）加/改气泡台词——通用池、英雄专属、地图场景吐槽、大招前摇喊话都走这一套。当用户说"挂机气泡加几句话""让英雄说点骚话/牢骚""按地图/按技能加台词""大招前弹一句"时使用。内含 AfkSpeak/Language 双表追加、官方导表器、LuaBytes 重编、两行排版实测、Type 池编号约定与全部踩坑。
+description: 给 TimeSpaceGirl1 的挂机面板（FightPointPassMainPanel/Bg/talk）加/改气泡台词——通用池、英雄专属、地图场景吐槽、大招前摇喊话都走这一套。当用户说"挂机气泡加几句话""让英雄说点骚话/牢骚""按地图/按技能加台词""大招前弹一句"时使用。内含 AfkSpeak/Language 双表追加、官方导表器、LuaBytes 重编、两行排版实测、台词去重、Type 池编号约定与全部踩坑。
 ---
 
 # 挂机气泡台词：从写词到真机生效
@@ -113,13 +113,35 @@ new GameEditor.Core.DataConfig.DataToOptimizeLuaExporter(sheet,
    段数压到 3 段（原生 12 段会刷满屏飘字）。
 5. 每场至多 1 个大招：敌方 `deadTimes=1`，我方一轮清场，本来就只有一个回合。
 
+## 6.1 台词去重（新增冒泡入口必须走 `PickFreshTalk`）
+
+挂机一次 HeroTalk 最多让 **2 个人同帧说话**。早年两人各自 `math.random` 抽独立池，
+线上出现过"两个英雄同一秒说同一句"（实例：通用池第 13 条 `Real goods are in the wild.`）。
+
+所有挑词都必须走 `PickFreshTalk(pool, recent, avoid)`：
+
+| 参数 | 作用 |
+|---|---|
+| `this.talkRecent` | 跨场保留的「最近说过」环形表（`TALK_RECENT_CAP = 24`，先进先出） |
+| `avoid` | 本轮正在显示的 Id 集合，同帧第二个人必须避开；池子被历史掏空时仍生效 |
+
+- 池子被历史掏空（英雄只有 2 句且都刚说）→ 放宽 `recent`，但**不放宽 `avoid`**；再空才允许重复。
+- `TALK_RECENT_CAP` 要 **≥ 通用池条数（20）**，否则连打几场就开始整池循环。
+- 生命周期：`Init` 里 `this.talkRecent = this.talkRecent or {}`（跨场保留），`Dispose` 里清空。
+- 新增说话入口（新池、新触发点）时**不要**自己写 `pool[math.random(...)]`，
+  一定调 `PickFreshTalk`，否则又会出现同帧撞句。
+
 ## 7. 回归测试（不依赖 Unity）
 
 ```bash
 cd LuaEncoder/luajit_mac/64
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_afk_ult_talk.lua
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_afk_map_talk.lua
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_afk_talk_dedupe.lua
 ```
+
+`test_afk_talk_dedupe.lua` 专门守去重：空池/单元素池边界、整池 N 次不重复、
+同帧双人 500 轮 0 撞句（通用池 + 大招通用池）、`recent` 裁剪与淘汰顺序。
 
 新池照 `test_afk_ult_talk.lua` 抄：
 
@@ -165,3 +187,4 @@ python .workbuddy/tools/gen_afk_ult_review.py
 | 台词被截断 | 超过两行（280×78） | TextGenerator 实测，英文压到 ≤34 字符 |
 | 真机没变化 | 忘了重编 LuaBytes | `lua-bytes-sync.sh --check` |
 | 老台词被整表重写 | 用了 openpyxl 存盘 | 回滚备份，改走 XML 追加脚本 |
+| 两个人同帧说同一句 | 自己 `math.random` 抽池，没走 `PickFreshTalk` | 改用 `PickFreshTalk(pool, this.talkRecent, shownNow)` |

@@ -173,6 +173,13 @@ function this.GetBaoKuData()
             end
         end
     end
+    --层数记录缺失（服务器尚未给该玩家初始化活动数据）时同样兜底到第1层，
+    --否则 curBasicPool 保持初始值 0，奖池查空 → 整盘无卡
+    if not actData.curLevel and BlessingConfigNew then
+        actData.curLevel = SafeBaoKuLevel(nil, BlessingConfigNew, ActInfo.activityId)
+        curBasicPool = BlessingConfigNew.BasicPoolId[actData.curLevel]
+        curFinalPool = BlessingConfigNew.FinalPoolId
+    end
     --初始的坑的35条数据
     local RewardConfig = ConfigManager.GetAllConfigsDataByKey(ConfigName.BlessingRewardPoolNew,"PoolId",curBasicPool)
     local index = 1

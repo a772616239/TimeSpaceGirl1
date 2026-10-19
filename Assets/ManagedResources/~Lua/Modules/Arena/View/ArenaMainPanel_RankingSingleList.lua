@@ -1,3 +1,4 @@
+require("Modules/CountryRank/CountryFlagUtil")
 --require("Base/BasePanel")
 local this = {}
 --local ArenaMainPanel_RankingSingleList = {}
@@ -248,6 +249,7 @@ function this.ShowArenaInfo(root,data,myRankData)
     this.SetRankingNum(root,data.personInfo.rank)
     this.SetHeadInfo(root,data.personInfo.head,data.personInfo.headFrame,data.personInfo.level)
     this.SetHeroBtnLike(root,data.personInfo)
+    this.UpdateCountryFlag(root,data.personInfo)
 
     Util.GetGameObject(root,"name"):GetComponent("Text").text = data.personInfo.name
     Util.GetGameObject(root,"totalForce"):GetComponent("Text").text = tostring(data.personInfo.totalForce)
@@ -584,6 +586,8 @@ end
 --设置非滚动区信息
 function this.SetNotRollingInfo(...)
     local args = {...}
+    -- 底部「我的排名」行的国家小旗：只能用自己的国家（这一行没有 uid/country）
+    this.RefreshMyRankFlag()
     this.info0.text = args[3]--底部信息
     this.info1.text = args[4]
 
@@ -609,6 +613,42 @@ function this.AddPlayerInfoClick(root,uid)
     Util.AddOnceClick(clickBtn,function()
         UIManager.OpenPanel(UIName.PlayerInfoPopup, uid)
     end)
+end
+
+--[[
+ * 竞技场榜单行的国家小旗
+ *
+ * 节点 countryFlag 在行根节点（ItemPre）下，见 .workbuddy/tools/patch_arena_rank_flag.py。
+ * 数据来自服务端 ArenaPersonInfo.country（服务端 commit 见 CommonProto.proto 第 16 号字段）；
+ * 老回包没有该字段时 country 为 nil ⇒ CountryFlagUtil 画「问号旗」占位，不留空白。
+ * 取不到节点就静默跳过（兼容未打补丁的旧 prefab / 已缓存的老字节码）。
+--]]
+function this.UpdateCountryFlag(root,personInfo)
+    if root == nil or IsNull(root) or personInfo == nil then
+        return
+    end
+    local flagGo = Util.GetGameObject(root,"countryFlag")
+    if flagGo == nil or IsNull(flagGo) then
+        return
+    end
+    flagGo:SetActive(true)
+    CountryFlagUtil.Apply(flagGo,personInfo.uid,personInfo.country)
+end
+
+--[[
+ * 底部「我的排名」行的国家小旗
+ * 这一行没有榜单数据（dData 里没有 uid/country），只能以自己的国家为准。
+--]]
+function this.RefreshMyRankFlag()
+    if this.record == nil or IsNull(this.record) then
+        return
+    end
+    local flagGo = Util.GetGameObject(this.record,"countryFlag")
+    if flagGo == nil or IsNull(flagGo) then
+        return
+    end
+    flagGo:SetActive(true)
+    CountryFlagUtil.ApplySelf(flagGo)
 end
 
 --设置自身背景

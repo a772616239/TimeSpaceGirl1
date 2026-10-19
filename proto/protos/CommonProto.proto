@@ -400,6 +400,7 @@ message EmptyMessage {
 		optional int32 serverid = 13;//服务器id
 		optional int32 investigateLevel = 14;   //号角等级
 		optional string guildName = 15;   //公会名称
+		optional string country = 16;   //玩家国家/地区码（小写，用于竞技场排行榜显示国旗；空=未选）
 	}
 
 

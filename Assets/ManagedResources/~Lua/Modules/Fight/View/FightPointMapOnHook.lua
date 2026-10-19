@@ -23,9 +23,17 @@ local afkSpeak = ConfigManager.GetConfig(ConfigName.AfkSpeak)
 --   0        = 通用池（任何英雄、任何地图）
 --   10001... = 英雄专属（Type == 英雄配置 Id）
 --   9900 + n = 第 n 张挂机地图的场景吐槽（Map2 -> 9902）
+--   40000 + 英雄id = 该英雄开大招时的专属台词
+--   9998     = 通用大招台词（英雄没配专属台词，或 30% 混播）
 -- 地图名来自 MainLevelConfig[curOpenFight].BG（Map1/Map2/Map5/Map7/Map8）。
 local MAP_TALK_TYPE_BASE = 9900
 local MAP_TALK_PERCENT = 40   -- 场景吐槽命中概率（%）
+
+local ULT_TALK_TYPE_BASE = 40000
+local ULT_TALK_TYPE_GENERIC = 9998
+local ULT_HERO_PERCENT = 70   -- 大招台词里英雄专属的占比（%），其余走通用池
+local ULT_OPEN_PERCENT = 55   -- 每场战斗「有人开局就放大招」的概率（%）
+local ULT_HIT_CAP = 3         -- 挂机里的大招最多打 3 段（原生 12 段会把飘字刷满屏）
 
 ---地图资源名 -> 场景池 Type；不是 MapN 形态就返回 nil（只是不说话，不报错）
 local function MapTalkTypeFromName(mapName)
@@ -59,6 +67,171 @@ local function BuildTalkPool(rows, heroId, mapType, roll)
         return mapTalk
     end
     return heroAndGeneric
+end
+
+----------------------------------------------------------------------
+-- 大招：预计算 + 前摇台词
+----------------------------------------------------------------------
+-- 挂机战斗默认只打普攻；这里给每个单位补一个「大招」，
+-- 每场战斗开场前随机抽 1 个我方单位，它这一场的下一招就是大招（其余人仍是普攻）。
+-- 🔴 为什么只抽 1 个：敌方 deadTimes=1，我方一轮就把对面清完，本来就只有一回合；
+--    全员放大招会让 9 个人同时抢镜，且大招动画（ReturnTime 2.5~5.8s）会互相盖住。
+-- 抽签结果写在 turnArrayX[i].ultReady 上，HeroAttack 出手前就已知「这一招是不是大招」。
+
+---大招段数收敛：只改本次挂机用的副本，不动配置本身
+local function MakeHookCombat(combat)
+    local count = tonumber(combat.SkillNumber) or 1
+    if count <= ULT_HIT_CAP then
+        return combat
+    end
+    local durations = {}
+    for i = 1, ULT_HIT_CAP - 1 do
+        local d = combat.SkillDuration and combat.SkillDuration[i]
+        durations[i] = tonumber(d) or 150
+    end
+    -- __index 回落到原配置：特效、动画、音效、位移全部按原技能播，只把段数压到 3
+    return setmetatable({ SkillNumber = ULT_HIT_CAP, SkillDuration = durations }, { __index = combat })
+end
+
+---槽位规则里挑「大招」：槽位最高、且 CombatControl.SkillType == 2 的主动技能
+---（unlocked 由调用方决定：挂机演出传全 true，正式战斗可以按养成卡）
+---@param rules table OpenSkillRules {{slot, group}, ...}
+---@param unlocked table { [group] = true }
+---@param displayOfGroup table { [group] = SkillDisplay }
+---@param combatOfDisplay table { [display] = CombatControl 行 }
+local function PickUltSlot(rules, unlocked, displayOfGroup, combatOfDisplay)
+    local bestSlot, bestGroup, bestCombat = nil, nil, nil
+    if type(rules) ~= "table" then
+        return nil
+    end
+    for i = 1, #rules do
+        local rule = rules[i]
+        local slot = tonumber(rule and rule[1])
+        local group = tonumber(rule and rule[2])
+        if slot and group and slot > 0 and unlocked[group] then
+            local display = displayOfGroup[group]
+            local combat = display and combatOfDisplay[display]
+            if combat and tonumber(combat.SkillType) == 2 then
+                if bestSlot == nil or slot > bestSlot then
+                    bestSlot, bestGroup, bestCombat = slot, group, combat
+                end
+            end
+        end
+    end
+    return bestSlot, bestGroup, bestCombat
+end
+
+---英雄配置 -> 大招（combat 用挂机副本、skill 给受击判定用）
+---🔴 挂机是「演出」不是推图：大招取槽位最高的主动技能，不看养成解锁（UnlockSkill）。
+---   槽位 3 要 Rank>=3 才解锁，而挂机一直用 heroConfig 的静态星级、突破恒为 0，
+---   按解锁算的话所有人都会退化成槽位 1，台词里那些技能名的梗就全对不上了。
+---   技能等级固定取 Level=1：等级只影响数值，SkillDisplay（特效）与技能 id 稳定。
+local function ResolveLoadout(heroConfig)
+    if heroConfig == nil or heroConfig.OpenSkillRules == nil then
+        return nil
+    end
+    local rules = heroConfig.OpenSkillRules
+
+    local unlocked, displays, combats, logics = {}, {}, {}, {}
+    for i = 1, #rules do
+        local rule = rules[i]
+        local slot = tonumber(rule and rule[1])
+        local group = tonumber(rule and rule[2])
+        if slot and group and slot > 0 then
+            local logic = ConfigManager.GetConfigDataByDoubleKey(
+                ConfigName.SkillLogicConfig, "Group", group, "Level", 1)
+            if logic then
+                unlocked[group] = true
+                displays[group] = logic.SkillDisplay
+                logics[group] = logic
+            end
+        end
+    end
+
+    for _, display in pairs(displays) do
+        local combat = ConfigManager.GetConfigData(ConfigName.CombatControl, display)
+        if combat then
+            combats[display] = combat
+        end
+    end
+
+    local slot, group, combat = PickUltSlot(rules, unlocked, displays, combats)
+    if combat == nil or group == nil then
+        return nil
+    end
+
+    local logic = logics[group]
+    local skillCfg = nil
+    if logic then
+        local all = ConfigManager.GetConfig(ConfigName.SkillConfig)
+        skillCfg = all and all[logic.Id]
+    end
+    -- 拿不到 SkillConfig 就不放这个技能：OnDamaged 会读 skill.Type，缺了会直接报错
+    if skillCfg == nil then
+        return nil
+    end
+
+    return {
+        combat = MakeHookCombat(combat),
+        skill = skillCfg,
+        slot = slot,
+        group = group,
+    }
+end
+
+local ultCache = {}
+
+---按英雄 id 取大招（一次解析，整局复用；nil 表示这个英雄没有可用大招）
+local function ResolveHeroUlt(heroId)
+    if heroId == nil then
+        return nil
+    end
+    local cached = ultCache[heroId]
+    if cached ~= nil then
+        return cached or nil
+    end
+    local heroConfig = ConfigManager.GetConfigData(ConfigName.HeroConfig, heroId)
+    -- fail-open：某一个英雄的配置拼不起来，只让他不放这招，绝不能把 Init/CreateEnemy 带崩
+    local ok, ult = pcall(ResolveLoadout, heroConfig)
+    if not ok then
+        LogError("onhook ResolveLoadout failed heroId=" .. tostring(heroId) .. " err=" .. tostring(ult))
+        ult = nil
+    end
+    ultCache[heroId] = ult or false
+    return ult
+end
+
+---大招台词候选：英雄专属池 70%，通用池 30%；专属缺失时直接用通用池
+local function BuildUltPool(rows, heroId, roll)
+    local hero, generic = {}, {}
+    local heroType = ULT_TALK_TYPE_BASE + (tonumber(heroId) or -1)
+    for i, v in ConfigPairs(rows) do
+        if v.Type == heroType then
+            table.insert(hero, v.AfkDialogue)
+        elseif v.Type == ULT_TALK_TYPE_GENERIC then
+            table.insert(generic, v.AfkDialogue)
+        end
+    end
+    if #hero > 0 and (roll == nil or roll <= ULT_HERO_PERCENT) then
+        return hero
+    end
+    if #generic > 0 then
+        return generic
+    end
+    return hero
+end
+
+---从候选中抽一个位置；roll 同时决定「这一场有没有大招」和落在谁身上（便于测试注入）
+local function PickOpenUltPos(candidates, roll)
+    if candidates == nil or #candidates == 0 then
+        return 0
+    end
+    if roll ~= nil and roll > ULT_OPEN_PERCENT then
+        return 0
+    end
+    local r = tonumber(roll) or 1
+    local idx = (r * 7919 + #candidates * 104729) % #candidates + 1
+    return candidates[idx]
 end
 
 local rolePosCount = 9 --左右每侧位置数量
@@ -295,6 +468,7 @@ function this:Init()
     rightCount = 0
     liveNodesLeft = {}
     liveNodesRight = {}
+    this:ClearTalkTimers()
     talkPosList = {}
     talkNum = 0
     turnArrayLeft = {}
@@ -400,6 +574,107 @@ function this:startFindEnemy()
     isFindEnemy = true
 end
 
+---停掉所有气泡的收起定时器（换阵容 / 关面板时必须调，否则旧 Timer 会去关新气泡）
+function this:ClearTalkTimers()
+    if this.talkTimers == nil then
+        return
+    end
+    for pos, timer in pairs(this.talkTimers) do
+        if timer ~= nil then
+            timer:Stop()
+        end
+        this.talkTimers[pos] = nil
+    end
+end
+
+---在指定位置冒一个气泡
+---@param pos number 1~9，对应 Bg/talk/textN
+---@param langId number|string Language 表 id
+---@param duration number 停留秒数（之后播收起动画再 SetActive(false)）
+function this:ShowTalk(pos, langId, duration)
+    local node = this.talkList and this.talkList[pos]
+    if node == nil or IsNull(node) or langId == nil then
+        return false
+    end
+
+    -- 同一位置的收起定时器必须先停：不然后一个气泡会被前一个的定时器提前关掉
+    this.talkTimers = this.talkTimers or {}
+    if this.talkTimers[pos] ~= nil then
+        this.talkTimers[pos]:Stop()
+        this.talkTimers[pos] = nil
+    end
+
+    local textNode = Util.GetGameObject(node, "Text")
+    if textNode == nil or IsNull(textNode) then
+        return false
+    end
+    node:SetActive(true)
+    textNode:GetComponent("Text").text = GetLanguageStrById(langId)
+
+    local timer = Timer.New(function()
+        this.talkTimers[pos] = nil
+        -- tolua fake-null：面板关掉后 GameObject 被 Destroy，lua 侧仍不是 nil
+        if node == nil or IsNull(node) then
+            return
+        end
+        local animation = node:GetComponent("Animation")
+        local hold = 0.3
+        if animation ~= nil then
+            animation:Play("cn2-X1_UI_FightPointPassMainPanel_talk_fan")
+            if animation.clip ~= nil then
+                hold = animation.clip.length
+            end
+        end
+        local hideTimer = Timer.New(function()
+            this.talkTimers[pos] = nil
+            if node ~= nil and not IsNull(node) then
+                node:SetActive(false)
+            end
+        end, hold)
+        this.talkTimers[pos] = hideTimer
+        hideTimer:Start()
+    end, duration or 2.5)
+    this.talkTimers[pos] = timer
+    timer:Start()
+    return true
+end
+
+---大招前摇台词：英雄专属池优先，取不到就走通用池；两边都没有就不说话
+function this:ShowUltTalk(pos)
+    local heroConfig = talkPosList[pos]
+    if heroConfig == nil then
+        return false
+    end
+    local pool = BuildUltPool(afkSpeak, heroConfig.Id, math.random(1, 100))
+    if #pool == 0 then
+        return false
+    end
+    -- 2.2s：大招 KeyFrame 0.55~2.2s，气泡从起手一直留到伤害结算之后一点
+    return this:ShowTalk(pos, pool[math.random(1, #pool)], 2.2)
+end
+
+---每场战斗开场前抽签：至多 1 个我方单位这一场的第一招是大招
+---@param roll number|nil 1~100（测试注入；nil 时按 ULT_OPEN_PERCENT 必定命中）
+---@return number 被选中的位置，0 表示这场没人放大招
+function this:PrecomputeOpenUlt(roll)
+    local candidates = {}
+    for i = 1, #turnArrayLeft do
+        local entry = turnArrayLeft[i]
+        if entry ~= nil then
+            entry.ultReady = false
+            if entry.livego ~= nil and entry.ult ~= nil then
+                table.insert(candidates, i)
+            end
+        end
+    end
+
+    local pos = PickOpenUltPos(candidates, roll)
+    if pos > 0 and turnArrayLeft[pos] ~= nil then
+        turnArrayLeft[pos].ultReady = true
+    end
+    return pos
+end
+
 --英雄说话
 function this:HeroTalk()
     local r = math.random(0,talkNum)
@@ -409,25 +684,14 @@ function this:HeroTalk()
     local rand1,rand2 = this:RandTalkPos(r)
 
     local talk = function (_rand)
-        this.talkList[_rand]:SetActive(true)
-
         -- 候选池：英雄专属 + 通用池，或者当前场景池（40% 概率，见 BuildTalkPool）
         local pool = BuildTalkPool(afkSpeak, talkPosList[_rand].Id, this.curMapType, math.random(1, 100))
         if #pool == 0 then
-            -- 没词可说：气泡上面已经 SetActive(true) 了，必须收回去，
-            -- 否则会留一个空白气泡既没文字、也没有收尾的 Timer 去隐藏它。
-            this.talkList[_rand]:SetActive(false)
+            -- 没词可说：不要先把气泡 SetActive(true)，否则会留一个空白气泡
             return
         end
 
-        Util.GetGameObject(this.talkList[_rand],"Text"):GetComponent("Text").text = GetLanguageStrById(pool[math.random(1,#pool)])
-        Timer.New(function ()
-            local animation = this.talkList[_rand]:GetComponent("Animation")
-            animation:Play("cn2-X1_UI_FightPointPassMainPanel_talk_fan")
-            Timer.New(function ()
-                this.talkList[_rand]:SetActive(false)
-            end,animation.clip.length):Start()
-        end,2.5):Start()
+        this:ShowTalk(_rand, pool[math.random(1,#pool)], 2.5)
     end
     if rand1 and rand1 ~= 0 then
         talk(rand1)
@@ -517,6 +781,9 @@ function this:stopFindEnemy()
    --左右开始播放人物站立动画
    this:allLiveNodesPlayAnim(liveNodesLeft, 0, RoleAnimationName.Stand, true)
    this:allLiveNodesPlayAnim(liveNodesRight, 0, RoleAnimationName.Stand, true)
+
+   -- 开场抽签：这一场谁的第一招是大招（必须在 turn 之前算好，HeroAttack 只读结果）
+   this:PrecomputeOpenUlt(math.random(1, 100))
 
    --开始回合战斗
    this:turn()
@@ -645,6 +912,10 @@ function this:SetAttackData(i, camp)
         if skills and skills[1] then
             turnArray[i].skill = skills[1].skillConfig
         end
+
+        -- 大招（槽位最高的 SkillType==2 技能）；每场开场前由 PrecomputeOpenUlt 抽签决定谁先放
+        turnArray[i].ult = ResolveHeroUlt(turnArray[i].heroid)
+        turnArray[i].ultReady = false
     end
 end
 
@@ -685,6 +956,19 @@ function this:HeroAttack()
     
     if dataAttack and dataAttack.livego then
         -- dataAttack.livego:GetComponent("Canvas").sortingOrder = m_orginLayer + attackSortingOrder
+
+        -- 「下一招是大招」在开场抽签时就算好了（turnEntry.ultReady）。
+        -- 这里只换本次出手的 combat/skill，不污染 turnArray：用一层代理表，
+        -- 延迟回调里读到的仍然是这一招自己的特效与段数。
+        local turnEntry = dataAttack
+        if turnEntry.ultReady == true and turnEntry.ult ~= nil then
+            dataAttack = setmetatable(
+                { combat = turnEntry.ult.combat, skill = turnEntry.ult.skill },
+                { __index = turnEntry })
+            turnEntry.ultReady = false
+            -- 前摇窗口：CombatControl.KeyFrame 1.8~2.2s 后才结算伤害，气泡正好压在这段
+            this:ShowUltTalk(turnIdx)
+        end
 
         local targetIndex = this:randDefendPos()
 
@@ -1719,6 +2003,8 @@ function this:Dispose()
     Log("Dispose")
     isFindEnemy = false
     isPlay = false
+    -- 气泡的收起定时器不属于 DelayFunc 列表，必须单独停：否则面板关了还会去碰已销毁的节点
+    this:ClearTalkTimers()
     -- 地图渲染器缓存跟着这一轮播放一起作废；下次 OnShow 会重新 UpdateMap 重建
     mapMeshRenderers = {}
     this.mapRoot = nil
@@ -1799,9 +2085,19 @@ function this:ResetSpineComponent(spineComponent)
     spineComponent.AnimationState:SetAnimation(0, RoleAnimationName.Stand, true)
 end
 
---暴露给 scripts/lua-tests/test_afk_map_talk.lua（纯函数，不碰 UI）
+--暴露给 scripts/lua-tests（纯函数，不碰 UI）
 this.BuildTalkPool = BuildTalkPool
 this.MapTalkTypeFromName = MapTalkTypeFromName
 this.MAP_TALK_PERCENT = MAP_TALK_PERCENT
+this.BuildUltPool = BuildUltPool
+this.PickUltSlot = PickUltSlot
+this.PickOpenUltPos = PickOpenUltPos
+this.MakeHookCombat = MakeHookCombat
+this.ResolveLoadout = ResolveLoadout
+this.ULT_TALK_TYPE_BASE = ULT_TALK_TYPE_BASE
+this.ULT_TALK_TYPE_GENERIC = ULT_TALK_TYPE_GENERIC
+this.ULT_HERO_PERCENT = ULT_HERO_PERCENT
+this.ULT_OPEN_PERCENT = ULT_OPEN_PERCENT
+this.ULT_HIT_CAP = ULT_HIT_CAP
 
 return this

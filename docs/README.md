@@ -17,6 +17,7 @@
 | 起服 / 开区服 / 改线上 / 每日巡检 | **`server_ops_runbook.md`** |
 | **查某个玩家是不是开挂（判定）** | **`cheat_detection_skill.md`** |
 | **玩家作弊 / 数据异常 / 封号处置（动作）** | **`gm_abuse_incident_playbook.md`** |
+| **发全服邮件 / 节日礼包 / 补偿（含英文文案）** | **`gm_fullserver_mail_skill.md`** |
 | **用 AI/MCP 控制 Unity Editor（联调）** | **`unity_mcp_control.md`** |
 | Unity 构建侧深坑（Gradle / AGP / billing / AndroidX） | `unity_android_build_skill.md` |
 | service account 申请与 Play 后台授权 | `google_play_upload_setup.md` |

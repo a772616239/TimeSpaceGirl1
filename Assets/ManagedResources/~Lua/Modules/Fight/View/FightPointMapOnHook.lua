@@ -1888,13 +1888,13 @@ function this:AddDelayRecycleRes(path, go, delayTime, delayFunc)
             end
             for i = 1, #self.delayRecycleList[path] do
                 if self.delayRecycleList[path][i].node == go then
-                    -->
-                    -- for j, v in ipairs(this.hitEffectArray) do
-                    --     if v == go then
-                    --         table.remove(this.hitEffectArray, j)
-                    --     end
-                    -- end
-
+                    -- tolua fake-null：特效挂在战斗角色节点下，角色被回收时特效随之销毁，
+                    -- 但 Lua 侧 userdata 仍非 nil；必须先判活，已销毁只清登记项、不再触碰节点
+                    -- （否则 Util.SetGray/UnLoad 对已销毁 GameObject 报错，见 FightPointMapOnHook:1901）
+                    if IsNull(go) then
+                        table.remove(self.delayRecycleList[path], i)
+                        break
+                    end
                     if self.delayRecycleList[path][i].type == PoolManager.AssetTypeGo.GameObjectFrame then
                         poolManager:UnLoadFrame(path, go)
                     else

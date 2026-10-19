@@ -85,6 +85,19 @@ function CountryFlagUtil.ApplyTo(parent, uid, country)
     CountryFlagUtil.Apply(go, uid, country)
 end
 
+--- 给「自己」的旗子赋值（底部我的排名行、个人面板…）
+-- 为什么要单独一个入口：
+--   自己没有榜单行数据时，调用方只能传 nil，而 ResolveCountry 的本地兜底走
+--   CountryRankManager.GetPlayerCountry()，它**永远不返回空**（最后兜到 xx 问号旗）。
+--   如果那一刻 PlayerManager.country 还没下发、PlayerPrefs 也还没写，
+--   就会把旗子定格成问号，之后再没人刷它。
+--   这里显式带上 PlayerManager.country（服务端真源），随面板每次刷新自愈。
+function CountryFlagUtil.ApplySelf(go)
+    local uid = (PlayerManager ~= nil) and PlayerManager.uid or nil
+    local country = (PlayerManager ~= nil) and PlayerManager.country or nil
+    CountryFlagUtil.Apply(go, uid, country)
+end
+
 --[[
  * 让「国家小旗」可点击：点一下弹出该国家的**英文名**提示
  *

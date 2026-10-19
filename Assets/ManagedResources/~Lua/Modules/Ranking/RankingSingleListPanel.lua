@@ -807,6 +807,32 @@ function this.InitNotRollingInfo()
     this.myRankName:GetComponent("Text").text = ""
 end
 
+--[[
+ * 底部「我的排名」行的国家小旗
+ *
+ * 数据口径：自己的国家以 PlayerManager.country（服务端真源）为准，
+ *   不能用榜单行数据 —— 这一行没有 uid/country。
+ * 显示口径：公会榜展示公会名，没有国籍概念 → 隐藏。
+ * 位置：写在 prefab 里（见 .workbuddy/tools/patch_rank_record_flag_layout.py），
+ *   与 ItemPre 的一致：头像右侧、比头像中心高 25。
+--]]
+function this.RefreshMyRankFlag()
+    if this.record == nil or IsNull(this.record) then
+        return
+    end
+    local flagGo = Util.GetGameObject(this.record, "countryFlag")
+    if flagGo == nil or IsNull(flagGo) then
+        return
+    end
+    if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
+            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
+        flagGo:SetActive(false)
+        return
+    end
+    flagGo:SetActive(true)
+    CountryFlagUtil.ApplySelf(flagGo)
+end
+
 --设置非滚动区信息
 function this.SetNotRollingInfo(...)
     local args = {...}
@@ -815,10 +841,7 @@ function this.SetNotRollingInfo(...)
     local myRank = args[2]          -- 名次
 
     -- 底部「我的排名」行的国家小旗：用玩家自己的国家
-    if not (sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
-            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD)) then
-        CountryFlagUtil.ApplyTo(this.record, PlayerManager and PlayerManager.uid or nil, nil)
-    end
+    this.RefreshMyRankFlag()
 
     this.TextTopEnd.text = topEndName
     if not myRank or myRank < 1 then
@@ -940,8 +963,12 @@ end
 --[[
  * 刷新榜单行的国家小旗
  *
- * go 是每行的 infoGo（或 Record 里的 infoGo），countryFlag 是它的兄弟节点，
+ * go 是每行的 infoGo，countryFlag 是它的兄弟节点，
  * 所以这里从父节点按名字取，取不到就静默跳过（兼容未打补丁的旧 prefab）。
+ *
+ * ⚠️ 底部「我的排名」行的 infoGo 也走这里，但它的 dData 里没有 uid/country
+ *    （只有 rankInfo / userName 之类），以前就把它刷成了问号占位旗，
+ *    把 SetNotRollingInfo 刚设好的正确国旗覆盖掉 ⇒ 这里直接转交 RefreshMyRankFlag。
 --]]
 function this.UpdateCountryFlag(go, data)
     if go == nil or IsNull(go) or data == nil then
@@ -949,6 +976,10 @@ function this.UpdateCountryFlag(go, data)
     end
     local parent = go.transform.parent
     if parent == nil then
+        return
+    end
+    if this.record ~= nil and not IsNull(this.record) and parent.gameObject == this.record then
+        this.RefreshMyRankFlag()
         return
     end
     -- 公会榜展示的是公会名，玩家没有对应国家，用公会主体国家不合适 → 隐藏

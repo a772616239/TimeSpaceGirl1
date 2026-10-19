@@ -103,6 +103,9 @@ end
 
 print("\n[4] 榜单生成与排序")
 do
+    -- 上一段 SetPlayerCountry("KR") 会写 PlayerManager.country，而 GetPlayerCountry
+    -- 优先取服务端值 ⇒ 不清掉的话这里的「本国」仍是 kr，与期望的 cn 不符。
+    PlayerManager.country = nil
     prefs = { player_country = "cn" }
     CountryRankManager.Initialize()
     local all = CountryRankManager.GetRankList(CountryRankManager.RankType.All)
@@ -135,6 +138,7 @@ end
 
 print("\n[5] 我的排名")
 do
+    PlayerManager.country = nil
     prefs = { player_country = "cn" }
     CountryRankManager.Initialize()
     local mine = CountryRankManager.GetMyRankInfo(CountryRankManager.RankType.All)
@@ -186,10 +190,16 @@ do
 
     prefs = { player_country = "jp" }
     PlayerManager.uid = 777
+    PlayerManager.country = nil
     CountryRankManager.Initialize()
 
-    check("服务端下发的国家优先", CountryFlagUtil.ResolveCountry(777, "br") == "br",
+    -- 自己：本地已选值优先。榜单回包里的 country 是「请求那一刻的快照」，
+    -- 刚改完旗时服务端落值有延迟，若以回包为准会显示旧旗（见 CountryFlagUtil 注释）。
+    check("自己本地选择优先于回包快照", CountryFlagUtil.ResolveCountry(777, "br") == "jp",
             CountryFlagUtil.ResolveCountry(777, "br"))
+    -- 其他玩家：服务端 country 是唯一真源
+    check("其他玩家按服务端下发", CountryFlagUtil.ResolveCountry(12345, "br") == "br",
+            CountryFlagUtil.ResolveCountry(12345, "br"))
     check("自己没有服务端值→用本地选择", CountryFlagUtil.ResolveCountry(777, nil) == "jp",
             CountryFlagUtil.ResolveCountry(777, nil))
 

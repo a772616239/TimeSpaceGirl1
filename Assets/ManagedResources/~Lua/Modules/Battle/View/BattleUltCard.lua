@@ -9,9 +9,9 @@
   名字 name、地点 location），缩放到 26% 后重挂锚点。立绘走 LoadHerolive，
   与助战英雄入场展示框同一套资源链路。
 
-  🔴 定位规则：锚点一律落在「屏幕顶角」（X 贴左/右、Y 距屏幕顶边固定像素），
-  绝不挂到画布中心附近的节点上 —— CanvasScaler 换宽高比只改画布高度，
-  中心锚点的东西会整体滑到画面中部。
+  🔴 定位规则：跟随技能栏（myRect_Skill / enemyRect_Skill）——卡片纵向落在技能栏那一带，
+  不是在屏幕顶角；X 贴左右边缘。位置全部在技能栏的锚点空间里算，所以技能栏怎么锚
+  卡片就怎么跟，不再自己揣一套绝对坐标。
 
   注意：每个阵营各持一张卡（slots[camp]），敌我可能同时放大招，
   共用一张会互相覆盖、位置乱跳。
@@ -29,8 +29,10 @@ local ONLY_MY_CAMP    = false
 
 local CARD_SCALE       = 0.26   -- 相对整屏版 HelpHeroShow 的缩放
 local CARD_MARGIN_X    = 140    -- 卡片中心距左/右边缘的距离（0.26 缩放后卡宽 280.8，半宽 140.4，边缘贴齐）
-local CARD_GAP_Y       = 25     -- 卡片内容顶边与血条带底边的间隙
+local CARD_GAP_Y       = 8      -- 卡片顶边与技能栏底边的间隙（参考分辨率像素，CanvasScaler 统一缩放）
 local CARD_CONTENT_TOP = 642.5  -- 卡片内容顶边相对卡片中心（缩放前，Image1 顶边 = pos.y 7 + 高 1271/2）
+local CARD_Y_OFFSET    = 309.35 -- 在「技能栏下沿」基础上的整体竖向微调（正数向上）
+local CARD_FALLBACK_Y  = -520   -- 兜底：找不到技能栏时卡片中心的 Y（相对顶部锚点）
 local CARD_SHOW_TIME   = 2.0    -- 停留时长（对齐特写 CloseupDuration = 2000ms）
 local POP_IN_TIME     = 0.18
 local POP_OUT_TIME    = 0.12
@@ -87,8 +89,7 @@ local function GetTemplate(view)
 end
 
 -- 技能栏节点：我方 myRect_Skill（贴左），敌方 enemyRect_Skill（贴右）
--- 🔴 只用来「跟随消失」和压层级，定位不再依赖它：它锚在画布垂直中心，
---    换宽高比时画布高度变化会把它连同挂在它下面的东西一起拽到画面中部。
+-- 定位、跟随消失、压层级三处都用它，是卡片唯一的参照物
 local function GetSkillBar(view, camp)
     if not view or not IsAlive(view.transform) then
         return nil
@@ -104,36 +105,37 @@ local function GetSkillBar(view, camp)
     return ui
 end
 
--- 顶部血条带下沿距屏幕顶边的像素（UpRoot/EnemyHP：锚顶部、高 164.72）
--- 只读高度、不跟它的锚点走，所以它本身怎么锚都不影响卡片的坐标系
-local DEFAULT_TOP_HUD_H = 165
-local function GetTopHudBottom(view)
-    if not (view and IsAlive(view.transform)) then
-        return DEFAULT_TOP_HUD_H
-    end
-    local go = Util.GetGameObject(view.transform, "UpRoot/EnemyHP")
-    local hudRt = IsAlive(go) and go:GetComponent("RectTransform") or nil
-    if not hudRt then
-        return DEFAULT_TOP_HUD_H
-    end
-    -- 节点底边到锚点参考点（屏幕顶边）的距离
-    return -(hudRt.anchoredPosition.y - hudRt.pivot.y * hudRt.sizeDelta.y)
-end
-
--- 卡片定位：锚在屏幕左上/右上角，Y 一律「距屏幕顶边」量
---   🔴 不能锚在画布垂直中心（技能栏就是这么锚的）：CanvasScaler 在宽高比变化时只改
---   画布高度（1080x1920 -> 1080x2220），中心锚点会把卡片一起拽到画面中部。
---   顶部锚点则天然免疫：顶部血条带高度是固定像素，卡片永远贴在血条带下沿。
---   X 贴边、Y = 血条带高 + 间隙 + 卡片内容半高（全部是参考分辨率像素）
+-- 卡片定位：跟随技能栏（我方 myRect_Skill / 敌方 enemyRect_Skill）
+--   🔴 位置口径按昨晚定稿：卡片纵向落在技能栏那一带（屏幕中部略偏下），不是贴屏幕顶角。
+--   直接复制技能栏的锚点（我方 (0,0.5)、敌方 (1,0.5)），X 只给「距边距离」；
+--   Y = 技能栏底边 - 间隙 - 卡片内容半高 + 固定微调，全部在技能栏的锚点空间里算。
 local function ApplyLayout(view, s, rt)
-    local ax = ((tonumber(s.camp) or 0) == 0) and 0 or 1
+    local bar = GetSkillBar(view, s.camp)
+    local barRt = bar and bar:GetComponent("RectTransform")
     rt.pivot = Vector2.New(0.5, 0.5)
-    rt.anchorMin = Vector2.New(ax, 1)
-    rt.anchorMax = Vector2.New(ax, 1)
-    local dx = (ax == 0) and CARD_MARGIN_X or -CARD_MARGIN_X
-    local dy = -(GetTopHudBottom(view) + CARD_GAP_Y + CARD_CONTENT_TOP * CARD_SCALE)
-    rt.anchoredPosition = Vector2.New(dx, dy)
-    return { x = dx, y = dy }
+    if not barRt then
+        -- 兜底：拿不到技能栏才退回顶部锚点绝对定位
+        local ax = ((tonumber(s.camp) or 0) == 0) and 0 or 1
+        rt.anchorMin = Vector2.New(ax, 1)
+        rt.anchorMax = Vector2.New(ax, 1)
+        local dx = ((tonumber(s.camp) or 0) == 0) and CARD_MARGIN_X or -CARD_MARGIN_X
+        local dy = CARD_FALLBACK_Y + CARD_Y_OFFSET
+        rt.anchoredPosition = Vector2.New(dx, dy)
+        LogRed("[UIFlow] 大招小卡定位兜底：找不到技能栏节点")
+        return { x = dx, y = dy }
+    end
+
+    rt.anchorMin = barRt.anchorMin
+    rt.anchorMax = barRt.anchorMax
+    -- 技能栏底边（相对其锚点参考点）；pivot.y 通常是 0.5，用配置值算，不写死
+    local barBottom = barRt.anchoredPosition.y - barRt.pivot.y * barRt.sizeDelta.y
+    local centerY = barBottom - CARD_GAP_Y - CARD_CONTENT_TOP * CARD_SCALE + CARD_Y_OFFSET
+    local dx = CARD_MARGIN_X
+    if (tonumber(s.camp) or 0) ~= 0 then
+        dx = -dx
+    end
+    rt.anchoredPosition = Vector2.New(dx, centerY)
+    return { x = dx, y = centerY }
 end
 
 local function DestroySlot(s)
@@ -233,7 +235,7 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         return
     end
 
-    -- 定位：贴屏幕顶角（顶部血条带下沿），只跟屏幕边缘走，不跟任何居中节点走
+    -- 定位：跟随技能栏（相对技能栏锚点，换分辨率不跑偏）
     local rt = go:GetComponent("RectTransform")
     local pos = nil
     if rt then

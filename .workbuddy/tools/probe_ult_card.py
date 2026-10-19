@@ -4,8 +4,9 @@
 在运行中的 Editor 里：建一块指定尺寸的「假画布」→ 放 BattlePanel 副本 →
 用假 view 调 BattleUltCard.Show（营 0 / 营 1）→ 读回 Image1 相对假画布的归一化位置。
 
-🔴 判定口径：卡片锚点若在顶部，归一化「顶距」必须与画布高度无关；
-旧实现跟技能栏（锚在画布垂直中心）走，画布越高卡片越靠下 —— 分辨率一换就跑到画面中部。
+🔴 判定口径（按定稿：卡片跟随技能栏，落在屏幕中部那一带，不贴顶）：
+  · 卡片相对「技能栏」的位置必须恒定 —— 量 R = 卡片底边到技能栏顶边的像素差；
+  · 立绘（live 下的 spine）占卡宽/卡高的比例必须恒定 —— 这是「英雄显示不对」的判据。
 
 用法：
   python .workbuddy/tools/probe_ult_card.py
@@ -138,8 +139,29 @@ foreach (var nm in names) {
     var iw = new Vector3[4]; ((RectTransform)imag).GetWorldCorners(iw);
     float L = (iw[0].x - bc[0].x) / bw, R = (iw[2].x - bc[0].x) / bw;
     float Bo = (iw[0].y - bc[0].y) / bh, T = (iw[2].y - bc[0].y) / bh;
+    float cw = iw[2].x - iw[0].x, chh = iw[2].y - iw[0].y;
     sb.AppendLine(string.Format("    Image1 占屏 L={0:F3} R={1:F3} / 顶距={2:F1}% 底距={3:F1}% 高={4:F1}%",
         L, R, (1f - T) * 100f, (1f - Bo) * 100f, (T - Bo) * 100f));
+    // 立绘：对比卡片底图的占比（换分辨率若占比变了 = 英雄显示不对）
+    var live = t.Find("live");
+    if (live == null || live.childCount == 0) sb.AppendLine("    live: 空");
+    else {
+        var sp = live.GetChild(0);
+        var sc = new Vector3[4]; ((RectTransform)sp).GetWorldCorners(sc);
+        float sw = sc[2].x - sc[0].x, sh = sc[2].y - sc[0].y;
+        sb.AppendLine(string.Format("    live={0} 占卡宽={1:F2} 占卡高={2:F2} 中心偏移=({3:F2},{4:F2})",
+            sp.name, sw / cw, sh / chh,
+            ((sc[0].x + sc[2].x) / 2 - (iw[0].x + iw[2].x) / 2) / cw,
+            ((sc[0].y + sc[2].y) / 2 - (iw[0].y + iw[2].y) / 2) / chh));
+    }
+    // 相对技能栏：卡片底边到技能栏顶边的像素差（应恒定）
+    var barName = nm.EndsWith("Mine") ? "myRect_Skill" : "enemyRect_Skill";
+    var barT = panel.transform.Find(barName);
+    if (barT != null) {
+        var bw2 = new Vector3[4]; ((RectTransform)barT).GetWorldCorners(bw2);
+        sb.AppendLine(string.Format("    到技能栏: 卡底边-栏顶边={0:F1}px 卡顶边-栏顶边={1:F1}px",
+            iw[0].y - bw2[2].y, iw[2].y - bw2[2].y));
+    }
 }
 return sb.ToString();
 '''

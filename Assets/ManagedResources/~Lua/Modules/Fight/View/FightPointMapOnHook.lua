@@ -414,6 +414,9 @@ function this:HeroTalk()
         -- 候选池：英雄专属 + 通用池，或者当前场景池（40% 概率，见 BuildTalkPool）
         local pool = BuildTalkPool(afkSpeak, talkPosList[_rand].Id, this.curMapType, math.random(1, 100))
         if #pool == 0 then
+            -- 没词可说：气泡上面已经 SetActive(true) 了，必须收回去，
+            -- 否则会留一个空白气泡既没文字、也没有收尾的 Timer 去隐藏它。
+            this.talkList[_rand]:SetActive(false)
             return
         end
 

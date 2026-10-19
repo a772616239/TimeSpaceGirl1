@@ -64,6 +64,8 @@
 │   ├── stage_apk.sh           APK 收成构建产物（cp -c 克隆 → workspace/artifacts/，出固定下载链接）
 │   ├── find_artifact.py       按 mtime 定位「本次」产物；**默认拒绝回退到旧包**
 │   ├── server_ops.sh          服务端动作统一派发口（14 个动作，标注破坏性/只读）
+│   ├── server_release.sh      服务端「代码发包正式服」执行口（11 个子命令：切分支/编译/差异/备份/注入/自检/记录/回滚）
+│   ├── server_release.py      发布辅助：jar 条目清单 / 逐条目 CRC 差异 / 发布记录 / 发布看板 HTML
 │   └── checks/
 │       ├── android_env.sh         打包环境预检（工具链/三口径/Gradle 模板/keystore/Unity 占用）
 │       ├── repo_hygiene.sh        仓库卫生 + Lua 源码↔字节码成对性（唯一硬闸门）
@@ -78,9 +80,9 @@
 
 ---
 
-## 3. 七个 job
+## 3. 八个 job
 
-视图：**「时空美少女 · 全流程」**（`ListView`，含全部 7 个 job，带状态球/天气/上次成功/耗时/构建按钮列）。
+视图：**「时空美少女 · 全流程」**（`ListView`，含全部 8 个 job，带状态球/天气/上次成功/耗时/构建按钮列）。
 
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
@@ -110,6 +112,7 @@
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |
 | **TS-Server-Ops** | 服务端/区服运维动作统一入口 | `ACTION=health` `CONFIRM=` `REASON=` | — | 允许 |
+| **TS-Server-Release** | **服务端代码发包正式服**：切 release 分支 → JDK8 编译 → 与线上逐条目 CRC 比对 → 审批 → 备份 → 注入差异类 → 重启 → 自检 → 回写发布记录 | `ACTION=release` `SOURCE_BRANCH=x1-tag-1.2.2` `RELEASE_BRANCH=` `DEPLOY=False` `CONFIRM=` `AUTO_APPROVE=False` `ONLY_CLASSES=` `EXCLUDE_CLASSES=` `RESTART=gameserver` `ALLOW_DIRTY=False` `PUSH_BRANCH=True` `ROLLBACK_DIR=` `NOTES=` `SEND_MAIL=False` | — | **禁止** |
 | **TS-Play-Watch** | Play 轨道 + 16KB 合规巡检 | `DRY_RUN=True` `NO_MAIL=False` `AAB=` `TO=` | `H 9 * * *` | 允许 |
 
 ### 3.1 送审红线（三层闸门 + 一层代码级自检）
@@ -194,6 +197,134 @@ scripts/build_envs.json ──┴─→ scripts/apply_build_env.py apply <env>  
 - 手动核对：`python3 scripts/apply_build_env.py show`（工程当前连哪）、
   `python3 scripts/verify_aab_server_env.py <aab|apk>`（某个包连哪）、
   `python3 scripts/apply_build_env.py envs`（列可选环境）。
+
+---
+
+### 3.4 服务端发包正式服（`TS-Server-Release`，2026-10-19 新增）
+
+服务端代码要上线时，以前是人肉拼命令：切分支 → `gradlew` 编译 → 比线上 jar → 备份 →
+`zip -u` 注入 → 重启 → 看日志。每条都有坑，而且**顺序不能错**。现在收成一个 job。
+
+#### 为什么不是「`package.sh` 打全量包覆盖线上」
+
+这一点是 2026-10-18 用数据定论的，别再翻案：
+
+| 现象 | 量化证据 |
+|---|---|
+| `package.sh` 的包 ≠ 线上正在跑的包 | 线上 jar 与 HEAD 源码**154 个类同名不同 CRC**（差异全在日志层：线上中文串乱码、缺新增 LOGGER 行） |
+| 全量覆盖会顺手带走未上线改动 | 工作区有未提交的 `MongoBitSetConverter`（Mongo BSON 存储迁移，回退不可逆） |
+| 全量覆盖会动运行时数据 | `conf/` 混着 `hotfix.json`/玩家 `checkout_*.txt`；`assets/` 有 889MB 运行期日志 |
+
+⇒ 正确姿势：**以线上 jar 为基线，只 `zip -u` 差异条目**（类级注入）。本 job 固定走这条。
+
+#### 12 个环节
+
+| # | 环节 | 分组 | 干什么 | 失败会怎样 |
+|---|---|---|---|---|
+| ① | 参数与影响说明 | 前置 | 把「这次会动什么」打印在最前面；`DEPLOY=true` 但 `CONFIRM≠正式服` 直接拒 | 红 |
+| ② | 发布前预检 | 预检 | 源码是否干净 / JDK8 / gradle 缓存 / SSH / 线上实例·端口·在线数·内存·磁盘 / 备份数 | 红（关注项黄） |
+| ③ | 切 release 分支（独立 worktree） | 发布记录 | `git worktree add -b release/x1-<版本>-<YYYYMMDD-HHmm>` | 红 |
+| ④ | 编译（JDK8 + gradle） | 构建 | 只编 `:serverlogic:jar :chatserver:jar`（根 `gradle build` 会连 worldserver 一起挂） | 红 |
+| ⑤ | 产物校验 | 构建 | `unzip -t` / class major=52 / 注入边界 / lib 数量 | 红 |
+| ⑥ | 与线上逐条目差异 | 差异 | 下载线上 jar，按**同名同 CRC** 分类：变更 / 仅本地 / 仅线上 / 将注入 / 被排除 | 无差异 ⇒ **黄**（rc=3） |
+| ⑦ | 部署审批闸门 | 发布闸门 | 列出分支、注入条数、重启范围、在线连接数、说明；`AUTO_APPROVE=False` 时停在这 | 等人 |
+| ⑧ | 线上备份 | 发布 | `deploy-staging/<stamp>/backup/`：jar + `gamecommon` + `config/*.properties` + `MD5SUMS` | 红（**无备份绝不注入**） |
+| ⑨ | 注入差异条目 + 重启 | 发布 | 抽差异条目 → 传 → 服务器 `zip -u` 分批 → `unzip -t` → `RESTART-GAMESERVER.sh` | 红 |
+| ⑨-2 | 回滚（恢复备份 + 重启） | 发布 | `ACTION=rollback` 时走这条：恢复 jar + config → 重启 | 红 |
+| ⑩ | 上线自检 | 发布 | **把线上 jar 再拉回来逐条目比 CRC** + 实例数/16081/认证失败/端口冲突/OOM/ERROR 行数 | 红 |
+| ⑪ | 回写发布记录 | 发布记录 | 写 `server_game/deploy/releases/<stamp>.{md,json}` + 重建 `INDEX.md` → 提交 release 分支 → 打 tag `rel-<stamp>` → （真上线时）push | 黄（`--warn-ok`） |
+| ⑫ | 发布看板 | 交付 | 生成自包含 HTML，归档 + 拷到 `userContent` 固定地址 | 红 |
+
+#### release 分支与「做好记录」
+
+- 分支名：`release/x1-<版本>-<YYYYMMDD-HHmm>`（从 `SOURCE_BRANCH` 切，默认 `x1-tag-1.2.2`）。
+- 🔴 **用 `git worktree` 而不是 `checkout`**：服务端主工作区常年有并行会话在改，
+  在主工作区切分支会把人家 WIP 一起带走；独立 worktree 还能保证「release 分支 = 编译产物」这句话成立。
+- 记录落在**分支里**（不是只留在 Jenkins 上），三件：
+  - `server_game/deploy/releases/<stamp>.md` —— 人看的：源提交、脏项、注入统计、自检结论、环节明细
+  - `server_game/deploy/releases/<stamp>.json` —— 机器看的：完整 diff 计数、`backup_dir`、健康检查
+  - `server_game/deploy/releases/INDEX.md` —— 台账，每次**从 JSON 全量重建**（追加写法在重跑时会写重）
+- tag：`rel-<stamp>`（annotated，message 带本次提交摘要）。
+- 推送策略：**只有真上线（`DEPLOY=true`）才 push 分支与 tag**；演练一律不推，免得远端堆一串垃圾分支。
+- 提交只 `git add` 这三个路径 —— 🔴 绝不 `git add -A`（这个仓有并行会话在改源码，`-A` 会把别人的 WIP 卷进来）。
+
+#### 三道闸门（默认「什么都不做」）
+
+1. `DEPLOY=False`（默认）⇒ 只切分支 + 编译 + 比对 + 记录，**生产零写入**。
+2. `DEPLOY=True` 且 `CONFIRM` 不等于「正式服」⇒ ① 环节直接 `error`（回滚时为「回滚」）。
+3. `AUTO_APPROVE=False`（默认）⇒ ⑦ 停下来等人在页面点「确认部署」。
+
+#### 注入边界（哪些条目永不自动注入）
+
+`META-INF/*`、`application*.properties`、`*.properties`、`*.xml` —— 默认排除。原因：
+
+- 注入 `MANIFEST.MF` 会改写 `Class-Path`，等于顺手换了整条依赖链（47 个 lib）；
+- 编译产物里的 `application.properties` 是 `src` 的**开发配置**（`server.id=70001`、远程 Mongo），
+  线上那份是 `deploy-overlay` 的生产配置，注入即连错库。
+
+`ONLY_CLASSES` / `EXCLUDE_CLASSES` 可再收窄（热修口径用前者，例如 `com/ljsd/jieling/handler/*`）。
+
+#### 可视化五件套
+
+除 §4 的四件（stage 图 / JUnit 表格 / 构建描述 / `evidence/**`）之外，这个 job 多一件：
+
+- **发布看板**：`evidence/release/release-report.html`（自包含、无外链），一页看完
+  结论 KPI / 环节流水线 / 环节明细（含耗时）/ 每个 jar 的差异条形图与包分布 / 上线自检表。
+  另拷贝到固定地址 **`http://localhost:8080/userContent/TS-Server-Release-latest.html`**（可收藏）。
+- 构建描述形如：`✅ 7 个环节全部通过 | x1-1.2.2-20261019-2030 · 注入 58 条 · 演练`。
+
+#### 球的颜色语义（别把告警当噪音）
+
+| 结果 | 含义 | 典型触发 |
+|---|---|---|
+| 蓝/绿 | 通过 | 演练或上线全链路无关注项 |
+| **黄（UNSTABLE）** | 通过但**有需要人看一眼**的事 | 预检有 `[WARN]`（可用内存/磁盘偏低、缺重启脚本）、线上已有相同代码（`⑥` 全 0 条）、分支推送失败、`RESTART=none` |
+| 红 | 失败 | 任一环节 `rc=1` |
+
+🔴 **告警必须与「真会造成的后果」对齐**：长连接（会踢玩家）只在
+`DEPLOY=true` 且 `RESTART≠none`，或 `ACTION=rollback` 时才算 `[WARN]`；
+演练模式只打印一行 `[info] 生产服当前 N 条 16081 长连接（本次不重启，不影响）`。
+早期版本一刀切当告警，结果线上只有 1 条心跳连接时演练也会变黄 —— 黄球一多就没人看颜色了（`#3` 实测踩到，`#4` 修正后转绿）。
+
+#### 实测状态（2026-10-19）
+
+- ✅ `#1` 演练（`DEPLOY=false`）：7 个环节全绿（预检/切分支/编译/校验/差异/记录/看板），
+  JUnit `passCount=7`、stage 图 200、看板 200；产出 release 分支
+  `release/x1-1.2.2-20261019-2030` + 记录提交 + tag `rel-20261019-2030`（本地，未推）。
+- ✅ `#4` 演练（长连接告警语义修正后）：`SUCCESS`，255s，描述
+  `✅ 7 个环节全部通过 | x1-1.2.2-20261019-2056 · 注入 58 条 · 演练`；产物 29 个（**无 jar**，
+  证据目录从 34M 压到 152K）；看板 `userContent` 已刷新。
+- ✅ 注入机制在**生产 staging 副本**上验证过（不动线上）：抽取 2 个 class → `tar` → `zip -u` 分批 →
+  `unzip -t` OK → 逐条目 CRC 与本地编译产物**完全相同**；复核的失败分支（清单里混入不存在的条目）会 rc=1。
+- 🔴 **`DEPLOY=true` 尚未实跑**（会重启生产、踢线）⇒ 首次真上线必须由用户点头；
+  建议先拿一次「只注 1~2 个类」的小范围热修（`ONLY_CLASSES`）走通全链路。
+
+#### 演练分支要清理（否则攒一堆）
+
+演练每次都会切一条 `release/x1-...-<stamp>` 分支 + tag，但**只有真上线才 push**，本地攒多了会碍眼：
+
+```bash
+cd TimeSpaceServer/Server_x1tag1.2.2
+git branch --list 'release/*'                     # 先看有哪些
+git branch -D release/x1-1.2.2-20261019-2030      # 删分支
+git tag -d rel-20261019-2030                      # 删对应 tag
+```
+
+记录（`deploy/releases/*.md`）随分支一起去掉是**设计如此**：演练不产生发布事实；
+真上线的记录在推上去的 release 分支里，且 Jenkins 侧还留一份（`record.md` / `record.json` 产物 + 看板）。
+
+
+#### 排障
+
+| 症状 | 先查什么 |
+|---|---|
+| ② 报「源码有未提交改动」 | 这个仓把 `server_game/.gradle_home`（11918 个文件）和 `dist/` 也纳入了版本管理 ⇒ 每编译一次就有十几项脏。脚本已把这类**构建残留**单独统计（只报告不阻断），真正阻断的是源码改动；急发时勾 `ALLOW_DIRTY`（不参与构建，仅留痕） |
+| ③ 报「分支已存在」 | 同一分钟重复构建。换 `RELEASE_BRANCH` 或等一分钟 |
+| ⑥ 全 0 条 | 线上已经和这个提交一致（重复发布）⇒ 黄球，不是失败 |
+| ⑥ 提示 `overlay/application.properties 与线上不一致` | 类级注入**不更新** `deploy-overlay` 里的 `application.properties` / `logback-boot.xml`；要生效需单独注入该文件或走 package 模式 |
+| ⑨ 报 `zip -u 失败` | 看 `deploy-staging/<stamp>/` 下的 `*.list`；条目名含空格/中文时 `zip` 会当作多个参数 |
+| ⑩ 注入复核失败 | 说明 `zip -u` 没写进去。最常见原因：**没 `touch`**（zip 按 mtime 2 秒粒度判更新，同秒文件会被静默跳过） |
+| 想回滚 | 同一 job 选 `ACTION=rollback` + `DEPLOY=true` + `CONFIRM=回滚`；或手工 `server_release.sh rollback` |
 
 ---
 
@@ -430,13 +561,19 @@ org.dom4j.DocumentException: … invalid XML character (Unicode: 0x1b)
 ## 9. 验收清单（改完 job 必过）
 
 - [ ] `.jenkins/lint.sh` 全绿（四道）
-- [ ] `.jenkins/apply-jobs.sh` → `完成：成功 7，失败 0`
+- [ ] `.jenkins/apply-jobs.sh` → `完成：成功 8，失败 0`
 - [ ] 参数核对无误：`.jenkins/apply-jobs.sh --list`
 - [ ] **真跑一次 `TS-Pipeline-Overview`**（只读、无副作用），核对四件产物：
   - [ ] stage 图有多层嵌套分组
   - [ ] 测试结果表格有 8 个环节、按 6 个分组排列
   - [ ] 构建描述是 `stage_report.py desc` 的单行结论
   - [ ] `evidence/**` 归档条目数 = **21**（5 个文件 + 8 个 log + 8 个 stage json）
+- [ ] 动过服务端发布链路的话，**真跑一次 `TS-Server-Release`（`DEPLOY=False`）**：
+  - [ ] 7 个环节全绿、`testReport` 的 `passCount=7`
+  - [ ] 构建描述形如 `✅ 7 个环节全部通过 | x1-1.2.2-<stamp> · 注入 N 条 · 演练`
+  - [ ] `evidence/release/release-report.html` 打得开，且 `~/.jenkins/userContent/TS-Server-Release-latest.html` 已更新
+  - [ ] 归档里**没有** `*.jar`（基线 jar 不入归档，见 3.4）
+  - [ ] 跑完 `git -C TimeSpaceServer/Server_x1tag1.2.2 worktree list` 只剩主工作区（worktree 已回收）
 - [ ] 球色语义正确：有 warn 但无 fail ⇒ **黄球（UNSTABLE）**，不是红球
 - [ ] 改过 `checks/*.sh` 的话，确认退出码语义没被改坏（尤其 `android_env.sh` 的 rc=3）
 
@@ -459,6 +596,7 @@ org.dom4j.DocumentException: … invalid XML character (Unicode: 0x1b)
 | `TS-Client-Resources`（`ACTION=check`） | **SUCCESS** #1 | 字节码一致性 + AB 就绪体检，真跑了环节 |
 | `TS-Server-Health` | **SUCCESS** #1 | 默认 `SEND_MAIL=false`，只采集不发信 |
 | `TS-Play-Watch` | **SUCCESS** #2 | 默认 `DRY_RUN=true`，不发信、不写状态 |
+| `TS-Server-Release` | **SUCCESS** #1（2026-10-19，演练） | 7 环节全绿 · 注入 58 条 · 产出 release 分支+记录+tag（本地） |
 
 - ✅ 球色语义符合设计：**有 warn 无 fail ⇒ 黄球（UNSTABLE）**；有 fail ⇒ 红球。
 - 🔴 **送审闸门自检曾偶发假红**：同一份代码在 Jenkins 判 fail（rc=2 却判「竟然放行」），
@@ -473,6 +611,11 @@ org.dom4j.DocumentException: … invalid XML character (Unicode: 0x1b)
   `1.2.51_vc74_215144.apk`（965M）；#3 验证「APK 本体进构建产物」这次改造。
 - [ ] **未实跑过的 job**：`TS-Android-Release`、`TS-Server-Ops`。
   它们含破坏性动作（Unity 打包 / 重启游戏服会踢线 / 上传）⇒ **需要用户明确同意才能试跑**，不自行验证。
+- [ ] **`TS-Server-Release` 的 `DEPLOY=true` 路径未实跑**（会写生产 jar 并重启、踢线）。
+  已做的替代验证：注入机制在生产 `deploy-staging/` 的**副本**上跑通（`zip -u` 分批 + `unzip -t` +
+  逐条目 CRC 与本地一致），复核失败分支也验过。首次真上线建议先用 `ONLY_CLASSES` 只注 1~2 个类走通全链路。
+- [ ] 发布记录目前落在 `release` 分支（本地）；**推送策略是「只有真上线才 push」**，
+  所以演练产生的分支不会出现在 origin。若希望演练也留远端痕迹，把 `PUSH_BRANCH` 的逻辑改成随 `record` 无条件推。
 - [ ] `TS-Server-Health` / `TS-Play-Watch` 的**定时触发尚未自然触发**过 ——
   注意 `H 9 * * *` / `H 10 * * *` 里 `H` 是**分钟**、`9` / `10` 是**小时** ⇒
   含义是「**每天 9 点 / 10 点各一次**」，**不是每小时**。这两个 job 建于当天 14:13，

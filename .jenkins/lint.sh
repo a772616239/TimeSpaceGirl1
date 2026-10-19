@@ -64,6 +64,10 @@ pat = re.compile(r'(?<!\\)\$([A-Za-z_][A-Za-z0-9_]*|\d)\s*(?=[^\x00-\x7f])')
 hits = []
 targets = (glob.glob(os.path.join(root, '.jenkins', '**', '*.sh'), recursive=True)
            + glob.glob(os.path.join(root, 'scripts', '*.sh')))
+# 🔴 必须排除 .jenkins/run/：那是运行态目录（含服务端发布 job 的 git worktree，
+#    里面是被检出的**别人的** package.sh 等脚本）。审计别人的代码只会产生假红，
+#    而假红会训练人忽略红灯（2026-10-13 的教训）。
+targets = [t for t in targets if '/.jenkins/run/' not in t.replace(os.sep, '/')]
 for f in sorted(targets):
     try:
         lines = open(f, encoding='utf-8').read().splitlines()

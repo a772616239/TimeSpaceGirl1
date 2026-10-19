@@ -157,19 +157,30 @@ end
 
 function YiJingBaoKu:SetFinalReward()
     ActData = DynamicActivityManager.GetBaoKuData()
+    local rewardConfig = BlessingConfig and BlessingConfig[ActData.selectId]
+    if not rewardConfig then
+        -- 未选择最终奖励或配置缺失：隐藏展示位，避免索引 nil
+        if finalReward then
+            finalReward.gameObject:SetActive(false)
+        end
+        return
+    end
     if not finalReward then
         finalReward = SubUIManager.Open(SubUIConfig.ItemView,this.itemTra.transform)
     end
-    finalReward:OnOpen(false, BlessingConfig[ActData.selectId].Reward, 0.65, false, false, false, sortingOrder)
+    finalReward:OnOpen(false, rewardConfig.Reward, 0.65, false, false, false, sortingOrder)
     finalReward.transform.localPosition = Vector2.New(0,0)
     finalReward.gameObject:SetActive(true)
 end
 
 --初始化给所有坑赋值
 function YiJingBaoKu:InitSetAllCard()
-    for i = 1, #_itemsList do
-        if ActData.initCardDatas[i].reward then
-            YiJingBaoKu:SetSingleCardData(i,_itemsList[i],ActData.initCardDatas[i].reward)
+    local initCardDatas = ActData and ActData.initCardDatas or {}
+    -- 以数据长度为准：服务器数据异常时 initCardDatas 可能短于坑位数量
+    for i = 1, math.min(#_itemsList, #initCardDatas) do
+        local cardData = initCardDatas[i]
+        if cardData and cardData.reward then
+            YiJingBaoKu:SetSingleCardData(i,_itemsList[i],cardData.reward)
         end
     end
 end
@@ -186,12 +197,17 @@ function YiJingBaoKu:AddBackToFrontClick()
                 PopupTipPanel.ShowTipByLanguageId(11880)
                 return
             end
+            local finalCardData = ActData.finalCardDatas and ActData.finalCardDatas[index]
+            if not finalCardData then
+                -- 多出的坑位没有对应抽取数据，直接忽略
+                return
+            end
             if not trigger then
                 return
             end
             trigger = false
             
-            NetManager.GetActivityRewardRequest(ActData.finalCardDatas[index].Id,ActData.activityId,function (drop)
+            NetManager.GetActivityRewardRequest(finalCardData.Id,ActData.activityId,function (drop)
                 local tempData = YiJingBaoKu:RebuildDrop(drop)
                 YiJingBaoKu:SetSingleCardData(index,value,tempData)
                 local thread = coroutine.start(function()
@@ -204,7 +220,8 @@ function YiJingBaoKu:AddBackToFrontClick()
                     this.effect:SetActive(false)
                     UIManager.OpenPanel(UIName.RewardItemPopup, drop, 1,function ()
                         trigger = true
-                        if tempData[1] == BlessingConfig[ActData.selectId].Reward[1] then
+                        local selectConfig = BlessingConfig and BlessingConfig[ActData.selectId]
+                        if selectConfig and tempData[1] == selectConfig.Reward[1] then
                             finalReward.gameObject:SetActive(false)
                             if itemViewList[18] then
                                 itemViewList[18].gameObject:SetActive(false)

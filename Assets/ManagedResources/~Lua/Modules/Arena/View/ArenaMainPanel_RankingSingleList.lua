@@ -7,6 +7,14 @@ local this = {}
 this.firsthead = nil
 this.playerHeadList = {}--背景前三头像
 this.playerScrollHead = {}--滚动条头像
+-- 底部「我的排名」行本次刷新是否真的有名次（false = 未上榜 / 还没拿到数据）
+this.myRankValid = false
+
+-- 名次是否有效（>= 1 才算上榜）；tonumber 兼容 proto number / 字符串两种来源
+local function HasValidRank(rank)
+    local n = tonumber(rank)
+    return n ~= nil and n >= 1
+end
 
 local mapNpc = "live2d_npc_map"
 local mapNpc2 = "live2d_npc_map_nv"
@@ -193,6 +201,7 @@ end
 
 --显示每条数据
 function this.ShowWarPowerInfo(root,data,myRankData)
+    this.HideCountryFlag(root)
     this.AddPlayerInfoClick(root,data.uid)
     this.SetSelfBG(root,myRankData.myRank, data.rankInfo.rank)
     this.SetRankingNum(root, data.rankInfo.rank)
@@ -292,6 +301,7 @@ end
 
 --显示每条数据
 function this.ShowTrialInfo(root,data,myRankData)
+    this.HideCountryFlag(root)
     this.AddPlayerInfoClick(root,data.uid)
     this.SetSelfBG(root,myRankData.rank,data.rankInfo.rank)
     this.SetRankingNum(root,data.rankInfo.rank)
@@ -334,6 +344,7 @@ end
 
 --显示每条数据
 function this.ShowMonsterInfo(root,data,myRankData)
+    this.HideCountryFlag(root)
     this.AddPlayerInfoClick(root,data.uid)
     this.SetSelfBG(root,myRankData.myRank,data.rankInfo.rank)
     this.SetRankingNum(root,data.rankInfo.rank)
@@ -380,6 +391,7 @@ end
 
 --显示每条数据
 function this.ShowAdventureInfo(root,data,myRankData)
+    this.HideCountryFlag(root)
     this.AddPlayerInfoClick(root,data.uid)
     this.SetSelfBG(root,myRankData.rank,data.rank)
     this.SetRankingNum(root,data.rank)
@@ -431,6 +443,7 @@ end
 
 --显示每条数据
 function this.ShowCustomsPassInfo(root,data,myRankData)
+    this.HideCountryFlag(root)
     if data.rankInfo.param1 > 0 then
         this.AddPlayerInfoClick(root,data.uid)
         this.SetSelfBG(root,myRankData.myRank,data.rankInfo.rank)
@@ -481,6 +494,7 @@ end
 
 --显示每条数据
 function this.ShowGuildForceInfo(root,data,myRankData)
+    this.HideCountryFlag(root)
     if data.rankInfo.param1 > 0 then
         this.AddPlayerInfoClick(root,data.uid)
         this.SetSelfBG(root,myRankData.myRank,data.rankInfo.rank)
@@ -534,6 +548,7 @@ function this.SetGoldExperSortInfo()
 end
 --显示每条数据
 function this.ShowGoldExperSortInfo(root,data,myRankData)
+    this.HideCountryFlag(root)
     if data.rankInfo.param1 > 0 then
         this.AddPlayerInfoClick(root,data.uid)
         this.SetSelfBG(root,myRankData.myRank,data.rankInfo.rank)
@@ -581,17 +596,23 @@ function this.InitNotRollingInfo()
     this.info0.text = ""
     this.info1.text = ""
     this.rank0.text = ""
+    -- 名次还没定，先按「未上榜」口径把「我的排名」行的旗收掉；
+    -- 由随后的 SetNotRollingInfo 决定要不要重新显示
+    this.myRankValid = false
+    this.RefreshMyRankFlag()
 end
 
 --设置非滚动区信息
 function this.SetNotRollingInfo(...)
     local args = {...}
-    -- 底部「我的排名」行的国家小旗：只能用自己的国家（这一行没有 uid/country）
+    -- 底部「我的排名」行的国家小旗：只能用自己的国家（这一行没有 uid/country），
+    -- 且**有名次才有旗**（args[5] 就是名次，<1 = 未上榜 Unranked，旗必须跟着收）
+    this.myRankValid = HasValidRank(args[5])
     this.RefreshMyRankFlag()
     this.info0.text = args[3]--底部信息
     this.info1.text = args[4]
 
-    if not args[5] or args[5] < 1 then--排名对比 < 0未上榜
+    if not HasValidRank(args[5]) then--排名对比 <1 未上榜
         this.rank0.text = args[6] --未上榜
         this.SetRankingNum(this.record, args[6])
     else
@@ -638,8 +659,10 @@ end
 --[[
  * 底部「我的排名」行的国家小旗
  * 这一行没有榜单数据（dData 里没有 uid/country），只能以自己的国家为准。
+ * 显示口径：空榜（NoneImage）或未上榜（名次 <1）→ 隐藏；
+ *   否则名字旁边挂一面自己的国旗，看着像「没上榜也有国家排名」。
 --]]
-function this.RefreshMyRankFlag()
+function this.RefreshMyRankFlag(hasRank)
     if this.record == nil or IsNull(this.record) then
         return
     end
@@ -647,8 +670,33 @@ function this.RefreshMyRankFlag()
     if flagGo == nil or IsNull(flagGo) then
         return
     end
+    if hasRank ~= nil then
+        this.myRankValid = (hasRank == true)
+    end
+    if this.noneImage ~= nil and not IsNull(this.noneImage) and this.noneImage.activeSelf then
+        flagGo:SetActive(false)
+        return
+    end
+    if not this.myRankValid then
+        flagGo:SetActive(false)
+        return
+    end
     flagGo:SetActive(true)
     CountryFlagUtil.ApplySelf(flagGo)
+end
+
+--[[
+ * 行级小旗：非竞技场榜单（战力/试炼/兽潮/外敌/关卡/公会/点金）不画玩家国旗，
+ * 但行是循环复用的 —— 从竞技榜切过去不收，就会留着上一批人的旗。
+--]]
+function this.HideCountryFlag(root)
+    if root == nil or IsNull(root) then
+        return
+    end
+    local flagGo = Util.GetGameObject(root,"countryFlag")
+    if flagGo ~= nil and not IsNull(flagGo) then
+        flagGo:SetActive(false)
+    end
 end
 
 --设置自身背景

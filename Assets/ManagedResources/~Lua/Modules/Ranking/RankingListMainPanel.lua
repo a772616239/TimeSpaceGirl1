@@ -269,7 +269,7 @@ end
  * ⇒ 公会榜的国家旗一直没被隐藏。
 --]]
 function this.UpdateCountryFlag(go, data, rankType)
-    if go == nil or IsNull(go) or data == nil then
+    if go == nil or IsNull(go) then
         return
     end
     local parent = go.transform.parent
@@ -280,8 +280,20 @@ function this.UpdateCountryFlag(go, data, rankType)
     if flagGo == nil or IsNull(flagGo) then
         return
     end
-    if rankType == RANK_TYPE.GUILD_FORCE_RANK or rankType == RANK_TYPE.CELEBRATION_GUILD then
+    -- 没有数据（dData.uid==0 的空位等）→ 隐藏，不能让上一屏的旗留在卡上
+    if data == nil then
         flagGo:SetActive(false)
+        return
+    end
+    if rankType == RANK_TYPE.GUILD_FORCE_RANK or rankType == RANK_TYPE.CELEBRATION_GUILD then
+        -- 公会榜卡片展示的是会长那条记录（服务端按会长组包）：
+        -- 会长选了国家就画他的旗，没选则隐藏（不画问号旗）。
+        if data.country == nil or data.country == "" then
+            flagGo:SetActive(false)
+        else
+            flagGo:SetActive(true)
+            CountryFlagUtil.Apply(flagGo, data.uid, data.country)
+        end
         return
     end
     flagGo:SetActive(true)

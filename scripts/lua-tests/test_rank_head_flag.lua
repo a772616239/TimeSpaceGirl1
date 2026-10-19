@@ -32,7 +32,8 @@ PlayerPrefs = {
     Save = function() end,
 }
 
-PlayerManager = { uid = 123456, nickName = "我", country = "cn", head = 1, frame = 1, level = 88 }
+PlayerManager = { uid = 123456, nickName = "我", country = "cn", head = 1, frame = 1, level = 88, familyId = 0 }
+MyGuildManager = { GetMyGuildInfo = function() return { name = "公会A" } end }
 Selection = { activeSelf = true }
 
 RANK_TYPE = {
@@ -83,7 +84,7 @@ newObjToParent = function(a, b) return a end
 local function newGO(name)
     local go = { name = name, _children = {}, _comps = {}, active = true, activeSelf = true }
     go.gameObject = go
-    go.transform = { parent = nil, parentGO = nil }
+    go.transform = { parent = nil, parentGO = nil, gameObject = go }
     function go:SetActive(v) self.active = v; self.activeSelf = v end
     function go.GetComponent(self, cls)
         -- 桩：任意组件都返回一个惰性占位（sprite / text / anchoredPosition 随便写）
@@ -310,6 +311,90 @@ P.SetHeroNotRollingInfo("战力", 7, { heroTemplateId = 1, heroLevel = 30, heroS
 check("数据恢复后我的排名旗重新可见", myFlag.active ~= false)
 check("恢复后旗 sprite = 自己的国家 cn",
     myFlag._comps["Image"].sprite == "cn2-guoqi_cn", myFlag._comps["Image"].sprite)
+P.noneImage = nil  -- 还原桩，避免影响后续用例
+
+-- ============ 8. 未上榜（Unranked）：榜里有人、自己没名次 ============
+-- 🔴 曾经的 bug：只按 noneImage 判断，榜单里有人时 noneImage 是关的 ⇒
+--    「我的排名」行明明显示 Unranked、头像也收了，名字旁边还挂着一面自己的旗。
+print("\n[8] 未上榜：榜单里有人但自己没名次 → 我的排名旗必须隐藏")
+P.noneImage = newGO("NoneImage")
+P.noneImage:SetActive(false)   -- 榜单有人
+openWith(RANK_TYPE.HERO_FORCE_RANK)
+P.SetHeroNotRollingInfo("战力", 0, { heroTemplateId = 1, heroLevel = 30, heroStar = 5, userName = "我" }, 20)
+check("英雄榜 Unranked → 我的排名旗隐藏", myFlag.active == false)
+check("英雄榜 Unranked → 名次文本是「未上榜」", P.myRank.text == "10041", P.myRank.text)
+P.SetHeroNotRollingInfo("战力", 5, { heroTemplateId = 1, heroLevel = 30, heroStar = 5, userName = "我" }, 20)
+check("英雄榜有名次 → 旗重新可见", myFlag.active ~= false)
+check("英雄榜有名次 → 旗 = 自己的国家 cn",
+    myFlag._comps["Image"].sprite == "cn2-guoqi_cn", myFlag._comps["Image"].sprite)
+
+-- 通用榜单（非英雄）同样的口径
+openWith(RANK_TYPE.FORCE_CURR_RANK)
+P.SetNotRollingInfo("战力", 0)
+check("战力榜 Unranked → 我的排名旗隐藏", myFlag.active == false)
+P.SetNotRollingInfo("战力", 12)
+check("战力榜有名次 → 旗重新可见", myFlag.active ~= false)
+check("战力榜有名次 → 旗 = 自己的国家 cn",
+    myFlag._comps["Image"].sprite == "cn2-guoqi_cn", myFlag._comps["Image"].sprite)
+
+-- 公会榜：即使有名次也不该画（展示公会名，没有玩家国籍口径）
+openWith(RANK_TYPE.GUILD_FORCE_RANK)
+P.SetNotRollingInfo("战力", 3)
+check("公会榜 → 我的排名旗隐藏", myFlag.active == false)
+
+-- 切榜时序：InitNotRollingInfo 阶段先收旗，随后由 Set*NotRollingInfo 决定
+openWith(RANK_TYPE.FORCE_CURR_RANK)
+P.SetNotRollingInfo("战力", 9)          -- 先有一个有效名次
+P.InitNotRollingInfo()                  -- 模拟切到另一个榜：名次还没回来
+check("刷新中间态（名次未定）→ 旗先收掉", myFlag.active == false)
+P.SetNotRollingInfo("战力", 9)
+check("名次回来后 → 旗恢复", myFlag.active ~= false)
+
+-- ============ 9. 行级小旗：整行不渲染时必须收掉 ============
+print("\n[9] 行级小旗：param1<=0 的行不渲染内容 → 上一屏的旗必须收掉")
+local rowRoot = newGO("ItemPre")
+rowRoot:AddChild(newGO("infoGo"))
+local rowFlag = newFlag("countryFlag")
+rowRoot:AddChild(rowFlag)
+rowFlag:SetActive(true)
+P.HideRowCountryFlag(rowRoot)
+check("整行不渲染 → 行旗隐藏", rowFlag.active == false)
+
+-- ============ 10. 竞技场榜单（ArenaMainPanel_RankingSingleList）============
+print("\n[10] 竞技场榜单：我的排名旗同样受「有名次」约束")
+-- 竞技场模块顶层会调用这两个全局（图片字 / 颜色），必须先补桩
+GetPictureFont = function(n) return n end
+Color = { New = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end }
+local A = dofile(LUA_SRC .. "/Modules/Arena/View/ArenaMainPanel_RankingSingleList.lua")
+A.firsthead = newGO("firstHead")
+A.firstHeadName = newText("nameText")._comps["Text"]
+A.info0 = newText("info0")._comps["Text"]
+A.info1 = newText("info1")._comps["Text"]
+A.rank0 = newText("rank0")._comps["Text"]
+local arec = newGO("Record")
+arec:AddChild(newGO("infoGo"))
+local aFlag = newFlag("countryFlag")
+arec:AddChild(aFlag)
+A.record = arec
+A.noneImage = newGO("NoneImage")
+A.noneImage:SetActive(false)     -- 榜单有人
+A.SetNotRollingInfo("", "", "10104", "11718", 0, "10041", "", 0, "0")
+check("竞技场 Unranked → 我的排名旗隐藏", aFlag.active == false)
+A.SetNotRollingInfo("", "", "10104", "11718", 7, "10041", "", 7, "0")
+check("竞技场有名次 → 旗可见", aFlag.active ~= false)
+check("竞技场有名次 → 旗 = 自己的国家 cn",
+    aFlag._comps["Image"].sprite == "cn2-guoqi_cn", aFlag._comps["Image"].sprite)
+A.InitNotRollingInfo()
+check("竞技场刷新中间态 → 旗先收掉", aFlag.active == false)
+
+-- 非竞技榜的行（战力/试炼/兽潮/外敌/关卡/公会/点金）不画玩家旗
+local aRow = newGO("ItemPre")
+local aRowFlag = newFlag("countryFlag")
+aRow:AddChild(aRowFlag)
+aRowFlag:SetActive(true)
+A.HideCountryFlag(aRow)
+check("非竞技榜行 → 上一屏的旗收掉", aRowFlag.active == false)
+
 P.noneImage = nil  -- 还原桩，避免影响后续用例
 
 print(string.format("\n结果：%d 通过，%d 失败", pass, fail))

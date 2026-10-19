@@ -8,6 +8,19 @@ this.playerHeadList = {}--背景前三头像
 this.playerHeroListHead= {} --背景前三英雄头像 
 this.playerHeroListGo= {} --背景前三英雄头像 
 this.playerScrollHead = {}--滚动条头像
+-- 底部「我的排名」行本次刷新是否真的有名次（false = 未上榜 Unranked / 还没拿到数据）
+this.myRankValid = false
+
+--[[
+ * 名次是否有效（>= 1 才算上榜）
+ * 用 tonumber 而不是直接比较：不同榜单的 myRank 可能来自 proto（number），
+ * 也可能被某条路径塞了字符串 —— 直接 `rank < 1` 会 "attempt to compare
+ * string with number" 整条渲染中断（竞技榜踩过这个坑）。
+--]]
+local function HasValidRank(rank)
+    local n = tonumber(rank)
+    return n ~= nil and n >= 1
+end
 
 local mapNpc = "live2d_npc_map"
 local mapNpc2 = "live2d_npc_map_nv"
@@ -359,7 +372,11 @@ function this.SetArenaInfo()
         this.isRefreshNow = true
     end
     this.InitNotRollingInfo()
-    this.SetNotRollingInfo(GetLanguageStrById(11713),GetLanguageStrById(11717),GetLanguageStrById(10104),GetLanguageStrById(11718),myRankData.myRank,GetLanguageStrById(10041),"",myRankData.myRank,myRankData.myScore)
+    -- ⚠️ 第 2 个参数必须是**数字名次**：SetNotRollingInfo 里要做 `myRank < 1` 比较，
+    --    早先这里塞了 GetLanguageStrById(11717)（字符串）⇒ "attempt to compare string
+    --    with number"，整个竞技榜渲染在 SetNotRollingInfo 就中断，列表一条都不画
+    --    （表现就是「竞技榜没有国旗/没有内容」）。
+    this.SetNotRollingInfo(GetLanguageStrById(11713), myRankData.myRank)
     local dData = {
         rankInfo = {param1 = myRankData.myScore},
         score = myRankData.myScore
@@ -400,7 +417,9 @@ function this.ShowArenaInfo(root,data,myRankData)
     this.SetSelfBG(root,myRankData.myRank,data.personInfo.rank)
     this.SetRankingNum(root,data.personInfo.rank)
     this.SetHeadInfo(root,data.personInfo.head,data.personInfo.headFrame,data.personInfo.level)
-    this.SetInfoShow(Util.GetGameObject(root,"infoGo"),data,sData.rankType,Util.GetGameObject(root,"Value0"))
+    -- ⚠️ 这里必须传 personInfo（真正的玩家记录），不能传 ArenaEnemy 包装对象：
+    --    包装对象上 uid/country/name 全是 nil ⇒ 国旗只能画问号、名字也刷不出来。
+    this.SetInfoShow(Util.GetGameObject(root,"infoGo"),data.personInfo,sData.rankType,Util.GetGameObject(root,"Value0"))
 end
 
 ------------设置试炼排名信息
@@ -576,6 +595,8 @@ end
 
 --显示每条数据
 function this.ShowCustomsPassInfo(root,data,myRankData)
+    -- 本行可能整行不渲染（param1<=0）→ 先把上一屏的旗收掉
+    this.HideRowCountryFlag(root)
     if data.rankInfo.param1 > 0 then
         this.AddPlayerInfoClick(root,data.uid)
         this.SetSelfBG(root,myRankData.myRank,data.rankInfo.rank)
@@ -628,6 +649,7 @@ end
 
 --显示每条数据
 function this.ShowGuildForceInfo(root,data,myRankData)
+    this.HideRowCountryFlag(root)
     if data.rankInfo.param1 > 0 then
         this.AddPlayerInfoClick(root,data.uid)
         this.SetSelfBG(root,myRankData.myRank,data.rankInfo.rank)
@@ -680,6 +702,7 @@ end
 
 --显示每条数据
 function this.ShowGoldExperSortInfo(root,data,myRankData)
+    this.HideRowCountryFlag(root)
     if data.rankInfo.param1 > 0 then
         this.AddPlayerInfoClick(root,data.uid)
         this.SetSelfBG(root,myRankData.myRank,data.rankInfo.rank)
@@ -732,6 +755,7 @@ end
 
 --显示每条数据
 function this.ShowGoldExperGuildSortInfo(root,data,myRankData)
+    this.HideRowCountryFlag(root)
     if data.rankInfo.param1 > 0 then
         this.AddPlayerInfoClick(root,data.uid)
         this.SetSelfBG(root,myRankData.myRank,data.rankInfo.rank)
@@ -771,11 +795,6 @@ end
 
 --- 给第 index 名画国旗；data 必须是**这个名次对应的那个玩家**的记录
 function this.SetHeadFlag(index, data)
-    if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
-            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
-        HideHeadFlag(index)
-        return
-    end
     if data == nil then
         HideHeadFlag(index)
         return
@@ -783,6 +802,14 @@ function this.SetHeadFlag(index, data)
     local headRoot = HeadGoOf(index)
     if headRoot == nil or IsNull(headRoot) then
         return
+    end
+    -- 公会榜：data 是会长那条记录（uid=会长），有国家才画，没有就隐藏
+    if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
+            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
+        if data.country == nil or data.country == "" then
+            HideHeadFlag(index)
+            return
+        end
     end
     CountryFlagUtil.ApplyTo(headRoot, data.uid, data.country)
 end
@@ -856,6 +883,10 @@ function this.InitNotRollingInfo()
     this.firstHeadName.text = ""
     this.myRank.text = ""
     this.myRankName:GetComponent("Text").text = ""
+    -- 名次还没定，先按「未上榜」口径把「我的排名」行的旗收掉；
+    -- 由随后的 SetNotRollingInfo / SetHeroNotRollingInfo 决定要不要重新显示
+    this.myRankValid = false
+    this.RefreshMyRankFlag()
 end
 
 --[[
@@ -863,11 +894,20 @@ end
  *
  * 数据口径：自己的国家以 PlayerManager.country（服务端真源）为准，
  *   不能用榜单行数据 —— 这一行没有 uid/country。
- * 显示口径：公会榜展示公会名，没有国籍概念 → 隐藏。
+ * 显示口径：
+ *    · 公会榜 / 公会庆典榜：展示公会名，没有国籍概念 → 隐藏；
+ *    · 空榜（NoneImage 显示）→ 隐藏，否则空榜画面上还挂着一面自己的国旗；
+ *    · 未上榜（名次 nil / 0 / 负数，界面显示 Unranked）→ 隐藏。
+ *      🔴 这条以前漏了：榜单里有人、自己没上榜时 noneImage 是关的，
+ *      只按 noneImage 判断就留下了一面自己的旗 —— 明明是「未上榜」，
+ *      名字旁边却还有国旗，看着像「没上榜也有排名」。
  * 位置：写在 prefab 里（见 .workbuddy/tools/patch_rank_record_flag_layout.py），
  *   与 ItemPre 的一致：头像右侧、比头像中心高 25。
+ *
+ * @param hasRank 可选，本次刷新是否上榜；不传则沿用 this.myRankValid
+ *                （SetInfoShow 转交过来的调用发生在名次确定之前，必须沿用）
 --]]
-function this.RefreshMyRankFlag()
+function this.RefreshMyRankFlag(hasRank)
     if this.record == nil or IsNull(this.record) then
         return
     end
@@ -875,16 +915,23 @@ function this.RefreshMyRankFlag()
     if flagGo == nil or IsNull(flagGo) then
         return
     end
+    if hasRank ~= nil then
+        this.myRankValid = (hasRank == true)
+    end
     if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
             or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
         flagGo:SetActive(false)
         return
     end
-    -- 空榜（NoneImage 显示）时本行没有可展示的名次，小旗要跟着 NoneImage 一起隐藏，
-    -- 否则空榜画面上还挂着一面自己的国旗。
+    -- 空榜（NoneImage 显示）时本行没有可展示的名次，小旗要跟着 NoneImage 一起隐藏。
     -- 时序依据：所有 Set*Info 路径都是先设 noneImage 再调 SetNotRollingInfo/SetHeroNotRollingInfo，
     -- 所以这里读 noneImage.activeSelf 拿到的一定是本次刷新的最新口径。
     if this.noneImage ~= nil and not IsNull(this.noneImage) and this.noneImage.activeSelf then
+        flagGo:SetActive(false)
+        return
+    end
+    -- 未上榜（Unranked）：头像已经收掉了，旗也必须一起收
+    if not this.myRankValid then
         flagGo:SetActive(false)
         return
     end
@@ -899,11 +946,13 @@ function this.SetNotRollingInfo(...)
     local topEndName = args[1]      -- 最后一列标题名
     local myRank = args[2]          -- 名次
 
-    -- 底部「我的排名」行的国家小旗：用玩家自己的国家
+    -- 底部「我的排名」行的国家小旗：有名次才有旗（未上榜 Unranked 必须隐藏）
+    this.myRankValid = HasValidRank(myRank)
     this.RefreshMyRankFlag()
 
     this.TextTopEnd.text = topEndName
-    if not myRank or myRank < 1 then
+    -- 与上面同一个判定口径（tonumber 兜住字符串名次，避免 compare string with number）
+    if not HasValidRank(myRank) then
         this.myRank.text = GetLanguageStrById(10041)
         this.MyRankHead:SetActive(false)
     else
@@ -1020,6 +1069,28 @@ function this.CheckTabCtrlIsLockS(type,des)
 end
 
 --[[
+ * 行级小旗：这一行本轮不渲染内容时（param1<=0 / 行还没填数据）必须把旗收掉。
+ * 行是循环复用的，不收就会留着上一屏那个人的国旗 —— 名字换了、旗还是旧的。
+--]]
+function this.HideRowCountryFlag(root)
+    if root == nil or IsNull(root) then
+        return
+    end
+    local infoGo = Util.GetGameObject(root, "infoGo")
+    if infoGo == nil or IsNull(infoGo) then
+        return
+    end
+    local parent = infoGo.transform.parent
+    if parent == nil then
+        return
+    end
+    local flagGo = Util.GetGameObject(parent.gameObject, "countryFlag")
+    if flagGo ~= nil and not IsNull(flagGo) then
+        flagGo:SetActive(false)
+    end
+end
+
+--[[
  * 刷新榜单行的国家小旗
  *
  * go 是每行的 infoGo，countryFlag 是它的兄弟节点，
@@ -1030,7 +1101,7 @@ end
  *    把 SetNotRollingInfo 刚设好的正确国旗覆盖掉 ⇒ 这里直接转交 RefreshMyRankFlag。
 --]]
 function this.UpdateCountryFlag(go, data)
-    if go == nil or IsNull(go) or data == nil then
+    if go == nil or IsNull(go) then
         return
     end
     local parent = go.transform.parent
@@ -1041,17 +1112,26 @@ function this.UpdateCountryFlag(go, data)
         this.RefreshMyRankFlag()
         return
     end
-    -- 公会榜展示的是公会名，玩家没有对应国家，用公会主体国家不合适 → 隐藏
-    if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
-            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
-        local flagGo = Util.GetGameObject(parent.gameObject, "countryFlag")
-        if flagGo and not IsNull(flagGo) then
-            flagGo:SetActive(false)
-        end
-        return
-    end
     local flagGo = Util.GetGameObject(parent.gameObject, "countryFlag")
     if flagGo == nil or IsNull(flagGo) then
+        return
+    end
+    -- 没有数据（这一行没内容 / 参数为 0）：隐藏，不能用上一屏的旗冒名顶替
+    if data == nil then
+        flagGo:SetActive(false)
+        return
+    end
+    -- 公会榜：行数据 uid 是**会长**（服务端 GuildForceRank / GuildSheJiScoreRank 都按会长组包），
+    -- 所以国旗口径 = 会长国籍；会长没选国家时隐藏而不是画问号旗
+    -- （问号旗的含义是「这个人没选」，挂在公会名旁边像数据错）。
+    if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
+            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
+        if data.country == nil or data.country == "" then
+            flagGo:SetActive(false)
+        else
+            flagGo:SetActive(true)
+            CountryFlagUtil.Apply(flagGo, data.uid, data.country)
+        end
         return
     end
     flagGo:SetActive(true)
@@ -1142,15 +1222,19 @@ function this.SetInfoShow(go,data,rankType,name)
             Util.GetGameObject(goldExper, "Text"):GetComponent("Text").text = data.rankInfo.param1
         end
     elseif rankType == RANK_TYPE.ARENA_RANK then
-        -- if data.personInfo.score and data.personInfo.score > 0 then
-            arenaScore:SetActive(true)
-            if name then
-                name:GetComponent("Text").text = data.userName
-                Util.GetGameObject(go,"arenaScore"):GetComponent("Text").text = GetLanguageStrById(12241) ..  data.personInfo.score
-            else
-                Util.GetGameObject(go,"arenaScore"):GetComponent("Text").text = GetLanguageStrById(12241) ..  data.score
-            end
-        -- end
+        -- data 现在是 personInfo（ArenaPersonInfo）：名字在 name、积分在 score。
+        -- 兼容老调用（包装对象）保留 data.userName / data.personInfo.score 两条兜底。
+        local arenaName = data.name or data.userName
+        local arenaScoreVal = data.score
+        if arenaScoreVal == nil and data.personInfo ~= nil then
+            arenaScoreVal = data.personInfo.score
+        end
+        arenaScoreVal = arenaScoreVal or 0
+        arenaScore:SetActive(true)
+        if name then
+            name:GetComponent("Text").text = arenaName or ""
+        end
+        Util.GetGameObject(go,"arenaScore"):GetComponent("Text").text = GetLanguageStrById(12241) .. tostring(arenaScoreVal)
     elseif rankType == RANK_TYPE.CLIMB_TOWER then
         if data.rankInfo.param1 and data.rankInfo.param1 > 0 then
             climbTower:SetActive(true)
@@ -1348,9 +1432,11 @@ function this.SetHeroNotRollingInfo(...)
     local data = args[3]                      -- 我的英雄数据
     local length = args[4]+OffsetTop+1        -- 未设缓存列表为当前最大长度
     this.TextTopEnd.text = topEndName
-    -- 英雄榜不走 SetNotRollingInfo，「我的排名」行的旗要自己刷，否则留着上一屏的
+    -- 英雄榜不走 SetNotRollingInfo，「我的排名」行的旗要自己刷，否则留着上一屏的；
+    -- 名次同样决定旗的可见性（Unranked → 隐藏）
+    this.myRankValid = HasValidRank(myRank)
     this.RefreshMyRankFlag()
-    if not myRank or myRank < 1 then
+    if not HasValidRank(myRank) then
         this.myRank.text = GetLanguageStrById(10041)
         this.MyRankHeroHead:SetActive(false)
     else

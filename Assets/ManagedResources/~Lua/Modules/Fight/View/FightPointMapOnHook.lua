@@ -35,6 +35,11 @@ local ULT_HERO_PERCENT = 70   -- 大招台词里英雄专属的占比（%），�
 local ULT_OPEN_PERCENT = 55   -- 每场战斗「有人开局就放大招」的概率（%）
 local ULT_HIT_CAP = 3         -- 挂机里的大招最多打 3 段（原生 12 段会把飘字刷满屏）
 
+-- 最近说过的台词记忆条数：两个位置同帧说话、以及相邻几场之间靠它去重。
+-- 要 ≥ 通用池规模（20 条），否则连打几场就会把最早说过的忘掉、开始整池循环重复；
+-- 但也不能太大（英雄专属只有 2 条，记太久会把人家两句全堵死，只剩兜底重复）。取 24。
+local TALK_RECENT_CAP = 24
+
 ---地图资源名 -> 场景池 Type；不是 MapN 形态就返回 nil（只是不说话，不报错）
 local function MapTalkTypeFromName(mapName)
     if type(mapName) ~= "string" then
@@ -67,6 +72,57 @@ local function BuildTalkPool(rows, heroId, mapType, roll)
         return mapTalk
     end
     return heroAndGeneric
+end
+
+---从候选池里挑一条「最近没说过」的台词
+---同一次 HeroTalk 的两个气泡共用一个 recent（第一条挑完立刻入表），
+---所以两个人不会同帧说同一句；跨场战斗也共用，相邻几场不会翻来覆去那一句。
+---@param pool table 候选语言 Id 列表
+---@param recent table 已说过的 Id 列表（先进先出，长度上限 TALK_RECENT_CAP）
+---@param avoid table|nil 本轮正在显示的 Id（同帧第二个人必须避开，池子再小也不能撞）
+---@return number|string|nil 选中的语言 Id；池为空时返回 nil
+local function PickFreshTalk(pool, recent, avoid)
+    if pool == nil or #pool == 0 then
+        return nil
+    end
+    recent = recent or {}
+
+    local used = {}
+    for i = 1, #recent do
+        used[recent[i]] = true
+    end
+
+    local function usable(id)
+        return not (avoid ~= nil and avoid[id])
+    end
+
+    local fresh = {}
+    for i = 1, #pool do
+        local id = pool[i]
+        if not used[id] and usable(id) then
+            table.insert(fresh, id)
+        end
+    end
+    -- 池子被历史掏空（例如英雄只有 2 句且都刚说过）：放宽「最近说过」，但仍然避开本轮正在显示的
+    if #fresh == 0 then
+        for i = 1, #pool do
+            local id = pool[i]
+            if usable(id) then
+                table.insert(fresh, id)
+            end
+        end
+    end
+    -- 池里只有 1 条又正好在显示：只能重复，总比不说话好
+    if #fresh == 0 then
+        fresh = pool
+    end
+
+    local id = fresh[math.random(1, #fresh)]
+    table.insert(recent, id)
+    while #recent > TALK_RECENT_CAP do
+        table.remove(recent, 1)
+    end
+    return id
 end
 
 ----------------------------------------------------------------------
@@ -469,6 +525,9 @@ function this:Init()
     liveNodesLeft = {}
     liveNodesRight = {}
     this:ClearTalkTimers()
+    -- 台词记忆跨场保留（同一面板里连打几十场，靠它避免相邻两场说同一句）；
+    -- 面板销毁时在 Dispose 里清空。
+    this.talkRecent = this.talkRecent or {}
     talkPosList = {}
     talkNum = 0
     turnArrayLeft = {}
@@ -650,7 +709,7 @@ function this:ShowUltTalk(pos)
         return false
     end
     -- 2.2s：大招 KeyFrame 0.55~2.2s，气泡从起手一直留到伤害结算之后一点
-    return this:ShowTalk(pos, pool[math.random(1, #pool)], 2.2)
+    return this:ShowTalk(pos, PickFreshTalk(pool, this.talkRecent), 2.2)
 end
 
 ---每场战斗开场前抽签：至多 1 个我方单位这一场的第一招是大招
@@ -683,6 +742,8 @@ function this:HeroTalk()
     end
     local rand1,rand2 = this:RandTalkPos(r)
 
+    -- 本轮正在显示的两句：第一个人挑完立刻登记，第二个人挑的时候必须避开
+    local shownNow = {}
     local talk = function (_rand)
         -- 候选池：英雄专属 + 通用池，或者当前场景池（40% 概率，见 BuildTalkPool）
         local pool = BuildTalkPool(afkSpeak, talkPosList[_rand].Id, this.curMapType, math.random(1, 100))
@@ -691,7 +752,12 @@ function this:HeroTalk()
             return
         end
 
-        this:ShowTalk(_rand, pool[math.random(1,#pool)], 2.5)
+        local langId = PickFreshTalk(pool, this.talkRecent, shownNow)
+        if langId == nil then
+            return
+        end
+        shownNow[langId] = true
+        this:ShowTalk(_rand, langId, 2.5)
     end
     if rand1 and rand1 ~= 0 then
         talk(rand1)
@@ -2005,6 +2071,8 @@ function this:Dispose()
     isPlay = false
     -- 气泡的收起定时器不属于 DelayFunc 列表，必须单独停：否则面板关了还会去碰已销毁的节点
     this:ClearTalkTimers()
+    -- 台词记忆随面板一起作废，下次开面板从空白开始
+    this.talkRecent = {}
     -- 地图渲染器缓存跟着这一轮播放一起作废；下次 OnShow 会重新 UpdateMap 重建
     mapMeshRenderers = {}
     this.mapRoot = nil
@@ -2087,6 +2155,8 @@ end
 
 --暴露给 scripts/lua-tests（纯函数，不碰 UI）
 this.BuildTalkPool = BuildTalkPool
+this.PickFreshTalk = PickFreshTalk
+this.TALK_RECENT_CAP = TALK_RECENT_CAP
 this.MapTalkTypeFromName = MapTalkTypeFromName
 this.MAP_TALK_PERCENT = MAP_TALK_PERCENT
 this.BuildUltPool = BuildUltPool

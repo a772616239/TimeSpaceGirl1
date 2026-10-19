@@ -753,6 +753,7 @@ message TeamOneInfo{
 		optional int32 substituteTid = 18;   	    //替补模板ID
 		optional int32 substituteLevel = 19;	    //替补等级
 		optional int32 substituteStar = 20;	        //替补星级
+		optional string country = 21;	            //玩家国家/地区码（小写 cn/us/jp…，空=未选）；玩家信息面板显示国旗用
 	}
 	
 	//妖兽排行

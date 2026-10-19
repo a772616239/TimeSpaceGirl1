@@ -9,8 +9,9 @@
 - 🔴 **日志在 `/usr/local/var/log/jenkins/error.log`**（异常栈）与 `output.log`（启动）。`~/.jenkins/logs/` 里没有主日志。
 - 凭据 `~/.jenkins/.qclaw-creds`（`JENKINS_URL` / `JENKINS_USER=a772616239` / `JENKINS_TOKEN`）。
 - 安全：`useSecurity=true` + `FullControlOnceLoggedInAuthorizationStrategy` + `denyAnonymousReadAccess`。
-- 视图 **「时空美少女 · 全流程」**，7 个 job：`TS-Pipeline-Overview` / `TS-Android-Release` /
-  `TS-Android-TestPackage` / `TS-Client-Resources` / `TS-Server-Health` / `TS-Server-Ops` / `TS-Play-Watch`。
+- 视图 **「时空美少女 · 全流程」**，8 个 job：`TS-Pipeline-Overview` / `TS-Android-Release` /
+  `TS-Android-TestPackage` / `TS-Client-Resources` / `TS-Server-Health` / `TS-Server-Ops` /
+  `TS-Server-Release` / `TS-Play-Watch`。
 - 装了 `pipeline-graph-view`（stage 图来源），**没装** `pipeline-stage-view` ⇒ `/wfapi/describe` 是 404（别误判成坏了）。
   也**没装** `blueocean` / `build-user-vars` / `ansi-color` / `lockable-resources` / `htmlpublisher`。
 
@@ -55,9 +56,31 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode 'json={"parameter":[]}' \
 ## 可视化四件套（用户要求的「各环节可视化」）
 ① stage 图（嵌套 `stages` 分组，pipeline-graph-view）② JUnit 表格+趋势（warn/skip → `<skipped message="[WARN] …">`）
 ③ `currentBuild.description` 单行结论 ④ `evidence/**` 归档。
+`TS-Server-Release` 多第五件：**自包含 HTML 发布看板**（另拷到 `userContent/TS-Server-Release-latest.html` 固定地址）。
 **球色**：有 warn 无 fail ⇒ `UNSTABLE`（黄球）——「没坏，但值得看一眼」，全绿/全红都表达不了。
+🔴 **但 warn 必须与「真会造成的后果」对齐**：`TS-Server-Release #3` 曾因线上有 1 条长连接把**演练**染黄，
+一改就绿（`will_restart` = `DEPLOY=true` 且 `RESTART≠none`，或 rollback）。误报多了就没人看颜色了。
 **分级降级**：`run_stage.sh --warn-rc 3`；`android_env.sh` rc=3 = 「环境就绪但被 Unity 编辑器占用」（临时状态），
 总览用 `--warn-rc 3` 标黄，打包 job 不加 ⇒ rc=3 当硬阻塞。
+
+## 服务端代码发包正式服（`TS-Server-Release`，2026-10-19 建，`4097b8c32`）
+> 全量口径 → `docs/jenkins_ci.md` §3.4；这里只留红线。
+
+- 🔴 **注入基线＝线上 jar**，只 `zip -u` 逐条目差异。**不要用 `server_game/package.sh` 全量包**：
+  那会把线上没上线的改动回退、还带走 `conf/`+`assets/` 运行时数据（2026-10-18 定论）。
+  `META-INF/* / application*.properties / *.properties / *.xml` 默认**永不注入**（改 MANIFEST = 换整条依赖链）。
+- 🔴 协议类在 `lib/gamecommon-1.0.0-SNAPSHOT.jar` ⇒ gameSrv 与 gamecommon **必须同批注入**；换协议两 jar 一起动。
+- 🔴 编译在 `git worktree` 里做（主工作区常年有并行会话），JDK8 + `GRADLE_USER_HOME=server_game/.gradle_home`，
+  只编 `:serverlogic:jar :chatserver:jar`（根 `gradle build` 会挂在 worldserver）。
+- 🔴 记录三件只 `git add` 那三个路径（绝不 `-A`）；tag `rel-<stamp>`。
+- 🔴 **推送＝打包成功就推，一次 `git push --atomic origin <br> rel-<stamp>`**（2026-10-19 口径变更，
+  `#5` 实测 origin 上分支+tag 都到位）。演练也推：差别只是「有没有动生产」，不该连可追溯性也差别对待。
+  分两次推会留「有分支没标签」的半截状态 ⇒ 必须 atomic，不支持再退回逐条。`PUSH_BRANCH=false` 可关。
+- 🔴 预检的「脏」要分**构建残留**（`.gradle_home/`、`dist/`、`lib/*.jar`，只报告）与**源码改动**（阻断）；
+  一刀切当脏 ⇒ 永远过不去（这仓把 gradle 缓存也纳了版本管理）。
+- 🔴 `zip -u` 前必须 `touch` 全部条目（zip 按 mtime 2 秒粒度判更新，同秒静默跳过）⇒
+  这就是为什么 ⑩ 要用 `verify-selected` 重新拉线上 jar 逐条目核对 CRC，而不是看 `zip` 的 rc。
+- 现状：演练 `#1/#2/#4` SUCCESS；**`DEPLOY=true` 未实跑**（写生产 + 重启踢线），首次需明确授权。
 
 ## 状态（2026-10-13 傍晚实跑核对）
 - 7 个 job 定义与视图已核对：`lint.sh` 四道全绿（7/7 语法通过）、`apply-jobs.sh --dry-run` **7/0**。

@@ -221,9 +221,47 @@ function BattlePanel:UnGreyAndFrie_Skill(skill,camp,index,role)
  end
 
 
+-- 技能名条（myRect_Skill / enemyRect_Skill）停留时长：真实秒
+-- 🔴 计时必须 unscaled（第 4 个参数 true）。默认走 Time.deltaTime，会跟着战斗倍速跑，
+--    3 倍速下「3 秒」真实只剩 1 秒，跟着技能条走的大招小卡（HelpHeroMiniCard_Mine）会被连带提前关掉。
+local RECT_SKILL_SHOW_TIME = 3
+
+local function IsAlive(go)
+    return go ~= nil and not IsNull(go)
+end
+
+-- 亮出技能名条，并重开这一条自己的停留计时
+-- 🔴 同一个条只允许持有一个隐藏定时器：新一次显示先 Stop 旧的再起新的。
+--    旧写法每次 New 一个 3 秒 Timer 却从不 Stop，一场里我方多个英雄接连放技能时，
+--    最先起的那个定时器会到点把刚落上的条关掉（最短只剩几十毫秒），
+--    表现就是「技能条闪一下就没了」，跟着它的卡片也一起消失。
+function BattlePanel:ShowSkillBar(barNode, timerField)
+    if not IsAlive(barNode) then
+        return
+    end
+
+    local oldTimer = this[timerField]
+    if oldTimer then
+        oldTimer:Stop()
+        this[timerField] = nil
+    end
+
+    barNode:SetActive(true)
+
+    local timer = Timer.New(function ()
+        if this[timerField] == timer then
+            this[timerField] = nil
+        end
+        if IsAlive(barNode) then
+            barNode:SetActive(false)
+        end
+    end, RECT_SKILL_SHOW_TIME, 1, true)
+    this[timerField] = timer
+    timer:Start()
+end
+
 function BattlePanel:ShowRect_Skill(roleIcon, skillName, index, isLead)
     if index == 1 then
-        this.myRect_Skill:SetActive(true)
         if isLead then
             this.myRect_Skill_title.sprite = Util.LoadSprite(GetPictureFont("cn2-X1_guaji_jinengmingzi_04"))
         else
@@ -232,11 +270,8 @@ function BattlePanel:ShowRect_Skill(roleIcon, skillName, index, isLead)
         this.myRect_Skill_Icon.sprite = Util.LoadSprite(GetResourcePath(roleIcon))
         this.myRect_Skill_SkillName.text = GetLanguageStrById(skillName)
         this.myRect_Skill_title:SetNativeSize()
-        Timer.New(function ()
-            this.myRect_Skill:SetActive(false)
-        end, 3):Start()
+        this:ShowSkillBar(this.myRect_Skill, "myRect_SkillTimer")
     elseif index == 2 then
-        this.enemyRect_Skill:SetActive(true)
         if isLead then
             this.enemyRect_Skill_title.sprite = Util.LoadSprite(GetPictureFont("cn2-X1_guaji_jinengmingzi_04"))
         else
@@ -245,9 +280,7 @@ function BattlePanel:ShowRect_Skill(roleIcon, skillName, index, isLead)
         this.enemyRect_Skill_Icon.sprite = Util.LoadSprite(GetResourcePath(roleIcon))
         this.enemyRect_Skill_SkillName.text = GetLanguageStrById(skillName)
         this.enemyRect_Skill_title:SetNativeSize()
-        Timer.New(function ()
-            this.enemyRect_Skill:SetActive(false)
-        end, 3):Start()
+        this:ShowSkillBar(this.enemyRect_Skill, "enemyRect_SkillTimer")
     end
 end
 
@@ -1168,6 +1201,16 @@ end
 
 --界面销毁时调用（用于子类重写）
 function this:OnDestroy()
+
+    --技能名条的收尾定时器（节点马上销毁，留着只会空跑一次）
+    if this.myRect_SkillTimer then
+        this.myRect_SkillTimer:Stop()
+        this.myRect_SkillTimer = nil
+    end
+    if this.enemyRect_SkillTimer then
+        this.enemyRect_SkillTimer:Stop()
+        this.enemyRect_SkillTimer = nil
+    end
 
     --地图销毁
     GameObject.Destroy(this.mapGameObject)

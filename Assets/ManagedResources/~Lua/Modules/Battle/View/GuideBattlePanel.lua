@@ -14,9 +14,42 @@ local fightType -- 1关卡 2副本 3限时怪, 5兽潮, 6新关卡, 7公会boss
 local orginLayer
 
 
+-- 技能名条停留时长：真实秒（unscaled），与 BattlePanel 保持一致
+-- 🔴 教学关这份是独立拷贝，同样要「一个条只持有一个隐藏定时器」，
+--    否则连续放技能时先前的定时器会把刚亮的条提前关掉，连带关掉大招小卡。
+local RECT_SKILL_SHOW_TIME = 3
+
+local function IsAlive(go)
+    return go ~= nil and not IsNull(go)
+end
+
+local function ShowSkillBar(barNode, timerField)
+    if not IsAlive(barNode) then
+        return
+    end
+
+    local oldTimer = this[timerField]
+    if oldTimer then
+        oldTimer:Stop()
+        this[timerField] = nil
+    end
+
+    barNode:SetActive(true)
+
+    local timer = Timer.New(function ()
+        if this[timerField] == timer then
+            this[timerField] = nil
+        end
+        if IsAlive(barNode) then
+            barNode:SetActive(false)
+        end
+    end, RECT_SKILL_SHOW_TIME, 1, true)
+    this[timerField] = timer
+    timer:Start()
+end
+
 function this:ShowRect_Skill(roleIcon,skillName,index,isLead)
     if index == 1 then
-        this.myRect_Skill:SetActive(true)
         this.myRect_Skill_Icon.sprite = Util.LoadSprite(GetResourcePath(roleIcon))
         this.myRect_Skill_SkillName.text = GetLanguageStrById(skillName)
         if isLead then
@@ -24,11 +57,8 @@ function this:ShowRect_Skill(roleIcon,skillName,index,isLead)
         else
             this.myRect_Skill_title.sprite = Util.LoadSprite("cn2-X1_guaji_jinengmingzi_01_zh")
         end
-        Timer.New(function ()
-            this.myRect_Skill:SetActive(false)
-        end, 3):Start()
+        ShowSkillBar(this.myRect_Skill, "myRect_SkillTimer")
     elseif index == 2 then
-        this.enemyRect_Skill:SetActive(true)
         this.enemyRect_Skill_Icon.sprite = Util.LoadSprite(GetResourcePath(roleIcon))
         this.enemyRect_Skill_SkillName.text = GetLanguageStrById(skillName)
         if isLead then
@@ -36,9 +66,7 @@ function this:ShowRect_Skill(roleIcon,skillName,index,isLead)
         else
             this.enemyRect_Skill_title.sprite = Util.LoadSprite("cn2-X1_guaji_jinengmingzi_01_zh")
         end
-        Timer.New(function ()
-            this.enemyRect_Skill:SetActive(false)
-        end, 3):Start()
+        ShowSkillBar(this.enemyRect_Skill, "enemyRect_SkillTimer")
     end
 end
 
@@ -268,6 +296,16 @@ end
 
 --界面销毁时调用（用于子类重写）
 function this:OnDestroy()
+    --技能名条的收尾定时器
+    if this.myRect_SkillTimer then
+        this.myRect_SkillTimer:Stop()
+        this.myRect_SkillTimer = nil
+    end
+    if this.enemyRect_SkillTimer then
+        this.enemyRect_SkillTimer:Stop()
+        this.enemyRect_SkillTimer = nil
+    end
+
     --地图销毁
     GameObject.Destroy(this.mapGameObject)
     this.mapGameObject = nil

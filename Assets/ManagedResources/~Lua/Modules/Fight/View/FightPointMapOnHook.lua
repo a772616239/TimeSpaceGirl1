@@ -2051,7 +2051,7 @@ function this.SetEffect(pos, boxState)
 end
 
 -- 战利品线 eff_UI_loot_line 飞到宝箱身上的那一下：宝箱弹性回弹（撞到的反馈）
-local BOX_HIT_SQUASH = 0.84   -- 撞击瞬间压到原大的 84%
+local BOX_HIT_SQUASH = 0.74   -- 撞击瞬间压到原大的 74%
 local BOX_HIT_DURATION = 0.5  -- 回弹时长（秒）
 local boxHitTween = nil       -- 当前回弹的 tween（再撞一次要先 Kill，避免缩放叠加）
 local boxHitTarget = nil      -- 被弹的节点
@@ -2080,7 +2080,7 @@ local function PlayBoxHitBounce()
 
     -- 撞到的那一帧直接压扁，再 OutElastic 弹回原大（自带过冲再到位的抖动）
     target.localScale = Vector3.New(boxHitBaseScale.x * BOX_HIT_SQUASH, boxHitBaseScale.y * BOX_HIT_SQUASH, boxHitBaseScale.z)
-    boxHitTween = target:DOScale(boxHitBaseScale, BOX_HIT_DURATION):SetEase(Ease.OutElastic, 1.6):OnComplete(function ()
+    boxHitTween = target:DOScale(boxHitBaseScale, BOX_HIT_DURATION):SetEase(Ease.OutElastic, 1.8):OnComplete(function ()
         boxHitTween = nil
         -- 面板可能已经在回弹途中关掉，节点 being destroyed 时写 localScale 会报错
         if not boxHitTarget or IsNull(boxHitTarget) or boxHitBaseScale == nil then

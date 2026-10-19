@@ -29,7 +29,8 @@ message ChatInfo{
 	optional int32 job = 24; //职务 0无工会 1:会长 2:管理员 3:一般成员
     optional int32 serverId = 25; //服务器ID
     optional string serverName = 26; //服务器名称
-    optional bool showVip = 27;//VIP显示
+	optional bool showVip = 27;//VIP显示
+	optional string country = 28;//发送者国家码（国旗）
 }
 
 message GetChatMessageInfoRequest {

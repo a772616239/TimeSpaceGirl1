@@ -1,4 +1,5 @@
 require("Base/BasePanel")
+require("Modules/CountryRank/CountryFlagUtil")
 local ChatPanel = Inherit(BasePanel)
 local this = ChatPanel
 local itemConfig = ConfigManager.GetConfig(ConfigName.ItemConfig)
@@ -502,6 +503,35 @@ function this.ChatItemAdapter(node, data, isShowTime, isShowServerName)
 	local CH = Util.GetGameObject(node, "contentroot/bg/info/title/title"):GetComponent("Image")
 	local CHison = Util.GetGameObject(node, "contentroot/bg/info/title")
     local vip = Util.GetGameObject(node, "base/vip"):GetComponent("Image")
+
+    --[[
+     * 国家小旗（节点 contentroot/bg/info/name/countryFlag，见 patch_chat_flag.py）
+     *
+     * 数据来自服务端 ChatInfo.country（field 28）。没下发时显示问号占位旗，
+     * 与排行榜/玩家信息面板同一条规则。走 CountryFlagUtil.Apply 而不是直接设
+     * sprite：自己的消息会被登记，改旗后由 CountryRankManager.SetPlayerCountry
+     * 触发的 RefreshSelfFlags 就地重画，不用重开面板。
+    --]]
+    local flagGo = Util.GetGameObject(node, "contentroot/bg/info/name/countryFlag")
+    if flagGo ~= nil then
+        -- 系统消息 / 广播（senderId 为 0 或空）没有国籍：不画旗，并把名字挪回原位；
+        -- 有国籍的才画（且把名字让开 52px，与 prefab 里 patch_chat_flag.py 的改法一致）
+        local senderId = tonumber(data.senderId)
+        local showFlag = senderId ~= nil and senderId > 0
+        flagGo:SetActive(showFlag)
+        local nameRt = name.gameObject:GetComponent("RectTransform")
+        if nameRt ~= nil then
+            local baseX = isMyChat and 0 or 1.1
+            local x = baseX
+            if showFlag then
+                x = isMyChat and (baseX - 52) or (baseX + 52)
+            end
+            nameRt.anchoredPosition = Vector2.New(x, nameRt.anchoredPosition.y)
+        end
+        if showFlag then
+            CountryFlagUtil.Apply(flagGo, senderId, data.country)
+        end
+    end
 
     -- 判断是否显示时间
     time:SetActive(isShowTime)

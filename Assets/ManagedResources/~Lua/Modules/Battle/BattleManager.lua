@@ -1933,9 +1933,9 @@ function BattleManager.ResetCVDatas()
 end
 
 ---战场相机根节点（BattleScene/CameraRoot）的本地 Y 高度
----挂机场景沿用 prefab 默认值 0，战斗内抬高到 -1.57；两者各自 Instantiate，互不影响
+---挂机场景沿用 prefab 默认值 0，战斗内抬高到 -1.5；两者各自 Instantiate，互不影响
 BattleManager.CAMERA_ROOT_Y_HOOK = 0
-BattleManager.CAMERA_ROOT_Y_BATTLE = -1.57
+BattleManager.CAMERA_ROOT_Y_BATTLE = -1.5
 
 ---设置战场相机根节点高度（唯一收口，别在别处直接改 CameraRoot）
 ---@param battleScene any BattleScene 实例

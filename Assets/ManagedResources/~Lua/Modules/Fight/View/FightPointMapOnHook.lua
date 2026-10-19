@@ -40,6 +40,10 @@ local ULT_HIT_CAP = 3         -- 挂机里的大招最多打 3 段（原生 12 �
 -- 但也不能太大（英雄专属只有 2 条，记太久会把人家两句全堵死，只剩兜底重复）。取 24。
 local TALK_RECENT_CAP = 24
 
+-- 气泡统一延长停留：策划反馈"字还没看完就收起来了"，所有 Bg/talk 气泡
+-- （英雄闲聊 + 大招台词）在各自时长基础上多留 1.5s 再播收起动画。
+local TALK_HOLD_EXTRA = 1.5
+
 ---地图资源名 -> 场景池 Type；不是 MapN 形态就返回 nil（只是不说话，不报错）
 local function MapTalkTypeFromName(mapName)
     if type(mapName) ~= "string" then
@@ -649,7 +653,8 @@ end
 ---在指定位置冒一个气泡
 ---@param pos number 1~9，对应 Bg/talk/textN
 ---@param langId number|string Language 表 id
----@param duration number 停留秒数（之后播收起动画再 SetActive(false)）
+---@param duration number 停留秒数（之后播收起动画再 SetActive(false)）；
+---                       实际停留 = duration + TALK_HOLD_EXTRA，调用处不用再各加一遍
 function this:ShowTalk(pos, langId, duration)
     local node = this.talkList and this.talkList[pos]
     if node == nil or IsNull(node) or langId == nil then
@@ -692,7 +697,7 @@ function this:ShowTalk(pos, langId, duration)
         end, hold)
         this.talkTimers[pos] = hideTimer
         hideTimer:Start()
-    end, duration or 2.5)
+    end, (duration or 2.5) + TALK_HOLD_EXTRA)
     this.talkTimers[pos] = timer
     timer:Start()
     return true
@@ -1036,6 +1041,14 @@ function this:HeroAttack()
             this:ShowUltTalk(turnIdx)
         end
 
+        -- 出手方的显示节点在这里就定死，后面所有延迟回调都用这个快照。
+        -- 不能到回调里再读 dataAttack.livego：防守方阵亡时 RoleOnDead 会把
+        -- turnArray[pos].livego 置 nil，而本函数在 this:turn() 之后还会有
+        -- ReturnTime 级的延时回位，这中间该单位完全可能已经被打死，
+        -- 回调里再读就是 nil，DoMoveFight 里 go.transform 直接抛
+        -- "attempt to index local 'go' (a nil value)"，整条攻击链路断在这里。
+        local livegoAttack = dataAttack.livego
+
         local targetIndex = this:randDefendPos()
 
         if dataAttack.combat.Move == 0 then
@@ -1129,7 +1142,7 @@ function this:HeroAttack()
                 self:DelayFunc(dataAttack.combat.ReturnTime / 1000 - 3 * BattleLogic.GameDeltaTime, function()
                     --hit effect finish
                     --go back
-                    this:DoMoveFight(dataAttack.livego, roleLivePosAttack[turnIdx].transform.localPosition, 3 * BattleLogic.GameDeltaTime, _goBackFinish)
+                    this:DoMoveFight(livegoAttack, roleLivePosAttack[turnIdx].transform.localPosition, 3 * BattleLogic.GameDeltaTime, _goBackFinish)
                 end)
 
                 if dataAttack.combat.SkillSound then
@@ -1143,9 +1156,9 @@ function this:HeroAttack()
 
             --移动到目标点
             if not isLeftTurn then
-                this:DoMoveFight(dataAttack.livego, roleLivePosDefend[targetIndex].transform.localPosition + Vector3.New(-3, 0, -0.1), 3 * BattleLogic.GameDeltaTime, _MoveFinish)
+                this:DoMoveFight(livegoAttack, roleLivePosDefend[targetIndex].transform.localPosition + Vector3.New(-3, 0, -0.1), 3 * BattleLogic.GameDeltaTime, _MoveFinish)
             else
-                this:DoMoveFight(dataAttack.livego, roleLivePosDefend[targetIndex].transform.localPosition + Vector3.New(3, 0, -0.1), 3 * BattleLogic.GameDeltaTime, _MoveFinish)
+                this:DoMoveFight(livegoAttack, roleLivePosDefend[targetIndex].transform.localPosition + Vector3.New(3, 0, -0.1), 3 * BattleLogic.GameDeltaTime, _MoveFinish)
             end
             
         end
@@ -1420,6 +1433,12 @@ function this:MoveBgImage(bgImage, speed, deltaTime, offset, normalWidth)
 end
 
 function this:DoMoveFight(go, tarpos, dur, func)
+    -- 兜底：go 为 nil（数据侧已被 RoleOnDead 清掉）或已被销毁（换场/关面板）时直接放弃这次位移。
+    -- 这里故意不调 func：调用方传进来的都是"位移完成后接着放技能"的回调，
+    -- 单位都没了还继续播特效/结算伤害只会连锁报错；回合推进由 this:turn() 独立驱动，不会卡住。
+    if go == nil or IsNull(go) or tarpos == nil then
+        return
+    end
     local oldpt = go.transform.localPosition
     DoTween.To(
     DG.Tweening.Core.DOGetter_float(
@@ -1429,6 +1448,10 @@ function this:DoMoveFight(go, tarpos, dur, func)
     ),
     DG.Tweening.Core.DOSetter_float(
         function(progress)
+            -- tween 是按帧跑的，中途对象可能被销毁，每帧都要重新确认
+            if go == nil or IsNull(go) then
+                return
+            end
             go.transform.localPosition = Vector3.Lerp(oldpt, tarpos, progress)
         end
     ),
@@ -1436,6 +1459,10 @@ function this:DoMoveFight(go, tarpos, dur, func)
     dur
     ):SetEase(Ease.Linear):OnComplete(
         function()
+            -- 中途被销毁就别再往下走技能流程了
+            if go == nil or IsNull(go) then
+                return
+            end
             if func then
                 func()
             end

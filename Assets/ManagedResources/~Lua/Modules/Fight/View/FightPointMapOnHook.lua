@@ -2050,6 +2050,46 @@ function this.SetEffect(pos, boxState)
     SoundManager.PlaySound(SoundConfig.Sound_FightArea_Gold)
 end
 
+-- 战利品线 eff_UI_loot_line 飞到宝箱身上的那一下：宝箱弹性回弹（撞到的反馈）
+local BOX_HIT_SQUASH = 0.84   -- 撞击瞬间压到原大的 84%
+local BOX_HIT_DURATION = 0.5  -- 回弹时长（秒）
+local boxHitTween = nil       -- 当前回弹的 tween（再撞一次要先 Kill，避免缩放叠加）
+local boxHitTarget = nil      -- 被弹的节点
+local boxHitBaseScale = nil   -- 该节点的原始缩放
+
+local function PlayBoxHitBounce()
+    if not this.getBoxReward or IsNull(this.getBoxReward) then
+        return
+    end
+    -- 用 Find 拿子节点（按名字递归找会有重名风险，这里必须走确定路径）
+    local target = this.getBoxReward.transform:Find("Image")
+    if not target or IsNull(target) then
+        return
+    end
+
+    -- 原始缩放只记一次；换了节点（面板重建）就重新记，反复撞击不会累积缩小
+    if boxHitBaseScale == nil or boxHitTarget ~= target then
+        boxHitTarget = target
+        boxHitBaseScale = target.localScale
+    end
+
+    if boxHitTween then
+        boxHitTween:Kill()
+        boxHitTween = nil
+    end
+
+    -- 撞到的那一帧直接压扁，再 OutElastic 弹回原大（自带过冲再到位的抖动）
+    target.localScale = Vector3.New(boxHitBaseScale.x * BOX_HIT_SQUASH, boxHitBaseScale.y * BOX_HIT_SQUASH, boxHitBaseScale.z)
+    boxHitTween = target:DOScale(boxHitBaseScale, BOX_HIT_DURATION):SetEase(Ease.OutElastic, 1.6):OnComplete(function ()
+        boxHitTween = nil
+        -- 面板可能已经在回弹途中关掉，节点 being destroyed 时写 localScale 会报错
+        if not boxHitTarget or IsNull(boxHitTarget) or boxHitBaseScale == nil then
+            return
+        end
+        boxHitTarget.localScale = boxHitBaseScale
+    end)
+end
+
 -- 设置宝箱特效
 function this.SetBoxEffect(isShow, state, pos)
     this.boxEffectParent:SetActive(isShow)
@@ -2060,7 +2100,8 @@ function this.SetBoxEffect(isShow, state, pos)
         end
     else
         this.boxEffects[pos]:SetActive(true)
-        
+        -- 战利品线刚撞上来，宝箱跟着弹一下
+        PlayBoxHitBounce()
     end
  
 end
@@ -2069,6 +2110,16 @@ function this:Dispose()
     Log("Dispose")
     isFindEnemy = false
     isPlay = false
+    -- 宝箱回弹可能正弹到一半：停掉并还原缩放，否则下次开面板宝箱是压扁的
+    if boxHitTween then
+        boxHitTween:Kill()
+        boxHitTween = nil
+    end
+    if boxHitTarget and not IsNull(boxHitTarget) and boxHitBaseScale ~= nil then
+        boxHitTarget.localScale = boxHitBaseScale
+    end
+    boxHitTarget = nil
+    boxHitBaseScale = nil
     -- 气泡的收起定时器不属于 DelayFunc 列表，必须单独停：否则面板关了还会去碰已销毁的节点
     this:ClearTalkTimers()
     -- 台词记忆随面板一起作废，下次开面板从空白开始

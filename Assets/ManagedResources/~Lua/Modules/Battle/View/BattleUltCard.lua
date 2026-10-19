@@ -2,14 +2,22 @@
   大招入场小卡（缩小版 HelpHeroShow）
   ==========================================================================
   英雄释放大招的瞬间，把助战英雄展示框 HelpHeroShow 的缩小副本摆到对应角落：
-  我方 camp 0 -> myRect_Skill 左侧，敌方 camp 1 -> enemyRect_Skill 右侧，
+  我方 camp 0 -> myRect_Skill 正上方，敌方 camp 1 -> enemyRect_Skill 正上方，
   随后大招攻击照常播放。按需求：卡片与攻击同时进行，不额外暂停战斗。
 
+  🔴 为什么是「正上方」而不是「左侧 / 右侧」：
+     技能栏 anchor(0,0.5) + pivot(0,0.5) 贴在屏幕【左边缘】（我方）/ 右边缘（敌方），
+     外侧根本没有空间；卡片 280x330 摆在同一个 x 上就会整块压住技能底板 Image(280x90)
+     与 SkillName 文字（实测 canvas: 技能栏 [-540,-269]-[95,-161]，卡片 [-540,-298]-[-260,32]）。
+     卡片以前画在技能栏【下面】所以看不出来，改成子节点后 z 序在上 ⇒ 直接盖住技能名。
+     所以落点改为：水平贴技能栏外缘（与技能底板同宽、左/右对齐），
+     垂直方向卡片【底边】顶在技能栏【上沿】之上 GAP_Y，完全不与技能栏矩形相交。
+
   不新增 prefab 节点：直接克隆 BattlePanel 下的 HelpHeroShow（含立绘挂点 live、
-  名字 name、地点 location），缩放到 26% 后挂到技能栏下面。
+  名字 name、地点 location），缩放到 26% 后作为技能栏的子节点挂上去。
 
   🔴 卡片是技能栏的【子节点】，生成时就挂进 myRect_Skill / enemyRect_Skill：
-     - 位置：Show 时按技能栏【当前的世界坐标】算一次，落到技能栏外侧下沿；
+     - 位置：Show 时按技能栏【当前的世界坐标】算一次，落成「贴外缘 + 压在技能栏上方」；
        之后技能栏怎么动（入场动画滑 anchoredPosition、换分辨率重排）卡片都自动跟着，
        不再需要每帧重算（旧实现用 50Hz 计时器模拟 ParentConstraint，现在父子关系天然跟随）。
      - 缩放：技能栏自己带 1.2 缩放，敌方那条还是 -1.2 的镜像副本；
@@ -31,12 +39,11 @@ local REQUIRE_CLOSEUP = false
 -- 敌我都弹，靠角落位置区分：我方贴 myRect_Skill、敌方贴 enemyRect_Skill
 local ONLY_MY_CAMP    = false
 
-local CARD_SCALE       = 0.26   -- 相对整屏版 HelpHeroShow 的缩放
-local CARD_MARGIN_X    = 140    -- 卡片中心距技能栏外侧边缘的距离（0.26 缩放后卡宽 280.8，半宽 140.4，边缘贴齐）
-local CARD_GAP_Y       = 8      -- 卡片顶边与技能栏底边的间隙（参考分辨率像素，CanvasScaler 统一缩放）
-local CARD_CONTENT_TOP = 642.5  -- 卡片内容顶边相对卡片中心（缩放前，Image1 顶边 = pos.y 7 + 高 1271/2）
-local CARD_Y_OFFSET    = 309.35 -- 在「技能栏下沿」基础上的整体竖向微调（正数向上）
-local CARD_FALLBACK_Y  = -520   -- 兜底：找不到技能栏时卡片中心的 Y（相对顶部锚点）
+local CARD_SCALE       = 0.26    -- 相对整屏版 HelpHeroShow 的缩放
+local CARD_MARGIN_X    = 140     -- 卡片中心距技能栏外侧边缘的水平距离（0.26 缩放后卡宽 280.8，半宽 140.4，边缘贴齐）
+local CARD_GAP_Y       = 8       -- 卡片【底边】与技能栏【上沿】的间隙（参考分辨率像素，CanvasScaler 统一缩放）
+local CARD_BOTTOM_HALF = 628.5   -- 卡片内容底边相对卡片中心（缩放前，Image1 底边 = pos.y 7 - 高 1271/2）
+local CARD_FALLBACK_Y  = -211    -- 兜底：找不到技能栏时卡片中心的 Y（相对顶部锚点，沿用改版前的观感）
 local POP_IN_TIME     = 0.18
 
 -- [camp] = { go, live, hero, tween, lastKey, lastTime }
@@ -155,7 +162,8 @@ local function GetPanelScale(view)
     return 1
 end
 
--- 卡片定位：落在技能栏外侧下沿（我方左边缘 / 敌方右边缘），全部按技能栏当前世界坐标算
+-- 卡片定位：水平贴技能栏外缘、垂直整块压在技能栏【上方】（不与技能栏矩形相交）
+--   全部按技能栏当前世界坐标算。
 --   🔴 只在 Show 时算一次：卡片已经是技能栏的子节点，之后技能栏移动卡片跟着移动，
 --      不需要也不应该每帧重算。
 --   返回 卡片本地缩放 (lx, ly) 和落点世界坐标 (wx, wy)
@@ -174,7 +182,7 @@ local function ApplyLayout(view, s, rt)
         rt.anchorMin = Vector2.New(ax, 1)
         rt.anchorMax = Vector2.New(ax, 1)
         local dx = ((tonumber(s.camp) or 0) == 0) and CARD_MARGIN_X or -CARD_MARGIN_X
-        local dy = CARD_FALLBACK_Y + CARD_Y_OFFSET
+        local dy = CARD_FALLBACK_Y
         rt.anchoredPosition = Vector2.New(dx, dy)
         rt.localScale = Vector3.New(CARD_SCALE, CARD_SCALE, 1)
         LogRed("[UIFlow] 大招小卡定位兜底：找不到技能栏节点")
@@ -189,9 +197,10 @@ local function ApplyLayout(view, s, rt)
     else
         wx = geom.right - margin
     end
-    -- Y：技能栏下沿往上（- 间隙 - 卡片内容半高 + 竖向微调）
-    local lift = (CARD_Y_OFFSET - CARD_GAP_Y - CARD_CONTENT_TOP * CARD_SCALE) * px
-    local wy = geom.bottom + lift
+    -- Y：卡片【底边】落在技能栏【上沿】之上 GAP_Y ⇒ 中心 = 上沿 + 间隙 + 卡片下半高
+    --    🔴 不能用「下沿往上」：技能栏只有 108 高，卡片 330 高，那样必然盖住技能底板与技能名。
+    local lift = (CARD_GAP_Y + CARD_BOTTOM_HALF * CARD_SCALE) * px
+    local wy = geom.top + lift
 
     -- 🔴 世界坐标 -> 技能栏本地坐标。技能栏的 lossyScale 可能带负号（敌方是镜像副本），
     --    除以它同时完成「换算到本地单位」和「把镜像翻回来」两件事。

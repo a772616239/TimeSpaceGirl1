@@ -6,10 +6,11 @@
 --
 -- 覆盖的回归点（本轮改动）：
 --   ① 卡片生成时直接是 myRect_Skill / enemyRect_Skill 的子节点，不再挂面板下；
---   ② 落点按「技能栏当前世界坐标」算：外侧边缘 + 140、下沿往上 134.3（面板像素量纲）；
+--   ② 落点按「技能栏当前世界坐标」算：贴外缘 + 整块压在技能栏【上方】；
 --   ③ 技能栏 1.2 缩放 / 敌方 -1.2 镜像必须被反算，否则卡片放大 1.2 倍、敌方左右翻转；
 --   ④ 父子关系天然跟随：技能栏一动卡片世界坐标就跟着动，不需要（也不再创建）每帧重算计时器；
---   ⑤ 卡片不再自己隐藏：技能栏灭掉由父节点带走，卡片 activeSelf 不动。
+--   ⑤ 卡片不再自己隐藏：技能栏灭掉由父节点带走，卡片 activeSelf 不动；
+--   ⑥ 卡片矩形与技能栏矩形【不相交】（技能底板 280x90 + SkillName 不能被盖住）。
 --
 -- 历史 bug（上一版，已删除的实现）：卡片自带 2.0s 定时器而技能栏亮 3.0s，卡片必然早 1 秒消失；
 -- 靠 50Hz 计时器重算位置模拟 ParentConstraint，技能栏一动就顿挫。
@@ -172,7 +173,10 @@ local HERO = { Id = 1001, ReadingName = 0, HeroLocation = 0 }
 
 -- 面板像素量纲 ⇒ 世界单位（面板缩放为 1 时相等）
 local MARGIN_X_W = 140
-local LIFT_W = 309.35 - 8 - 642.5 * 0.26      -- 134.3：卡片中心相对技能栏下沿的高度
+local CARD_HALF_W = 140.4                          -- 0.26 缩放后卡宽 280.8 的一半
+local CARD_HALF_H = 628.5 * 0.26                   -- 163.41：卡片中心到底边的距离
+local GAP_Y = 8                                    -- 卡片底边与技能栏上沿的间隙
+local LIFT_W = GAP_Y + CARD_HALF_H                 -- 171.41：卡片中心相对技能栏【上沿】的高度
 
 local failures = 0
 local function Check(name, cond, detail)
@@ -216,7 +220,7 @@ do
 end
 
 -- ② 落点按技能栏当前世界坐标算
-print("== ② 落点 = 技能栏外侧 + 下沿往上（世界坐标） ==")
+print("== ② 落点 = 贴外缘 + 整块压在技能栏上方（世界坐标） ==")
 do
     local view, myBar = NewView()
     BattleUltCard.ResetForBattle(view)
@@ -224,13 +228,18 @@ do
     local s = BattleUltCard.slots[0]
 
     local left = myBar.transform.position.x + myBar.transform.lossyScale.x * myBar.rt.rect.xMin   -- 0
-    local bottom = myBar.transform.position.y + myBar.transform.lossyScale.y * myBar.rt.rect.yMin -- -314
+    local top  = myBar.transform.position.y + myBar.transform.lossyScale.y * myBar.rt.rect.yMax   -- -206
     local wx, wy = CardWorld(s.go)
     Check("X = 技能栏左边界 + 140", Near(wx, left + MARGIN_X_W), string.format("wx=%.2f want=%.2f", wx, left + MARGIN_X_W))
-    Check("Y = 技能栏下沿 + 134.3", Near(wy, bottom + LIFT_W), string.format("wy=%.2f want=%.2f", wy, bottom + LIFT_W))
+    Check("Y = 技能栏上沿 + 171.41", Near(wy, top + LIFT_W), string.format("wy=%.2f want=%.2f", wy, top + LIFT_W))
     -- 本地坐标同样对得上（子节点位置口径）
     Check("本地 localPosition.x = 140/1.2", Near(s.go.rt.localPosition.x, 140 / 1.2, 0.01),
         string.format("lp.x=%.4f", s.go.rt.localPosition.x))
+    -- 关键：卡片底边必须落在技能栏上沿之上（否则会盖住技能底板 280x90 与 SkillName）
+    local cardBottom = wy - CARD_HALF_H
+    Check("卡片底边与技能栏上沿的间隙 = 8（不压技能栏）", Near(cardBottom - top, GAP_Y, 0.01),
+        string.format("bottom=%.2f top=%.2f gap=%.2f", cardBottom, top, cardBottom - top))
+    Check("卡片矩形与技能栏矩形竖向不相交", cardBottom >= top, string.format("bottom=%.2f top=%.2f", cardBottom, top))
 end
 
 -- ③ 缩放反算：技能栏 1.2 / 敌方 -1.2 镜像
@@ -258,6 +267,11 @@ do
     local ex = CardWorld(enemy.go)
     Check("敌方卡 X = 技能栏右边界 - 140", Near(ex, right - MARGIN_X_W),
         string.format("ex=%.2f want=%.2f", ex, right - MARGIN_X_W))
+    -- 敌方那条上沿与 Y 同口径，镜像只影响 x，竖向必须在技能栏上方
+    local eTop = enemyBar.transform.position.y + enemyBar.transform.lossyScale.y * enemyBar.rt.rect.yMax
+    local _, ey = CardWorld(enemy.go)
+    Check("敌方卡底边也在技能栏上沿之上（不压技能栏）", ey - CARD_HALF_H >= eTop,
+        string.format("bottom=%.2f top=%.2f", ey - CARD_HALF_H, eTop))
 end
 
 -- ④ 父子关系天然跟随：技能栏一动卡片就动，不需要重算
@@ -320,10 +334,11 @@ do
     BattleUltCard.Show(view, HERO, 0, "g2")
 
     local s = BattleUltCard.slots[0]
-    local bottom = -200 + 1.44 * (-45)                  -- -264.8
+    local top = -200 + 1.44 * 45                        -- -135.2
     local wx, wy = CardWorld(s.go)
     Check("X 仍是外侧 +140（世界单位）", Near(wx, 140), string.format("wx=%.2f", wx))
-    Check("Y 跟随新的下沿", Near(wy, bottom + LIFT_W), string.format("wy=%.2f want=%.2f", wy, bottom + LIFT_W))
+    Check("Y 跟随新的上沿", Near(wy, top + LIFT_W), string.format("wy=%.2f want=%.2f", wy, top + LIFT_W))
+    Check("换缩放后卡片仍不压技能栏", wy - CARD_HALF_H >= top, string.format("bottom=%.2f top=%.2f", wy - CARD_HALF_H, top))
     Check("本地缩放按新父链缩放反算 = 0.26/1.44", Near(s.go.rt.localScale.x, 0.26 / 1.44, 0.001),
         string.format("scale=%.4f", s.go.rt.localScale.x))
 end

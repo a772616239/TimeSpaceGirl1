@@ -890,12 +890,79 @@ function this.InitNotRollingInfo()
 end
 
 --[[
+ * 公会榜底部行要画的那面旗：口径 = 我的公会的**会长国籍**
+ *
+ * 为什么不能直接用自己：
+ *   公会榜底部行展示的是我的公会（SetNotRollingInfo 里取 MyGuildManager 的公会名），
+ *   而服务端 GuildForceRank / GuildSheJiScoreRank 的行数据 uid/country 都是按**会长**组包，
+ *   所以同一块面板里列表行画会长旗、底部行画自己的旗会自相矛盾。
+ *
+ * 数据从哪来：
+ *   客户端没有「我的公会的会长国籍」这个独立字段（公会成员协议不带 country），
+ *   只能从**已经拉下来的榜单数据**里找我的公会那一行：
+ *     1) 先按会长 uid 匹配（MyGuildManager.GetMyGuildMasterInfo()，成员列表加载过才有）
+ *     2) 再按公会名匹配（这个一定有）
+ *   找不到（我的公会排在还没加载的后续分页）→ 返回 nil，由调用方兜底。
+ *
+ * @return uid, country  查不到时两者均为 nil
+--]]
+function this.ResolveMyGuildFlag()
+    local myGuildName = ""
+    local masterUid = nil
+    if MyGuildManager ~= nil then
+        local guildInfo = MyGuildManager.GetMyGuildInfo()
+        if guildInfo ~= nil and guildInfo.name ~= nil then
+            myGuildName = guildInfo.name
+        end
+        if MyGuildManager.GetMyGuildMasterInfo ~= nil then
+            local master = MyGuildManager.GetMyGuildMasterInfo()
+            if master ~= nil then
+                masterUid = master.roleUid
+            end
+        end
+    end
+    if myGuildName == "" and masterUid == nil then
+        return nil, nil
+    end
+    if RankingManager == nil then
+        return nil, nil
+    end
+
+    local data = RankingManager.GetGuildForeInfo()
+    if data == nil then
+        return nil, nil
+    end
+    local found
+    for i = 1, #data do
+        local row = data[i]
+        if row ~= nil then
+            if masterUid ~= nil and tonumber(row.uid) == tonumber(masterUid) then
+                found = row
+                break
+            end
+            if row.guildName ~= nil and row.guildName ~= "" and row.guildName == myGuildName then
+                found = row
+                -- 名字匹配到了先记下来，继续找 uid 更精确的那一条
+                if masterUid == nil then
+                    break
+                end
+            end
+        end
+    end
+    if found == nil then
+        return nil, nil
+    end
+    return found.uid, found.country
+end
+
+--[[
  * 底部「我的排名」行的国家小旗
  *
- * 数据口径：自己的国家以 PlayerManager.country（服务端真源）为准，
- *   不能用榜单行数据 —— 这一行没有 uid/country。
+ * 数据口径：
+ *    · 普通榜：自己的国家以 PlayerManager.country（服务端真源）为准，
+ *      不能用榜单行数据 —— 这一行没有 uid/country；
+ *    · 公会战力榜（GUILD_FORCE_RANK）：这一行是**我的公会**，旗 = 会长国籍（见 ResolveMyGuildFlag）。
  * 显示口径：
- *    · 公会榜 / 公会庆典榜：展示公会名，没有国籍概念 → 隐藏；
  *    · 空榜（NoneImage 显示）→ 隐藏，否则空榜画面上还挂着一面自己的国旗；
  *    · 未上榜（名次 nil / 0 / 负数，界面显示 Unranked）→ 隐藏。
  *      🔴 这条以前漏了：榜单里有人、自己没上榜时 noneImage 是关的，
@@ -918,14 +985,10 @@ function this.RefreshMyRankFlag(hasRank)
     if hasRank ~= nil then
         this.myRankValid = (hasRank == true)
     end
-    if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
-            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
-        flagGo:SetActive(false)
-        return
-    end
     -- 空榜（NoneImage 显示）时本行没有可展示的名次，小旗要跟着 NoneImage 一起隐藏。
     -- 时序依据：所有 Set*Info 路径都是先设 noneImage 再调 SetNotRollingInfo/SetHeroNotRollingInfo，
     -- 所以这里读 noneImage.activeSelf 拿到的一定是本次刷新的最新口径。
+    -- 🔴 公会对齐这条判定必须排在「公会榜」分支之前：公会榜换个顺序就会空榜挂旗。
     if this.noneImage ~= nil and not IsNull(this.noneImage) and this.noneImage.activeSelf then
         flagGo:SetActive(false)
         return
@@ -935,6 +998,27 @@ function this.RefreshMyRankFlag(hasRank)
         flagGo:SetActive(false)
         return
     end
+
+    -- 公会战力榜：这一行展示的是**我的公会**（SetNotRollingInfo 里取的是公会名）
+    -- ⇒ 旗 = 会长国籍。会长数据从已加载的榜单行里反查（ResolveMyGuildFlag）；
+    -- 实在查不到（我的公会还在没加载到的后续分页）才退回到自己 ——
+    -- 这一行的头像/等级本来就填的是我自己。
+    -- ⚠️ 公会庆典榜（CELEBRATION_GUILD）不在这里处理：它这一行填的是玩家昵称
+    --    （SetNotRollingInfo 只对 GUILD_FORCE_RANK 取公会名），所以走下面的 ApplySelf。
+    if sData and sData.rankType == RANK_TYPE.GUILD_FORCE_RANK then
+        local guildUid, guildCountry = this.ResolveMyGuildFlag()
+        if guildUid ~= nil then
+            if guildCountry == nil or guildCountry == "" then
+                -- 会长没选国家：与列表行同口径，隐藏而不是画问号旗
+                flagGo:SetActive(false)
+            else
+                flagGo:SetActive(true)
+                CountryFlagUtil.Apply(flagGo, guildUid, guildCountry)
+            end
+            return
+        end
+    end
+
     flagGo:SetActive(true)
     CountryFlagUtil.ApplySelf(flagGo)
 end

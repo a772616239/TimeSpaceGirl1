@@ -10,7 +10,8 @@
 --   ③ 技能栏 1.2 缩放 / 敌方 -1.2 镜像必须被反算，否则卡片放大 1.2 倍、敌方左右翻转；
 --   ④ 父子关系天然跟随：技能栏一动卡片世界坐标就跟着动，不需要（也不再创建）每帧重算计时器；
 --   ⑤ 卡片不再自己隐藏：技能栏灭掉由父节点带走，卡片 activeSelf 不动；
---   ⑥ 卡片矩形与技能栏矩形【不相交】（技能底板 280x90 + SkillName 不能被盖住）。
+--   ⑥ 卡片矩形与技能栏矩形【不相交】（技能底板 280x90 + SkillName 不能被盖住）；
+--   ⑦ 卡面装饰件 Image / name / location 只在新手引导动画里显示，普通战斗只留立绘 + 卡片框 Image1。
 --
 -- 历史 bug（上一版，已删除的实现）：卡片自带 2.0s 定时器而技能栏亮 3.0s，卡片必然早 1 秒消失；
 -- 靠 50Hz 计时器重算位置模拟 ParentConstraint，技能栏一动就顿挫。
@@ -97,6 +98,12 @@ local function NewCardGo()
         localScale = Vector3.New(1, 1, 1),
     }
     go.links["live"] = NewGo("live")
+    -- HelpHeroShow 的卡面节点：Image1 = 卡片框（落点基准，不能关）；
+    -- Image = 底部底板，name / location = 英雄名与阵营地点（这两个只在引导里显示）
+    go.links["Image1"] = NewGo("Image1")
+    go.links["Image"] = NewGo("Image")
+    go.links["name"] = NewGo("name")
+    go.links["location"] = NewGo("location")
     return go
 end
 
@@ -376,6 +383,66 @@ do
 
     BattleUltCard.OnBarHidden(1)   -- 另一个阵营收场
     Check("敌方收场不影响我方卡", s.go.activeSelf == true)
+end
+
+print("== ⑩ 卡面装饰件（Image / name / location）只在新手引导动画里显示 ==")
+do
+    -- ① 普通战斗：三个装饰件必须关掉，卡片框 Image1 与立绘 live 不能动
+    local view = NewView()
+    BattleUltCard.ResetForBattle(view)
+    BattleUltCard.forceDecor = nil
+    BattleUltCard.Show(view, HERO, 0, "j1")
+    local go = BattleUltCard.slots[0].go
+    Check("底板 Image 关掉", go.links["Image"].activeSelf == false)
+    Check("名字 name 关掉", go.links["name"].activeSelf == false)
+    Check("地点 location 关掉", go.links["location"].activeSelf == false)
+    Check("卡片框 Image1 仍显示（落点基准，不能关）", go.links["Image1"].activeSelf == true)
+    Check("立绘挂点 live 仍显示", go.links["live"].activeSelf == true)
+    Check("ShouldShowDecor 默认 false", BattleUltCard.ShouldShowDecor(view) == false)
+
+    -- ② 强制打开（GM / 需要整卡观感时）
+    BattleUltCard.forceDecor = true
+    BattleUltCard.Show(view, HERO, 0, "j2")
+    Check("forceDecor=true → 底板/名字/地点都显示",
+        go.links["Image"].activeSelf == true and go.links["name"].activeSelf == true
+        and go.links["location"].activeSelf == true)
+    Check("ShouldShowDecor 跟随 forceDecor=true", BattleUltCard.ShouldShowDecor(view) == true)
+
+    -- ③ 强制关闭：再切回来必须重新关掉（不能只关一次）
+    BattleUltCard.forceDecor = false
+    BattleUltCard.Show(view, HERO, 0, "j3")
+    Check("forceDecor=false → 三个装饰件重新关掉",
+        go.links["Image"].activeSelf == false and go.links["name"].activeSelf == false
+        and go.links["location"].activeSelf == false)
+    BattleUltCard.forceDecor = nil
+
+    -- ④ 强制新手引导进行中（教学期普通战斗）→ 走引导口径，装饰件显示
+    local gView = NewView()
+    BattleUltCard.ResetForBattle(gView)
+    _G.GuideManager = { IsInMainGuide = function() return true end }
+    BattleUltCard.Show(gView, HERO, 0, "j4")
+    local ggo = BattleUltCard.slots[0].go
+    Check("引导中 → 装饰件显示", ggo.links["Image"].activeSelf == true and ggo.links["name"].activeSelf == true)
+    _G.GuideManager = nil
+
+    -- ⑤ 教学关（GuideBattlePanel）自己就是引导动画场景，即使不在强制引导里也显示
+    local bView = NewView()
+    BattleUltCard.ResetForBattle(bView)
+    _G.GuideBattlePanel = bView
+    BattleUltCard.Show(bView, HERO, 0, "j5")
+    local bgo = BattleUltCard.slots[0].go
+    Check("教学关面板 → 装饰件显示", bgo.links["Image"].activeSelf == true and bgo.links["location"].activeSelf == true)
+    _G.GuideBattlePanel = nil
+
+    -- ⑥ 引导模块没加载 / 判定抛错时不能炸，按「不在引导」处理
+    local nView = NewView()
+    BattleUltCard.ResetForBattle(nView)
+    _G.GuideManager = { IsInMainGuide = function() error("boom") end }
+    local ok = pcall(BattleUltCard.Show, nView, HERO, 0, "j6")
+    _G.GuideManager = nil
+    Check("IsInMainGuide 抛错时 Show 不崩", ok)
+    Check("判定失败按「非引导」处理（装饰件关掉）",
+        BattleUltCard.slots[0].go.links["Image"].activeSelf == false)
 end
 
 print("")

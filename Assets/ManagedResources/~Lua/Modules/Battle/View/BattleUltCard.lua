@@ -14,7 +14,14 @@
      垂直方向卡片【底边】顶在技能栏【上沿】之上 GAP_Y，完全不与技能栏矩形相交。
 
   不新增 prefab 节点：直接克隆 BattlePanel 下的 HelpHeroShow（含立绘挂点 live、
-  名字 name、地点 location），缩放到 26% 后作为技能栏的子节点挂上去。
+  卡片框 Image1、底板 Image、名字 name、地点 location），缩放到 26% 后作为技能栏的子节点挂上去。
+
+  🔴 卡面装饰件（底板 Image + 名字 name + 地点 location）只在【新手引导动画】里显示：
+     教学关（GuideBattlePanel）要借这张卡交代「这是谁、从哪来」，名字/地点是教学内容；
+     正常战斗里卡片只有 26% 大，700x225 的名字、410x116 的地点缩完根本读不出来，
+     底板还会实打实压住战斗画面 ⇒ 非引导场景一律 SetActive(false)，只留立绘 + 卡片框。
+     判定见 IsGuideScene()（view == GuideBattlePanel 或强制引导进行中），
+     临时要改口径用 this.forceDecor = true/false 覆盖，不用动这里。
 
   🔴 卡片是技能栏的【子节点】，生成时就挂进 myRect_Skill / enemyRect_Skill：
      - 位置：Show 时按技能栏【当前的世界坐标】算一次，落成「贴外缘 + 压在技能栏上方」；
@@ -50,12 +57,59 @@ local POP_IN_TIME     = 0.18
 -- 收场动画不在本模块做：卡片是技能条的子节点，由 BattlePanel:PlaySkillBarOut 把【父节点】
 -- 横向滑出屏幕（见 BattlePanel.SKILL_BAR_OUT_*），卡片跟着一起走，滑完再一起关。
 
+-- 卡面装饰件：底部底板 Image（1080x376）+ 英雄名 name（700x225）+ 阵营地点 location（410x116）。
+--   🔴 只在【新手引导动画】里显示，正常战斗只留立绘 + 卡片框 Image1（1080x1271）。
+--   名字/地点缩到 26% 后字号不到 10px 根本读不出来，底板还会压住战斗画面。
+--   卡片框 Image1 不能关：卡片的可见边缘就是它的矩形（CARD_BOTTOM_HALF 按它算的）。
+local DECOR_NODES = { "Image", "name", "location" }
+
+-- 装饰件显示开关：nil = 按场景自动判断（默认）；true/false = 强制（GM / 回归测试用）
+this.forceDecor = nil
+
 -- [camp] = { go, live, hero, tween, lastKey, lastTime }
 this.slots = {}
 this.view = nil
 
 local function IsAlive(go)
     return go ~= nil and not IsNull(go)
+end
+
+-- 是否「新手引导动画」场景（卡面装饰件 Image / name / location 只在这里显示）
+--   ① 教学关：卡片挂在 GuideBattlePanel 上（它自己带一套 myRect_Skill，不是 BattlePanel）；
+--   ② 强制新手引导进行中（GuideManager.IsInMainGuide，教学期普通战斗也算引导）。
+--   🔴 两个模块都可能没加载（引导关闭 / 单测桩），一律按「不在引导」处理，绝不能让判定抛错。
+local function IsGuideScene(view)
+    if this.forceDecor ~= nil then
+        return this.forceDecor and true or false
+    end
+    if GuideBattlePanel ~= nil and view ~= nil and view == GuideBattlePanel then
+        return true
+    end
+    if GuideManager ~= nil and type(GuideManager.IsInMainGuide) == "function" then
+        local ok, inGuide = pcall(GuideManager.IsInMainGuide)
+        if ok and inGuide then
+            return true
+        end
+    end
+    return false
+end
+
+-- 装饰件开关：show=false 时把底板 Image / 名字 / 地点 全部 SetActive(false)，只留立绘 + 卡片框
+--   🔴 只动这三个节点，不碰 Image1（卡片框）与 live（立绘挂点）：
+--      Image1 的矩形是落点基准（CARD_BOTTOM_HALF），关掉卡片会变成看不见但仍在挡的空白。
+local function ApplyDecor(go, show)
+    show = show and true or false
+    for i = 1, #DECOR_NODES do
+        local node = Util.GetGameObject(go, DECOR_NODES[i])
+        if IsAlive(node) then
+            node:SetActive(show)
+        end
+    end
+end
+
+-- 对外：当前这一局该不该显示装饰件（供 GM/其它模块查询）
+function this.ShouldShowDecor(view)
+    return IsGuideScene(view or this.view)
 end
 
 local function GetSlot(camp)
@@ -283,6 +337,9 @@ local function EnsureCard(view, s)
         effect:SetActive(false)
     end
 
+    -- 名字 / 地点 / 底板：非新手引导场景一律不显示（只留立绘 + 卡片框）
+    ApplyDecor(go, IsGuideScene(view))
+
     s.go = go
     return go
 end
@@ -316,6 +373,8 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         sx, sy, wx, wy = ApplyLayout(view, s, rt)
     end
     go:SetActive(true)
+    -- 每次亮卡都校正一次装饰件：forceDecor / 引导状态中途变化也能立刻生效
+    ApplyDecor(go, IsGuideScene(view))
 
     -- 换立绘：先卸掉上一张，避免多张叠在一起
     local liveRoot = Util.GetGameObject(go, "live")

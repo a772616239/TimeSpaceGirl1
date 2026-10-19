@@ -359,6 +359,25 @@ do
     Check("兜底：卡片可见", s.go.activeSelf == true)
 end
 
+-- ⑨ 技能条滑出屏幕后关闭时，卡片必须跟着真正关掉
+print("== ⑨ 父条收场关闭 → 卡片 activeSelf 也要关（否则会被下一条技能带出来） ==")
+do
+    local view = NewView()
+    BattleUltCard.ResetForBattle(view)
+    BattleUltCard.Show(view, HERO, 0, "i")
+    local s = BattleUltCard.slots[0]
+    Check("先亮着", s.go.activeSelf == true)
+
+    BattleUltCard.OnBarHidden(0)
+    Check("OnBarHidden 后卡片 activeSelf=false", s.go.activeSelf == false)
+
+    BattleUltCard.Show(view, HERO, 0, "i2")
+    Check("下一次大招能重新亮起来", s.go.activeSelf == true)
+
+    BattleUltCard.OnBarHidden(1)   -- 另一个阵营收场
+    Check("敌方收场不影响我方卡", s.go.activeSelf == true)
+end
+
 print("")
 if failures == 0 then
     print("ALL PASS")

@@ -3,6 +3,7 @@ require("Base/Stack")
 require("Modules.Battle.Config.PokemonEffectConfig")
 require("Modules/Fight/FightPointPassMainPanel")
 local BattleView = require("Modules/Battle/View/BattleView")
+local BattleUltCard = require("Modules/Battle/View/BattleUltCard")
 BattlePanel = Inherit(BasePanel)
 
 local chatPanel = require("Modules/Chat/BattleChatPanel")
@@ -226,8 +227,70 @@ function BattlePanel:UnGreyAndFrie_Skill(skill,camp,index,role)
 --    3 倍速下「3 秒」真实只剩 1 秒，跟着技能条走的大招小卡（HelpHeroMiniCard_Mine）会被连带提前关掉。
 local RECT_SKILL_SHOW_TIME = 3
 
+-- 技能条收场：像入场那样横向滑回屏幕外，滑完再关（时长短促）
+-- 🔴 入场曲线只挪 500，那个位置右/左边还有一截留在屏内（实测 135），收场必须挪得更远才真出屏
+local SKILL_BAR_OUT_TIME = 0.16
+local SKILL_BAR_OUT_X    = 700
+
+-- 两条技能条各自的运行时状态字段（camp 0 我方 / 1 敌方）
+local SKILL_BAR_FIELDS = {
+    [0] = { timer = "myRect_SkillTimer",    out = "myRect_SkillOutTween",    home = "myRect_SkillHomeX" },
+    [1] = { timer = "enemyRect_SkillTimer", out = "enemyRect_SkillOutTween", home = "enemyRect_SkillHomeX" },
+}
+
 local function IsAlive(go)
     return go ~= nil and not IsNull(go)
+end
+
+-- 技能条收场：横向滑出屏幕 → 关掉节点
+-- 🔴 不能直接 SetActive(false)：跟着技能条的大招小卡（HelpHeroMiniCard_*）是它的子节点，
+--    父节点一关，卡片连一帧过渡都没有就没了，观感非常突兀。
+--    所以让父节点自己滑出屏幕，卡片跟着一起走。
+function BattlePanel:PlaySkillBarOut(barNode, camp)
+    if not IsAlive(barNode) then
+        return
+    end
+    local fields = SKILL_BAR_FIELDS[camp == 0 and 0 or 1]
+
+    local oldTween = this[fields.out]
+    if oldTween then
+        oldTween:Kill()
+        this[fields.out] = nil
+    end
+
+    local rt = barNode:GetComponent("RectTransform")
+
+    local function finish()
+        this[fields.out] = nil
+        -- 卡片虽然跟着父节点一起不显示了，但它自己的 activeSelf 还是 true；
+        -- 下次技能条为别的技能亮起时会把上一张大招卡一起带出来 ⇒ 这里同步关掉
+        if BattleUltCard and BattleUltCard.OnBarHidden then
+            BattleUltCard.OnBarHidden(camp)
+        end
+        if IsAlive(barNode) then
+            barNode:SetActive(false)
+        end
+    end
+
+    if not rt then
+        finish()
+        return
+    end
+
+    -- 记住静止位：下次亮起来要回到这里，否则会从屏幕外一点点往回滑
+    this[fields.home] = rt.localPosition.x
+
+    -- 我方往左、敌方往右
+    local dir = (camp == 0) and -1 or 1
+    local tween = barNode.transform:DOLocalMoveX(rt.localPosition.x + dir * SKILL_BAR_OUT_X, SKILL_BAR_OUT_TIME)
+    tween:SetEase(Ease.InQuad)
+    this[fields.out] = tween
+    tween:OnComplete(function ()
+        if this[fields.out] ~= tween then
+            return   -- 期间被新一次施法打断，节点还要继续用，别关
+        end
+        finish()
+    end)
 end
 
 -- 亮出技能名条，并重开这一条自己的停留计时
@@ -238,6 +301,21 @@ end
 function BattlePanel:ShowSkillBar(barNode, timerField)
     if not IsAlive(barNode) then
         return
+    end
+
+    local camp = (timerField == SKILL_BAR_FIELDS[0].timer) and 0 or 1
+    local fields = SKILL_BAR_FIELDS[camp]
+
+    -- 上一次收场可能还没滑完（0.16 秒内又放了同一条技能）⇒ 掐掉并回到静止位，
+    -- 否则这一条会接着往外滑，越放越偏
+    local outTween = this[fields.out]
+    if outTween then
+        outTween:Kill()
+        this[fields.out] = nil
+    end
+    local rt = barNode:GetComponent("RectTransform")
+    if rt and this[fields.home] then
+        rt.localPosition = Vector3.New(this[fields.home], rt.localPosition.y, rt.localPosition.z)
     end
 
     local oldTimer = this[timerField]
@@ -252,9 +330,7 @@ function BattlePanel:ShowSkillBar(barNode, timerField)
         if this[timerField] == timer then
             this[timerField] = nil
         end
-        if IsAlive(barNode) then
-            barNode:SetActive(false)
-        end
+        this:PlaySkillBarOut(barNode, camp)
     end, RECT_SKILL_SHOW_TIME, 1, true)
     this[timerField] = timer
     timer:Start()
@@ -1210,6 +1286,15 @@ function this:OnDestroy()
     if this.enemyRect_SkillTimer then
         this.enemyRect_SkillTimer:Stop()
         this.enemyRect_SkillTimer = nil
+    end
+    --技能条收场滑动（节点都没了，别再回调进来）
+    if this.myRect_SkillOutTween then
+        this.myRect_SkillOutTween:Kill()
+        this.myRect_SkillOutTween = nil
+    end
+    if this.enemyRect_SkillOutTween then
+        this.enemyRect_SkillOutTween:Kill()
+        this.enemyRect_SkillOutTween = nil
     end
 
     --地图销毁

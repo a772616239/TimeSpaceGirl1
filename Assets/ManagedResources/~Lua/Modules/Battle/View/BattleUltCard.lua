@@ -22,8 +22,10 @@
        不再需要每帧重算（旧实现用 50Hz 计时器模拟 ParentConstraint，现在父子关系天然跟随）。
      - 缩放：技能栏自己带 1.2 缩放，敌方那条还是 -1.2 的镜像副本；
        子节点必须按父链缩放反算，否则卡片凭空放大 1.2 倍、敌方那张还会左右翻转。
-     - 显隐：技能栏 SetActive(false) 一关，卡片作为子节点跟着一起消失，
-       所以卡片不再自己隐藏（旧实现那套 3 秒 / 2 秒 / 防抖判定全部删掉）。
+     - 显隐：技能条到点收场时，由 BattlePanel:PlaySkillBarOut 把【父节点】横向滑出屏幕
+       （0.16s，方向与入场一致），卡片作为子节点跟着滑出去，滑完再一起关；
+       所以卡片自己不做消失动画、也不再自己计时。技能条重新亮起前由 OnBarHidden 把卡片
+       的 activeSelf 真正关掉，避免上一张大招卡跟着新技能条又冒出来。
 
   注意：每个阵营各持一张卡（slots[camp]），敌我可能同时放大招，
   共用一张会互相覆盖、位置乱跳。
@@ -45,6 +47,8 @@ local CARD_GAP_Y       = 8       -- 卡片【底边】与技能栏【上沿】�
 local CARD_BOTTOM_HALF = 628.5   -- 卡片内容底边相对卡片中心（缩放前，Image1 底边 = pos.y 7 - 高 1271/2）
 local CARD_FALLBACK_Y  = -211    -- 兜底：找不到技能栏时卡片中心的 Y（相对顶部锚点，沿用改版前的观感）
 local POP_IN_TIME     = 0.18
+-- 收场动画不在本模块做：卡片是技能条的子节点，由 BattlePanel:PlaySkillBarOut 把【父节点】
+-- 横向滑出屏幕（见 BattlePanel.SKILL_BAR_OUT_*），卡片跟着一起走，滑完再一起关。
 
 -- [camp] = { go, live, hero, tween, lastKey, lastTime }
 this.slots = {}
@@ -357,7 +361,24 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         wy and string.format("%.0f", wy) or "?"))
 end
 
--- 手动清场（正常流程不需要：卡片是技能栏的子节点，技能栏一关就跟着隐藏了）
+-- 技能条收场滑完、要把父节点关掉时调用
+--   🔴 卡片是技能条的子节点，父节点一关它自己【不会】变成 inactive（activeSelf 仍是 true），
+--      下次技能条为别的技能亮起来时会把上一张大招卡一起带出来 ⇒ 这里真正关掉它。
+function this.OnBarHidden(camp)
+    local s = this.slots[tonumber(camp) or 0]
+    if not s then
+        return
+    end
+    if s.tween then
+        s.tween:Kill()
+        s.tween = nil
+    end
+    if IsAlive(s.go) then
+        s.go:SetActive(false)
+    end
+end
+
+-- 手动清场（正常流程不需要：技能条滑出屏幕后由 OnBarHidden 关掉）
 function this.Hide(camp)
     local s = this.slots[tonumber(camp) or 0]
     if not s then

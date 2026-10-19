@@ -11,6 +11,10 @@ public class IAPManagerWrap
 		L.RegFunction("OnInitialized", OnInitialized);
 		L.RegFunction("BuyItem1", BuyItem1);
 		L.RegFunction("BuyItem", BuyItem);
+		L.RegFunction("IsReady", IsReady);
+		L.RegFunction("IsPurchaseInFlight", IsPurchaseInFlight);
+		L.RegFunction("GetPendingPurchaseCount", GetPendingPurchaseCount);
+		L.RegFunction("TakePendingPurchases", TakePendingPurchases);
 		L.RegFunction("OnInitializeFailed", OnInitializeFailed);
 		L.RegFunction("ProcessPurchase", ProcessPurchase);
 		L.RegFunction("__eq", op_Equality);
@@ -85,6 +89,74 @@ public class IAPManagerWrap
 			string arg0 = ToLua.CheckString(L, 2);
 			obj.BuyItem(arg0);
 			return 0;
+		}
+		catch (Exception e)
+		{
+			return LuaDLL.toluaL_exception(L, e);
+		}
+	}
+
+	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
+	static int IsReady(IntPtr L)
+	{
+		try
+		{
+			ToLua.CheckArgsCount(L, 1);
+			IAPManager obj = (IAPManager)ToLua.CheckObject<IAPManager>(L, 1);
+			bool o = obj.IsReady();
+			LuaDLL.lua_pushboolean(L, o);
+			return 1;
+		}
+		catch (Exception e)
+		{
+			return LuaDLL.toluaL_exception(L, e);
+		}
+	}
+
+	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
+	static int IsPurchaseInFlight(IntPtr L)
+	{
+		try
+		{
+			ToLua.CheckArgsCount(L, 1);
+			IAPManager obj = (IAPManager)ToLua.CheckObject<IAPManager>(L, 1);
+			bool o = obj.IsPurchaseInFlight();
+			LuaDLL.lua_pushboolean(L, o);
+			return 1;
+		}
+		catch (Exception e)
+		{
+			return LuaDLL.toluaL_exception(L, e);
+		}
+	}
+
+	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
+	static int GetPendingPurchaseCount(IntPtr L)
+	{
+		try
+		{
+			ToLua.CheckArgsCount(L, 1);
+			IAPManager obj = (IAPManager)ToLua.CheckObject<IAPManager>(L, 1);
+			int o = obj.GetPendingPurchaseCount();
+			LuaDLL.lua_pushnumber(L, o);
+			return 1;
+		}
+		catch (Exception e)
+		{
+			return LuaDLL.toluaL_exception(L, e);
+		}
+	}
+
+	[MonoPInvokeCallbackAttribute(typeof(LuaCSFunction))]
+	static int TakePendingPurchases(IntPtr L)
+	{
+		try
+		{
+			ToLua.CheckArgsCount(L, 1);
+			IAPManager obj = (IAPManager)ToLua.CheckObject<IAPManager>(L, 1);
+			string[] o = obj.TakePendingPurchases();
+			ToLua.Push(L, o);
+			return 1;
 		}
 		catch (Exception e)
 		{

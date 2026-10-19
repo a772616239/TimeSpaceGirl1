@@ -4289,6 +4289,7 @@ GameObject:
   - component: {fileID: 2041610646892008101}
   - component: {fileID: 8250130798021681388}
   - component: {fileID: 6405300532980572454}
+  - component: {fileID: 1388835033163167536}
   m_Layer: 0
   m_Name: Image
   m_TagString: Untagged
@@ -4353,6 +4354,28 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!114 &1388835033163167536
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 89582215267711373}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 80dcc2ab5907e4a3aa24aa48d7d3a8b2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GameLogic.UIShineSweep
+  sweepDuration: 0.62
+  interval: 2.2
+  delay: 0.45
+  angle: 40
+  widthFactor: 0.3
+  lengthFactor: 3.2
+  color: {r: 1, g: 1, b: 1, a: 1}
+  maxAlpha: 0.92
+  maskWidthFactor: 0.68
+  maskHeightFactor: 0.72
 --- !u!1 &131480974487814971
 GameObject:
   m_ObjectHideFlags: 0

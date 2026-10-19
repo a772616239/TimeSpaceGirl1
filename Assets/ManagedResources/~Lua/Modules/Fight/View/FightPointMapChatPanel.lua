@@ -18,9 +18,37 @@ local _TabData = {
 this._CurChannel = CHAT_CHANNEL.GLOBAL
 this.ChatPanel = nil
 
+--- 滚动列表是不是"本实例创建且还活着"
+--- SubUIManager.Open 出来的子界面（ScrollCycleView / ScrollFitterView）是挂在当前面板实例
+--- 节点下面的，面板被 UIManager.DestroyPanel 销毁时一起被带走；而 this 是模块级单表
+--- （require 有缓存），缓存引用会跨实例残留。所以判定要落到 gameObject 上，不能只判 nil。
+---@param view table|nil SubUIManager 返回的子界面对象
+---@return boolean
+local function IsViewAlive(view)
+    if view == nil then
+        return false
+    end
+    local go = view.gameObject
+    return go ~= nil and not IsNull(go)
+end
+
+--- 丢掉上一轮面板实例的滚动列表缓存（换实例时必须清）
+function this:ResetCachedViews()
+    this.FriendScrollView = nil
+    this.ChatScrollView = nil
+    this.SystemScrollView = nil
+end
+
 ---等于窗口的InitComponent
 function this:InitComponent(chatPanel, parent)
     this.ChatPanel = chatPanel
+
+    -- 每个新面板实例都会走到这里，先把上一个实例的滚动列表缓存清掉：
+    -- 不清的话 OnShow -> TabCtrl:ChangeTab -> OnTabChange 会拿到已被销毁的 ScrollView，
+    -- lastSV.gameObject:SetActive(false) 直接抛
+    -- "The object of type 'UnityEngine.GameObject' has been destroyed"
+    -- （线上 17:24:46 崩溃即此）。
+    this:ResetCachedViews()
 
     this.tabbox = Util.GetGameObject(this.ChatPanel, "tabbox")
     this.btnBack = Util.GetGameObject(this.ChatPanel, "btnBack")
@@ -116,6 +144,15 @@ function this:OnClose()
     ChatManager.StopChatDataUpdate()
 end
 
+---等于窗口的OnDestroy
+---UIManager.DestroyPanel 只保证走 OnDestroy，不保证先走 OnClose（缓存销毁/CloseAll 都有跳过路径），
+---这里把子界面缓存和定时刷新都兜一遍，避免下一个实例拿到已销毁节点。
+function this:OnDestroy()
+    ChatManager.StopChatDataUpdate()
+    this.TabCtrl = nil
+    this:ResetCachedViews()
+end
+
 -- tab节点自定义设置
 function this.TabAdapter(tab, index, status)
     Util.GetGameObject(tab, "Image"):GetComponent("Image").sprite = Util.LoadSprite(_TabData[index].image)
@@ -149,14 +186,20 @@ function this.OnTabChange(index, lastIndex)
     -- 关闭上个界面
     if lastIndex then
         local lastSV = this.GetScrollView(lastIndex)
-        -- if lastIndex ~= 1 then
-        --     lastSV:RecycleNode()
-        -- end
-        lastSV.gameObject:SetActive(false)
+        if IsViewAlive(lastSV) then
+            -- if lastIndex ~= 1 then
+            --     lastSV:RecycleNode()
+            -- end
+            lastSV.gameObject:SetActive(false)
+        end
     end
     -- 打开当前界面
     this._CurTabIndex = index
     local curSV = this.GetScrollView(index)
+    if not IsViewAlive(curSV) then
+        LogError("[FightPointMapChatPanel] 滚动列表创建失败 tab=" .. tostring(index))
+        return
+    end
     curSV.gameObject:SetActive(true)
 
     -- 是否能够发言
@@ -192,6 +235,10 @@ end
 function this.RefreshShow(isForceBottom)
     -- 刷新数据
     local curSV = this.GetScrollView(this._CurTabIndex)
+    if not IsViewAlive(curSV) then
+        LogError("[FightPointMapChatPanel] RefreshShow 时滚动列表不可用 tab=" .. tostring(this._CurTabIndex))
+        return
+    end
     local datalist = ChatManager.GetChatList(this._CurChannel)
 
     local _GoToIndex = nil
@@ -226,11 +273,14 @@ function this.RefreshShow(isForceBottom)
 end
 
 -- 创建滚动列表
+-- 注意：缓存判定必须看 gameObject 是否已被销毁（IsViewAlive），不能只判 nil ——
+-- 面板销毁后 this.ChatScrollView 这类引用仍然存在，只是指向了已销毁的节点。
 function this.GetScrollView(index)
     -- 不存在则创建
     if index == 1 then
         -- 判断是否存在
-        if not this.FriendScrollView then
+        if not IsViewAlive(this.FriendScrollView) then
+            this.FriendScrollView = nil
             local rootHight = this.scrollRoot.transform.rect.height
             local sv = SubUIManager.Open(SubUIConfig.ScrollCycleView, this.scrollRoot.transform,
                     this.friendItem, nil, Vector2.New(1080, rootHight - 10), 1, 1, Vector2.New(0, 10))
@@ -242,7 +292,8 @@ function this.GetScrollView(index)
         return this.FriendScrollView
 
     elseif index == 2 or index == 3 or index == 4 then
-        if not this.ChatScrollView then
+        if not IsViewAlive(this.ChatScrollView) then
+            this.ChatScrollView = nil
             local rootHight = this.scrollRoot.transform.rect.height
             local sv = SubUIManager.Open(SubUIConfig.ScrollFitterView, this.scrollRoot.transform,
                     this.chatItem, Vector2.New(1080, rootHight - 10), 1, 10)
@@ -254,7 +305,8 @@ function this.GetScrollView(index)
         return this.ChatScrollView
 
     elseif index == 5 then
-        if not this.SystemScrollView then
+        if not IsViewAlive(this.SystemScrollView) then
+            this.SystemScrollView = nil
             local rootHight = this.scrollRoot.transform.rect.height
             local sv = SubUIManager.Open(SubUIConfig.ScrollFitterView, this.scrollRoot.transform,
                     this.systemItem, Vector2.New(980, rootHight - 10), 1, 20)

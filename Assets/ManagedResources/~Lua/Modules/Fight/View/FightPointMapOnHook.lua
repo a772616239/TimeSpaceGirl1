@@ -305,13 +305,36 @@ end
 
 function this:UpdateMap(map)
     mapMeshRenderers = {}
-    if map ~= nil then
-        for i = 0, map.transform.childCount - 1 do
-            local meshRenderer = map.transform:GetChild(i):GetComponent("MeshRenderer")
-            if meshRenderer then
-                table.insert(mapMeshRenderers, meshRenderer)
-            end
+    this.mapRoot = map
+    if map == nil or IsNull(map) then
+        return
+    end
+    for i = 0, map.transform.childCount - 1 do
+        local meshRenderer = map.transform:GetChild(i):GetComponent("MeshRenderer")
+        if meshRenderer then
+            -- 材质在 UpdateMap 时取一次并缓存：
+            -- ① Renderer.material 每次访问都会 new 一份材质实例，原来放在每帧 Update 里访问
+            --    （每帧还访问两次）⇒ 每帧每块地图泄漏材质实例，长时间挂机必然涨内存；
+            -- ② 地图一旦被销毁，Renderer.material 返回 nil（tolua 只报一条 destroyed 错误），
+            --    后面接 :GetFloat 就是线上 event:172 的 "attempt to index material on a nil value"。
+            table.insert(mapMeshRenderers, { renderer = meshRenderer, material = meshRenderer.material })
         end
+    end
+end
+
+--- 背景地图 UV 流动（Update 每帧调用；单独抽出来便于回归测试）
+function this:UpdateMapUV()
+    for i = #mapMeshRenderers, 1, -1 do
+        local item = mapMeshRenderers[i]
+        if item == nil or item.material == nil or IsNull(item.material) or IsNull(item.renderer) then
+            -- 地图已经被换掉/销毁（FightPointPassMainPanel 换章节 Destroy 了旧 mapGameObject，
+            -- 或面板销毁把整棵战场带走）：整批渲染器一起作废，清空后等下一次 UpdateMap 重建，
+            -- 绝不能每帧拿已销毁的 Material 去 GetFloat —— 那会每帧刷一条报错并且永远自愈不了。
+            mapMeshRenderers = {}
+            return
+        end
+        local material = item.material
+        material:SetFloat("_time", material:GetFloat("_time") + Time.deltaTime)
     end
 end
 
@@ -962,14 +985,19 @@ function this:Update()
     end
 
     if isFindEnemy then
-        for i = 1, #mapMeshRenderers do
-            local old = mapMeshRenderers[i].material:GetFloat("_time")
-            mapMeshRenderers[i].material:SetFloat("_time", old + Time.deltaTime)
-        end
+        this:UpdateMapUV()
 
         --右侧敌人位移进位置
+        local rightPanel = this.RightPanel
+        if rightPanel == nil or IsNull(rightPanel) then
+            -- 战场节点已被销毁（面板销毁只保证走 OnDestroy，Dispose 不一定会跑到），
+            -- 这里直接收掉播放状态，别每帧去索引已销毁的 transform。
+            isFindEnemy = false
+            isPlay = false
+            return
+        end
         local speedOffset = 4.1 --为了跟背景图同步的一个值
-        local rightPos = this.RightPanel.transform.localPosition
+        local rightPos = rightPanel.transform.localPosition
         rightPos.x = rightPos.x - Time.deltaTime * speedOffset
 
         if rightPos.x <= this.rightTargetX then --移到位置
@@ -978,7 +1006,7 @@ function this:Update()
             this:stopFindEnemy()
         end
 
-        this.RightPanel.transform.localPosition = rightPos
+        rightPanel.transform.localPosition = rightPos
     end
 end
 
@@ -1645,6 +1673,9 @@ function this:Dispose()
     Log("Dispose")
     isFindEnemy = false
     isPlay = false
+    -- 地图渲染器缓存跟着这一轮播放一起作废；下次 OnShow 会重新 UpdateMap 重建
+    mapMeshRenderers = {}
+    this.mapRoot = nil
     this:ClearDelayFunc()
     --立即回收延迟列表上的资源
     if self.delayRecycleList then

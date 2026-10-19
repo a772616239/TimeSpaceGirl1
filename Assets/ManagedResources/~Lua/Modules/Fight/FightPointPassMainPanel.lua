@@ -269,13 +269,35 @@ function FightPointPassMainPanel:OnShow()
     SoundManager.PlayMusic(SoundConfig.BGM_Main)
     
 
+    -- 地图必须先于挂机战斗开播就位：
+    -- fightOnHook:Init() 之后 isPlay / isFindEnemy 立刻为 true，它的 Update 每帧刷地图 UV。
+    -- 旧顺序把建图放在 chatPanel:OnShow() 之后，聊天页签一旦抛错（见
+    -- FightPointMapChatPanel.OnTabChange 里对已销毁滚动列表的操作），OnShow 就断在这里，
+    -- ⇒ 战场 isPlay=true 但 mapMeshRenderers 还指着上一轮已销毁的 MeshRenderer，
+    --    于是每帧刷 "attempt to index material on a nil value"，挂机战斗再也起不来。
+    -- 另外 UpdateMap 每次 OnShow 都重建一遍，保证缓存和当前这张地图实例一致
+    -- （重开面板时地图可能是复用的，不重建就会留着旧 Renderer）。
+    local loadMapName = fightLevelConfig[FightPointPassManager.curOpenFight].BG
+    if this.mapGameObject ~= nil and not IsNull(this.mapGameObject) and this.mapName ~= loadMapName then
+        GameObject.Destroy(this.mapGameObject)
+        this.mapGameObject = nil
+    end
+    if this.mapGameObject == nil or IsNull(this.mapGameObject) then
+        this.mapName = loadMapName
+        this.mapGameObject = BattleManager.CreateMap(this.battleSceneGameObject, loadMapName)
+    end
+    fightOnHook:UpdateMap(this.mapGameObject)
+
     if not hasLoad then
         timePressStarted = Time.realtimeSinceStartup
         this.chapterName.text = fightLevelConfig[FightPointPassManager.curOpenFight].Name
         this.IntiReward()
         isCounting = false
-        fightOnHook:Init()
-        chatPanel:OnShow()
+        -- 子模块生命周期逐个隔离：挂机战斗 / 聊天页签任一方抛错，都不能把父界面卡在
+        -- "半初始化"状态 —— 原本一个聊天页签报错，就会让 OnShow 后半段的按钮刷新、
+        -- 引导、入侵怪全部不执行。MyPCall 只把错误打进日志，不中断父界面。
+        MyPCall(function() fightOnHook:Init() end)
+        MyPCall(function() chatPanel:OnShow() end)
 
         FightPointPassManager.isBattleBack = false
         hasLoad = true
@@ -287,16 +309,6 @@ function FightPointPassMainPanel:OnShow()
             callBack()
             callBack = nil
         end
-    end
-
-    local loadMapName = fightLevelConfig[FightPointPassManager.curOpenFight].BG
-    if this.mapName ~= loadMapName then
-        this.mapName = loadMapName
-        if this.mapGameObject ~= nil then
-            GameObject.Destroy(this.mapGameObject)
-        end
-        this.mapGameObject = BattleManager.CreateMap(this.battleSceneGameObject, loadMapName)
-        fightOnHook:UpdateMap(this.mapGameObject)
     end
 
     this.BtnsIsOpen()
@@ -533,6 +545,11 @@ function FightPointPassMainPanel:OnDestroy()
 
     invadeMonster:OnDestroy()
     fightOnHook:OnDestroy()
+    -- 聊天页签也要走一遍销毁：它持有 SubUIManager 动态创建出来的滚动列表缓存，
+    -- 清不掉就会被下一个面板实例当成"还能用"而访问到已销毁节点。
+    if chatPanel.OnDestroy then
+        MyPCall(function() chatPanel:OnDestroy() end)
+    end
 
     SubUIManager.Close(this.PlayerHeadFrameView)
     SubUIManager.Close(this.UpView)

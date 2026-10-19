@@ -21,8 +21,8 @@ FROM_SCALE = 当前已烘焙的倍率（0.6），SCALE = 目标倍率。脚本�
 import re
 import sys
 
-FROM_SCALE = 0.6   # 当前资源里的倍率（上次烘焙的结果）
-SCALE = 0.7        # 目标倍率
+FROM_SCALE = 0.7   # 当前资源里的倍率（上次烘焙的结果）
+SCALE = 0.49       # 目标倍率（0.7 * 0.7）
 PANEL = "Assets/ManagedResources/Prefabs/UI/Fight/FightPointPassMainPanel.prefab"
 
 # 原始（1.0 倍）基准值；期望值 = 原始 * FROM_SCALE，用来防止重复执行

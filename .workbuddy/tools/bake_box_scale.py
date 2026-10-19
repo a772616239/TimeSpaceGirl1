@@ -16,12 +16,13 @@
 一起等比缩，pivot 不动所以箱子原地变小。BaoDian 容器本身仍保持 1（它的 world position 被
 FightPointMapOnHook.SetEffect 当战利品线 DOMove 的终点）。
 
-可重复跑：已经是目标值就跳过，不是 1 也不是目标值就报错（防止误缩第二遍）。
+可重复跑：已经是目标值就跳过，不等于 FROM（当前倍率）也不是目标值就报错（防止误缩第二遍）。
 """
 import re
 import sys
 
-SCALE = 0.7
+SCALE = 0.49          # 目标倍率
+FROM = 0.7            # 当前资源里的倍率（上次烘焙的结果）
 PANEL = "Assets/ManagedResources/Prefabs/UI/Fight/FightPointPassMainPanel.prefab"
 ROOT = "boxRoot"
 TARGETS = ["UI_effect_GuaJi_Box_01", "UI_effect_GuaJi_Box_02", "UI_effect_GuaJi_Box_03"]
@@ -78,9 +79,9 @@ def set_local_scale(txt, spans, rt_fid, target, label):
     if abs(old - target) < 1e-6:
         print("skip   %-24s 已经是 %s" % (label, fmt(old)))
         return txt
-    if abs(old - 1.0) > 1e-6:
-        raise SystemExit("%s 的 scale 是 %s，既不是 1 也不是目标 %s，人工确认后再跑"
-                         % (label, fmt(old), fmt(target)))
+    if abs(old - FROM) > 1e-5:
+        raise SystemExit("%s 的 scale 是 %s，不是期望的当前值 %s，人工确认后再跑"
+                         % (label, fmt(old), fmt(FROM)))
     new = fmt(target)
     block = (block[:m.start()] + m.group(1) + new + m.group(3) + new
              + m.group(5) + new + m.group(7) + block[m.end():])

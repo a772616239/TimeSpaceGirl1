@@ -263,8 +263,12 @@ end
  *
  * go 是 hero/infoGo，旗帜是它的兄弟节点 hero/countryFlag，所以从父节点取。
  * 公会榜没有国籍概念 → 隐藏。
+ *
+ * ⚠️ rankType 必须由调用方传进来：这个文件里没有 sData（那是
+ * RankingSingleListPanel 的模块级变量），早先读 sData.rankType 恒为 nil
+ * ⇒ 公会榜的国家旗一直没被隐藏。
 --]]
-function this.UpdateCountryFlag(go, data)
+function this.UpdateCountryFlag(go, data, rankType)
     if go == nil or IsNull(go) or data == nil then
         return
     end
@@ -276,8 +280,7 @@ function this.UpdateCountryFlag(go, data)
     if flagGo == nil or IsNull(flagGo) then
         return
     end
-    if sData and (sData.rankType == RANK_TYPE.GUILD_FORCE_RANK
-            or sData.rankType == RANK_TYPE.CELEBRATION_GUILD) then
+    if rankType == RANK_TYPE.GUILD_FORCE_RANK or rankType == RANK_TYPE.CELEBRATION_GUILD then
         flagGo:SetActive(false)
         return
     end
@@ -287,7 +290,7 @@ end
 
 function this.SetInfoShow(go,data,rankType,nameText)
     -- 名字后面的国家小旗（节点 bg/panel/ItemPre/hero/countryFlag，见 patch_more_flags.py）
-    this.UpdateCountryFlag(go, data)
+    this.UpdateCountryFlag(go, data, rankType)
     local fight = Util.GetGameObject(go,"fight")
     local warPower = Util.GetGameObject(go,"warPower")
     local trial = Util.GetGameObject(go,"trial")

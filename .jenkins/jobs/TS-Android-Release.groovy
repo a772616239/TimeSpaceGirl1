@@ -434,10 +434,13 @@ set -uo pipefail
 cd "$PROJ"
 # --warn-rc 4：投递失败（凭据/网络/SMTP 拒收）只标黄，不把已经成功的发版判红。
 # 这是 2026-10-18 巡检那条 job 踩过的教训：发信抖一下就把整次构建判红，得不偿失。
+# 取证目录用 TS_RUN_DIR（与其他环节一致）；🔴 别写 $STAGE_RUN_DIR —— 本 job 从不定义它，
+# set -u 下引用未定义变量会在 run_stage 启动前直接炸（2026-10-20 #8 实测：17 环节全过、
+# 邮件却没发，整条构建被这个环节判红）。
 "$BASH" "$SHARED/lib/run_stage.sh" --name "发版完成邮件" \
   --group "通知" --slug notify --timeout 300 --warn-rc 4 \
   -- "$PY" "$SHARED/lib/notify.py" release \
-       --run-dir "$STAGE_RUN_DIR" --job "$JOB_NAME" --build "$BUILD_NUMBER" \
+       --run-dir "$TS_RUN_DIR" --job "$JOB_NAME" --build "$BUILD_NUMBER" \
        --url "$BUILD_URL" --result SUCCESS \
        --field 轨道 "$TS_TRACK" --field 状态 "$TS_STATUS"
 ''')

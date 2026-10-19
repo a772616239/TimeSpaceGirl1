@@ -37,6 +37,14 @@ local CARD_SHOW_TIME   = 2.0    -- 停留时长（对齐特写 CloseupDuration =
 local POP_IN_TIME     = 0.18
 local POP_OUT_TIME    = 0.12
 
+-- 跟随技能栏消失的兜底参数
+-- 技能栏理论上亮 3 秒（BattlePanel.ShowSkillBar，unscaled），比卡片久，
+-- 正常情况卡片走自己的 CARD_SHOW_TIME 收场，这里的跟随只管「技能栏被别处提前关掉」。
+-- 🔴 但不能一发现技能栏没亮就关卡：刚弹出那一瞬可能正好卡在技能栏显示的先后顺序上，
+--    且旧逻辑下技能栏会被堆积的定时器提前关掉，卡片就跟着闪退。
+local CARD_MIN_LIVE_TIME = 1.2  -- 弹出后这段时间内不吃「技能栏消失」的信号（真实秒）
+local FOLLOW_MISS_LIMIT  = 2    -- 连续这么多次轮询都看不到技能栏才算真的消失（0.1s/次）
+
 -- [camp] = { go, live, hero, timer, tween, lastKey, lastTime }
 this.slots = {}
 this.view = nil
@@ -160,6 +168,8 @@ local function DestroySlot(s)
     s.tween = nil
     s.lastKey = nil
     s.lastTime = 0
+    s.showTime = 0
+    s.followMiss = 0
 end
 
 -- 清掉全部卡片（换战斗时重建，保证是从「没被入场动画改过」的模板克隆的）
@@ -228,6 +238,9 @@ function this.Show(view, heroConfig, camp, dedupeKey)
     end
     s.lastKey = dedupeKey
     s.lastTime = now
+    -- 记录弹出时刻 + 清零跟随计数：跟随技能栏的那套判定从这里重新起算
+    s.showTime = now
+    s.followMiss = 0
 
     local go = EnsureCard(view, s)
     if not go then
@@ -293,7 +306,9 @@ function this.Show(view, heroConfig, camp, dedupeKey)
     end, CARD_SHOW_TIME, 1, true)
     s.timer:Start()
 
-    -- 跟随技能栏：技能栏一消失，卡片同步消失（大招表现结束）
+    -- 跟随技能栏：技能栏真没了，卡片也跟着收（大招表现结束）
+    -- 🔴 两道防抖：① 刚弹出的 CARD_MIN_LIVE_TIME 内不吃隐藏信号；
+    --              ② 要连续 FOLLOW_MISS_LIMIT 次轮询都看不到才收，避免瞬时隐藏把卡片闪退。
     if s.followTimer then
         s.followTimer:Stop()
     end
@@ -303,7 +318,16 @@ function this.Show(view, heroConfig, camp, dedupeKey)
             return
         end
         local ui = GetSkillBar(view, s.camp)
-        if not IsAlive(ui) or not ui.activeInHierarchy then
+        if IsAlive(ui) and ui.activeInHierarchy then
+            s.followMiss = 0
+            return
+        end
+        if Time.realtimeSinceStartup - (s.showTime or 0) < CARD_MIN_LIVE_TIME then
+            return
+        end
+        s.followMiss = (s.followMiss or 0) + 1
+        if s.followMiss >= FOLLOW_MISS_LIMIT then
+            Log(string.format("[UIFlow] 大招小卡跟随技能栏收起 camp=%s（技能栏已隐藏）", tostring(camp)))
             this.Hide(camp)
         end
     end, 0.1, -1, true)
@@ -318,6 +342,12 @@ function this.Hide(camp)
     if s.followTimer then
         s.followTimer:Stop()
         s.followTimer = nil
+    end
+    -- 🔴 停留定时器必须一起停：否则提前收起后它还会在原来那个时间点再 Hide 一次，
+    --    正好把下一次弹出（同一阵营）的卡片按原时间点切掉，表现为「这张卡怎么这么快没了」。
+    if s.timer then
+        s.timer:Stop()
+        s.timer = nil
     end
     local go = s.go
     if s.tween then

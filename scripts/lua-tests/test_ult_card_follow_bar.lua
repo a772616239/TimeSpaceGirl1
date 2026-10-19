@@ -309,12 +309,21 @@ do
     RTo(0.50)
     local y0 = BattleUltCard.slots[0].go.rt.anchoredPosition.y
     -- 技能栏整体上移 100（换分辨率 / 面板位移都会这样）
-    RAt(1.00, function() bar.rt.anchoredPosition = Vector2.New(bar.rt.anchoredPosition.x, bar.rt.anchoredPosition.y + 100) end)
-    RTo(1.60)
+    RAt(1.03, function() bar.rt.anchoredPosition = Vector2.New(bar.rt.anchoredPosition.x, bar.rt.anchoredPosition.y + 100) end)
+    -- 50Hz（0.02s）跟随：移动后 0.04s 内卡片必须已经跟到位；
+    -- 旧节拍 0.1s 时下一次 tick 在 1.10，这里会读不到（就是「跟着移动」要修的那种顿挫）
+    RTo(1.07)
     local y1 = BattleUltCard.slots[0].go.rt.anchoredPosition.y
-    Check("技能栏上移 100 后卡片跟着上移 100", math.abs((y1 - y0) - 100) < 1,
+    Check("技能栏上移 100 后 0.04s 内卡片跟着上移 100", math.abs((y1 - y0) - 100) < 1,
         string.format("y0=%.1f y1=%.1f", y0, y1))
     Check("卡片仍在显示", CardActive(0))
+
+    -- 继续移动也要继续跟（不是只在第一次重算）
+    RAt(1.20, function() bar.rt.anchoredPosition = Vector2.New(bar.rt.anchoredPosition.x, bar.rt.anchoredPosition.y - 40) end)
+    RTo(1.30)
+    local y2 = BattleUltCard.slots[0].go.rt.anchoredPosition.y
+    Check("再次下移 40 后卡片继续跟着走", math.abs((y2 - y0) - 60) < 1,
+        string.format("y0=%.1f y2=%.1f", y0, y2))
 end
 
 print("")

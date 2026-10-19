@@ -12,7 +12,7 @@
   🔴 定位规则：跟随技能栏（myRect_Skill / enemyRect_Skill）——卡片纵向落在技能栏那一带，
   不是在屏幕顶角；X 贴左右边缘。位置全部在技能栏的锚点空间里算，所以技能栏怎么锚
   卡片就怎么跟，不再自己揣一套绝对坐标。
-  🔴 位置是「绑定」而不是「算一次」：卡片存活期间每 0.1s 跟着技能栏重算一次
+  🔴 位置是「绑定」而不是「算一次」：卡片存活期间由生命周期计时器每 0.02s（50Hz）重算一次
   （等同 ParentConstraint 的锁定位置语义，但不动父子关系、不动层级、不跟技能栏的
   SetActive 联动 —— 见文件末尾 LockToSkillBar 注释）。
 
@@ -39,20 +39,21 @@ local CARD_FALLBACK_Y  = -520   -- 兜底：找不到技能栏时卡片中心的
 local POP_IN_TIME     = 0.18
 local POP_OUT_TIME    = 0.12
 
--- 收场参数：卡片跟着技能栏（myRect_Skill / enemyRect_Skill）的生命周期走
+-- 生命周期计时器参数：卡片只活一次大招，这段时间里「位置 + 收场」都由同一个计时器推
 -- 🔴 卡片不再自己拍一个固定时长。技能栏亮 3 秒（BattlePanel.RECT_SKILL_SHOW_TIME，unscaled），
 --    以前卡片写死 2.0s（对齐 CloseupDuration）⇒ 卡片必然比技能栏早 1 秒消失。
 --    放大招带特写时更糟：前摇 0.5s + CloseupDuration 这段里战斗是暂停的，技能栏还没亮，
 --    卡片的 2 秒却照走不误，等技能栏亮起来时卡片早就收掉了。
--- 判定分三种情况（0.1s 轮询，真实时间）：
---   ① 技能栏亮着              → 卡片留着（记 barSeen = true）；
---   ② 技能栏亮过、现在灭了     → 连续 FOLLOW_MISS_LIMIT 次看不到才收（≈0.2s 内跟上技能栏）；
+-- 计时器每 FOLLOW_TICK 跑一次（真实时间），判定分三种情况：
+--   ① 技能栏亮着              → 卡片留着（barSeen = true）并重算一次位置（跟着移动）；
+--   ② 技能栏亮过、现在灭了     → 持续 FOLLOW_HIDE_DELAY 才收，防瞬时隐藏把卡片闪退；
 --   ③ 技能栏还没亮（特写前摇） → 只等，不算消失，等它亮起来再跟。
+local FOLLOW_TICK        = 0.02 -- 位置跟随节拍：50Hz，技能栏动起来卡片是连续跟的（0.1s 会顿挫）
+local FOLLOW_HIDE_DELAY  = 0.2  -- 技能栏灭掉后延迟这么久才收卡片（真实秒）
 local CARD_MIN_LIVE_TIME = 1.2  -- 弹出后这段时间内不吃「技能栏消失」的信号（真实秒）
-local FOLLOW_MISS_LIMIT  = 2    -- 连续这么多次轮询都看不到技能栏才算真的消失（0.1s/次）
 local CARD_MAX_LIFE_TIME = 6.0  -- 兜底：技能栏计时异常（一直不灭/一直不亮）时卡片的上限
 
--- [camp] = { go, live, hero, tween, lastKey, lastTime, showTime, barSeen, followMiss }
+-- [camp] = { go, live, hero, tween, lastKey, lastTime, showTime, barSeen, barGoneAt }
 this.slots = {}
 this.view = nil
 
@@ -175,7 +176,7 @@ local function DestroySlot(s)
     s.lastTime = 0
     s.showTime = 0
     s.barSeen = false
-    s.followMiss = 0
+    s.barGoneAt = nil
 end
 
 -- 清掉全部卡片（换战斗时重建，保证是从「没被入场动画改过」的模板克隆的）
@@ -247,7 +248,7 @@ function this.Show(view, heroConfig, camp, dedupeKey)
     -- 记录弹出时刻 + 清零跟随状态：跟随技能栏的那套判定从这里重新起算
     s.showTime = now
     s.barSeen = false
-    s.followMiss = 0
+    s.barGoneAt = nil
 
     local go = EnsureCard(view, s)
     if not go then
@@ -304,7 +305,7 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         pos and string.format("%.0f", pos.x) or "?",
         pos and string.format("%.0f", pos.y) or "?"))
 
-    -- 收场：跟着技能栏走（技能栏亮着就留着，技能栏灭了就跟着灭）
+    -- 生命周期计时器：从弹出到收起只跑这一个 Timer，位置跟随 + 收场都挂在它上面
     -- 🔴 这里不再有「停留 N 秒」的独立定时器：一旦卡片和技能栏各持一个时钟，
     --    两者时长对不上（3.0s vs 2.0s）就必然出现「卡片比技能栏先消失」，
     --    宁可只留技能栏一个时钟，卡片只做跟随 + 兜底上限。
@@ -321,9 +322,9 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         local barOn = IsAlive(ui) and ui.activeInHierarchy
 
         if barOn then
-            -- 技能栏亮着 → 卡片必须是活的
+            -- 技能栏亮着 → 卡片必须是活的，并且跟着它移动
             s.barSeen = true
-            s.followMiss = 0
+            s.barGoneAt = nil
             -- 位置锁定：等同 ParentConstraint 的「锁定位置」，但只锁位置 ——
             -- 卡片仍是 BattlePanel 的子节点（层级压技能栏之下），也不跟技能栏的 SetActive 联动
             -- （特写前摇里技能栏是灭的，卡片必须还能显示）。
@@ -332,9 +333,9 @@ function this.Show(view, heroConfig, camp, dedupeKey)
                 ApplyLayout(view, s, rt)
             end
         elseif s.barSeen and lived >= CARD_MIN_LIVE_TIME then
-            -- 技能栏亮过又灭了 → 防抖几次再收，约 0.2s 内跟上技能栏
-            s.followMiss = (s.followMiss or 0) + 1
-            if s.followMiss >= FOLLOW_MISS_LIMIT then
+            -- 技能栏亮过又灭了 → 持续 FOLLOW_HIDE_DELAY 才收（防瞬时隐藏把卡片闪退）
+            s.barGoneAt = s.barGoneAt or Time.realtimeSinceStartup
+            if Time.realtimeSinceStartup - s.barGoneAt >= FOLLOW_HIDE_DELAY then
                 Log(string.format("[UIFlow] 大招小卡跟随技能栏收起 camp=%s（技能栏已隐藏）", tostring(camp)))
                 this.Hide(camp)
                 return
@@ -347,7 +348,7 @@ function this.Show(view, heroConfig, camp, dedupeKey)
                 tostring(camp), CARD_MAX_LIFE_TIME))
             this.Hide(camp)
         end
-    end, 0.1, -1, true)
+    end, FOLLOW_TICK, -1, true)
     s.followTimer:Start()
 end
 

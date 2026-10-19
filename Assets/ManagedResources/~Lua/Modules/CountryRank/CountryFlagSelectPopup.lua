@@ -161,17 +161,10 @@ end
 
 function CountryFlagSelectPopup:SelectCountry(code)
     this._selected = CountryConfig.Normalize(code)
+    -- 落本地 + 上报服务端；「派发 OnCountryChanged / 重画已渲染的自己的旗」
+    -- 统一在 CountryRankManager.SetPlayerCountry 里做（唯一收口），这里不再重复。
     CountryRankManager.SetPlayerCountry(this._selected)
     this:RefreshSelected()
-    if Game.GlobalEvent then
-        Game.GlobalEvent:DispatchEvent(GameEvent.CountryRank.OnCountryChanged, this._selected)
-    end
-    -- 已经画出来的「自己的旗」就地重画：排行榜/竞技场/玩家信息这些面板
-    -- 都没监听改旗事件，只等数据回包；而回包里的 country 是旧快照，
-    -- 不重画就得关掉重开，重开还可能命中旧快照（用户反馈的「缓存没刷新」）。
-    if CountryFlagUtil ~= nil and CountryFlagUtil.RefreshSelfFlags ~= nil then
-        CountryFlagUtil.RefreshSelfFlags()
-    end
     if this._callback then
         this._callback(this._selected)
     end

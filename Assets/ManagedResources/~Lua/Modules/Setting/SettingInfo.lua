@@ -3,6 +3,7 @@ local this = SettingInfo
 
 require("Modules/CountryRank/CountryConfig")
 require("Modules/CountryRank/CountryRankManager")
+require("Modules/CountryRank/CountryFlagUtil")
 
 local dropDownList = {}
 
@@ -289,12 +290,10 @@ function this.RefreshCountryFlag()
     if this.countryFlag == nil or IsNull(this.countryFlag) then
         return
     end
-    local img = this.countryFlag:GetComponent("Image")
-    if img == nil then
-        return
-    end
-    local code = CountryRankManager.GetPlayerCountry()
-    img.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(code))
+    -- 走 ApplySelf 而不是自己设 sprite：设置页的旗会登记成「自己的旗」，
+    -- 玩家在设置页里改完旗由 CountryRankManager.SetPlayerCountry 就地重画，
+    -- 不用退出设置再进来（这里原来的注释写了靠事件刷新，但其实没监听）。
+    CountryFlagUtil.ApplySelf(this.countryFlag)
 end
 
 --是否显示VIP

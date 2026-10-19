@@ -108,6 +108,25 @@ function CountryRankManager.SetPlayerCountry(code, skipServer)
     -- 榜单里"本国"部分需要重算
     this._localRank = nil
     this._myRankInfo = nil
+
+    --[[
+     * 改旗后的**唯一广播点**
+     *
+     * 以前把「派发 OnCountryChanged + 重画自己的旗」写在各入口里，结果：
+     *   - 设置页的旗、聊天点开的玩家信息面板、国家榜的「我的排名」都以为
+     *     别人会发事件，实际没人发 ⇒ 改完旗不关掉重开就一直是旧旗；
+     *   - 任何新增入口（引导、静默补传）都得自己再写一遍，必漏。
+     * 收口到这里后，所有路径都只走一次，且时序正确：PlayerManager.country
+     * 与本地 player_country 已更新，CountryFlagUtil 立刻解析出新值。
+     *]]
+    if Game ~= nil and Game.GlobalEvent ~= nil and GameEvent ~= nil and GameEvent.CountryRank ~= nil then
+        Game.GlobalEvent:DispatchEvent(GameEvent.CountryRank.OnCountryChanged, normalized)
+    end
+    -- 已经画出来的「自己的旗」就地重画（排行榜/竞技场/玩家信息/设置页都登记在这里）
+    if CountryFlagUtil ~= nil and CountryFlagUtil.RefreshSelfFlags ~= nil then
+        CountryFlagUtil.RefreshSelfFlags()
+    end
+
     return normalized
 end
 

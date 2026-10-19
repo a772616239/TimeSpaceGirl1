@@ -310,14 +310,12 @@ function this.RefreshCountryFlag(data)
     if (uid == nil or uid == 0) and data ~= nil then
         uid = data.uid
     end
-    -- 统一走 CountryFlagUtil：服务端有 country 就显示；
-    -- 没有则显示问号占位旗（用户要求名字旁不留空）
-    local code = CountryFlagUtil.ResolveCountry(uid, data and data.country)
-    -- 记住当前旗帜对应的国家码：点击提示是异步的，不能在那时重新解析
-    this._CountryCode = code
-    this.memCountryFlag:SetActive(true)
-    this.memCountryFlagImg.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(
-            code or CountryConfig.FALLBACK_CODE))
+    -- 统一走 CountryFlagUtil.Apply（不再自己设 sprite）：
+    --   1) 看的是「自己」时它会把节点登记下来，改旗后由 RefreshSelfFlags 就地重画
+    --      —— 聊天里点开的玩家信息面板以前不登记，改完旗一直显示旧旗；
+    --   2) sprite 与问号占位规则只在一处维护。
+    -- 返回的是实际画上去的国家码，记住它：点击提示是异步的，不能那时重新解析。
+    this._CountryCode = CountryFlagUtil.Apply(this.memCountryFlag, uid, data and data.country)
     -- 自愈：面板实例是复用的，升级前就创建好的旧实例不会重跑 InitComponent，
     -- 这里按「有没有 Button」判断是否已绑过，没绑就补一次（幂等，不会重复弹提示）
     if this.memCountryFlag:GetComponent("Button") == nil then

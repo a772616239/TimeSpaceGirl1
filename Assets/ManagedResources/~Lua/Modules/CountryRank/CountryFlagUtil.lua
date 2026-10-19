@@ -101,22 +101,18 @@ function CountryFlagUtil.Apply(go, uid, country)
         selfFlagNodes[go] = nil
     end
 
-    local code = CountryFlagUtil.ResolveCountry(uid, country)
-    if code == nil then
-        -- 没有真实数据：显示问号占位旗（用户 2026-10-18 要求，不要留空）
-        go:SetActive(true)
-        local img = go:GetComponent("Image")
-        if img ~= nil then
-            img.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(CountryConfig.FALLBACK_CODE))
-        end
-        return
-    end
-    local img = go:GetComponent("Image")
-    if img == nil then
-        return
-    end
+    -- 没有真实数据时用问号占位旗（用户 2026-10-18 要求，名字旁不要留空）
+    local shownCode = CountryFlagUtil.ResolveCountry(uid, country) or CountryConfig.FALLBACK_CODE
+
     go:SetActive(true)
-    img.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(code))
+    local img = go:GetComponent("Image")
+    if img ~= nil then
+        img.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(shownCode))
+    end
+
+    -- 返回「实际画上去的国家码」：调用方（如玩家信息弹窗的点击提示）要记住它。
+    -- 不能事后重新 ResolveCountry —— 点击是异步的，那时数据可能已经变了。
+    return shownCode
 end
 
 --- 玩家改旗后调用：把所有「已经画出来的自己的旗」就地重画一遍
@@ -151,7 +147,7 @@ end
 function CountryFlagUtil.ApplySelf(go)
     local uid = (PlayerManager ~= nil) and PlayerManager.uid or nil
     local country = (PlayerManager ~= nil) and PlayerManager.country or nil
-    CountryFlagUtil.Apply(go, uid, country)
+    return CountryFlagUtil.Apply(go, uid, country)
 end
 
 --[[

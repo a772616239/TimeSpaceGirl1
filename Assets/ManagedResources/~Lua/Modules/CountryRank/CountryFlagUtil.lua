@@ -25,29 +25,64 @@ if not CountryConfig then
     return
 end
 
+--- 判断这个 uid 是不是玩家自己（未登录时一律 false）
+local function isSelfUid(uid)
+    if uid == nil or PlayerManager == nil then
+        return false
+    end
+    local myUid = PlayerManager.uid
+    if myUid == nil or myUid == 0 or tonumber(myUid) == nil then
+        return false
+    end
+    return tonumber(uid) == tonumber(myUid)
+end
+
 --- 解析某个玩家应显示的国家码；取不到返回 nil（= 由调用方决定占位/隐藏）
 -- @param uid     玩家 uid（可为 nil）
 -- @param country 服务端下发的国家码（可为 nil / ""）
+--
+-- 🔴 自己的优先级与别人不同（2026-10-19「改旗后排行榜还是旧旗」的根因）：
+--    榜单回包里的 country 是**请求那一刻的服务端快照**。玩家刚改完旗时，
+--    服务端落值有延迟（消息排队 / 多端 / 网络抖动），本地 player_country
+--    已经是新值，而回包仍是旧值 ⇒ 列表里自己那行显示旧旗、底部「我的排名」
+--    显示新旗，同一面板自相矛盾。所以「自己」必须本地已选值优先，
+--    服务端值只做兜底；其他玩家仍以服务端为准。
 function CountryFlagUtil.ResolveCountry(uid, country)
-    -- 1. 服务端有记录就用服务端的（唯一真源）
+    local self = isSelfUid(uid)
+
+    -- 1. 自己：本地最新选择优先（GetChosenCountry = player_country，玩家选过才有值）
+    if self and CountryRankManager ~= nil and CountryRankManager.GetChosenCountry ~= nil then
+        local chosen = CountryRankManager.GetChosenCountry()
+        if chosen ~= nil and chosen ~= "" then
+            return chosen
+        end
+    end
+
+    -- 2. 服务端下发的值（其他玩家的唯一真源）
     if country ~= nil and country ~= "" then
         return CountryConfig.Normalize(country)
     end
 
-    -- 2. 自己没有服务端值时，允许用本地已选值做临时显示
-    --    （玩家刚在面板里选完、服务端响应还没回来的窗口）
-    local myUid = PlayerManager and PlayerManager.uid or 0
-    if uid ~= nil and myUid ~= nil and myUid ~= 0
-            and tonumber(uid) == tonumber(myUid) and CountryRankManager then
+    -- 3. 自己没有服务端值 → 用本地解析结果（自选 > 设备地区 > 兜底）
+    if self and CountryRankManager ~= nil then
         local localCode = CountryRankManager.GetPlayerCountry()
         if localCode ~= nil and localCode ~= "" then
             return localCode
         end
     end
 
-    -- 3. 其他玩家且服务端没记录 → nil（调用方显示问号占位旗）
+    -- 4. 其他玩家且服务端没记录 → nil（调用方显示问号占位旗）
     return nil
 end
+
+--[[
+ * 「自己」的旗子节点登记表：node -> uid
+ *
+ * 用途：玩家改旗后**就地**重画已经渲染出来的自己的旗，不必关掉再打开面板。
+ * 只登记自己的节点 —— 榜单/列表的节点是循环复用的，重画别人的旗只会画错。
+ * 弱键：面板销毁后节点没人引用，条目自动回收，不会攒垃圾。
+--]]
+local selfFlagNodes = setmetatable({}, { __mode = "k" })
 
 --- 给一个 Image 设置国旗 sprite
 -- 取不到国家码时显示 cn2-guoqi_xx 问号旗占位（名字旁不空一块）
@@ -58,6 +93,14 @@ function CountryFlagUtil.Apply(go, uid, country)
     if go == nil or IsNull(go) then
         return
     end
+
+    -- 登记/注销「这个节点此刻画的是不是自己」，供 RefreshSelfFlags 就地重画
+    if isSelfUid(uid) then
+        selfFlagNodes[go] = uid
+    else
+        selfFlagNodes[go] = nil
+    end
+
     local code = CountryFlagUtil.ResolveCountry(uid, country)
     if code == nil then
         -- 没有真实数据：显示问号占位旗（用户 2026-10-18 要求，不要留空）
@@ -74,6 +117,19 @@ function CountryFlagUtil.Apply(go, uid, country)
     end
     go:SetActive(true)
     img.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(code))
+end
+
+--- 玩家改旗后调用：把所有「已经画出来的自己的旗」就地重画一遍
+-- 不改动别人的旗，也不碰列表数据（数据下次请求时自然带上新 country）。
+-- 面板关闭/销毁过的节点 IsNull 为真，直接跳过。
+function CountryFlagUtil.RefreshSelfFlags()
+    for go, uid in pairs(selfFlagNodes) do
+        if go ~= nil and not IsNull(go) then
+            CountryFlagUtil.Apply(go, uid, nil)
+        else
+            selfFlagNodes[go] = nil
+        end
+    end
 end
 
 --- 直接在父节点下按名字取 countryFlag 再设置

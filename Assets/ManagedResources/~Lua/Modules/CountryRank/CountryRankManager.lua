@@ -62,6 +62,19 @@ function CountryRankManager.GetPlayerCountry()
     return CountryConfig.FALLBACK_CODE
 end
 
+--- 玩家「自己选过」的国家码；没选过返回 nil
+--- 与 GetPlayerCountry 的区别：这里**不看** PlayerManager.country（服务端回包），
+--- 只认本地 player_country —— 即「玩家最后一次选择/或登录时与服务端同步的值」。
+--- 用途：改完旗到服务端落值之间有一段窗口，榜单回包还是旧 country，
+---       此时「自己」的旗要以这份本地值为准（见 CountryFlagUtil.ResolveCountry）。
+function CountryRankManager.GetChosenCountry()
+    local saved = PlayerPrefs.GetString(PLAYER_COUNTRY_KEY, "")
+    if saved ~= nil and saved ~= "" then
+        return CountryConfig.Normalize(saved)
+    end
+    return nil
+end
+
 --- 玩家是否主动选过国家（决定首次进入是否弹选择面板）
 function CountryRankManager.HasChosenCountry()
     if PlayerManager ~= nil and PlayerManager.country ~= nil and PlayerManager.country ~= "" then

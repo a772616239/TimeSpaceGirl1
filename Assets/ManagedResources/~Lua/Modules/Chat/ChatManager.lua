@@ -36,6 +36,9 @@ function this.Initialize()
     this.ChatList = {}
     this.FriendChatList = {}
 
+    -- 发送者 uid -> 国家码（聊天记录里老消息没有 country 时的兜底，见 GetPlayerCountry）
+    this.PlayerCountryCache = {}
+
     -- msgId标志位，用于记录当前最新消息的消息号，刷新时按此消息号进行数据刷新
     this.MsgIdFlag = {}
 
@@ -206,7 +209,39 @@ function this.GetMsgIdFlag(channel)
 end
 
 -- 数据处理
+--[[
+ * 发送者国家码缓存（uid -> country）
+ *
+ * 为什么需要：ChatInfo.country 是后加的字段，加字段之前写进聊天队列/Redis 的历史消息
+ * 这一项是空串；同一个玩家「新消息有旗、老消息问号旗」看起来就像画错了。
+ * 只要这个 uid 在任意一条消息里带过 country，就把他的旗统一成那个值。
+ * 自己的消息不依赖这个缓存（CountryFlagUtil 里本地选择优先）。
+--]]
+function this.GetPlayerCountry(uid)
+    local id = tonumber(uid)
+    if id == nil then
+        return nil
+    end
+    return this.PlayerCountryCache[id]
+end
+
+--- 从一批 ChatInfo 里刷新 uid -> country 缓存
+local function cachePlayerCountry(chatInfoList)
+    if chatInfoList == nil then
+        return
+    end
+    for i = 1, #chatInfoList do
+        local info = chatInfoList[i]
+        local id = info ~= nil and tonumber(info.senderId) or nil
+        local country = info ~= nil and info.country or nil
+        if id ~= nil and id > 0 and country ~= nil and country ~= "" then
+            this.PlayerCountryCache[id] = country
+        end
+    end
+end
+
 function this.ChatDataAdapter(channel, data)
+    cachePlayerCountry(data ~= nil and data.chatInfo or nil)
     -- 好友数据特殊处理
     if channel == CHAT_CHANNEL.FRIEND then return end
     -- 先对数据排个序

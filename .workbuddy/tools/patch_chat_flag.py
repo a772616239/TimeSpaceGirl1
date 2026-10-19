@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""给**聊天消息气泡**的名字旁加国家小旗节点（ChatPanel.prefab）。
+"""给**聊天消息气泡**的名字旁加国家小旗节点。
 
-  content/chat/leftchat/contentroot/bg/info/name/countryFlag    别人的消息
-  content/chat/rightchat/contentroot/bg/info/name/countryFlag   自己的消息（镜像到右侧）
+  <chat>/leftchat/contentroot/bg/info/name/countryFlag    别人的消息
+  <chat>/rightchat/contentroot/bg/info/name/countryFlag   自己的消息（镜像到右侧）
+
+三份聊天面板各有一份**独立**的气泡模板（不是嵌套 prefab），必须分别打：
+
+  Assets/ManagedResources/Prefabs/UI/Chat/ChatPanel.prefab              --chat content/chat
+  Assets/ManagedResources/Prefabs/UI/Battle/BattlePanel.prefab          --chat ChatPanel/content/chat
+  Assets/ManagedResources/Prefabs/UI/Fight/FightPointPassMainPanel.prefab --chat Bg/ChatPanel/content/chat
 
 为什么放在 name 容器里而不是 info 下：
   info 这一行是 title | name | pos 紧贴排满的（0..178 / 178..466 / 466..553），
@@ -11,13 +17,19 @@
   右聊 pivot 右），把旗放进容器并把这侧的名字顶开 50px 即可，既有留白够用。
 
 幂等：已有 countryFlag 就直接跳过（不重复插、不重复挪名字）。
+
+用法：
+  python patch_chat_flag.py                       # 默认 ChatPanel.prefab
+  python patch_chat_flag.py --prefab Assets/.../BattlePanel.prefab --chat ChatPanel/content/chat
 """
+import argparse
 import hashlib
 import os
 import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PREFAB = os.path.join(ROOT, "Assets/ManagedResources/Prefabs/UI/Chat/ChatPanel.prefab")
+CHAT_ROOT = "content/chat"
 NODE_NAME = "countryFlag"
 
 FLAG_W, FLAG_H = 46, 32     # 名字行高 66、字号 26，旗子取 46x32
@@ -34,7 +46,6 @@ LAYOUT = {
 def new_id(seed):
     h = hashlib.md5(("TimeSpaceGirl1/ChatFlag/" + seed).encode()).hexdigest()
     return str(int(h[:15], 16) + 500000000000000000)
-
 
 def parse(txt):
     docs = re.split(r"^--- !u!(\d+) &(-?\d+)", txt, flags=re.M)
@@ -82,21 +93,30 @@ def find(objs, path):
 
 
 def main():
-    txt = open(PREFAB, encoding="utf-8").read()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--prefab", default=PREFAB, help="prefab 路径（默认 ChatPanel.prefab）")
+    ap.add_argument("--chat", default=CHAT_ROOT, help='气泡模板所在的相对路径，如 "content/chat" 或 "ChatPanel/content/chat"')
+    args = ap.parse_args()
+
+    prefab = args.prefab if os.path.isabs(args.prefab) else os.path.join(ROOT, args.prefab)
+    base = [s for s in args.chat.split("/") if s]
+    tag = os.path.splitext(os.path.basename(prefab))[0] + "/"
+
+    txt = open(prefab, encoding="utf-8").read()
     head, objs, order = parse(txt)
     added = []
 
     # 模板：同 prefab 里一个普通 Image 节点（title/title）
-    tpl_rt = find(objs, ["content", "chat", "leftchat", "contentroot", "bg", "info", "title", "title"])
+    tpl_rt = find(objs, base + ["leftchat", "contentroot", "bg", "info", "title", "title"])
     if tpl_rt is None:
-        raise SystemExit("模板节点 title/title 没找到，prefab 结构变了？")
+        raise SystemExit("模板节点 %s/title/title 没找到，prefab 结构变了？" % args.chat)
     tpl_go = go_of(objs, tpl_rt)
     comp_ids = [c.strip() for c in re.findall(r"- component: \{fileID: (-?\d+)\}", objs[tpl_go][1])]
     tpl_cr = next(c for c in comp_ids if objs[c][0] == 222)
     tpl_img = next(c for c in comp_ids if objs[c][0] == 114)
 
     for side, cfg in LAYOUT.items():
-        name_rt = find(objs, ["content", "chat", side, "contentroot", "bg", "info", "name"])
+        name_rt = find(objs, base + [side, "contentroot", "bg", "info", "name"])
         if name_rt is None:
             raise SystemExit("找不到 %s 的 name 容器" % side)
         text_rt = None
@@ -113,10 +133,10 @@ def main():
             print("  = %s 已有 %s，跳过" % (side, NODE_NAME))
             continue
 
-        go_id = new_id(side + "/go")
-        rt_id = new_id(side + "/rt")
-        cr_id = new_id(side + "/cr")
-        img_id = new_id(side + "/img")
+        go_id = new_id(tag + side + "/go")
+        rt_id = new_id(tag + side + "/rt")
+        cr_id = new_id(tag + side + "/cr")
+        img_id = new_id(tag + side + "/img")
 
         # --- GameObject ---
         go_body = objs[tpl_go][1]
@@ -177,14 +197,14 @@ def main():
         added.append("%s (name.x %s -> %s)" % (side, old_x, cfg["text_x"]))
 
     if not added:
-        print("无需改动（已存在）")
+        print("无需改动（已存在）：" + os.path.basename(prefab))
         return
 
     out = [head]
     for oid in order:
         out.append("--- !u!%d &%s%s" % (objs[oid][0], oid, objs[oid][1]))
-    open(PREFAB, "w", encoding="utf-8").write("".join(out))
-    print("已添加：")
+    open(prefab, "w", encoding="utf-8").write("".join(out))
+    print("已添加（%s）：" % os.path.basename(prefab))
     for a in added:
         print("  +", a)
 

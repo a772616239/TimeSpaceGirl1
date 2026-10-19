@@ -529,7 +529,13 @@ function this.ChatItemAdapter(node, data, isShowTime, isShowServerName)
             nameRt.anchoredPosition = Vector2.New(x, nameRt.anchoredPosition.y)
         end
         if showFlag then
-            CountryFlagUtil.Apply(flagGo, senderId, data.country)
+            -- 老消息（ChatInfo 加 country 字段之前写入的）没有国籍：
+            -- 用这个 uid 在其它消息里带过的国家码兜底，避免同一个人有的有旗、有的问号旗
+            local country = data.country
+            if country == nil or country == "" then
+                country = ChatManager.GetPlayerCountry(senderId)
+            end
+            CountryFlagUtil.Apply(flagGo, senderId, country)
         end
     end
 

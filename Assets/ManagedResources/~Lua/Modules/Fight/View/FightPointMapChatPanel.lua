@@ -1,6 +1,7 @@
 ---挂机界面的聊天窗口,代码拷贝的ChatPanel.lua文件,根据需求修改,比如没有发送消息等
 local this = {}
 
+require("Modules/CountryRank/CountryFlagUtil")
 local itemConfig = ConfigManager.GetConfig(ConfigName.ItemConfig)
 
 local TabBox = require("Modules/Common/TabBox")
@@ -366,6 +367,39 @@ function this.ChatItemAdapter(node, data, isShowTime, isShowServerName)
 	local CH = Util.GetGameObject(node, "contentroot/bg/info/title/title"):GetComponent("Image")
 	local CHison = Util.GetGameObject(node, "contentroot/bg/info/title")
     local vip = Util.GetGameObject(node, "base/vip"):GetComponent("Image")
+
+    --[[
+     * 国家小旗（节点 contentroot/bg/info/name/countryFlag，见 patch_chat_flag.py）
+     * 数据来自服务端 ChatInfo.country（field 28）；没下发时显示问号占位旗，
+     * 与排行榜 / 玩家信息面板同一条规则。走 CountryFlagUtil.Apply 而不是直接设
+     * sprite：自己的消息会被登记，改旗后由 CountryRankManager.SetPlayerCountry
+     * 触发的 RefreshSelfFlags 就地重画，不用重开面板。
+    --]]
+    local flagGo = Util.GetGameObject(node, "contentroot/bg/info/name/countryFlag")
+    if flagGo ~= nil then
+        -- 系统消息 / 广播（senderId 为 0 或空）没有国籍：不画旗，并把名字挪回原位
+        local senderId = tonumber(data.senderId)
+        local showFlag = senderId ~= nil and senderId > 0
+        flagGo:SetActive(showFlag)
+        local nameRt = name.gameObject:GetComponent("RectTransform")
+        if nameRt ~= nil then
+            local baseX = isMyChat and 0 or 1.1
+            local x = baseX
+            if showFlag then
+                x = isMyChat and (baseX - 52) or (baseX + 52)
+            end
+            nameRt.anchoredPosition = Vector2.New(x, nameRt.anchoredPosition.y)
+        end
+        if showFlag then
+            -- 老消息（ChatInfo 加 country 字段之前写入的）没有国籍：
+            -- 用这个 uid 在其它消息里带过的国家码兜底，避免同一个人有的有旗、有的问号旗
+            local country = data.country
+            if country == nil or country == "" then
+                country = ChatManager.GetPlayerCountry(senderId)
+            end
+            CountryFlagUtil.Apply(flagGo, senderId, country)
+        end
+    end
     -- 判断是否显示时间
     -- time:SetActive(isShowTime)
     -- if isShowTime then

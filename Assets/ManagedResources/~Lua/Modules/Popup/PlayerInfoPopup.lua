@@ -316,7 +316,9 @@ end
 -- 刷新基础信息显示
 function this.RefreshPlayerInfo(data)
     this.memName.text = SetRobotName(data.uid, data.name)
-    this:RefreshCountryFlag(data)
+    -- 🔴 必须点号调用：函数签名是 function this.RefreshCountryFlag(data)，
+    -- 用冒号会把 this 当成 data 传进去（历史 bug：国旗永远是问号旗）。
+    this.RefreshCountryFlag(data)
 
     this.memProfessTip.text = GetLanguageStrById(10629)
     if data.guildName ~= "" then

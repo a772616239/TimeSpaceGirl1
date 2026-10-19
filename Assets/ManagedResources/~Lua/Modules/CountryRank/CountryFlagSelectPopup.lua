@@ -114,11 +114,40 @@ function CountryFlagSelectPopup:OnClose()
     this._callback = nil
 end
 
---- 生成旗帜格子
-function CountryFlagSelectPopup:BuildCells()
-    if #this.cells > 0 then
+--- 清掉 grid 下已经生成过的格子（保留 cellPre 模板）
+---
+--- 🔴 为什么必须清：本面板 noDestory=false ⇒ UIManager.ClosePanel 里
+--- `isDestroy = isDestroy or noDestory == 0` 为 false，关闭时只把 GameObject
+--- SetActive(false)，lua 面板对象还被 openedList[id] 缓存复用。所以 grid 下克隆出来的
+--- 73 个格子在关闭后依然存在；下次 OnShow 再 BuildCells 就又叠一整套在同一坐标，
+--- 而旧格子里上一个被点选国家的 `selected` 高亮没人重置 ⇒ 看上去「多选了多个国家」。
+--- 更早版本用来防重入的 `#this.cells > 0` 也拦不住：cells 以国家码（字符串）为键，
+--- `#` 长度恒为 0。这里改成按节点名清理，天然幂等（也顺手修掉已叠加的多套旧格子）。
+function CountryFlagSelectPopup:ClearCells()
+    this.cells = {}
+    if this.grid == nil or IsNull(this.grid) then
         return
     end
+    local t = this.grid.transform
+    -- Destroy 是延迟到帧末执行，childCount 不会当场变，倒序遍历即可安全
+    for i = t.childCount, 1, -1 do
+        local child = t:GetChild(i - 1)
+        if child ~= nil and not IsNull(child) then
+            local go = child.gameObject
+            if go ~= nil and not IsNull(go) then
+                -- 克隆出来的格子都叫 cell_<code>；模板 cellPre 不会命中该前缀
+                local name = go.name
+                if name ~= nil and string.sub(name, 1, 5) == "cell_" then
+                    GameObject.Destroy(go)
+                end
+            end
+        end
+    end
+end
+
+--- 生成旗帜格子
+function CountryFlagSelectPopup:BuildCells()
+    this:ClearCells()
     local list = CountryConfig.List
     local total = #list
     local rowCount = math.ceil(total / COLUMN_COUNT)

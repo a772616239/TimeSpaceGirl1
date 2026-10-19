@@ -33,19 +33,23 @@ local CARD_GAP_Y       = 8      -- 卡片顶边与技能栏底边的间隙（参
 local CARD_CONTENT_TOP = 642.5  -- 卡片内容顶边相对卡片中心（缩放前，Image1 顶边 = pos.y 7 + 高 1271/2）
 local CARD_Y_OFFSET    = 309.35 -- 在「技能栏下沿」基础上的整体竖向微调（正数向上）
 local CARD_FALLBACK_Y  = -520   -- 兜底：找不到技能栏时卡片中心的 Y（相对顶部锚点）
-local CARD_SHOW_TIME   = 2.0    -- 停留时长（对齐特写 CloseupDuration = 2000ms）
 local POP_IN_TIME     = 0.18
 local POP_OUT_TIME    = 0.12
 
--- 跟随技能栏消失的兜底参数
--- 技能栏理论上亮 3 秒（BattlePanel.ShowSkillBar，unscaled），比卡片久，
--- 正常情况卡片走自己的 CARD_SHOW_TIME 收场，这里的跟随只管「技能栏被别处提前关掉」。
--- 🔴 但不能一发现技能栏没亮就关卡：刚弹出那一瞬可能正好卡在技能栏显示的先后顺序上，
---    且旧逻辑下技能栏会被堆积的定时器提前关掉，卡片就跟着闪退。
+-- 收场参数：卡片跟着技能栏（myRect_Skill / enemyRect_Skill）的生命周期走
+-- 🔴 卡片不再自己拍一个固定时长。技能栏亮 3 秒（BattlePanel.RECT_SKILL_SHOW_TIME，unscaled），
+--    以前卡片写死 2.0s（对齐 CloseupDuration）⇒ 卡片必然比技能栏早 1 秒消失。
+--    放大招带特写时更糟：前摇 0.5s + CloseupDuration 这段里战斗是暂停的，技能栏还没亮，
+--    卡片的 2 秒却照走不误，等技能栏亮起来时卡片早就收掉了。
+-- 判定分三种情况（0.1s 轮询，真实时间）：
+--   ① 技能栏亮着              → 卡片留着（记 barSeen = true）；
+--   ② 技能栏亮过、现在灭了     → 连续 FOLLOW_MISS_LIMIT 次看不到才收（≈0.2s 内跟上技能栏）；
+--   ③ 技能栏还没亮（特写前摇） → 只等，不算消失，等它亮起来再跟。
 local CARD_MIN_LIVE_TIME = 1.2  -- 弹出后这段时间内不吃「技能栏消失」的信号（真实秒）
 local FOLLOW_MISS_LIMIT  = 2    -- 连续这么多次轮询都看不到技能栏才算真的消失（0.1s/次）
+local CARD_MAX_LIFE_TIME = 6.0  -- 兜底：技能栏计时异常（一直不灭/一直不亮）时卡片的上限
 
--- [camp] = { go, live, hero, timer, tween, lastKey, lastTime }
+-- [camp] = { go, live, hero, tween, lastKey, lastTime, showTime, barSeen, followMiss }
 this.slots = {}
 this.view = nil
 
@@ -157,10 +161,6 @@ local function DestroySlot(s)
     end
     s.go = nil
     s.hero = nil
-    if s.timer then
-        s.timer:Stop()
-        s.timer = nil
-    end
     if s.followTimer then
         s.followTimer:Stop()
         s.followTimer = nil
@@ -169,6 +169,7 @@ local function DestroySlot(s)
     s.lastKey = nil
     s.lastTime = 0
     s.showTime = 0
+    s.barSeen = false
     s.followMiss = 0
 end
 
@@ -238,8 +239,9 @@ function this.Show(view, heroConfig, camp, dedupeKey)
     end
     s.lastKey = dedupeKey
     s.lastTime = now
-    -- 记录弹出时刻 + 清零跟随计数：跟随技能栏的那套判定从这里重新起算
+    -- 记录弹出时刻 + 清零跟随状态：跟随技能栏的那套判定从这里重新起算
     s.showTime = now
+    s.barSeen = false
     s.followMiss = 0
 
     local go = EnsureCard(view, s)
@@ -297,18 +299,10 @@ function this.Show(view, heroConfig, camp, dedupeKey)
         pos and string.format("%.0f", pos.x) or "?",
         pos and string.format("%.0f", pos.y) or "?"))
 
-    -- 停留后收起
-    if s.timer then
-        s.timer:Stop()
-    end
-    s.timer = Timer.New(function ()
-        this.Hide(camp)
-    end, CARD_SHOW_TIME, 1, true)
-    s.timer:Start()
-
-    -- 跟随技能栏：技能栏真没了，卡片也跟着收（大招表现结束）
-    -- 🔴 两道防抖：① 刚弹出的 CARD_MIN_LIVE_TIME 内不吃隐藏信号；
-    --              ② 要连续 FOLLOW_MISS_LIMIT 次轮询都看不到才收，避免瞬时隐藏把卡片闪退。
+    -- 收场：跟着技能栏走（技能栏亮着就留着，技能栏灭了就跟着灭）
+    -- 🔴 这里不再有「停留 N 秒」的独立定时器：一旦卡片和技能栏各持一个时钟，
+    --    两者时长对不上（3.0s vs 2.0s）就必然出现「卡片比技能栏先消失」，
+    --    宁可只留技能栏一个时钟，卡片只做跟随 + 兜底上限。
     if s.followTimer then
         s.followTimer:Stop()
     end
@@ -317,17 +311,28 @@ function this.Show(view, heroConfig, camp, dedupeKey)
             s.followTimer:Stop()
             return
         end
+        local lived = Time.realtimeSinceStartup - (s.showTime or 0)
         local ui = GetSkillBar(view, s.camp)
-        if IsAlive(ui) and ui.activeInHierarchy then
+        local barOn = IsAlive(ui) and ui.activeInHierarchy
+
+        if barOn then
+            -- 技能栏亮着 → 卡片必须是活的
+            s.barSeen = true
             s.followMiss = 0
-            return
+        elseif s.barSeen and lived >= CARD_MIN_LIVE_TIME then
+            -- 技能栏亮过又灭了 → 防抖几次再收，约 0.2s 内跟上技能栏
+            s.followMiss = (s.followMiss or 0) + 1
+            if s.followMiss >= FOLLOW_MISS_LIMIT then
+                Log(string.format("[UIFlow] 大招小卡跟随技能栏收起 camp=%s（技能栏已隐藏）", tostring(camp)))
+                this.Hide(camp)
+                return
+            end
         end
-        if Time.realtimeSinceStartup - (s.showTime or 0) < CARD_MIN_LIVE_TIME then
-            return
-        end
-        s.followMiss = (s.followMiss or 0) + 1
-        if s.followMiss >= FOLLOW_MISS_LIMIT then
-            Log(string.format("[UIFlow] 大招小卡跟随技能栏收起 camp=%s（技能栏已隐藏）", tostring(camp)))
+        -- ③ 技能栏还没亮（放大招前摇 + 特写期间战斗暂停）→ 什么都不做，继续等
+
+        if lived >= CARD_MAX_LIFE_TIME then
+            Log(string.format("[UIFlow] 大招小卡兜底收起 camp=%s（技能栏 %.1fs 内没收场）",
+                tostring(camp), CARD_MAX_LIFE_TIME))
             this.Hide(camp)
         end
     end, 0.1, -1, true)
@@ -343,12 +348,9 @@ function this.Hide(camp)
         s.followTimer:Stop()
         s.followTimer = nil
     end
-    -- 🔴 停留定时器必须一起停：否则提前收起后它还会在原来那个时间点再 Hide 一次，
-    --    正好把下一次弹出（同一阵营）的卡片按原时间点切掉，表现为「这张卡怎么这么快没了」。
-    if s.timer then
-        s.timer:Stop()
-        s.timer = nil
-    end
+    -- 🔴 卡片只有一个时钟（followTimer），收起后就没了；
+    --    以前还给卡片挂过一个「停留 2 秒」的定时器，提前收起后它照样到点再 Hide 一次，
+    --    正好把同一阵营下一次弹出的卡片按上一个时间点切掉。
     local go = s.go
     if s.tween then
         s.tween:Kill()

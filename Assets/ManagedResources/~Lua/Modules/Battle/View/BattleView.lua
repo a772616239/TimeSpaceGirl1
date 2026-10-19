@@ -129,6 +129,9 @@ function this:InitComponent(root, battleSceneLogic, battleScene)
     this.closeupPos = Util.GetGameObject(battleScene, "CameraRoot/CameraPos/CloseupPos").transform
     this.pvPos = Util.GetGameObject(battleScene, "PVPos").transform
 
+    --战斗相机根节点抬高到 -1.57；挂机场景由 FightPointMapOnHook 归位
+    BattleManager.SetCameraRootY(battleScene, BattleManager.CAMERA_ROOT_Y_BATTLE)
+
     -- body
     this.root = root
     this.battleSceneLogic = battleSceneLogic

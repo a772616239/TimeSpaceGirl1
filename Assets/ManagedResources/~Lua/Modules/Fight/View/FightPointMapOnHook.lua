@@ -137,6 +137,9 @@ function this:InitComponent(root, parent, battleSceneLogic, battleScene)
     BattleSceneLayer = LayerMask.NameToLayer("BattleScene")
     battleSceneSkillTransform = Util.GetGameObject(battleSceneLogic, "Skill").transform
 
+    --挂机场景相机根节点归位到 0（战斗内被抬到 -1.57，场景实例复用时要显式还原）
+    BattleManager.SetCameraRootY(battleScene, BattleManager.CAMERA_ROOT_Y_HOOK)
+
     m_parent = parent
     this.battleSceneLogic = battleSceneLogic
     this.battleScene = battleScene

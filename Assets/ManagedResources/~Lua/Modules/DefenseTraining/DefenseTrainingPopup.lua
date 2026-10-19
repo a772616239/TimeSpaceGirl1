@@ -334,9 +334,18 @@ function DefenseTrainingPopup:UpdateFirstReward()
             this.Reward_GetButton:SetActive(true)
 
             Util.AddOnceClick(this.Reward_GetButton, function()
+                -- 关键关卡领奖 ⇒ 诱导评分（Google Play 内评价）
+                -- 首通奖励只配置在里程碑关上（GetFirstRewardList），后端对每关只发一次，
+                -- 所以「领取成功」本身就等于该关的首次通关里程碑；具体弹不弹由 AppReview_TryShowOnKeyLevel 控频。
+                local reviewKey = "def_training_" .. tostring(getFirstRewardConfigData.Id)
                 NetManager.DefTrainingGetFirstAward(getFirstRewardConfigData.Id, function(msg)
                     if msg.drop then
-                        UIManager.OpenPanel(UIName.RewardItemPopup, msg.drop, 1)
+                        UIManager.OpenPanel(UIName.RewardItemPopup, msg.drop, 1, function()
+                            -- 等奖励面板关掉再弹，避免内评价盖在领奖动画上
+                            AppReview_TryShowOnKeyLevel(reviewKey)
+                        end)
+                    else
+                        AppReview_TryShowOnKeyLevel(reviewKey)
                     end
 
                     NetManager.DefTrainingGetInfo(function(msg) --< 拉数据

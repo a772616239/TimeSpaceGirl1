@@ -174,10 +174,20 @@ function BlitzStrikePanel.UpdateMain()
                 -- can get
                 N:SetActive(true)
                 Util.AddOnceClick(N, function()
-                    NetManager.BlitzGetBoxAward(BoxSignIdx[i].Id, function(msg)
+                    -- 关键关卡领奖 ⇒ 诱导评分（Google Play 内评价）
+                    -- 宝箱每 3 关一个（含每档最后一关），后端只允许领一次，
+                    -- 所以「领取成功」就等于打完了这一段的关键里程碑；具体弹不弹由 AppReview_TryShowOnKeyLevel 控频。
+                    local boxConfigId = BoxSignIdx[i].Id
+                    local reviewKey = "blitz_box_" .. tostring(boxConfigId)
+                    NetManager.BlitzGetBoxAward(boxConfigId, function(msg)
                         NetManager.BlitzTypeInfo(function()
                             if msg.drop then
-                                UIManager.OpenPanel(UIName.RewardItemPopup, msg.drop, 1)
+                                UIManager.OpenPanel(UIName.RewardItemPopup, msg.drop, 1, function()
+                                    -- 等奖励面板关掉再弹，避免内评价盖在领奖动画上
+                                    AppReview_TryShowOnKeyLevel(reviewKey)
+                                end)
+                            else
+                                AppReview_TryShowOnKeyLevel(reviewKey)
                             end
                             this.UpdateMain()
                         end)

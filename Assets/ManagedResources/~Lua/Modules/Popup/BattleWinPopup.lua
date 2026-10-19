@@ -435,6 +435,14 @@ function BattleWinPopup:NextStep()
                             UIManager.ClosePanel(UIName.HegemonyPopup)
                             UIManager.ClosePanel(UIName.BattlePanel)
                             this:ClosePanel()
+                            -- 关键节点（成功夺取神位）⇒ 诱导评分（Google Play 内评价）
+                            -- HegemonyPanel 只是神位列表，通关判定只在这个胜利结算分支里，
+                            -- 因此钩子挂在这里，等英雄/奖励弹框都关完再弹；每个神位只弹一次，
+                            -- 具体由 AppReview_TryShowOnKeyLevel 控频。
+                            local hegemonyFightId = HegemonyManager.curFightId
+                            if hegemonyFightId then
+                                AppReview_TryShowOnKeyLevel("hegemony_seat_" .. tostring(hegemonyFightId))
+                            end
                         end,7,true,true,nil,false,HegemonyManager.curFightId)
                     end)
                 end

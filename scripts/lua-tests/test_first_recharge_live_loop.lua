@@ -110,14 +110,28 @@ local function NewNode(name)
     local node = { __name = name, __destroyed = false, localPosition = nil }
     return setmetatable(node, {
         __index = function(t, k)
+            -- 已 Destroy：读字段/取方法一律复刻 tolua 的兜底报错（SetActive 之类也一样）
+            if t.__destroyed and k ~= "__destroyed" then
+                error("attempt to index " .. tostring(k) .. " on a nil value", 2)
+            end
             if k == "transform" then
-                if t.__destroyed then
-                    error("attempt to index transform on a nil value", 2)
-                end
                 return t
             end
             if k == "gameObject" then
                 return t
+            end
+            if k == "SetActive" then
+                return function() end
+            end
+            if k == "GetComponent" then
+                return function(_, comp)
+                    return NewNode(comp)
+                end
+            end
+            if k == "Find" then
+                return function(_, path)
+                    return NewNode(path)
+                end
             end
             return nil
         end,
@@ -207,6 +221,7 @@ DG = {
         },
     },
 }
+local nodeMap = {} -- path -> false 表示该节点不存在
 Util = {
     ClearChild = function() end,
     LoadSprite = function()
@@ -215,12 +230,23 @@ Util = {
     AddClick = function() end,
     AddParticleSortLayer = function() end,
     LogError = function() end,
+    -- 默认每个路径都拿得到节点；nodeMap 里显式给 false 的路径模拟「节点不存在」
+    GetGameObject = function(_, path)
+        if nodeMap[path] == false then
+            return nil
+        end
+        return NewNode(path)
+    end,
 }
 SoundConfig = { Sound_UICancel = 1 }
 Inherit = function(base)
     return setmetatable({}, { __index = base })
 end
 BasePanel = {}
+function ConfigPairs(t)
+    return pairs(t or {})
+end
+IndexValueDef = { 1, 2 }
 
 local loadLiveCount = 0
 function LoadHerolive()
@@ -235,6 +261,7 @@ function GetProStrImageByProNum()
     return ""
 end
 function Log() end
+function LogError() end
 function PlaySoundWithoutClick() end
 
 -- 这个 luajit 构建下 package.loaded 覆盖不了 require（实测 require 只看 package.preload），
@@ -264,14 +291,26 @@ local function Check(cond, msg)
 end
 
 local function ResetPanel()
+    Panel.transform = NewNode("root")
     Panel.lihui = NewNode("lihuis")
     Panel.oneLihui = NewNode("lihui")
+    Panel.lihuiInfo = NewNode("lihuiInfo")
+    Panel.oneLihuiInfo = NewNode("oneLihuiInfo")
     Panel.name = NewNode("name")
     Panel.pro = NewNode("pro")
     Panel.liveNode = nil
     Panel.Onelive = nil
     Panel.heroData = heroCfg[10003]
     Panel.oneHeroData = heroCfg[10042]
+    -- OnShow/OnTabChanged 需要的外观件
+    Panel.selectTabIndex = 1
+    Panel.selectTabs = { NewNode("selected1"), NewNode("selected2") }
+    Panel.tabTitles = { NewNode("title1"), NewNode("title2") }
+    Panel.tabRedPoint = { NewNode("red1"), NewNode("red2") }
+    Panel.reChargeTips = NewNode("tips")
+    Panel.reChargeBtn = NewNode("rechargeBtn")
+    Panel.dayRewardList = {}
+    nodeMap = {}
 end
 
 print("[1] SetHeroData：lihui 已销毁时不能再索引 transform")
@@ -331,6 +370,38 @@ Tick(0.1, 2)
 DestroyNode(Panel.lihui)
 Panel:OnDestroy()
 Check(ActiveCoCount() == 0, "OnDestroy 后协程已停（实际 " .. ActiveCoCount() .. "）")
+
+print("[7] OnShow：oneLihui 已销毁（fake-null）时不再裸取 .transform")
+ResetPanel()
+DestroyNode(Panel.oneLihui)
+-- 只测 OnShow 里的「静态立绘」这一段：把 tab 切换临时打空，避免 305 行的报错抢在前面
+-- （305 由用例 [8] 单独覆盖），这样旧版就能精确复现 149 行那句
+-- "attempt to index transform on a nil value"。
+local realOnTabChanged = Panel.OnTabChanged
+Panel.OnTabChanged = function() end
+ok, err = pcall(Panel.OnShow, Panel)
+Panel.OnTabChanged = realOnTabChanged
+Check(ok, "OnShow 不抛异常" .. (ok and "" or ("（" .. tostring(err) .. "）")))
+-- 轮播协程第一轮会自己 LoadHerolive（挂到 liveNode 上），所以这里只看静态立绘这一个槽位
+Check(Panel.Onelive == nil, "节点已销毁时跳过加载静态立绘（Onelive 保持 nil，未多挂一张）")
+Panel:OnDestroy()
+
+print("[8] OnTabChanged：oneLihui/oneLihuiInfo/lihuiInfo 已销毁时不再裸 :SetActive")
+ResetPanel()
+DestroyNode(Panel.oneLihui)
+DestroyNode(Panel.oneLihuiInfo)
+DestroyNode(Panel.lihuiInfo)
+ok, err = pcall(Panel.OnTabChanged, Panel, 2)
+Check(ok, "OnTabChanged 不抛异常" .. (ok and "" or ("（" .. tostring(err) .. "）")))
+
+print("[9] InitComponent：缺 hero 节点时只记日志，不抛异常")
+ResetPanel()
+nodeMap["hero"] = false
+ok, err = pcall(Panel.InitComponent, Panel)
+Check(ok, "InitComponent 不抛异常" .. (ok and "" or ("（" .. tostring(err) .. "）")))
+Check(Panel.lihui == nil and Panel.oneLihui == nil and Panel.name == nil,
+        "hero 相关引用全部为 nil（下游整块走跳过分支）")
+nodeMap["hero"] = nil
 
 print("")
 if failed > 0 then

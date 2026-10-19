@@ -45,16 +45,35 @@ function FirstRechargePanel:InitComponent()
     this.Onelive = nil
     this.heroData = nil
     this.oneHeroData = nil
+    this.lihui = nil
+    this.oneLihui = nil
+    this.lihuiInfo = nil
+    this.name = nil
+    this.pro = nil
 
+    -- hero 整块都做判空：美术改结构缺一个节点不该让面板开机就崩，
+    -- 下游 OnShow/OnTabChanged/SetHeroData 已全部按 nil 处理（只是不显示立绘）。
     self.hero = Util.GetGameObject(self.transform, "hero")
-    this.lihui = Util.GetGameObject(self.hero.transform, "lihuis")
-    if this.lihui == nil then
+    if Alive(self.hero) then
+        this.lihui = Util.GetGameObject(self.hero.transform, "lihuis")
+        this.oneLihui = Util.GetGameObject(self.hero.transform, "lihui")
+        this.lihuiInfo = Util.GetGameObject(self.hero.transform, "lihuiInfo")
+        if Alive(this.lihuiInfo) then
+            local nameNode = Util.GetGameObject(this.lihuiInfo, "name")
+            local proNode = Util.GetGameObject(this.lihuiInfo, "pro")
+            if Alive(nameNode) then
+                this.name = nameNode:GetComponent("Text")
+            end
+            if Alive(proNode) then
+                this.pro = proNode:GetComponent("Image")
+            end
+        end
+    else
+        LogError("FirstRechargePanel: 缺少 hero 节点，立绘与英雄信息全部跳过")
+    end
+    if not Alive(this.lihui) then
         LogError("FirstRechargePanel: 缺少 hero/lihuis 节点，立绘轮播不会启动")
     end
-    this.oneLihui = Util.GetGameObject(self.hero.transform, "lihui")
-    this.lihuiInfo = Util.GetGameObject(self.hero.transform, "lihuiInfo")
-    this.name = Util.GetGameObject(this.lihuiInfo, "name"):GetComponent("Text")
-    this.pro = Util.GetGameObject(this.lihuiInfo, "pro"):GetComponent("Image")
 
     self.closeBtn = Util.GetGameObject(self.transform, "closeBtn")
 	this.Btnback = Util.GetGameObject(this.transform, "Btnback")
@@ -146,10 +165,23 @@ function FirstRechargePanel:OnShow()
             Util.ClearChild(this.oneLihui.transform)
         end
     end
-    this.Onelive = LoadHerolive(this.oneHeroData,this.oneLihui.transform)
+    -- 静态立绘与英雄信息同样要判活：面板被 Destroy 后又 Open（openedList 里的残留实例）时，
+    -- 这些节点已经是 fake-null，直接取 .transform 就是本条崩溃的同款死法。
+    this.Onelive = nil
+    if Alive(this.oneLihui) then
+        this.Onelive = LoadHerolive(this.oneHeroData, this.oneLihui.transform)
+    end
 
-    Util.GetGameObject(self.oneLihuiInfo,"name"):GetComponent("Text").text = GetLanguageStrById(this.oneHeroData.ReadingName)
-    Util.GetGameObject(self.oneLihuiInfo,"pro"):GetComponent("Image").sprite = Util.LoadSprite(GetProStrImageByProNum(this.oneHeroData.PropertyName))
+    if this.oneHeroData and Alive(this.oneLihuiInfo) then
+        local nameNode = Util.GetGameObject(this.oneLihuiInfo, "name")
+        local proNode = Util.GetGameObject(this.oneLihuiInfo, "pro")
+        if Alive(nameNode) then
+            nameNode:GetComponent("Text").text = GetLanguageStrById(this.oneHeroData.ReadingName)
+        end
+        if Alive(proNode) then
+            proNode:GetComponent("Image").sprite = Util.LoadSprite(GetProStrImageByProNum(this.oneHeroData.PropertyName))
+        end
+    end
 
     -- 原写法 "for i = 1, 10, 0" 步长为 0：LuaJIT 2.1 不报错但会死循环（i 恒为 1），
     -- 每轮都 Load/UnLoad 一次立绘，是 UnLoadAsset 崩溃的高频触发源。这里显式写成轮播。
@@ -302,10 +334,17 @@ function FirstRechargePanel:OnTabChanged(index)
     end
     self:ShowContent(index)
     self.selectTabIndex = index
-    this.oneLihui:SetActive(index == 1)
+    -- tab 切换会被 OnShow 直接调用，节点可能已随面板销毁 ⇒ 逐个判活，不再裸 :SetActive
+    if Alive(this.oneLihui) then
+        this.oneLihui:SetActive(index == 1)
+    end
     --this.lihui:SetActive(index == 2)
-    this.oneLihuiInfo:SetActive(index == 1)
-    this.lihuiInfo:SetActive(index == 1)
+    if Alive(this.oneLihuiInfo) then
+        this.oneLihuiInfo:SetActive(index == 1)
+    end
+    if Alive(this.lihuiInfo) then
+        this.lihuiInfo:SetActive(index == 1)
+    end
     Log("OnTabClicked index:"..index)
 end
 

@@ -286,7 +286,7 @@ function FightPointPassMainPanel:OnShow()
         this.mapName = loadMapName
         this.mapGameObject = BattleManager.CreateMap(this.battleSceneGameObject, loadMapName)
     end
-    fightOnHook:UpdateMap(this.mapGameObject)
+    fightOnHook:UpdateMap(this.mapGameObject, this.mapName)
 
     if not hasLoad then
         timePressStarted = Time.realtimeSinceStartup

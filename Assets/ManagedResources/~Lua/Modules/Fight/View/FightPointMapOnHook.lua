@@ -19,6 +19,48 @@ local DoColor_Spine_TweenerRight = {}--右方变换颜色的Tweener
 local DeadMaterial_TweenerRight = {}--右方死亡材质
 local afkSpeak = ConfigManager.GetConfig(ConfigName.AfkSpeak)
 
+-- 挂机气泡「场景池」约定（AfkSpeak 表 Type 列）：
+--   0        = 通用池（任何英雄、任何地图）
+--   10001... = 英雄专属（Type == 英雄配置 Id）
+--   9900 + n = 第 n 张挂机地图的场景吐槽（Map2 -> 9902）
+-- 地图名来自 MainLevelConfig[curOpenFight].BG（Map1/Map2/Map5/Map7/Map8）。
+local MAP_TALK_TYPE_BASE = 9900
+local MAP_TALK_PERCENT = 40   -- 场景吐槽命中概率（%）
+
+---地图资源名 -> 场景池 Type；不是 MapN 形态就返回 nil（只是不说话，不报错）
+local function MapTalkTypeFromName(mapName)
+    if type(mapName) ~= "string" then
+        return nil
+    end
+    local n = tonumber(string.match(mapName, "^Map(%d+)$"))
+    if n == nil then
+        return nil
+    end
+    return MAP_TALK_TYPE_BASE + n
+end
+
+---组一次气泡候选
+---@param rows AfkSpeak 配置
+---@param heroId number 说话位置上的英雄配置 Id
+---@param mapType number|nil 当前场景池 Type
+---@param roll number 1~100 的随机数（便于回归测试注入）
+---@return table 候选语言 Id 列表
+local function BuildTalkPool(rows, heroId, mapType, roll)
+    local heroAndGeneric, mapTalk = {}, {}
+    for i, v in ConfigPairs(rows) do
+        if v.Type == heroId or v.Type == 0 then
+            table.insert(heroAndGeneric, v.AfkDialogue)
+        elseif mapType ~= nil and v.Type == mapType then
+            table.insert(mapTalk, v.AfkDialogue)
+        end
+    end
+    -- 场景池为空（新地图还没配台词）时自动退回通用池，不会出现「不说话」
+    if #mapTalk > 0 and roll ~= nil and roll <= MAP_TALK_PERCENT then
+        return mapTalk
+    end
+    return heroAndGeneric
+end
+
 local rolePosCount = 9 --左右每侧位置数量
 ---右方数量
 local rightCount = 0
@@ -303,9 +345,11 @@ function this:Init()
     talkNum = this:GetTalkNum()
 end
 
-function this:UpdateMap(map)
+function this:UpdateMap(map, mapName)
     mapMeshRenderers = {}
     this.mapRoot = map
+    -- 换图/换章节时跟着换吐槽池：拿不到名字就置 nil，退回通用池
+    this.curMapType = MapTalkTypeFromName(mapName)
     if map == nil or IsNull(map) then
         return
     end
@@ -367,14 +411,13 @@ function this:HeroTalk()
     local talk = function (_rand)
         this.talkList[_rand]:SetActive(true)
 
-        local talk = {}
-        for i, v in ConfigPairs(afkSpeak) do
-            if v.Type == talkPosList[_rand].Id or v.Type == 0 then
-                table.insert(talk,v.AfkDialogue)
-            end
+        -- 候选池：英雄专属 + 通用池，或者当前场景池（40% 概率，见 BuildTalkPool）
+        local pool = BuildTalkPool(afkSpeak, talkPosList[_rand].Id, this.curMapType, math.random(1, 100))
+        if #pool == 0 then
+            return
         end
-    
-        Util.GetGameObject(this.talkList[_rand],"Text"):GetComponent("Text").text = GetLanguageStrById(talk[math.random(1,#talk)])
+
+        Util.GetGameObject(this.talkList[_rand],"Text"):GetComponent("Text").text = GetLanguageStrById(pool[math.random(1,#pool)])
         Timer.New(function ()
             local animation = this.talkList[_rand]:GetComponent("Animation")
             animation:Play("cn2-X1_UI_FightPointPassMainPanel_talk_fan")
@@ -1752,5 +1795,10 @@ function this:ResetSpineComponent(spineComponent)
     spineComponent.AnimationState:ClearTracks()
     spineComponent.AnimationState:SetAnimation(0, RoleAnimationName.Stand, true)
 end
+
+--暴露给 scripts/lua-tests/test_afk_map_talk.lua（纯函数，不碰 UI）
+this.BuildTalkPool = BuildTalkPool
+this.MapTalkTypeFromName = MapTalkTypeFromName
+this.MAP_TALK_PERCENT = MAP_TALK_PERCENT
 
 return this

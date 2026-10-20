@@ -1280,6 +1280,58 @@ def append_manifest(root: Path, record: dict) -> Path:
     return mf
 
 
+def cmd_compress(args) -> int:
+    """交付前压体积：无损重编码优先，够不到目标再逐级降位深（每档实测误差）。
+
+    🔴 为什么需要这一步：换风格出的图是 32bit 全彩，生成模型会往里塞雪花/灯串/光斑，
+       同尺寸下颜色数能翻三倍（实测 10 万 → 34 万），体积 685KB → 1196KB。
+       这不是「画坏了」，是交付前该做的一道工序——包体按体积算，不按好不好看算。
+    """
+    from png_compress import compress_file, describe
+
+    mode = getattr(args, "mode", "auto")
+    max_diff = int(getattr(args, "max_diff", 8) or 8)
+    target_kb = getattr(args, "target_kb", None)
+
+    if getattr(args, "file", None):
+        src = Path(args.file).expanduser().resolve()
+        if not src.is_file():
+            log("compress", f"🔴 文件不存在：{src}")
+            return RC_FAIL
+        asset = None
+        work = None
+    else:
+        if not getattr(args, "work", None):
+            log("compress", "🔴 需要 --work 或 --file")
+            return RC_USAGE
+        work = Path(args.work).expanduser().resolve()
+        state = read_state(work)
+        outputs = state.get("outputs") or {}
+        variant = getattr(args, "variant", "auto")
+        if variant == "auto":
+            variant = "opaque" if str(state.get("source_mode", "")).upper() == "RGB" else "alpha"
+        src = Path(outputs.get(variant, ""))
+        if not src.is_file():
+            log("compress", f"🔴 变体 {variant} 不存在，先跑 postprocess")
+            return RC_FAIL
+        asset = Path(state["asset"]) if state.get("asset") else None
+
+    # 目标默认 = 资源当前体积（此时还没写回，拿到的就是「之前那张」的体积）
+    if target_kb is None and asset is not None and asset.is_file():
+        target_kb = asset.stat().st_size / 1024
+        log("compress", f"目标体积默认取原资源：{target_kb:.1f} KB")
+
+    rep = compress_file(src, target_kb=target_kb, max_diff=max_diff, mode=mode, log=lambda s: log("compress", s))
+    print("  " + describe(rep))
+    if rep["saved_pct"] <= 0:
+        log("compress", "⚠ 压不下去（已经接近最优，或误差预算太紧）——保留原文件")
+
+    if work is not None:
+        (work / "compress.json").write_text(json.dumps(rep, ensure_ascii=False, indent=2),
+                                            encoding="utf-8")
+    return RC_OK
+
+
 def cmd_publish(args) -> int:
     """把验收通过的版本写回资源；**原图被搬出工程**到 ResBackpack/备份（可 restore 回滚）。"""
     work = Path(args.work).expanduser().resolve()
@@ -1527,6 +1579,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--work", required=True)
     p.add_argument("--out", default=None)
     p.set_defaults(func=cmd_graph)
+
+    p = sub.add_parser("compress", help="交付前压体积：无损优先，够不到目标再降位深（每档实测误差）")
+    p.add_argument("--work", default=None, help="工作目录（压缩 outputs 里选中的那个变体，就地覆盖）")
+    p.add_argument("--variant", choices=["auto", "alpha", "opaque"], default="auto")
+    p.add_argument("--file", default=None, help="直接压某个文件（就地覆盖），与 --work 二选一")
+    p.add_argument("--target-kb", type=float, default=None,
+                   help="目标体积 KB；留空=用资源当前体积（即「别比之前那张大」）")
+    p.add_argument("--max-diff", type=int, default=8,
+                   help="降位深允许的最大通道差（0-255，只在不透明区算）。默认 8，超过就停在上一档")
+    p.add_argument("--mode", choices=["auto", "lossless", "off"], default="auto",
+                   help="auto=无损压不动就降位深；lossless=只重编码；off=跳过")
+    p.set_defaults(func=cmd_compress)
 
     p = sub.add_parser("publish", help="写回原资源（破坏性，需 --yes；原图搬出工程到 ResBackpack/备份）")
     p.add_argument("--work", required=True)

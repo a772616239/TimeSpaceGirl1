@@ -74,6 +74,8 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
 | `ALPHA_FROM` / `SOURCE_FROM` | 资源已被换过、工作区里没原版时，用 `git:HEAD:<path>` 取回参照                                                            |
 | `WRITE_BACK`                 | **替换原图（默认开）**：验收通过后把成品写回资源，**原图先搬进 `BACKUP_ROOT`** 再覆盖，`.meta` 不动。传 `false` 只出图不改资源                                                              |
 | `BACKUP_ROOT`                | 备份根，留空 = `ResBackpack/备份`                                                                           |
+| `COMPRESS`                   | 交付前压体积（写回**之前**跑，阶段 ⑤b）：`auto`（默认）/ `lossless` / `off`。目标体积默认取资源当前体积 = 「别比之前那张大」 |
+| `COMPRESS_MAX_DIFF`          | 降位深允许的最大通道差（默认 8，只在不透明区算）。调小更保画质、可能压不到目标；调大更小、渐变处可能出台阶 |
 
 构建页能看到：环节表（JUnit）+ `summary.md` + 构建描述 + `artifacts/`（改前改后对比图、graph.md、  
 prompt.txt、state.json、published.json）。节点图由 `graph` 生成，链路  
@@ -353,6 +355,35 @@ $PY scripts/image/gen_chatgpt_web.py --image ... --prompt-file ... --out ... \
 
 出图建议：`HERO_BAND` 模式**用 1:1 或接近带子比例的输入**（如 856×930 → `1024x1024`），
 不要拿整张超长图去生成——模型会把角色放大填满画幅，底边反而更难接。
+
+---
+
+## 体积压缩（阶段 ⑤b，写回之前）
+
+```text
+$PY scripts/image/restyle_pipeline.py compress --work <工作目录> --variant auto   # 目标=资源当前体积
+$PY scripts/image/restyle_pipeline.py compress --file <某个.png> --target-kb 700 --max-diff 8
+```
+
+**为什么必须有这一步**：换风格出的图是 32bit 全彩，而生成模型会往画面里塞雪花、灯串、光斑这类高频细节，
+**同尺寸下颜色数能从 10 万涨到 34 万**——实测 `cn2-X1_shikongzhanchang_shangdianpeitu.png`
+（1080×476）原图 685KB / 10.1 万色，换风格后 1196KB / 34.2 万色，尺寸一模一样，体积 1.75 倍。
+
+档位（`auto` 按顺序试，取第一个够到目标的；每档都实测误差）：
+
+| 档位 | 做法 | 本图实测 | 最大通道差 |
+|---|---|---|---|
+| 0 | PIL `optimize=True` 重编码（像素完全不变） | 1161 KB | 0 |
+| 1 | 每通道降到 7bit（128 级） | 1111 KB | 1 |
+| 2 | 6bit（64 级） | 947 KB | 2 |
+| 3 | 5bit（32 级） | 749 KB | 4 |
+| 4 | 4bit（16 级） | 563 KB | 8 |
+
+- 🔴 **不要用 `Image.quantize` 做这件事**：RGBA 只支持 FASTOCTREE，256 色调色板会把发光/渐变打出明显色块
+  （实测平均差 22，肉眼可见）。降位深是「均匀削精度」，对平涂 anime 几乎无损，对渐变只是轻微台阶。
+- 误差只在**不透明区**算——透明区的 RGB 是垃圾值，拿它算误差没有意义。
+- 每档超过 `COMPRESS_MAX_DIFF` 立刻停，停在上一档；压完反而更大就原样保留（不为了「压过」而变大）。
+- 报告写 `<工作目录>/compress.json`，控制台打印「多少 KB → 多少 KB（-x%，档位，最大通道差）」。
 
 ---
 

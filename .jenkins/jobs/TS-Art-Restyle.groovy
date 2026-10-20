@@ -22,7 +22,9 @@
     {"name":"FRAME_RIM","type":"choice","choices":["warm","ivory","violet","none"],"default":"warm","description":"卡框最外那道亮边（跟游戏道具槽一致的「暗带+亮边」）。warm=暖金（配圣诞等暖色主题）；ivory=银白；violet=紫白（跟紫色面板同色系）；none=不画亮边——🔴 深色面板(17,17,25)上墨带跟底色同亮度，框会直接看不见"},
     {"name":"WATERMARK","type":"choice","choices":["auto","off","force"],"default":"auto","description":"去水印。auto=按「亮+灰+排成一行」判据自动修；off=完全不碰像素（生成图本来没水印、或右下角有亮装饰带会被误判成水印时用；掩码为 0 时验收自动跳过这条）；force=已知有水印但判据没认出来"},
     {"name":"WRITE_BACK","type":"boolean","default":true,"description":"替换原图（默认开）：验收通过后把成品写回资源，**原图先搬出工程**到 BACKUP_ROOT（默认 ResBackpack/备份，.meta 不动），再覆盖；写回前先复核哈希，可 restore 回滚。传 false 则只出图、不改工程里的资源"},
-    {"name":"BACKUP_ROOT","type":"string","default":"","description":"原图备份根目录。留空=ResBackpack/备份（按资源相对路径镜像，_manifest.jsonl 记台账）"}
+    {"name":"BACKUP_ROOT","type":"string","default":"","description":"原图备份根目录。留空=ResBackpack/备份（按资源相对路径镜像，_manifest.jsonl 记台账）"},
+    {"name":"COMPRESS","type":"choice","choices":["auto","lossless","off"],"default":"auto","description":"交付前压体积（写回前跑）：auto=无损重编码优先，仍大于原资源体积才逐级降位深；lossless=只重编码；off=跳过。生成图颜色数常是原图的 3 倍，同尺寸体积会大 1.7 倍，这一步就是把它压回去"},
+    {"name":"COMPRESS_MAX_DIFF","type":"string","default":"8","description":"降位深允许的最大通道差（0-255，只在不透明区算）。默认 8；调小=更保画质但可能压不到目标，调大=更小但渐变处可能出台阶"}
   ]
 }
 META*/
@@ -199,6 +201,24 @@ cd "$PROJ"
 "$BASH" .jenkins/lib/run_stage.sh --name "像素级验收" \
   --group "美术资源链" --slug art-verify --timeout 300 --warn-rc 3 \
   -- "$PY" scripts/image/restyle_pipeline.py verify --work "$ART_WDIR"
+''')
+      }
+    }
+
+    stage('⑤b 体积压缩') {
+      // 换风格出的图是 32bit 全彩，同尺寸下体积能比原资源大 1.7 倍（颜色数 10 万 → 34 万）。
+      // 这一步在写回**之前**跑：目标体积默认取资源当前体积，也就是「别比之前那张大」。
+      when { expression { fileExists("${env.TS_RUN_DIR}/gen.ready") && (params.COMPRESS ?: 'auto') != 'off' } }
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+echo "压缩模式：${COMPRESS:-auto}   误差预算：${COMPRESS_MAX_DIFF:-8}"
+"$BASH" .jenkins/lib/run_stage.sh --name "体积压缩" \
+  --group "美术资源链" --slug art-compress --timeout 300 \
+  -- "$PY" scripts/image/restyle_pipeline.py compress \
+       --work "$ART_WDIR" --variant auto \
+       --mode "${COMPRESS:-auto}" --max-diff "${COMPRESS_MAX_DIFF:-8}"
 ''')
       }
     }

@@ -82,10 +82,13 @@ cd "$PROJ"
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
-"$BASH" .jenkins/lib/lock.sh --name unity run --who "$JOB_NAME #$BUILD_NUMBER" --timeout 1800 -- \
-  "$BASH" .jenkins/lib/run_stage.sh --name "导表（xlsx→Lua+txt）" \
-    --group "资源构建" --slug export-tables --timeout 1800 \
-    -- "$BASH" scripts/resource_build.sh --action export
+# 🔴 不要在这里再套 `lock.sh --name unity`：resource_build.sh 自己会 exec 自身套同一把锁
+#    （见其头部 TSG_INNER 说明）。外层再套一层 = 自己等自己，flock 不可重入 ⇒ 必然死锁。
+#    实测 2026-10-21：TS-Resource-Build #9/#10 都卡在「重建 AB」，等满 2400s 判 rc=75，
+#    连带 TS-Android-Release #15/#16 一起失败（stage ③-0 propagate）。
+"$BASH" .jenkins/lib/run_stage.sh --name "导表（xlsx→Lua+txt）" \
+  --group "资源构建" --slug export-tables --timeout 1800 \
+  -- "$BASH" scripts/resource_build.sh --action export
 ''')
       }
     }
@@ -115,10 +118,10 @@ fi
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
-"$BASH" .jenkins/lib/lock.sh --name unity run --who "$JOB_NAME #$BUILD_NUMBER" --timeout 2400 -- \
-  "$BASH" .jenkins/lib/run_stage.sh --name "重建 AB + 复制到 StreamingAssets" \
-    --group "资源构建" --slug rebuild-ab --timeout 2400 \
-    -- "$BASH" scripts/resource_build.sh --action ab --server-env "$TS_SERVER_ENV"
+# 🔴 同上：resource_build.sh 内部已自带 unity 锁，这里不能再套一层（会死锁）。
+"$BASH" .jenkins/lib/run_stage.sh --name "重建 AB + 复制到 StreamingAssets" \
+  --group "资源构建" --slug rebuild-ab --timeout 2400 \
+  -- "$BASH" scripts/resource_build.sh --action ab --server-env "$TS_SERVER_ENV"
 ''')
       }
     }

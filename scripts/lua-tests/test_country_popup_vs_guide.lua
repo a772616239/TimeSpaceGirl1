@@ -125,6 +125,8 @@ local failOpenId = nil
 local coexist = {}
 UIManager = {}
 function UIManager.IsOpen(id) return openPanels[id] == true end
+function UIManager.GetConfig(id) return { id = id, assetName = "Panel" .. tostring(id) } end
+function UIManager.SetPopupQueue(q) UIManager.popupQueue = q end
 function UIManager.OpenPanel(id, ...)
     if failOpenId == id then return nil end
     if id == UIName.GuidePanel and openPanels[UIName.CountryFlagSelectPopup] then
@@ -138,11 +140,16 @@ function UIManager.OpenPanel(id, ...)
     Game.GlobalEvent:DispatchEvent(GameEvent.UI.OnOpen, id, nil)
     return { id = id }
 end
+UIManager.OpenPanelWithSound = UIManager.OpenPanel
 function UIManager.ClosePanel(id)
     if not openPanels[id] then return end
     openPanels[id] = nil
     -- 与 BasePanel:CloseUI 一致：关掉之后再派发 UI.OnClose
     Game.GlobalEvent:DispatchEvent(GameEvent.UI.OnClose, id, nil)
+    -- 与 UIManager.CloseStackPanel 一致：收尾后通知主动弹窗队列放行下一个
+    if UIManager.popupQueue then
+        UIManager.popupQueue.OnPanelClosed(id)
+    end
 end
 
 -- ---- 载入被测模块 ----
@@ -168,6 +175,8 @@ local function reset()
     failOpenId = nil
     timers = {}
     listeners = {}
+    -- 主动弹窗队列是跨用例的全局单例，不清会把上一个用例的 current 带进来
+    if PopupQueue ~= nil then PopupQueue.Clear() end
     CountryRankManager.Initialize()
 end
 

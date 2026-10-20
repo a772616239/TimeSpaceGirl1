@@ -56,9 +56,14 @@ agent_created: true
    ```
    输出每节点的 `pos / size / 组件（含脚本名、Animator 的控制器名）`，`pos` 的 y 就是 `baseY`。
    首跑约 15s（建 guid 索引），之后 6 小时内命中 `/tmp` 缓存，约 0.3s。
-2. **复制模板**：`scripts/UIPanelFloatAnimBuilder.template.cs` → `Assets/Editor/XxxFloatAnimBuilder.cs`，
-   **改类名（与文件名一致）**，只填配置区（`PrefabPath` / `AssetDir` / `BaseName` / `Nodes`）。
-3. **点菜单**：`Tools/UI/<面板名>/生成并挂载浮动动画`。Console 会打
+2. **两条路，先看 Unity 能不能用**：
+   - **Unity 可用**（编辑器没开这个工程 / 能点菜单）→ 复制 `scripts/UIPanelFloatAnimBuilder.template.cs`
+     到 `Assets/Editor/XxxFloatAnimBuilder.cs`，**改类名（与文件名一致）**，只填配置区
+     （`PrefabPath` / `AssetDir` / `BaseName` / `Nodes`）。
+   - **Unity 被占用**（`lsof Temp/UnityLockfile` 有进程 / 不能 batchmode）→ 用
+     `scripts/gen_float_anim_yaml.py --prefab <prefab> --base <前缀>`，直接写 clip/controller 并改 prefab，
+     **不需要 Unity 参与**。生成的 clip 与 Unity 生成的逐字节一致（已 diff 验证）。
+3. **点菜单或看脚本输出**：菜单是 `Tools/UI/<面板名>/生成并挂载浮动动画`，Console 会打
    `状态机 start(1.00s, loop=False) → normal(3.00s, loop=True)`，直接确认循环有没有生效。
 4. **重打 AB**：新 clip/controller 是 prefab 的依赖，不打 AB 真机还是旧包。
 
@@ -84,7 +89,7 @@ static readonly NodeCfg[] Nodes =
 
 | 坑 | 现象 | 原因 |
 |---|---|---|
-| 手写 `.anim` | 不报错，但完全不播 | `m_ClipBindingConstant` 里是路径的哈希值，改 path 不改哈希就绑不上。**必须让 Unity 生成 clip** |
+| 手写 `.anim` | 不报错，但完全不播 | `m_ClipBindingConstant.genericBindings[].path` 是**层级路径的 `zlib.crc32`**（attribute 是属性名的 crc32，`m_AnchoredPosition.y` = 538195251；缩放走 `attribute: 3` + `typeID: 4` + `customType: 0`，RectTransform 属性走 `typeID: 224` + `customType: 28`）。算对了和 Unity 写的完全等价，算错了静默不播 |
 | 复用别的面板的 controller | 不报错，也不播 | 曲线按**层级路径**绑定，`frame/bg` ≠ `frame/BG` |
 | 在 `OnEnable` 里手写 `Animator.Play` | 重复打开时弹入不重播 | 面板是缓存复用的；`Animator` 的 `KeepAnimatorStateOnDisable = 0` 才会在禁用后重置到默认状态 |
 | 写了 `sizeDelta` | 每帧 LayoutGroup 重建，掉帧 | 只写 `m_AnchoredPosition.*` / `m_LocalScale.*` / `m_Color.a` |
@@ -102,7 +107,8 @@ static readonly NodeCfg[] Nodes =
 
 ## 参考资料
 
-- `scripts/UIPanelFloatAnimBuilder.template.cs` — 配置驱动的生成器模板（已用 Unity 6000.6.5f1 程序集编译校验）
+- `scripts/UIPanelFloatAnimBuilder.template.cs` — C# 生成器模板（Unity 可用时首选；已用 Unity 6000.6.5f1 程序集编译校验）
+- `scripts/gen_float_anim_yaml.py` — Python 生成器（Unity 被占用时的后路，直接写 YAML，输出与 Unity 逐字节一致）
 - `scripts/dump_prefab_tree.py` — 打印 prefab 层级 + anchoredPosition + 组件，取基准值和路径用
 - `references/case-firstrecharge.md` — 案例：首充面板（含每日首充的原始曲线数据与冲突分析）
 - 工程内现成实现：`Assets/Editor/FirstRechargeFloatAnimBuilder.cs`

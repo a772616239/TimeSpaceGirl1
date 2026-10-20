@@ -89,3 +89,25 @@
 - 面板是缓存复用的（`UIManager.openedList`），第二次打开**不会**重播 start，这是预期
 - `Animator.m_KeepAnimatorStateOnDisable` 保持 0，禁用后再启用才会重置回默认状态
 - 新 clip / controller 是 prefab 的依赖，**不打 AB 真机不变**
+
+## 七、最终落地结果（2026-10-20）
+
+Unity 编辑器当时正开着工程（占着 `Temp/UnityLockfile`），没法 batchmode，所以走了
+`scripts/gen_float_anim_yaml.py` 的路线，**不经过 Unity** 直接写文件：
+
+| 产物 | 路径 |
+|---|---|
+| clip | `Assets/Art/UIAni/cn2-X1_UI_FirstRechargePanel_float_start.anim`（1s，loop=0） |
+| clip | `Assets/Art/UIAni/cn2-X1_UI_FirstRechargePanel_float_normal.anim`（3s，loop=1） |
+| controller | `Assets/Art/UIAni/cn2-X1_UI_FirstRechargePanel_float.controller`（start → normal） |
+| prefab | 根节点 `!u!111 Animation` → `!u!95 Animator`，`m_Controller` 指向上面的 controller |
+
+prefab 的 diff 只有两处：根节点 `m_Component` 里那条 fileID，以及组件块本身。
+对象总数 340 → 340（换了一个组件，没多没少）。
+
+校验手段（没有 Unity 也能做）：
+- 路径/属性哈希 = `zlib.crc32`，用现有 clip 的 5 个样本 5/5 命中
+- 生成结果与 Unity 写出的 `UI_effect_DailyRechargePanel_normal.anim` 逐块比对：文件头、settings 块一致
+- 每条 normal 曲线首尾同值（循环处不跳）
+- guid 链闭合：prefab → controller.meta → 两个 clip.meta
+- Python 生成器复跑，`diff` 出来的 clip 与已提交版本**逐字节一致**

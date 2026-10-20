@@ -268,9 +268,31 @@ prefab 的 diff 只有两处（根节点 `m_Component` 里那条 fileID + 组件
 
 **验收记录**：
 
-- Unity 回读：`start` 1.000s / 27 条曲线、`normal` 3.000s / 12 条曲线、`loopTime` 分别 False/True、`missingPaths=0`
+- Unity 回读：`start` 1.000s / 27 条曲线、`normal` 3.000s / 12 条曲线、`loopTime` 分别 False/True、
+  `missingPaths=0`（⚠️ 这条第一次是**假阳性**，锚点按根节点算的；见下方事故复盘，修复后按 `Animator.transform` 复验仍为 0）
 - 离线：13/13 与 8/8 条曲线的 `path`/`attribute` 哈希与 `genericBindings` 一一对应；normal 每条曲线首尾同值
 - 旧 `UI_effect_SupremeHeroPopup.controller`（+ `_start.anim` / `_normal.anim`）**原样留在** `Assets/Art/EffectsOld/Animation/`，只是不再被 prefab 引用（`_praticle_controller` 仍在用，别一起删）
 
 > Play mode 里 Unity 不会重导 prefab ⇒ `AssetDatabase.LoadAssetAtPath` 仍返回旧 controller（内存缓存），
 > 退出 Play mode（或重启编辑器）后才会看到新引用。别在 Play mode 里按 Ctrl+S 保存这个 prefab，会把内存里的旧数据写回去。
+
+### 事故复盘：controller 挂错节点（同日后修，必读）
+
+第一次落地时 `m_Controller` 改到了 **`Panel/Middle/Reward/Panel3/Button_Get`** 上，根节点仍指向旧 controller。
+表现是"动画里好多节点都丢了"——那颗按钮播着一份路径全错的动画，根节点反而还是空转。
+
+| 环节 | 错在哪 |
+|---|---|
+| 补丁 | `re.search(r'^--- !u!95 &', ...)` 取**文件里第一个** Animator 块。prefab 文件里 `!u!95` 的排列顺序与层级**无关**，这个 prefab 第一个是 Panel3/Button_Get 那颗 CommonButton 按钮（10 个 Animator 里排在文件最前） |
+| 校验 | 用 `prefabGo.transform.Find(path)` 从**根节点**查路径 ⇒ 恒为 true。曲线 `path` 是相对 **Animator 所在节点** 解析的，正确口径是 `animator.transform.Find(path)`；锚点错了，0 missing 也只是假阳性 |
+| 连带损伤 | 那颗按钮的 `CommonButton` 控制器被覆盖，按钮自身的弹动也一起没了 |
+
+**已固化到生成器**（`gen_float_anim_yaml.py`）：
+
+- `pick_animator(prefab, animator_go=None)`：按 `m_Father == 0` 找**根节点上**的 Animator；根上有多个或都不在根上时直接报错，要求 `--animator-go <路径>` 显式指定——绝不"取第一个"
+- `check_paths(prefab, anim_go, paths)`：打完补丁把每条曲线路径拼成 `锚点路径 + '/' + path`，校验它真的存在；解析不到就 `SystemExit`，**不落盘**
+- 落盘后自检：`start` 27 条 / `normal` 12 条曲线，`missing(相对 Animator 节点)=0`；`Panel3/Button_Get` 回到 `CommonButton`
+
+> 教训：Unity 对绑不上的曲线**不报错**，只在 Inspector / Animation 窗口标 Missing。所以"动画有没有生效"只能靠
+> `animator.transform.Find(path)` 逐条验，肉眼看面板"没动"分不清是没挂上、挂错节点、还是曲线本身没写。
+

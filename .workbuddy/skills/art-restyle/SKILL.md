@@ -132,6 +132,9 @@ $PY scripts/image/preview_ingame.py new.png --zoom 3 --out /tmp/corner.jpg
    要判断版本就量像素（底色/边框色），或者直接看 `_manifest.jsonl` 的 before/after 哈希。
 5. **`.meta` 永不改动。** 曾出现 guid 被换（`3b0b0d5e`→`042a30ad`），Unity 引用全断。
 6. **写回 ≠ 进包**：`publish` 只改 `Assets/` 里的 png，真机要重打 AssetBundle。
+6.1 **源是 RGB（无 alpha）就用 `--variant opaque` 写回**，别用默认的 `alpha`：
+    `alpha` 会把资源从 RGB 变成 RGBA（实测 799KB → 1.6MB），alpha 虽全是 255 看不出来，
+    但换了纹理导入/压缩口径。`prepare` 打印「源资源是整幅不透明」就是这种情况。
 7. **提示词不许写死文案**：文案由 `LAYOUT` 构图锁逐字保持，主题预设只描述风格（初版写死 `8-DAY`，
    换主题就串字）。
 

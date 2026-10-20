@@ -100,11 +100,41 @@ try {
   // 直接拿 pages()[0] 会把用户正在看的页面导航走，所以：已登录的 chatgpt 标签优先复用，
   // 没有就新开一个，绝不抢别人的 tab。
   const pages = ctx.pages();
-  const page =
+  let page =
     pages.find((p) => /chatgpt\.com/.test(p.url())) ??
     (pages.length && !process.env.PW_KEEP_BROWSER ? pages[0] : null) ??
     (await ctx.newPage());
   page.setDefaultTimeout(60000);
+
+  // 🔴 2026-10-20 实测：ChatGPT 会弹一个 codex 推广对话框（`.codex-dialog-overlay`），
+  //    遮罩吃掉 pointer events ⇒ 「发送」按钮 click 必然 60s 超时，整轮白跑。
+  //    这里在「上传前 / 发送前 / 取图前」各清一次：先按 Esc，再点遮罩左上角（点遮罩即关）。
+  const clearOverlays = async () => {
+    const SEL = '.codex-dialog-overlay, [role="dialog"][data-state="open"]';
+    for (let i = 0; i < 3; i++) {
+      let has = false;
+      try {
+        has = await page.evaluate((sel) => !!document.querySelector(sel), SEL);
+      } catch {
+        return false; // 页面已经没了，交给上层按异常处理
+      }
+      if (!has) return true;
+      log('发现遮挡对话框，尝试关闭');
+      await page.keyboard.press('Escape').catch(() => {});
+      await sleep(500);
+      const ov = page.locator('.codex-dialog-overlay').first();
+      if (await ov.count().catch(() => 0)) {
+        // 点遮罩自身（不是对话框内部）即可关闭；坐标取 4,4 保证落在对话框之外
+        await ov.click({ position: { x: 4, y: 4 }, force: true }).catch(() => {});
+        await sleep(400);
+      }
+    }
+    try {
+      return !(await page.evaluate((sel) => !!document.querySelector(sel), SEL));
+    } catch {
+      return false;
+    }
+  };
 
   log('打开新对话');
   const grabExisting = argv.includes('--grab-existing');
@@ -134,10 +164,12 @@ try {
 
   // 1) 上传参考图
   if (!grabExisting) {
+    await clearOverlays();
     log('上传参考图', imagePath);
     const fileInput = page.locator('input[type="file"]').first();
     await fileInput.setInputFiles(imagePath);
     await sleep(4000);
+    await clearOverlays();
 
     // 2) 填提示词并发送
     const composer = page.locator('#prompt-textarea, div[contenteditable="true"]').first();
@@ -151,7 +183,21 @@ try {
       .locator('button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="发送"]')
       .first();
     if (await sendBtn.count()) {
-      await sendBtn.click();
+      // 遮罩没清干净时 click 会等满 60s 才失败 ⇒ 短超时 + 清遮罩 + force + Enter 四连兜底
+      const clicked = await sendBtn
+        .click({ timeout: 15000 })
+        .then(() => true)
+        .catch(async () => {
+          await clearOverlays();
+          return sendBtn
+            .click({ force: true, timeout: 10000 })
+            .then(() => true)
+            .catch(async () => {
+              await page.keyboard.press('Enter').catch(() => {});
+              return true;
+            });
+        });
+      if (!clicked) log('⚠ 发送按钮点击失败，已尝试 Enter');
     } else {
       await page.keyboard.press('Enter');
     }
@@ -164,8 +210,38 @@ try {
   let picked = null;
   let lastSig = '';
   let stable = 0;
+  let pollFails = 0;
+
+  // 🔴 2026-10-20 实测：等图过程中整页偶发被关（Target page/context/browser has been closed），
+  //    那一次图其实已经生成好了，只是再也取不到 ⇒ 白等 + 白烧额度。
+  //    这里页面没了就先在同一浏览器里另找一个 chatgpt 标签接着等；找不到再让上层重试。
+  const recoverPage = async () => {
+    try {
+      const alive = browser.contexts()[0].pages().filter((p) => !p.isClosed());
+      const alt = alive.find((p) => /chatgpt\.com/.test(p.url()));
+      if (alt) {
+        page = alt;
+        page.setDefaultTimeout(60000);
+        log('原页面已关闭，切到另一个 chatgpt 标签继续等');
+        return true;
+      }
+    } catch {
+      /* ignore */
+    }
+    return false;
+  };
+
   while (Date.now() < deadline) {
-    const st = await page.evaluate(snapshot, GEN_ALT);
+    let st;
+    try {
+      st = await page.evaluate(snapshot, GEN_ALT);
+      pollFails = 0;
+    } catch (e) {
+      pollFails++;
+      log(`取图轮询异常（${pollFails}）：${e?.message ?? e}`);
+      if (pollFails > 3 || !(await recoverPage())) break;
+      continue;
+    }
     const s = sig(st.imgs);
     if (st.imgs.length && !st.busy && s === lastSig) {
       stable++;
@@ -183,11 +259,18 @@ try {
         : st.imgs.reduce((a, b) => (a.w * a.h >= b.w * b.h ? a : b));
       break;
     }
-    await sleep(4000);
+    // 4s → 2.5s：页面被关的窗口越小越好，图一稳定就立刻取
+    await sleep(2500);
   }
 
   if (!picked) {
-    const tail = await page.evaluate(() => (document.body.innerText || '').slice(-800));
+    let tail = '';
+    try {
+      tail = await page.evaluate(() => (document.body.innerText || '').slice(-800));
+    } catch (e) {
+      log('页面已关闭，取不到尾部文本：', e?.message ?? e);
+      process.exit(1);
+    }
     log('超时仍未拿到图。页面尾部：', tail.replace(/\n+/g, ' | '));
     if (/limit|上限|quota|额度/i.test(tail)) {
       log('⚠ 可能是出图额度用尽');

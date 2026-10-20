@@ -88,6 +88,12 @@ else
   echo "→ 未指定 --server-env，沿用工程 Assets/Resources/version.txt 现状"
 fi
 
+# 🔴 清理 StreamingAssets 里的 Unity 临时文件（.filename.XXXXXX）：
+#    Unity 打 AB / CopyAssetBundleToStreamingAssets 在 macOS 上会残留 atomic-write 临时文件，
+#    它们会被 BuildPipeline.BuildPlayer 打进 APK，导致包体积翻倍（实测 416MB 冗余）。
+#    FileUtils.CopyDir 已修（跳过 . 前缀），但保险起见在这里也清一遍。
+find "$PROJ/Assets/StreamingAssets" -name ".*" -type f ! -name ".DS_Store" -delete 2>/dev/null || true
+
 # 🔴 口径说明：CLIBuilder 里 `kProfile` 硬编码为 MinimalGmOff（只关 GM，其余与线上逐位一致）。
 #    这里不提供口径开关 —— 命令行产物必须与线上口径一致，出别的口径应当是显式改代码的决定，
 #    不该是一个手滑就能点出来的下拉框。

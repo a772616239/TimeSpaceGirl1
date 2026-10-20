@@ -77,6 +77,10 @@ namespace GameCore {
 
         /// <summary>
         /// 拷贝文件夹
+        /// 🔴 跳过以 . 开头的隐藏文件：Unity 打 AB 时会产生 .filename.XXXXXX 临时文件
+        /// （atomic write 临时文件），CopyDir 不过滤会把它们带进 StreamingAssets，
+        /// 导致 APK/AAB 体积翻倍（实测 2742 个临时文件 = 416MB 冗余，包从 439M 变 855M）。
+        /// macOS 上 Directory.GetFiles 会返回 . 开头的文件，必须显式过滤。
         /// </summary>
         /// <param name="fromDir"></param>
         /// <param name="toDir"></param>
@@ -93,6 +97,9 @@ namespace GameCore {
             foreach (string formFileName in files)
             {
                 string fileName = Path.GetFileName(formFileName);
+                // 跳过隐藏 / 临时文件（. 前缀 = macOS 隐藏文件 或 Unity atomic-write 临时文件）
+                if (fileName.StartsWith("."))
+                    continue;
                 string toFileName = Path.Combine(toDir, fileName);
                 File.Copy(formFileName, toFileName);
             }
@@ -100,6 +107,8 @@ namespace GameCore {
             foreach (string fromDirName in fromDirs)
             {
                 string dirName = Path.GetFileName(fromDirName);
+                if (dirName.StartsWith("."))
+                    continue;
                 string toDirName = Path.Combine(toDir, dirName);
                 CopyDir(fromDirName, toDirName);
             }

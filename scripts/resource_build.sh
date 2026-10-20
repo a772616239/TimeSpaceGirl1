@@ -118,6 +118,10 @@ if [[ "$RC" -eq 0 && ( "$ACTION" == "ab" || "$ACTION" == "all" ) ]]; then
     run_unity BuildAllABs ab || RC=$?
     if [[ "$RC" -eq 0 ]]; then
         echo "✅ AB 重建完成"
+        # 🔴 清理 StreamingAssets 里 Unity 残留的临时文件（.filename.XXXXXX）：
+        #    macOS 上 CopyAssetBundleToStreamingAssets 的 atomic-write 会留下 . 前缀临时文件，
+        #    FileUtils.CopyDir 已修（跳过 . 前缀），但保险起见在这里也清一遍。
+        find "$ROOT/Assets/StreamingAssets" -name ".*" -type f ! -name ".DS_Store" -delete 2>/dev/null || true
         BUNDLE="$ROOT/Assets/StreamingAssets/Android/lzma|luabytes.unity3d"
         if [[ -f "$BUNDLE" ]]; then
             echo "   luabytes bundle：$(ls -lh "$BUNDLE" | awk '{print $5}')  $(date -r "$BUNDLE" '+%Y-%m-%d %H:%M')"

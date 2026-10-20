@@ -17,6 +17,7 @@
 | 知道有哪些脚本、怎么调、退出码是什么 | **`scripts_reference.md`** |
 | 改 Lua / 配置表 / 资源，改完不生效 | **`client_build_chain.md`** |
 | **看到一个动画要在别的面板复刻（反解 → 落地 → 验收流程）** | **`ui_anim_reproduce_skill.md`** |
+| **把 UI 底板改成节日版（出图 → 去水印 → 验收 → 替换原图，Jenkins 一条链）** | **`art_restyle_pipeline.md`** |
 | 给面板加"弹入 + 呼吸"浮空动画（配方数字 / 11 个坑） | `ui_panel_float_anim_skill.md` |
 | 起服 / 开区服 / 改线上 / 每日巡检 | **`server_ops_runbook.md`** |
 | **查某个玩家是不是开挂（判定）** | **`cheat_detection_skill.md`** |

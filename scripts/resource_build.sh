@@ -37,12 +37,25 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+ORIG_ARGS=("$@")
 case "$ACTION" in
     export|ab|all) ;;
     *) echo "✗ --action 只能是 export / ab / all（收到：${ACTION}）" >&2; exit 2 ;;
 esac
 
 [[ -x "$UNITY_BIN" ]] || { echo "✗ 找不到 Unity：$UNITY_BIN" >&2; exit 2; }
+
+# 🔴 2026-10-21 修：整个执行体（注入→Unity→还原→快照核验）必须在 unity 锁内跑。
+#    注入/还原原来裸奔在锁外 —— 并行 job（如 TS-Android-TestPackage）在同一工作区
+#    注入自己的环境后，本脚本的 EXIT restore（备份基准=自己的口径）会把对方的注入值
+#    覆盖掉：#15 实锤，包里打出的是本脚本的口径而不是测试包请求的口径。
+#    做法：首跑时 exec 自身套锁重入（TSG_INNER 防递归）；.jenkins 不存在（纯手工环境）
+#    时退回旧行为，只是不再有跨 job 互斥。
+if [[ -z "${TSG_INNER:-}" && -x "$ROOT/.jenkins/lib/lock.sh" ]]; then
+    exec env TSG_INNER=1 /usr/local/bin/bash "$ROOT/.jenkins/lib/lock.sh" --name unity run \
+        --who "resource-build/$$/$ACTION" --timeout 3600 -- \
+        /usr/local/bin/bash "$0" "${ORIG_ARGS[@]}"
+fi
 
 # 🔴 2026-10-20 修：旧判定有两处错，等于**从来没拦过**。
 #   ① pgrep -f "Unity.*-projectPath $ROOT" 区分大小写，而 Unity Hub 拉起 GUI 时命令行是

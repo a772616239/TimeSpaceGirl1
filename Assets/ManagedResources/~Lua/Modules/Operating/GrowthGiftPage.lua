@@ -90,9 +90,13 @@ function GrowthGiftPage:RefreshGiftData()
     end
 
     --按照领取状态排序
+    --取不到任务数据时按 0 处理：这里一旦抛错，整个列表刷新会中断，
+    --表现就是「领完奖红点还在、按钮还是可点」
     table.sort(list, function(a, b)
-        local state_a = ActivityGiftManager.GetActivityInfo(a.ActivityId, a.Id).state
-        local state_b = ActivityGiftManager.GetActivityInfo(b.ActivityId, b.Id).state
+        local info_a = ActivityGiftManager.GetActivityInfo(a.ActivityId, a.Id)
+        local info_b = ActivityGiftManager.GetActivityInfo(b.ActivityId, b.Id)
+        local state_a = info_a and info_a.state or 0
+        local state_b = info_b and info_b.state or 0
         if state_a == 0 and state_b ~= 0 then
             return true
         end
@@ -120,10 +124,15 @@ end
 
 --刷新每一条item
 function GrowthGiftPage:RefreshShowData(item, data)
-    local GrowthRewardId = ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.GrowthReward)--当前礼包奖励的活动类型(6\7\8\9\16)（成长礼包的不同档位奖励ActivityId不同，虽然同为成长基金）
-    local singleRewardData = ActivityGiftManager.GetActivityInfo(GrowthRewardId, data.Id)--获取活动数据 self.context.Id
-    local havaBought = OperatingManager.GetGiftGoodsInfo(GoodsTypeDef.GrowthReward, GlobalActivity[GrowthRewardId].CanBuyRechargeId)--当前礼包ID(101\102\103\104\105)
-    local openStatus = ActivityGiftManager.GetActivityOpenStatus(GrowthRewardId)
+    -- 一律以「这一行配置自己的 ActivityId」为准。
+    -- 成长礼金 5 个档位(101~105)各对应一个活动 Id(6/601/602/603/604)，IsActivityTypeOpen 只返回当前开启的那一个；
+    -- 拿它去查别的档位的任务会取到 nil，服务器 takeReward 也会校验 config.ActivityId == 请求里的 activityId
+    -- （不等直接 CFG_NULL），表现就是「点了没反应 / 领完红点不消失 / 还能再点一次」。
+    local activityId = data.ActivityId or ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.GrowthReward)
+    local singleRewardData = activityId and ActivityGiftManager.GetActivityInfo(activityId, data.Id) or nil
+    local activityConfig = activityId and GlobalActivity[activityId] or nil
+    local havaBought = activityConfig and OperatingManager.GetGiftGoodsInfo(GoodsTypeDef.GrowthReward, activityConfig.CanBuyRechargeId) or nil
+    local openStatus = activityId and ActivityGiftManager.GetActivityOpenStatus(activityId) or false
     
     local condition = Util.GetGameObject(item, "contents/lv"):GetComponent("Text")
     local image_icon1 = Util.GetGameObject(item,"Image_1/Image_icon1"):GetComponent("Image")
@@ -151,7 +160,7 @@ function GrowthGiftPage:RefreshShowData(item, data)
             MainLevelConfig[actRewardConfig[data.Id].Values[1][2]].Name ..
             string.format("<color=#fffff><size=30>%s</size></color>",GetLanguageStrById(10622))
     end
-    local state = singleRewardData.state    --任务领取状态
+    local state = singleRewardData and singleRewardData.state or 0    --任务领取状态
 
     local goods = OperatingManager.GetHadBuyGoodsTypeId(GoodsTypeDef.GrowthReward)--已购买礼包ID
     image_icon1.sprite = Util.LoadSprite(GetResourcePath(rewardNameConfig[shows[1][1]].ResourceID))
@@ -175,7 +184,23 @@ function GrowthGiftPage:RefreshShowData(item, data)
         Util.GetGameObject(btnGet,"get"):GetComponent("Text").text = GetLanguageStrById(10348)--未达成
     end
 
+    -- 这条奖励已经领过（同一个按钮闭包只允许成功一次，防止列表还没重绘时又被点）
+    local claimed = false
     Util.AddOnceClick(btnGet,function()
+        -- 同一时刻只允许一笔领奖请求：列表刷新/翻页会重新绑按钮，
+        -- 响应回来前连点两下会发两次请求（第二笔服务器报 HAD_TAKE_REWARD，玩家侧看起来就是"能重复领"）。
+        -- 5 秒兜底：请求超时/断线时回调不会回来，不能让按钮永久点不动。
+        local now = GetTimeStamp and GetTimeStamp() or 0
+        if claimed then
+            return
+        end
+        if self.claiming and now - (self.claimingAt or 0) < 5 then
+            return
+        end
+        if not singleRewardData or not activityId then
+            PopupTipPanel.ShowTipByLanguageId(11467)
+            return
+        end
         local packageInfo = OperatingManager.IsGrowthGiftGoodsAvailable(GoodsTypeDef.GrowthReward)--packageInfo:当前成长基金礼包ID（ID：101、102、103、104、105）
         if not openStatus or (havaBought and havaBought.buyTimes < 1) then
             PopupTipPanel.ShowTipByLanguageId(11467)
@@ -187,28 +212,43 @@ function GrowthGiftPage:RefreshShowData(item, data)
         end
 
         if isCanGetReward then
-            NetManager.GetActivityRewardRequest(singleRewardData.missionId,GrowthRewardId, function(drop)
+            self.claiming = true
+            self.claimingAt = now
+            NetManager.GetActivityRewardRequest(data.Id, activityId, function(drop)
+                self.claiming = false
+                claimed = true
                 UIManager.OpenPanel(UIName.RewardItemPopup, drop, 1)
-                ActivityGiftManager.SetActivityInfo(actRewardConfig[data.Id].ActivityId, singleRewardData.missionId, 1)
+                -- 状态必须写到「这一行配置的 ActivityId」下，否则读回来还是 state=0，红点与领取按钮都复位不了
+                ActivityGiftManager.SetActivityInfo(activityId, data.Id, 1)
                 state = 1
+                -- 先把这一条自己改成"已领取"，不等整表刷新：整表刷新一旦中途抛错，红点就会永久留在按钮上
+                if redPoint then
+                    redPoint:SetActive(false)
+                end
+                Util.SetGray(btnGet, true)
+                Util.GetGameObject(btnGet, "get"):GetComponent("Text").text = GetLanguageStrById(10350)--已领取
                 CheckRedPointStatus(RedPointType.GrowthGift)
-    
+
                 --检测奖励是否全部领完
-                local t = ConfigManager.GetAllConfigsDataByKey(ConfigName.ActivityRewardConfig, "ActivityId", GrowthRewardId)
+                local allTaken = true
+                local t = ConfigManager.GetAllConfigsDataByKey(ConfigName.ActivityRewardConfig, "ActivityId", activityId)
                 for i = 1, #t do
-                    local info = ActivityGiftManager.GetActivityInfo(GrowthRewardId, t[i].Id)
-                    if info.state ~= 1 then
-                        -- Game.GlobalEvent:DispatchEvent(GameEvent.GrowGift.GetAllGift)
-                        self:RefreshGiftData()
-                        return
+                    local info = ActivityGiftManager.GetActivityInfo(activityId, t[i].Id)
+                    if not info or info.state ~= 1 then
+                        allTaken = false
+                        break
                     end
                 end
-                if GrowthRewardId == 604 then--16是最后一个礼包的ActivityId
-                    MsgPanel.ShowOne(GetLanguageStrById(11468))
+                if allTaken then
+                    if activityId == 604 then--604 是最后一个礼包的ActivityId
+                        MsgPanel.ShowOne(GetLanguageStrById(11468))
+                    else
+                        MsgPanel.ShowOne(GetLanguageStrById(11469))
+                    end
+                    self:RefreshData()
                 else
-                    MsgPanel.ShowOne(GetLanguageStrById(11469))
+                    self:RefreshGiftData()
                 end
-                self:RefreshData()
             end)
         else
             PopupTipPanel.ShowTipByLanguageId(11470)

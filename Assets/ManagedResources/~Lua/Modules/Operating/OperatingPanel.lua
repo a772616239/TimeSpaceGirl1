@@ -112,8 +112,9 @@ function OperatingPanel:BindEvent()
             this:OnTabChanged()
         end)
     end
-
-    this:BindRedPoint()
+    -- 红点绑定不要放在这里：BindEvent 只在面板首次创建时执行一次，
+    -- 而 OnClose 里的 ClearRedPoint 会把绑定清空，第二次打开后页签红点就再也不刷新了。
+    -- 改到 OnShow 里每次打开重新绑（见 BindRedPoint 的幂等保护）。
 end
 
 function OperatingPanel:OnOpen(data)
@@ -136,6 +137,9 @@ function OperatingPanel:OnShow()
     self.UpView:OnOpen({showType = UpViewOpenType.ShowRight, panelType = PanelType.Main })
     SoundManager.PlayMusic(SoundConfig.BGM_Main)
 
+    -- 先绑红点再检测：面板是缓存复用的，再次打开只走 AddListener→OnShow，
+    -- 而上次 OnClose 已经 ClearRedPoint 把绑定清空了，不重新绑就永远刷不出红点。
+    this:BindRedPoint()
     this:CheckRedPoint()
     this:RefreshTabStatus()
     if not curIndex then
@@ -267,6 +271,12 @@ function this:GetPriorityIndex()
 end
 
 function this:BindRedPoint()
+    -- 幂等：OnShow 可能被重复调用（重设层级/回栈再显示），重复 table.insert 会让同一个物体被绑多次
+    if self._redPointBound then
+        return
+    end
+    self._redPointBound = true
+
     -- BindRedPointObject(RedPointType.GiftPage, Util.GetGameObject(self.operateTabs[1], "redPoint"))
     BindRedPointObject(RedPointType.NobilityMonthCard, Util.GetGameObject(self.operateTabs[1], "redPoint"))
     BindRedPointObject(RedPointType.EveryWeekPreference, Util.GetGameObject(self.operateTabs[2], "redPoint"))
@@ -288,6 +298,7 @@ function this:BindRedPoint()
 end
 
 function this:ClearRedPoint()
+    self._redPointBound = false
     ClearRedPointObject(RedPointType.CumulativeSignIn)
     ClearRedPointObject(RedPointType.GrowthGift)
     -- ClearRedPointObject(RedPointType.GiftPage)

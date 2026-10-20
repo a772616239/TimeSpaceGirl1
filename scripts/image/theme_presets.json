@@ -1,0 +1,148 @@
+{
+  "_note": [
+    "主题预设：一份数据，零代码新增主题。新增一个节日只需往 themes 里加一条。",
+    "🔴 提示词**不能写死具体文案**：底板资源每张的文字都不一样（8-DAY / 50x Rebate / …）。",
+    "   早期版本把「8-DAY」「Login Premium Gift」写进 prompt，换一张图就会把旧文案画上去。",
+    "   现在改为模板拼装：layout（构图锁，通用规则或 --layout 传入）+ theme 字段（配色/装饰/服装/空区）。",
+    "themes 字段语义：",
+    "   zh/en       中文名 / 英文主题名（进 prompt）",
+    "   suffix      产出文件名后缀",
+    "   palette     配色（给人看的，也打印在环节日志里）",
+    "   decoration  装饰元素（给人看的）",
+    "   text_style  原文字的材质/描边处理（只改材质，不改字）",
+    "   outfit      角色服装改成什么样（姿势/位置/缩放不许动）",
+    "   body        大片空白卡体（给 UI 覆盖层用）换成什么质感",
+    "   banner      顶部横幅底色",
+    "   decor_sentence 替换掉原装饰的句子",
+    "providers: manual=人/Agent 出图后丢进 inbox；chatgpt_web=浏览器 cookie 驱动 chatgpt.com；",
+    "           任何能写文件的模型都可以用 manual 接入，本文件不绑定具体厂商。",
+    "body_colors: 长条底板（banner + 大片空白区）的续接渐变两端色，postprocess --hero-band 用。"
+  ],
+  "defaults": {
+    "size": "1024x1536",
+    "quality": "high",
+    "input_fidelity": "high"
+  },
+  "layout_default": [
+    "1) Every existing piece of text (headline, numerals, captions, badges, ribbons) keeps the EXACT same wording, spelling, position, scale and weight as the input image. Only its color/material may shift to the new palette. Do NOT add, remove, reword or re-typeset any text.",
+    "2) The illustrated character keeps the same pose, position, scale and silhouette; only the outfit, accessories and small props are restyled.",
+    "3) The large empty body area reserved for UI overlays stays empty with the same shape and margins - no text, no clutter, no ornaments in the center.",
+    "4) Keep the original canvas aspect ratio, framing, bleed and rounded-corner silhouettes."
+  ],
+  "themes": {
+    "christmas": {
+      "zh": "圣诞",
+      "en": "festive Christmas",
+      "suffix": "christmas",
+      "palette": [
+        "#0b1a33",
+        "#123a2b",
+        "#b2172a",
+        "#e8c76b",
+        "#ffffff"
+      ],
+      "decoration": [
+        "雪花",
+        "彩球",
+        "冬青红果",
+        "拐杖糖",
+        "铃铛",
+        "暖色灯串",
+        "柔光散景"
+      ],
+      "text_style": "white-cream faces with warm red outline and a light dusting of snow on top",
+      "outfit": "a festive Santa/elf version: deep red coat with white fur trim, candy-cane striped accents, small Santa hat, gold bell details",
+      "body": "a deep midnight-blue to pine-green gradient with a faint snowflake pattern, clean center",
+      "banner": "deep midnight blue with falling snow",
+      "decor_sentence": "replace the orange/yellow confetti triangles with Christmas decorations - snowflakes, holly leaves with red berries, candy canes, gold and red baubles, warm glowing fairy lights and soft bokeh",
+      "body_colors": [
+        "#0b1a33",
+        "#123a2b"
+      ]
+    },
+    "newyear": {
+      "zh": "新年",
+      "en": "Lunar New Year celebration",
+      "suffix": "newyear",
+      "palette": [
+        "#1a1030",
+        "#3b0f1f",
+        "#d4a017",
+        "#ff4d4d",
+        "#fff4d6"
+      ],
+      "decoration": [
+        "烟花",
+        "灯笼",
+        "金色飘带",
+        "金币",
+        "星芒"
+      ],
+      "text_style": "champagne-gold faces with a deep red outline",
+      "outfit": "a festive cheongsam-inspired version: deep red with gold embroidery, small gold hairpin",
+      "body": "a deep wine-red to plum gradient with a faint auspicious cloud pattern, clean center",
+      "banner": "deep night purple-red with bokeh",
+      "decor_sentence": "replace the orange/yellow confetti triangles with New Year decorations - fireworks, red lanterns, gold ribbons, coins, starbursts",
+      "body_colors": [
+        "#3b0f1f",
+        "#1a1030"
+      ]
+    },
+    "halloween": {
+      "zh": "万圣节",
+      "en": "Halloween",
+      "suffix": "halloween",
+      "palette": [
+        "#140f22",
+        "#2b1a3d",
+        "#ff7a18",
+        "#7b2cbf",
+        "#c6ff5e"
+      ],
+      "decoration": [
+        "南瓜灯",
+        "蝙蝠",
+        "蜘蛛网",
+        "糖果",
+        "月光"
+      ],
+      "text_style": "pumpkin-orange faces with a dark purple outline",
+      "outfit": "a playful witch version: dark violet dress with orange trim, small pointed hat, tiny bat charm",
+      "body": "a deep violet-black gradient with a faint spider-web pattern, clean center",
+      "banner": "deep midnight purple with moon glow",
+      "decor_sentence": "replace the orange/yellow confetti triangles with Halloween decorations - jack-o-lanterns, bats, spider webs, candy",
+      "body_colors": [
+        "#2b1a3d",
+        "#140f22"
+      ]
+    },
+    "valentine": {
+      "zh": "情人节",
+      "en": "Valentine's Day",
+      "suffix": "valentine",
+      "palette": [
+        "#2a0d1b",
+        "#5c1330",
+        "#ff4d79",
+        "#ffd1dc",
+        "#ffe9a8"
+      ],
+      "decoration": [
+        "心形气球",
+        "玫瑰",
+        "巧克力",
+        "缎带",
+        "星光"
+      ],
+      "text_style": "pearl-white faces with a rose-red outline",
+      "outfit": "a romantic version: rose-red dress with white lace trim, small ribbon",
+      "body": "a deep wine to rose gradient with a faint heart pattern, clean center",
+      "banner": "deep wine red with soft bokeh",
+      "decor_sentence": "replace the orange/yellow confetti triangles with Valentine decorations - heart balloons, roses, chocolate, ribbon, sparkles",
+      "body_colors": [
+        "#5c1330",
+        "#2a0d1b"
+      ]
+    }
+  }
+}

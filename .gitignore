@@ -73,3 +73,8 @@ build_log_resource_*.txt
 # Unity 异常退出后的恢复目录（编辑器自动生成，不属于工程资产）
 Assets/_Recovery/
 Assets/_Recovery.meta
+
+# 资源背包（2026-10-20 起）：被替换掉的原图搬到这里，不留在 Assets 里也不入库。
+# 体积大、纯二进制、且远端 PUBLIC 仓库塞不下；要回滚用
+#   scripts/image/restyle_pipeline.py restore --asset <资源路径>
+ResBackpack/

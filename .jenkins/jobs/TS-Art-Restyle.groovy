@@ -152,6 +152,17 @@ if [[ "$PROVIDER" == "chatgpt_web" ]]; then
     printf '%s\\n' "$ART_WDIR/inbox/gen_web.png" > "$TS_RUN_DIR/generated.path"
     touch "$TS_RUN_DIR/gen.ready"
   fi
+  # 🔴 额度用尽不再只是「页面尾部里的一句话」：driver 命中即退出 rc=4 并落 <out>.fail.json，
+  #    这里把它当证据归档，构建页直接看得到站点原文与重置时间。
+  #    （python 侧默认会自动换号到 AdsPower/SunBrowser；只有连换号也失败时这个文件才留下来。）
+  FAIL_JSON="$ART_WDIR/inbox/gen_web.png.fail.json"
+  if [[ -f "$FAIL_JSON" ]]; then
+    cp -f "$FAIL_JSON" "$TS_RUN_DIR/artifacts/provider_fail.json" 2>/dev/null || true
+    echo "──────────────────────────────────────────────"
+    echo "🔴 provider 明确拒绝出图（不是超时，重试无效）："
+    cat "$FAIL_JSON"
+    echo "──────────────────────────────────────────────"
+  fi
 fi
 ''')
       }

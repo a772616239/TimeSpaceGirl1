@@ -48,7 +48,8 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
     --out "$W/inbox/gen_web.png" --crop-height 930 --reuse-cdp --port <端口>
 ```
 
-退出码：`0` 通过 / `1` 失败 / `2` 用法错误 / `3` 需要人看一眼（Jenkins 里 `--warn-rc 3` → 黄，不阻断）。
+退出码：`0` 通过 / `1` 失败 / `2` 用法错误 / `3` 需要人看一眼（Jenkins 里 `--warn-rc 3` → 黄，不阻断）/
+`4` **出图额度用尽**（driver 内部码，`gen_chatgpt_web.py` 会转成「自动换号」或 `3`）。
 
 ---
 
@@ -215,10 +216,36 @@ gen_chatgpt_web.py
 
 退出码 `3` = 环境问题（不可达 / 未登录 / 人机验证 / 额度用尽），job 里标黄不阻断。
 
-### 额度用尽 / 换号：直接接上 AdsPower 的 SunBrowser
+### 额度用尽：**自动换号到 SunBrowser**（2026-10-21 起，不再是哑失败）
 
-免费版的出图额度是**按账号**算的，当天的图出完了就得换号。换号**不搬 cookie、不改代码**，  
-把 driver 接到另一个已经登录好的浏览器上就行：
+额度是**按账号**算的，所以「今天出完了」这件事一定会发生。以前的表现是：driver 傻等到
+`--timeout`（实测 394 秒），再从页面尾部里嗅一句「⚠ 可能是额度用尽」，还归到 `rc=3` ——
+Jenkins 上跟网络抖动长得一模一样，人得自己翻控制台才知道该换号。
+
+现在分两层：
+
+| 层 | 行为 |
+|---|---|
+| driver | 每轮轮询都扫页面文案（中/英/日/韩）。命中「额度已用完 / 已达到 Free 套餐上限 / 无法调用图像生成工具 / reached your limit / limit will reset」等判据 → **立刻退出 `rc=4`**，并把站点原文 + 重置时间写进 `<out>.fail.json` |
+| `gen_chatgpt_web.py` | 收到 `rc=4` → 调 `find_browser_cdp.py` 反查 AdsPower/SunBrowser 的 CDP 端口（**排除当前端口**，否则换号会连回同一个空额度账号）→ 用 `--reuse-cdp` 接上去重出；最多试 3 个端口 |
+
+- 换号**不搬 cookie**：只换「连哪个浏览器」，登录态留在指纹浏览器里（Chrome 155 的分片 cookie 重建后不认，见红线 14）。
+- `--reuse-cdp` = 只连不断：不启动、不关闭用户手上的窗口；driver 优先复用已开的 chatgpt 标签，不抢 tab。
+- 全部端口都额度用尽，才回落到 `rc=3`，并打印站点原文（含「几点重置」）。
+- 关掉自动换号：`--no-auto-fallback`（只在「就是要验某个账号的额度」时用）。
+- 证据：`_output/.../inbox/gen_web.png.fail.json` 会被 job 复制成
+  `artifacts/provider_fail.json`，构建页直接看得到，不用翻日志。
+
+```bash
+# 手工复现/排查
+$PY scripts/image/find_browser_cdp.py --json --all     # 看有哪些已登录浏览器
+$PY scripts/image/gen_chatgpt_web.py --image ... --prompt-file ... --out ... --reuse-cdp --port 64757
+```
+
+
+### 手工指定账号（自动换号之外）
+
+自动换号只是「挑第一个能用上的」。要**指定**某个号，把端口写死给 job 的 `CDP_PORT` 即可：
 
 ```bash
 $PY scripts/image/find_browser_cdp.py            # 反查 CDP 端口 → best port=64757
@@ -226,16 +253,12 @@ $PY scripts/image/gen_chatgpt_web.py --image ... --prompt-file ... --out ... \
     --crop-height 930 --reuse-cdp --port 64757
 ```
 
-- `--reuse-cdp` = **只连不断**：脚本不启动也不关闭浏览器（driver 里置 `PW_KEEP_BROWSER=1`，  
-  不走 `browser.close()`），不会把你手上的窗口关掉。
-- driver 优先复用**已经开着的 chatgpt.com 标签**，没有才新开一个 —— 绝不导航走你正在看的页面。
-- 🔴 AdsPower 的 `--remote-debugging-port` **不在命令行里**（随机高位端口 bind），免费版还调不了  
-  `/api/v1/user/list` 拿 `debug_port`。所以 `find_browser_cdp.py` 只能从「进程 → lsof 监听端口 →  
+- 🔴 AdsPower 的 `--remote-debugging-port` **不在命令行里**（随机高位端口 bind），免费版还调不了
+  `/api/v1/user/list` 拿 `debug_port`。所以 `find_browser_cdp.py` 只能从「进程 → lsof 监听端口 →
   逐个试 `/json/version`」反查；`pgrep -fl 9333` 这条思路在这里完全不成立。
 - 指纹浏览器自带代理/指纹，**不要**再传 `--proxy`（会把它的网络链路覆盖掉）。
-
-Reuse 与自起 Chrome 的区别：自起 Chrome（默认）用你本机真实 profile 的副本，**换号就断**；  
-reuse 用指纹浏览器里的登录态，**换号只需在 AdsPower 里开另一个 profile**。
+- Reuse 与自起 Chrome 的区别：自起 Chrome（默认）用你本机真实 profile 的副本，**换号就断**；
+  reuse 用指纹浏览器里的登录态，**换号只需在 AdsPower 里开另一个 profile**。
 
 实测（2026-10-20，free 计划）：856×930 英雄带 → 出图 1203×1308，`50x` / `Rebate` 文字与构图完整保真。
 

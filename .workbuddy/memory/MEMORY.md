@@ -21,10 +21,8 @@
 - 🔴 tolua fake-null：GameObject Destroy 后 lua userdata 仍非 nil ⇒ `if not obj` 无效，判活只能 `IsNull()`/`tolua.isnull`（已三次崩溃）。销毁判据＝`UIConfig.noDestory==0`；为 0 时 Close 走 `DelayDestroyPanel`（15s×openNum）⇒ 异步回调有「已销毁」窗口。异步写 UI 一律「判活+pcall+OnDestroy 清引用」。
 - `Timer.New` 第 4 参缺省受战斗倍速影响，UI 停留传 `true`；同一元素隐藏定时器先 Stop 再 New。
 
-## 挂机气泡（→ `.workbuddy/skills/afk-dialogue-authoring/SKILL.md`）
-- 唯一消费点 `Modules/Fight/View/FightPointMapOnHook.lua`；池看 `AfkSpeak.Type`（0 通用 / 英雄id / 9900+n 地图 / 40000+id 大招 / 9998 通用大招），台词在 `Language`。
-- 🔴 气泡 280×78、28 号字 ⇒ 最多两行（中≤16 / 英≤34 / 日≤20）；用 `TextGenerator.GetPreferredHeight` 实测（h≤74.5），别数字符。
-- 🔴 加行只能 XML 层追加（`append_afk_ult_talk.py`），禁止 openpyxl 存盘；导出走官方 `DataToOptimizeLuaExporter` + lua-bytes-sync。
+## 挂机气泡 / UI 布局 / IAP / 诱导评分
+- 细节已拆到 `REF-client-misc.md`（气泡 280×78 两行上限、CanvasScaler match=0、IAP 入口收口、AppReview 闸门）。
 
 ## 国家旗帜（→ docs/CountryFlag_FeatureDesign.md）
 - 🔴 250 国（ISO 3166-1）、旗 132×88：新增 png 必须补 `.meta`（textureType 8/spriteMode 1/spritePackingTag）+ `ResourcePathConfig.asset` 登记，否则 `Util.LoadSprite` 空白。
@@ -37,11 +35,6 @@
 - 列表动态（`server_info`→登录服 HTTP）：新区服只插记录，`channel=pc/plat=android/sub_channel=1` 要对齐；`tk/getServerList` 的 server_version 传真版本 `1.26001`（传 0 ⇒ 空列表）；隐藏区服只能服务端不下发。
 - 🔴 lanid=floor(id/100)%100：10001 中文CNY / 10101 英文USD / 10002 中文USD / 10201 日文 / 10301 韩文；真机首启用设备语言覆盖（`GameSettings.cs:110-114`）。
 - 🔴 本地服性能基线（10-19 已落地，别改回去）：`threadNum=8`、`redis.timeout=2000`、`mongo maxConnectionIdleTime=60000`、`run-gs.sh` 的 `MaxMetaspaceSize=256m`（堆别动）；`timeLimitMap` 504 条不可删；netty 通道选项必须 `childOption`。
-
-## UI 布局 / Unity 桥（→ docs/unity_mcp_control.md）
-- 🔴 `StdioBridgeHost` 127.0.0.1:6400，`.workbuddy/tools/unity_bridge.py` 直连；新连接踢旧；探测端口别先开试探连接再关；`execute_code` 结尾必须 `return <expr>;`；实拍开临时 additive 场景。
-- 🔴 `CanvasScalerAdapter` 宽高比<16:9 时 match=0 ⇒ 画布宽恒 1080、高随屏；网格 `(0.5,1)`+`-(row*H+H/2)`；图元是否跟画布中心按需求定（`BattleUltCard` 在画面中部）。
-- 🔴 相机根高度唯一收口 `BattleManager.SetCameraRootY`：战斗 `-1.57`、挂机 `0`；`BattleScene.prefab` 的 `CameraRoot` 留 0。
 
 ## 发版/Jenkins/GM（→ REF-android-release、REF-jenkins-ci）
 - 🔴🔴 versionCode 只增不减、同号只能上一次：10-19 仓内 74（1.2.51），下一个 ≥75（`scripts/bump_version.py`）；失败别重跑 `aab_release.sh` ⇒ `--skip-build`/`play_upload.py`。
@@ -66,11 +59,6 @@
 - 🔴 配置语义验证别读 lua 表：luajit 里 dofile 后 `GetKeys(t)`/`t[id]`；Language 字段 `id/Chinese/English/Japanese`，AfkDialogue 是 string。
 - 本地服：launchd `com.ts.localserver.*`、`~/home/java/start-local.sh`；agent shell 里 `launchctl bootstrap` 恒 EIO 5 ⇒ install 必须用户 Terminal 跑；客户端连本地改 `AssetBundles/version.txt`（勿提交）；测试号 `localtest/123456`、`10000004`(cn)/`10000005`(it)。
 
-## 内购 / IAP
-- 🔴 购买入口唯一收口 `Assets/Scripts/IAP/IAPManager.cs`（`BuyItem1`/`BuyItem`）：单飞锁 120s + 空判 + `IDetailedStoreListener`。
-- 🔴 `ProcessPurchase` 分「本次在途（pid 匹配）」与「Google 重投历史单」：后者落盘 `PlayerPrefs["iap_pending_purchases_v1"]` 再 `Complete`，`TakePendingPurchases()` 取补发（`productId#transactionId#receipt`）；真补发必须等服务端按 receipt 幂等。
-- 🔴 `ProxyBillingActivity getIntentSender() NPE` 是 Google 缺陷（billing 9.x 同款），升级无效 ⇒ 只做 Crashlytics 静音。
-
 ## 🔴 约定
 - 巡检默认只读、量化证据分级；发版/上线先取得明确同意（打包/校验/commit/push 可自行做；送审、重启生产服必须问）。
 - 改动逐条 commit 且必须 push；中文 `type(scope): 摘要`；严禁 `git add -A`；Lua 源码+LuaBytes 成对。
@@ -78,8 +66,3 @@
 - 凭据一律 `.secrets/`（700/600）；远端 PUBLIC、4 个 keystore 在库（决定不处置）。
 - 后台长任务不能 `nohup &`/`disown` ⇒ `Popen(..., start_new_session=True, DEVNULL)`；shell 坑：`pipefail`+`|head` 假失败、BSD `find` 无 `-newermt`/`timeout`、沙箱 `ps` 不可用（用 `pgrep -fl`）、`grep` 不认 `\|`（用 `-E`）、源码常为 GBK 需 `grep -a`。
 - 改系统级状态必须当场验证并标注重启后是否有效；`BattlePanel.prefab` 工作区副本会被 Unity 重写成 13.8 万行 ⇒ 打补丁先 `git show HEAD:path`。
-
-## 诱导评分（→ daily log 2026-10-19）
-- 底层 `Assets/Scripts/Review/ReviewMgr.cs`；Lua 唯一入口 `ReviewMgr:AllInOneFlowClick()`；`BattleBestPopup` 的 PassTimes1 计数不要动。
-- 🔴 新入口唯一闸门 `AppReview_TryShowOnKeyLevel(key)`（`Common/functions.lua` 末尾）：同 key 只一次 + 24h 冷却（取 `PlayerManager.serverTime`）+ 账号 3 次。
-- 口径：爬塔＝`VirtualTargetReward.Condition` 里程碑层；日常副本＝该 Type `Id` 最大末关**首通**，判首通必须在 `AddDailyChallengeInfo` 之前。

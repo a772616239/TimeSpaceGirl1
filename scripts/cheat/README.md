@@ -54,14 +54,40 @@ python3 scripts/cheatctl.py purge --uid 10000224 --account --confirm 10000224 --
 执行内容（顺序不可换）：
 
 1. 备份 `user` 文档 + 命中榜单快照 → `/root/incident_<tag>_<uid>/`
-2. `$unset` 英雄 + `heroForceSort` 置空 + 清 `heroStarMap`/`heroHandBook`
-3. 清榜：`ZREM`（含 `uid:heroId` 复合成员）、`RANKING_DATA` JSON 剔除、`supremacyInfo`、`guildInfo`
+2. 清榜：`ZREM`（含 `uid:heroId` 复合成员）、`RANKING_DATA` JSON 剔除、`supremacyInfo`、`guildInfo`
+   —— **`--account` 删号路径也一定先走这一步**（早期版本漏了，直接导致幽灵榜一）
+3. `$unset` 英雄 + `heroForceSort` 置空 + 清 `heroStarMap`/`heroHandBook`
 4. 可选封号 `HSET "10001:FORBID_LOGIN:" <uid> 0`
-5. 校验 + 写 `reports/<uid>_<tag>.json`（含回滚命令）
+5. 全榜体检（`RankIntegrity`，见下）+ 校验 + 写 `reports/<uid>_<tag>.json`（含回滚命令）
+
+## rank-audit —— 全榜完整性体检
+
+**排行榜打不开时先跑这个。** 客户端「第一名」请求 `RankFirstHandler`(11756) 会遍历所有榜，
+而 `HeroForceRank.getFirst()` 取到榜一后直接解引用英雄实体，**没有判空** ⇒
+只要有一个榜的第 1 名指向「账号已删」或「英雄已删」的成员，就抛 NPE，
+整个排行榜面板打不开（日志特征 `HeroForceRank.getFirst(HeroForceRank.java:69)`）。
+
+```bash
+python3 scripts/cheatctl.py rank-audit            # 只报清单（默认）
+python3 scripts/cheatctl.py rank-audit --repair   # 执行清理
+python3 scripts/cheatctl.py rank-audit --json
+```
+
+判定口径：
+
+| 类型 | 含意 | 典型来源 |
+|---|---|---|
+| `user_gone` | 成员 uid 在 `user` 集合里不存在 | `purge --account` 删号后没清榜 |
+| `hero_gone` | uid 存在，但 `heroMap` 里没这个 heroId | 删作弊英雄后榜单/`heroForceSort` 残留 |
+
+只有匹配 `^1\d{7}$` 的成员才按 uid 处理；**公会榜的 `3`/`4` 这类 guildId 不会被误删**。
+`purge` 结束时自动跑一次（`--no-rank-integrity` 可关）。
 
 ## 安全约束
 
 - `purge` 默认 dry-run；`--account` 必须 `--confirm <uid>`。
 - 只删该 uid 的成员，**绝不清整榜**。
 - 删英雄必须同步 `heroForceSort`，否则 `HeroForceRank.getMyInfo`/`getOptional` 会取空甚至 NPE。
+- 删号 / 删英雄之后**必须** `rank-audit`，否则幽灵成员会让全服排行榜崩掉。
 - 改 `RANKING_DATA` / `guildInfo` 后，`RankingRewardLogic` 与 `GuilidManager` 是启动加载 ⇒ **需重启**。
+

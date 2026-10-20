@@ -577,3 +577,44 @@ ssh gs 'grep -h "10000224" /home/java/gameserver/assets/log/jl_item/*/item0.log'
 `PlayerManager.maxForce` 是**当前阵容队伍战力**（`PlayerLogic.java:369` 写入），不是英雄战力总和。
 GM 发的英雄若从未编入 `teamPosManager`，战力完全没被污染（朗曼梅西 4948，与同级 3 人完全一致）。
 删英雄后去「重算 maxForce」只会造出假数据。
+
+### 10.4 删号后没清榜 → 幽灵榜一 → 整个排行榜打不开（2026-10-20 复发）
+
+`RankFirstHandler`(11756) → `RankLogic.getRankFirstInfo` 是**遍历请求里所有 rankTypes**、
+逐个调 `rank.getFirst(param)` 的。而 `HeroForceRank.getFirst()` 拿到榜一后：
+
+```java
+Hero hero = everyUser.getHeroManager().getHero(heroId);
+builder.setHeroTemplateId(hero.getTemplateId());   // hero == null → NPE
+```
+
+于是**任意一个榜的第 1 名失效**，整个 `RankFirstResponse` 失败，客户端表现为「排行榜打不开」。
+
+只有英雄战力榜会崩：`AbstractRank.getOneUserRank()` 对 `everyUser == null` 有判空，
+返回空 builder 不抛错；`HeroForceRank` 多做了一步英雄解引用，才把空值放大成异常。
+
+数据侧的成因是**删号路径漏清榜**：`cli.py --account` 传 `what=[]`，
+旧 `Purger.run()` 在 `delete_account=True` 分支里根本不调 `clean_ranks()`，
+`uid:heroId` 复合成员就永远留在 `10001:HERO_FORCE_RANK:` 里。
+
+复现链：10-18 处置的 4 个号只删了 `user` 文档 → 10-20 把作弊号 `10000224` 的成员清掉后，
+榜一落到幽灵号 `10000194`（`user` 里已不存在，战力 645361）头上 → 立刻 NPE。
+
+**排查一条命令**：
+
+```bash
+python3 scripts/cheatctl.py rank-audit           # 期望「失效 0 条」
+python3 scripts/cheatctl.py rank-audit --repair   # 有则清
+```
+
+日志侧特征（可直接定位）：
+
+```bash
+ssh gs 'grep -a -A6 "protoID=11756" /data/srvlog/gameserver.log | tail -20'
+# java.lang.NullPointerException
+#   at ...HeroForceRank.getFirst(HeroForceRank.java:69)
+```
+
+代码侧已加固（未发版前线上仍是旧逻辑）：
+`getFirst` 取前 5 名逐个校验、失效则顺延到下一个有效成员；`getOptional` 跳过失效行；
+`getMyInfo` 判 `zSetScore` / `getZSetreverseRank` 为 null（两者都是 `Long`/`Double`，直接拆箱会 NPE）。

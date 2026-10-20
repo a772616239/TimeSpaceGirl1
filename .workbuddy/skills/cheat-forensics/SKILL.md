@@ -1,6 +1,6 @@
 ---
 name: cheat-forensics
-description: TimeSpaceGirl1 作弊取证 / 判定 / 处置。当用户说"这个号是不是开挂""查一下 XXX 的异常数据""帮我找漏洞""一键删掉作弊账号""清掉他的排行榜""封了这个号"时使用。内含三层工具（scripts/cheat/ 的 remote/detect/purge）+ 六条判据（含 BI 文件流水 reason=28 这种 Mongo 看不到的证据）+ 处置四步（备份→删产物→清榜→封号）+ 三条会导致线上崩榜的红线。
+description: TimeSpaceGirl1 作弊取证 / 判定 / 处置。当用户说"这个号是不是开挂""查一下 XXX 的异常数据""帮我找漏洞""一键删掉作弊账号""清掉他的排行榜""封了这个号"时使用。内含三层工具（scripts/cheat/ 的 remote/detect/purge/rankint）+ 六条判据（含 BI 文件流水 reason=28 这种 Mongo 看不到的证据）+ 处置五步（备份→清榜→删产物→封号→全榜体检）+ 五条会导致线上崩榜的红线。
 ---
 
 # 作弊取证 / 处置
@@ -51,26 +51,33 @@ python3 scripts/cheatctl.py purge --uid 10000224 --account --confirm 10000224 --
 2. **GM 改星级/等级不写 `heroLog`**（只有 `upHeroLevel`/`upHeroStar` 写）⇒ 「heroLog 干净」证明不了没作弊。
 3. **「英雄等级高」本身不是证据**，正常十连抽也会 1 秒创建 10 个英雄（只是 1 级）。硬信号必须是「创建即满配 + 同级分位离群」。
 
-## 3. 处置四步（`purge` 已固化，不要手工重来）
+## 3. 处置五步（`purge` 已固化，不要手工重来）
 
 1. **备份**（自动）：`/root/incident_<tag>_<uid>/user_<uid>_<tag>.json` + 命中榜单的 `ZREVRANGE WITHSCORES` 快照；本地写 `scripts/cheat/reports/<uid>_<tag>.json`（含回滚命令）。
-2. **删作弊产物**：`$unset heroManager.heroMap.<id>`（默认判据 `level>=100`，可 `--hero-level/--hero-star`）。
-3. **清榜**：`ZREM` 每一名成员（含 `uid:heroId` 复合成员）、`RANKING_DATA` 的 JSON 里剔除该 uid、`supremacyInfo.uid=0`、`guildInfo.members` `$pull`。
+2. **清榜**（删号路径也一定会执行，见红线 5）：`ZREM` 每一名成员（含 `uid:heroId` 复合成员）、`RANKING_DATA` 的 JSON 里剔除该 uid、`supremacyInfo.uid=0`、`guildInfo.members` `$pull`。
+3. **删作弊产物**：`$unset heroManager.heroMap.<id>`（默认判据 `level>=100`，可 `--hero-level/--hero-star`）。
 4. **封号（可选）**：`HSET "10001:FORBID_LOGIN:" <uid> 0`。
+5. **全榜体检**（自动，`--no-rank-integrity` 可关）：`RankIntegrity` 扫全部 zset，挑出「账号已消失 / 英雄已消失」的成员并 `ZREM`。手工只需 `python3 scripts/cheatctl.py rank-audit [--repair]`。
 
-## 4. 🔴 四条红线（违反会导致线上崩榜 / 数据不可恢复）
+## 4. 🔴 五条红线（违反会导致线上崩榜 / 数据不可恢复）
 
 1. **只删本人成员，绝不清整榜**：db0 有 6200+ key、近 5000 个是排行，清空不可恢复。
 2. **删英雄必须同步清 `heroForceSort`**：它只排「≥100 级前 5 名」，且 `refreshHeroForceSort` 在结果为空时**不回写**（`HeroForceRank.java:168`）⇒ 不清会留下指向已删英雄的引用，`getMyInfo` 取空。
-3. **排行榜成员要在删数据的同时清**：`HeroForceRank.getOptional` 里 `getHero(heroId)` 为 null 时直接 NPE（`HeroForceRank.java:88-89`），全服点排行榜都会报错。
-4. **删号 ≠ 封号**：本服「查不到 user 就自动建档」，删号只是重置。必须写 `FORBID_LOGIN`。
+3. **删号 / 删英雄之后必须跑 `rank-audit`**（2026-10-20 事故）：`HeroForceRank.getFirst()` 取榜一后直接 `hero.getTemplateId()`，**没有判空**；而 `RankFirstHandler`→`RankLogic.getRankFirstInfo` 是**遍历所有榜**的，任意一个榜的第 1 名失效（账号被删、英雄被删）就抛 NPE，整个排行榜打不开。
+   - 复现路径：10-18 处置的那批号只删了 `user` 文档，`uid:heroId` 复合成员留在 `10001:HERO_FORCE_RANK:` 里；10-20 把作弊号的成员清掉后，榜一正好落到幽灵号 `10000194` 头上，立刻 NPE（`HeroForceRank.java:69`）。
+   - 只有**英雄战力榜**会崩：`AbstractRank.getOneUserRank()` 对 `everyUser == null` 有判空，其它榜返回空行不抛错。
+   - 代码侧已加判空（`getFirst` 会顺延到下一个有效成员、`getOptional` 跳过失效行、`getMyInfo` 判 `zSetScore` 空），但**未发版前线上仍是旧逻辑**，数据层必须自己清干净。
+4. **`--account` 删号必须先清榜再删号**：早期 `run()` 在 `delete_account=True` 分支里根本不调 `clean_ranks()`，导致复合成员永久残留 —— 这是幽灵榜一的唯一来源。现已改成「clean_ranks → clean_mongo_refs → delete_account」。
+5. **删号 ≠ 封号**：本服「查不到 user 就自动建档」，删号只是重置。必须写 `FORBID_LOGIN`。
+
 
 ## 5. 生效条件
 
 - 英雄/物品数据在 Mongo，**玩家离线时下次登录即生效**；在线则必须踢下线或重启（会覆盖内存态）。
 - `FORBID_LOGIN` 由 `MinuteTask` 每分钟重载，1 分钟内生效，重启不丢。
 - `RANKING_DATA`（`RankingRewardLogic.rankingDataMap`）与 `guildInfo`（`GuilidManager`）是启动加载 ⇒ 改完**必须重启**才对内存里的排行奖励逻辑生效。
-- 校验口径：`purge` 结束自动打印「英雄数 / ≥100 级数 / heroForceSort / 榜残留 / 封禁」，全服复扫用 `hunt`（应为空）。
+- 校验口径：`purge` 结束自动打印「英雄数 / ≥100 级数 / heroForceSort / 榜残留 / 封禁 / 全榜失效成员」，全服复扫用 `hunt`（应为空）。
+- **排行榜打不开先跑 `rank-audit`**：`python3 scripts/cheatctl.py rank-audit`（应为 0 条失效）；有则 `--repair`。日志特征：`protoID=11756` + `HeroForceRank.getFirst(HeroForceRank.java:69)` NPE。
 
 ## 6. 定位「漏洞在哪」的固定套路
 

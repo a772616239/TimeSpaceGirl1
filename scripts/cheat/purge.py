@@ -305,30 +305,61 @@ return {exists:true, heroN:n, maxLv:mx, n100:n100,
                               str(self.uid)).strip().endswith('1')
         state['rank_residue'] = len(ranks)
         state['banned'] = banned
+        ri = self.manifest.get('rank_integrity') or {}
+        state['ghost_rank_members'] = ri.get('ghosts')
+        state['ghost_rank_repaired'] = ri.get('repaired')
         self.manifest['verify'] = state
         print('  校验: 英雄 %s 个 / 最高 %s 级 / ≥100 级 %s 个 / heroForceSort %s 条 / '
-              '榜残留 %s / 封禁 %s' % (
+              '榜残留 %s / 封禁 %s / 全榜失效成员 %s（已清 %s）' % (
                   state.get('heroN', '-'), state.get('maxLv', '-'), state.get('n100', '-'),
-                  state.get('heroForceSortN', '-'), state.get('rank_residue'), state.get('banned')))
+                  state.get('heroForceSortN', '-'), state.get('rank_residue'), state.get('banned'),
+                  state.get('ghost_rank_members', '-'), state.get('ghost_rank_repaired', '-')))
         return state
 
     # -------------------------------------------------------------- 编排
     def run(self, what=('heroes', 'ranks', 'refs'), ban=False, delete_account=False,
-            min_level=HERO_LEVEL_FLOOR, min_star=None):
+            min_level=HERO_LEVEL_FLOOR, min_star=None, rank_integrity=True):
         self.backup()
         if delete_account:
-            self.delete_account()
-        elif 'heroes' in what:
-            self.purge_heroes(min_level=min_level, min_star=min_star)
-        if 'ranks' in what:
+            # 🔴 顺序不能反：必须先清榜再删号。
+            #    删号后再清，rank_members 仍能按 uid 前缀捞到成员，但「英雄是否还在」
+            #    已经无从判定；更重要的是早期版本在 --account 分支里**根本没调 clean_ranks**，
+            #    于是 `uid:heroId` 复合成员永远留在 zset 里，成为幽灵榜一，
+            #    下一次某个玩家打开排行榜就 getFirst NPE（2026-10-20 复现）。
             self.clean_ranks()
-        if 'refs' in what:
             self.clean_mongo_refs()
+            self.delete_account()
+        else:
+            if 'heroes' in what:
+                self.purge_heroes(min_level=min_level, min_star=min_star)
+            if 'ranks' in what:
+                self.clean_ranks()
+            if 'refs' in what:
+                self.clean_mongo_refs()
         if ban:
             self.ban()
+        # 🔴 兜底体检：删英雄/删号都会在榜单留下指向已消失实体的成员，
+        #    而 HeroForceRank.getFirst 缺判空 ⇒ 一条脏数据 = 整个排行榜打不开。
+        if rank_integrity:
+            self.check_rank_integrity()
         self.verify()
         path = self.write_manifest()
         print('  manifest: %s' % path)
         if not self.apply:
             print('  ⚠️ 以上为 dry-run，确认无误后加 --apply')
         return self.manifest
+
+    def check_rank_integrity(self):
+        """全榜体检：清掉「账号已消失」或「英雄已消失」的失效成员。"""
+        from .rankint import RankIntegrity
+        ri = RankIntegrity(self.r, apply=self.apply, on_log=self._log)
+        rep = ri.run(repair=True)
+        self.manifest['rank_integrity'] = {
+            'keys': rep['keys'], 'members': rep['members'],
+            'ghosts': len(rep['ghosts']), 'repaired': rep['repaired'],
+            'detail': rep['ghosts'][:50],
+        }
+        self._record('ranks.integrity', {'ghosts': len(rep['ghosts']),
+                                         'repaired': rep['repaired']})
+        return rep
+

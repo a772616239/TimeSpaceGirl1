@@ -16,7 +16,11 @@
   python3 scripts/cheatctl.py purge --uid 10000224 --apply --ban
   python3 scripts/cheatctl.py purge --uid 10000224 --account --confirm 10000224 --apply
 
-  # 4) 封禁名单
+  # 4) 全榜完整性体检（删号 / 删英雄之后必跑；GHOST 成员会让排行榜打不开）
+  python3 scripts/cheatctl.py rank-audit
+  python3 scripts/cheatctl.py rank-audit --repair
+
+  # 5) 封禁名单
   python3 scripts/cheatctl.py ban --uid 10000248 --reason "GM 探测"
   python3 scripts/cheatctl.py unban --uid 10000248
   python3 scripts/cheatctl.py banlist
@@ -31,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cheat.remote import Remote, RemoteError          # noqa: E402
 from cheat.detect import Detector, fmt_report, now_tag  # noqa: E402
 from cheat.purge import Purger                        # noqa: E402
+from cheat.rankint import RankIntegrity               # noqa: E402
 
 
 def _remote(a):
@@ -65,6 +70,25 @@ def cmd_hunt(a):
     return 0
 
 
+def cmd_rank_audit(a):
+    """全榜完整性体检：账号已删 / 英雄已删 的残留成员都能挑出来。
+
+    这类脏数据会让 HeroForceRank.getFirst 抛 NPE，而 RankFirstHandler 是遍历所有榜的，
+    一条脏成员 = 整个排行榜打不开。删号、删英雄之后都应该跑一次。
+    """
+    r = _remote(a)
+    ri = RankIntegrity(r, apply=a.repair)
+    rep = ri.run(repair=True)
+    if a.json:
+        print(json.dumps(rep, ensure_ascii=False, indent=2))
+    elif not rep['ghosts']:
+        print('✅ %d 个榜 / %d 个成员，无失效成员' % (rep['keys'], rep['members']))
+    elif not a.repair:
+        print('\n共 %d 条失效成员；加 --repair 执行清理（建议先不加，确认清单）'
+              % len(rep['ghosts']))
+    return 0 if not rep['ghosts'] else (2 if not a.repair else 0)
+
+
 def cmd_purge(a):
     if a.account and str(a.confirm) != str(a.uid):
         print('🔴 删号需要 --confirm <uid> 二次确认（当前 --confirm=%s）' % a.confirm)
@@ -82,7 +106,8 @@ def cmd_purge(a):
     print('=%s %s uid=%d  %s' % ('=' * 60, 'APPLY' if a.apply else 'DRY-RUN',
                                  a.uid, now_tag()))
     p.run(what=tuple(what), ban=a.ban, delete_account=a.account,
-          min_level=a.hero_level, min_star=a.hero_star)
+          min_level=a.hero_level, min_star=a.hero_star,
+          rank_integrity=not a.no_rank_integrity)
     return 0
 
 
@@ -137,9 +162,16 @@ def main(argv=None):
     s.add_argument('--no-ranks', action='store_true')
     s.add_argument('--no-refs', action='store_true')
     s.add_argument('--ban', action='store_true')
+    s.add_argument('--no-rank-integrity', action='store_true',
+                   help='跳过处置后的全榜失效成员体检（不建议）')
     s.add_argument('--account', action='store_true', help='删整号（必须配 --confirm <uid>）')
     s.add_argument('--confirm', default=None)
     s.set_defaults(func=cmd_purge)
+
+    s = sub.add_parser('rank-audit', help='全榜完整性体检（GHOST 成员会让排行榜打不开）')
+    s.add_argument('--repair', action='store_true', help='执行清理（默认只报清单）')
+    s.add_argument('--json', action='store_true')
+    s.set_defaults(func=cmd_rank_audit)
 
     s = sub.add_parser('ban', help='写 FORBID_LOGIN')
     s.add_argument('--uid', type=int, required=True)

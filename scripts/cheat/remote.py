@@ -159,6 +159,49 @@ class Remote(object):
         lines = self.redis_lines('HGETALL', '"%s"' % key)
         return dict(zip(lines[0::2], lines[1::2]))
 
+    def all_rank_members(self, patterns=None):
+        """把**全部**榜单成员一次抓回（key → [member,...]），用于完整性体检。
+
+        与 `rank_members(uid)` 的区别：不带 uid 前缀过滤，扫全榜。
+        同样整段塞进远端一个 shell，避免 ~90 次 redis-cli 进程启动。
+        """
+        patterns = patterns or ['%s*RANK*' % self.key_prefix,
+                                '%s*ARENA*' % self.key_prefix]
+        pcs = ' '.join('"%s"' % p for p in patterns)
+        script = ('for p in %s; do '
+                  'for k in $(redis-cli -n %s --scan --pattern "$p"); do '
+                  '[ "$(redis-cli -n %s TYPE "$k")" = "zset" ] || continue; '
+                  'redis-cli -n %s ZRANGE "$k" 0 -1 | '
+                  'while read -r m; do echo "$k|$m"; done; '
+                  'done; done') % (pcs, self.redis_db, self.redis_db, self.redis_db)
+        out = self.sh(script, timeout=240)[1]
+        members = {}
+        for line in out.splitlines():
+            if '|' not in line:
+                continue
+            key, member = line.split('|', 1)
+            key, member = key.strip(), member.strip()
+            if not key or not member:
+                continue
+            members.setdefault(key, []).append(member)
+        return members
+
+    def zrem_batch(self, pairs, chunk=200):
+        """批量 ZREM（按 key 分组，一条 redis-cli 可带多个成员），返回实际删除数。"""
+        by_key = {}
+        for key, member in pairs:
+            by_key.setdefault(key, []).append(member)
+        lines = []
+        for key, ms in by_key.items():
+            for i in range(0, len(ms), chunk):
+                args = ' '.join('"%s"' % m for m in ms[i:i + chunk])
+                lines.append('redis-cli -n %s ZREM "%s" %s'
+                             % (self.redis_db, key, args))
+        if not lines:
+            return 0
+        out = self.sh('\n'.join(lines), timeout=180)[1]
+        return sum(int(x.strip()) for x in out.splitlines() if x.strip().isdigit())
+
     # ---------------------------------------------------------------- 文件
     def read_file(self, path, limit_bytes=None):
         """读远端文本（BI 文件日志用）；不存在返回空串。"""

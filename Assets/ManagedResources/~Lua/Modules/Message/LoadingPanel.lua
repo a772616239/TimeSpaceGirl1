@@ -6,6 +6,7 @@ local this = LoadingPanel
 -- 登录链的每一步都是一次"发请求 → 等响应 → 再走下一步"的同步往返，正常 RTT 200~400ms
 -- （欧洲连亚洲服实测 230~300ms），网络层自己还有 5s×3 的重发。8s 已经远超正常上限，
 -- 到点就视为该步卡死。
+-- 注意：并行分组也算一格，所以 8s 是"整组最慢的那个"的上限，而不是组内每个成员各 8s。
 local STEP_TIMEOUT = 8
 -- 一次登录最多强制跳过几步。超过说明整条链路都不可用，此时一次性跳到末步进游戏，
 -- 而不是让玩家盯着一个不动的百分比（原来没有任何超时，卡住就是永久卡住）。
@@ -31,6 +32,12 @@ local lerp = 0
 local maxIndex = 0
 local stepWaitTime = 0   -- 当前步骤已等待时间（秒）
 local forceCount = 0     -- 本次登录已强制跳过几步
+
+-- 并行分组状态：一个分组算一格进度，组内 N 个请求同时发出，全部回包（或看门狗超时）后才推进
+local groupActive = false    -- 当前正在等某个分组
+local groupFiring = false    -- 正在循环发包（这期间不许收尾，否则后面的成员会发到串行队列里）
+local groupRemaining = 0     -- 还没回包的成员数
+local groupWaiters = 0       -- 调试用：分组里的成员数
 
 local function update()
     lerp = math.clamp(lerp + Time.fixedDeltaTime * 15,0,1)
@@ -72,12 +79,108 @@ function LoadingPanel.AddStep(func)
     maxIndex = #callList
 end
 
+-- 并行分组：{ groupName = "...", members = { {name=..., fire=function(cb) end}, ... } }
+-- 组内请求同时发出，只等最慢的一个，把 N 个 RTT 压成 1~2 个。
+function LoadingPanel.AddStepGroup(entry)
+    table.insert(callList, entry)
+    maxIndex = #callList
+end
+
+-- 清掉分组状态（跳过 / 超时 / 登录结束都要调，否则下一链的第一个请求会被当成并行请求）
+function LoadingPanel.ResetGroup()
+    if groupActive and Network and Network.EndParallelBatch then
+        MyPCall(function() Network:EndParallelBatch() end)
+    end
+    groupActive = false
+    groupFiring = false
+    groupRemaining = 0
+    groupWaiters = 0
+end
+
+-- 一个成员回包了（每个成员只会被计一次，重复回调由 cb 里的 finished 挡住）
+function LoadingPanel.StepDone()
+    if not groupActive then return end
+    groupRemaining = groupRemaining - 1
+    if groupRemaining > 0 then return end
+    if groupFiring then return end   -- 还在发包循环里，等循环结束再收尾
+    LoadingPanel.FinishGroup()
+end
+
+-- 并行请求报错：C# 侧已经把它自己的回调摘掉了，这里只当作"该成员失败"，
+-- 绝不能推进整条链（否则会连环跳步，把没回来数据的步骤跳过）
+function LoadingPanel.GroupMemberFailed(msg)
+    if not groupActive then return end
+    -- 还在发包循环里：报错不可能是组内成员的回包（回包是异步的），这是服务端推的错误码
+    -- （典型是"连接中"91000834），忽略，别白扣一个成员名额。
+    if groupFiring then
+        LogError(string.format("[Loading] 并行分组 %s 发包期间收到错误码 %s，忽略",
+            tostring(retStrs[curIndex]), tostring(msg and msg.errCode)))
+        return
+    end
+    LogError(string.format("[Loading] 并行分组 %s 有成员报错（errCode=%s, 剩余 %d 个未回包）",
+        tostring(retStrs[curIndex]), tostring(msg and msg.errCode), groupRemaining))
+    LoadingPanel.StepDone()
+end
+
+function LoadingPanel.FinishGroup()
+    if not groupActive then return end
+    groupActive = false
+    groupFiring = false
+    groupRemaining = 0
+    groupWaiters = 0
+    if Network and Network.EndParallelBatch then
+        MyPCall(function() Network:EndParallelBatch() end)
+    end
+    LoadingPanel.OnStep()
+end
+
+-- 执行一个并行分组：N 个请求一口气发出去，回包各自记账
+function LoadingPanel.RunGroup(entry)
+    local members = entry.members or {}
+    groupWaiters = #members
+    groupRemaining = #members
+    groupActive = true
+    groupFiring = true
+    stepWaitTime = 0
+
+    -- 让网络层把这一段里发出的请求（含成员回调里再发的后续请求）都走并发通道，不占串行槽位
+    if Network and Network.BeginParallelBatch then
+        MyPCall(function() Network:BeginParallelBatch() end)
+    end
+
+    for i = 1, #members do
+        local m = members[i]
+        local finished = false
+        local cb = function()
+            if finished then return end
+            finished = true
+            LoadingPanel.StepDone()
+        end
+        local ok, err = pcall(m.fire, cb)
+        if not ok then
+            -- 发包就抛错：这个成员判失败，别让整组等到超时
+            LogError(string.format("[Loading] 并行成员 %s 发包异常：%s", tostring(m.name), tostring(err)))
+            if not finished then
+                finished = true
+                groupRemaining = groupRemaining - 1
+            end
+        end
+    end
+
+    groupFiring = false
+    -- 全部是同步回调（例如未开放的功能/本地缓存）时，这里直接收尾
+    if groupActive and groupRemaining <= 0 then
+        LoadingPanel.FinishGroup()
+    end
+end
+
 -- 直接跳到末步进游戏（网络整体不可用时的兜底，避免无限空转）
 function LoadingPanel.SkipToEnd()
     if #callList < 1 then return end
     LogError(string.format("[Loading] 连续强制跳过 %d 步，直接进入游戏，剩余步骤不再等待", forceCount))
     lerp = 0
     stepWaitTime = 0
+    LoadingPanel.ResetGroup()
     curIndex = #callList - 1
     LoadingPanel.OnStep()
 end
@@ -90,11 +193,17 @@ function LoadingPanel.ForceStep(reason)
     LogError(string.format("[Loading] 步骤 #%d(%d%%) %s 等待 %ds 未回调，强制跳过（%s，累计 %d 步）",
         curIndex, math.floor(curIndex / math.max(1, maxIndex) * 100), tostring(name),
         STEP_TIMEOUT, tostring(reason), forceCount))
+    if groupActive then
+        LogError(string.format("[Loading] 并行分组 %s 仍有 %d/%d 个成员未回包，放弃等待",
+            tostring(name), groupRemaining, groupWaiters))
+    end
 
     -- 关键：放弃这次挂起的请求并清空网络层队列头，否则后续步骤的请求会被堵在发送队列里发不出去
     if Network and Network.AbortPending then
         MyPCall(function() Network:AbortPending() end)
     end
+    -- 分组状态必须清掉：否则下一格的请求会被当成并行请求发出去（不占串行槽位、也没人推进链）
+    LoadingPanel.ResetGroup()
 
     if forceCount >= MAX_FORCE_STEPS then
         LoadingPanel.SkipToEnd()
@@ -114,6 +223,13 @@ function LoadingPanel.OnStep()
     local func = callList[curIndex]
     if not func then
         LogError(string.format("[Loading] 步骤 #%d 缺失，加载链中断", curIndex))
+        return
+    end
+
+    -- 并行分组：一格进度里发 N 个请求，等全部回包（或看门狗）才推进
+    if type(func) == "table" then
+        retStrs[curIndex] = func.groupName or ("group" .. tostring(curIndex))
+        LoadingPanel.RunGroup(func)
         return
     end
 
@@ -153,6 +269,7 @@ function LoadingPanel.Start()
     stepWaitTime = 0
     forceCount = 0
     retStrs = {}
+    LoadingPanel.ResetGroup()
     maxIndex = #callList
     this.Slider.maxValue = #callList - 1
     this.Slider.value = curIndex
@@ -177,6 +294,7 @@ end
 function LoadingPanel.End()
     UpdateBeat:Remove(update)
     this:ClosePanel()
+    LoadingPanel.ResetGroup()
     callList = {}
     retStrs = {}
     curIndex = 0

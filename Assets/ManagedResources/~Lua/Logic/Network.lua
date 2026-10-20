@@ -21,6 +21,7 @@ function Network.New(type, socket)
     instance.sendFunc = nil --请求缓存
     instance.sendFuncQueue = Queue.New() --请求缓存列表，当一帧发送多个请求时，缓存等待上一个请求收到回调时，执行下一个请求
     instance.pendingReMsgId = nil --当前在途请求期待的回包 msgId（AbortPending 用来清掉 C# 侧的回调注册）
+    instance.parallelBatch = 0 -- >0 表示处于并行批次中：这批请求不进串行队列，直接并发发出（登录并行分组用）
 
     instance.re_resendTimes = 0 --记录断线重发次数
     instance.reconnectFlag = false --记录断线重连标记
@@ -149,6 +150,12 @@ function Network:SendMessage(nMsgId, sMsg)
 end
 
 function Network:SendMessageWithCallBack(nMsgId, nReMsgId, sMsg, func, isHideMask)
+    -- 并行批次内的请求不进串行队列：串行槽位一次只能有一个在途请求，
+    -- 登录链 40 多步全靠它排队，一步一个 RTT（欧洲 ~288ms）。纯展示数据的请求彼此
+    -- 没有依赖，让它们同时飞出去，N 个 RTT 压成 1 个。
+    if (self.parallelBatch or 0) > 0 then
+        return self:SendParallelMessage(nMsgId, nReMsgId, sMsg, func)
+    end
     if not isHideMask then
         -- RequestPanel.Show(GetLanguageStrById(23016))
     end
@@ -185,6 +192,41 @@ function Network:SendMessageWithCallBack(nMsgId, nReMsgId, sMsg, func, isHideMas
         end)
     end)
     self:Flush()
+end
+
+-- 进入/退出并行批次（登录加载链的并行分组用）。
+-- 批次期间发出的所有请求都走 SendParallelMessage：不占 sendFlag、不进 sendFuncQueue，
+-- 包括成员回调里再发的后续请求（例如跨服先 UNLOCK 再取数据）。
+function Network:BeginParallelBatch()
+    self.parallelBatch = (self.parallelBatch or 0) + 1
+end
+
+function Network:EndParallelBatch()
+    self.parallelBatch = math.max(0, (self.parallelBatch or 0) - 1)
+end
+
+-- 并发请求：直接发，不等串行槽位，回包只回调自己的 func。
+-- 不重发：重发只会在服务端重复处理，超时由加载链的分组看门狗统一兜底。
+function Network:SendParallelMessage(nMsgId, nReMsgId, sMsg, func)
+    local buffer = ByteBuffer.New()
+    if sMsg then
+        buffer:WriteBuffer(sMsg)
+    end
+    if self.isConnected == false or not self.socket then
+        -- 连接已断：直接算这个成员失败，别让整组等到看门狗超时
+        LogRed(string.format("[Network] 并行请求 %s 时连接不可用，跳过", tostring(nMsgId)))
+        if func then
+            MyPCall(function() func(nil) end)
+        end
+        return
+    end
+    MyPCall(function()
+        self.socket:SendMessageWithCallBack(nMsgId, nReMsgId, buffer, function(b)
+            if func then
+                MyPCall(function() func(b) end)
+            end
+        end)
+    end)
 end
 
 -- 队列里还有待发请求且当前没有在途请求时，立刻发一个（等价于 Update 里的那段逻辑）
@@ -235,7 +277,12 @@ function Network:ReceiveErrorInfo(buffer)
     --waitingTimes = 0
     RequestPanel.Hide()
     -- 登录过程中报错
-    LoadingPanel.ErrorStep(msg)
+    -- 并行批次里的报错只算"该成员失败"：C# 侧已经把它的回调摘掉了，再推进整条链会跳过还没回数据的步骤
+    if (self.parallelBatch or 0) > 0 and LoadingPanel and LoadingPanel.GroupMemberFailed then
+        MyPCall(function() LoadingPanel.GroupMemberFailed(msg) end)
+    else
+        LoadingPanel.ErrorStep(msg)
+    end
 
     -- 过滤掉服务端"连接中"消息（语言ID 91000834），不弹任何Toast
     -- 服务端可能发送语言ID或已解析文本，使用string.find模糊匹配以防空格/编码差异

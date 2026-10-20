@@ -771,349 +771,83 @@ end
 
 --登录进主界面之前需要依次请求玩家数据
 function this.ExecuteLoading()
+    -- 步骤清单：串行步骤一步一个 RTT（欧洲连亚洲服实测 288ms/步），
+    -- 纯展示、彼此无依赖的请求合并成"并行分组"一次发出，只等最慢的那个回包。
+    -- 分组约束（加新组前必须确认）：
+    --   1) 组内成员之间没有数据依赖，也不依赖组外尚未完成的步骤；
+    --   2) 各自期待的回包协议号互不相同（C# 侧 callbacks 以回包 msgId 为 key，
+    --      同号并发会让后注册的那个回调被丢弃 ⇒ 该成员永远不回调）；
+    --   3) 都是纯展示数据，晚到或缺失不会阻断进游戏。
     local requestList = {}
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.PlayerInfoRequest(LoadingPanel.OnStep)
-            return "PlayerInfoRequest"
-        end
-    ) -- 基础信息
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.RequestMission(LoadingPanel.OnStep)
-            return "RequestMission"
-        end
-    ) -- 任务
-    -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.DiceInfoRequest(2,LoadingPanel.OnStep) return "DiceInfoRequest" end)                                     -- 兵旗骰子
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.ItemInfoRequest(0, LoadingPanel.OnStep)
-            return "ItemInfoRequest"
-        end
-    ) -- 物品信息
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.AllEquipRequest(0, LoadingPanel.OnStep)
-            return "AllEquipRequest"
-        end
-    ) -- 装备
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            CombatPlanManager.RequestAllPlanData(LoadingPanel.OnStep)
-            return "RequestAllPlanData"
-        end
-    ) -- 作战方案
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.MedalGetAllRequest(LoadingPanel.OnStep)
-            return "MedalGetAllRequest"
-        end
-    ) -- 勋章信息
-    -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.TotemListRequest(LoadingPanel.OnStep) return "TotemListRequest" end)                                     -- 图腾
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.HeroInfoRequest(0, LoadingPanel.OnStep)
-            return "HeroInfoRequest"
-        end
-    ) -- 英雄信息
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.TeamInfoRequest(LoadingPanel.OnStep)
-            return "TeamInfoRequest"
-        end
-    ) -- 编队
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.GetAllMailData(LoadingPanel.OnStep)
-            return "GetAllMailData"
-        end
-    ) -- 邮件
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.GetAllFightDataRequest(LoadingPanel.OnStep)
-            return "GetAllFightDataRequest"
-        end
-    )
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.GetActivityAllRewardRequest(LoadingPanel.OnStep)
-            return "GetActivityAllRewardRequest"
-        end
-    ) -- 活动奖励
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.RequestBaseArenaData(LoadingPanel.OnStep)
-            return "RequestBaseArenaData"
-        end
-    ) -- 竞技场
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.RequestArenaRankData(1, LoadingPanel.OnStep)
-            return "RequestArenaRankData"
-        end
-    ) -- 竞技场排行
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            ShopManager.InitData(LoadingPanel.OnStep)
-            return "ShopManager.InitData"
-        end
-    ) -- 商店
-    -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.GetWorkShopInfoRequest(LoadingPanel.OnStep) return "GetWorkShopInfoRequest" end)                         -- 工坊
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            ChatManager.InitData(LoadingPanel.OnStep)
-            return "ChatManager.InitData"
-        end
-    ) -- 聊天
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.GetAllFunState(LoadingPanel.OnStep)
-            return "GetAllFunState"
-        end
-    ) -- 功能开启信息
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.RequestGetFriendInfo(1, LoadingPanel.OnStep)
-            return "RequestGetFriendInfo1"
-        end
-    ) -- 好友
-    -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.RequestGetFriendInfo(2, LoadingPanel.OnStep) return "RequestGetFriendInfo2" end)                         -- 好友搜索
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.RequestGetFriendInfo(3, LoadingPanel.OnStep)
-            return "RequestGetFriendInfo3"
-        end
-    ) -- 好友申请
-    -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.RequestGetFriendInfo(4, LoadingPanel.OnStep) return "RequestGetFriendInfo4" end)                         -- 黑名单
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            FriendChatManager.InitData(LoadingPanel.OnStep)
-            return "FriendChatManager.InitData"
-        end
-    ) -- 好友消息
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            MyGuildManager.InitBaseData(LoadingPanel.OnStep)
-            return "MyGuildManager.InitBaseData"
-        end
-    ) -- 公会信息
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            GuildFightManager.InitBaseData(LoadingPanel.OnStep)
-            return "GuildFightManager.InitBaseData"
-        end
-    ) -- 公会战
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.GetAllGuildSkillData(LoadingPanel.OnStep)
-            return "GetAllGuildSkillData"
-        end
-    ) -- 公会技能
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.InitFightPointLevelInfo(LoadingPanel.OnStep)
-            return "InitFightPointLevelInfo"
-        end
-    ) -- 关卡
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.GuildHelpGetAllRequest(LoadingPanel.OnStep)
-            return "GuildHelpGetAllRequest"
-        end
-    ) -- 公会援助
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            GuildBattleManager.InitData(LoadingPanel.OnStep)
-            return "GuideBattlePanel.InitData"
-        end
-    ) -- 公会战
-    -- table.insert(requestList, function() this.LogTime(#requestList + 1) NetManager.TreasureOfHeavenScoreRequest(LoadingPanel.OnStep) return "TreasureOfHeavenScoreRequest" end)             -- 天宫秘宝积分
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.RankFirstRequest({3, 22, 20, 4, 21}, {0, 0, 0, 0, 20}, LoadingPanel.OnStep)
-            return "RankFirstRequest"
-        end
-    ) -- 排行榜数据
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.GetAllAdjutantInfo(LoadingPanel.OnStep)
-            return "GetAllAdjutantInfo"
-        end
-    ) -- 守护数据
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.VirtualBattleGetInfo(LoadingPanel.OnStep)
-            return "VirtualBattleGetInfo"
-        end
-    ) -- 爬塔数据
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.GetSituationInfoRequest(LoadingPanel.OnStep)
-            return "GetSituationInfoRequest"
-        end
-    ) -- 阿登战役数据
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            SupportManager.GetServerData(LoadingPanel.OnStep)
-            return "GetServerData"
-        end
-    ) -- 支援
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            GuildCarDelayManager.InitBaseData(LoadingPanel.OnStep)
-            return "GuildCarDelayManager.InitBaseData"
-        end
-    ) -- 明斯克战役
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            AircraftCarrierManager.GetLeadData(LoadingPanel.OnStep)
-            return "ReqCVInfo"
-        end
-    ) -- 神眷者
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            AircraftCarrierManager.GetAllPlaneReq(LoadingPanel.OnStep)
-            return "GetAllPlaneReq"
-        end
-    ) -- 神眷者基因
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.DefTrainingGetInfo(LoadingPanel.OnStep)
-            return "DefTrainingGetInfo"
-        end
-    ) -- 防守训练
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.chenghaoRequest(LoadingPanel.OnStep)
-            return "chenghaoRequest"
-        end
-    ) -- 称号信息
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            ArenaTopMatchManager.RequestTopMatchBaseInfo(LoadingPanel.OnStep)
-            return "ArenaTopMatchRequest"
-        end
-    ) -- 巅峰赛数据
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.CarChallengeProgressIndication(LoadingPanel.OnStep)
-            return "WorldBossRequest"
-        end
-    ) -- 梦魇入侵数据
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            PlayerManager.RefreshreceivedList(LoadingPanel.OnStep)
-            return "LineupRecommendRequest"
-        end
-    ) -- 阵容推荐
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            NetManager.GetWorldArenaInfoRequest(false, false, LoadingPanel.OnStep)
-            return "GetWorldArenaInfoRequest"
-        end
-    ) -- 跨服
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            RankingManager.InitRankingRewardList(LoadingPanel.OnStep)
-            return "InitRankingRewardList"
-        end
-    ) -- 全服奖励数据
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            CardActivityManager.InitWish(LoadingPanel.OnStep)
-            return "InitWish"
-        end
-    ) -- 卡牌主题活动
-    table.insert(
-        requestList,
-        function()
-            this.LogTime(#requestList + 1)
-            OperatingManager.GetAllWarOrderData(LoadingPanel.OnStep)
-            return "GetAllWarOrderData"
-        end
-    ) -- 战令
+
+    -- 单步：发请求，等回调再走下一步
+    local function addStep(name, fire)
+        table.insert(requestList, function()
+            fire(LoadingPanel.OnStep)
+            return name
+        end)
+    end
+
+    -- 并行分组：组内请求同时发出，全部回包（或看门狗超时）后只推进一格
+    local function addGroup(name, list)
+        table.insert(requestList, { groupName = name, members = list })
+    end
+
+    -- 组内成员：fire(cb) 里发一个请求，回包时调用 cb（只会被计一次）
+    local function member(name, fire)
+        return { name = name, fire = fire }
+    end
+
+    addStep("PlayerInfoRequest", function(cb) NetManager.PlayerInfoRequest(cb) end)
+    addGroup("基础数据", {
+        member("RequestMission", function(cb) NetManager.RequestMission(cb) end),
+        member("ItemInfoRequest", function(cb) NetManager.ItemInfoRequest(0, cb) end),
+        member("AllEquipRequest", function(cb) NetManager.AllEquipRequest(0, cb) end),
+        member("RequestAllPlanData", function(cb) CombatPlanManager.RequestAllPlanData(cb) end),
+        member("MedalGetAllRequest", function(cb) NetManager.MedalGetAllRequest(cb) end),
+    })
+    addStep("HeroInfoRequest", function(cb) NetManager.HeroInfoRequest(0, cb) end)
+    addStep("TeamInfoRequest", function(cb) NetManager.TeamInfoRequest(cb) end)
+    addGroup("邮件/战绩/活动/竞技场/商店/聊天", {
+        member("GetAllMailData", function(cb) NetManager.GetAllMailData(cb) end),
+        member("GetAllFightDataRequest", function(cb) NetManager.GetAllFightDataRequest(cb) end),
+        member("GetActivityAllRewardRequest", function(cb) NetManager.GetActivityAllRewardRequest(cb) end),
+        member("RequestBaseArenaData", function(cb) NetManager.RequestBaseArenaData(cb) end),
+        member("ShopManager.InitData", function(cb) ShopManager.InitData(cb) end),
+        member("ChatManager.InitData", function(cb) ChatManager.InitData(cb) end),
+    })
+    addStep("RequestArenaRankData", function(cb) NetManager.RequestArenaRankData(1, cb) end)
+    addStep("GetAllFunState", function(cb) NetManager.GetAllFunState(cb) end)
+    addStep("RequestGetFriendInfo1", function(cb) NetManager.RequestGetFriendInfo(1, cb) end)
+    addStep("RequestGetFriendInfo3", function(cb) NetManager.RequestGetFriendInfo(3, cb) end)
+    addStep("FriendChatManager.InitData", function(cb) FriendChatManager.InitData(cb) end)
+    addStep("MyGuildManager.InitBaseData", function(cb) MyGuildManager.InitBaseData(cb) end)
+    addStep("GuildFightManager.InitBaseData", function(cb) GuildFightManager.InitBaseData(cb) end)
+    addStep("GetAllGuildSkillData", function(cb) NetManager.GetAllGuildSkillData(cb) end)
+    addStep("InitFightPointLevelInfo", function(cb) NetManager.InitFightPointLevelInfo(cb) end)
+    addStep("GuildHelpGetAllRequest", function(cb) NetManager.GuildHelpGetAllRequest(cb) end)
+    addStep("GuideBattlePanel.InitData", function(cb) GuildBattleManager.InitData(cb) end)
+    addGroup("排行榜首/守护/爬塔/阿登/支援/明斯克/神眷者", {
+        member("RankFirstRequest", function(cb) NetManager.RankFirstRequest({3, 22, 20, 4, 21}, {0, 0, 0, 0, 20}, cb) end),
+        member("GetAllAdjutantInfo", function(cb) NetManager.GetAllAdjutantInfo(cb) end),
+        member("VirtualBattleGetInfo", function(cb) NetManager.VirtualBattleGetInfo(cb) end),
+        member("GetSituationInfoRequest", function(cb) NetManager.GetSituationInfoRequest(cb) end),
+        member("GetServerData", function(cb) SupportManager.GetServerData(cb) end),
+        member("GuildCarDelayManager.InitBaseData", function(cb) GuildCarDelayManager.InitBaseData(cb) end),
+        member("ReqCVInfo", function(cb) AircraftCarrierManager.GetLeadData(cb) end),
+    })
+    addStep("GetAllPlaneReq", function(cb) AircraftCarrierManager.GetAllPlaneReq(cb) end)
+    addGroup("展示数据(训练/称号/巅峰/梦魇/阵容/跨服/全服/心愿/战令)", {
+        member("DefTrainingGetInfo", function(cb) NetManager.DefTrainingGetInfo(cb) end),
+        member("chenghaoRequest", function(cb) NetManager.chenghaoRequest(cb) end),
+        member("ArenaTopMatchRequest", function(cb) ArenaTopMatchManager.RequestTopMatchBaseInfo(cb) end),
+        member("WorldBossRequest", function(cb) NetManager.CarChallengeProgressIndication(cb) end),
+        member("LineupRecommendRequest", function(cb) PlayerManager.RefreshreceivedList(cb) end),
+        member("GetWorldArenaInfoRequest", function(cb) NetManager.GetWorldArenaInfoRequest(false, false, cb) end),
+        member("InitRankingRewardList", function(cb) RankingManager.InitRankingRewardList(cb) end),
+        member("InitWish", function(cb) CardActivityManager.InitWish(cb) end),
+        member("GetAllWarOrderData", function(cb) OperatingManager.GetAllWarOrderData(cb) end),
+    })
 
     table.insert(
         requestList,

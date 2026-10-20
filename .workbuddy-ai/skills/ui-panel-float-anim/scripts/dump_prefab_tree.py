@@ -56,15 +56,19 @@ def vec(raw):
     return '(' + ','.join('%g' % float(n) for n in nums[:2]) + ')' if len(nums) >= 2 else raw
 
 
-def build_guid_index(repo_root, exts=('.cs.meta', '.controller.meta')):
-    """guid -> 相对路径（脚本 + 控制器 + UGUI 组件）。结果缓存 6 小时，否则每次都要扫几万行 meta。"""
+def build_guid_index(repo_root, exts=('.cs.meta', '.controller.meta'), force=False):
+    """guid -> 相对路径（脚本 + 控制器 + UGUI 组件）。结果缓存 1 小时。
+
+    ⚠ 缓存会「过期成假信息」：刚生成的 controller/clip 在缓存里查不到，界面会显示成
+    `Animator(?)` 或 `MB:xxxxxxx`。看到这种就加 --refresh 重建（别以为是 guid 写错了）。
+    """
     import glob
     import hashlib
     import json
     import time
 
     cache = os.path.join('/tmp', 'ui_float_guid_index_%s.json' % hashlib.md5(repo_root.encode()).hexdigest()[:8])
-    if os.path.exists(cache) and time.time() - os.path.getmtime(cache) < 6 * 3600:
+    if not force and os.path.exists(cache) and time.time() - os.path.getmtime(cache) < 3600:
         try:
             with open(cache, encoding='utf-8') as f:
                 return json.load(f)
@@ -106,13 +110,14 @@ def main():
     ap.add_argument('--depth', type=int, default=2)
     ap.add_argument('--name', default=None, help='只展开名字包含该关键字的子树')
     ap.add_argument('--no-scripts', action='store_true', help='不解析脚本/控制器名（更快）')
+    ap.add_argument('--refresh', action='store_true', help='重建 guid 索引（刚生成的 controller 查不到时用）')
     args = ap.parse_args()
 
     with open(args.prefab, encoding='utf-8', errors='replace') as f:
         objs = parse_docs(f.read())
 
     repo_root = os.getcwd()
-    guid_index = {} if args.no_scripts else build_guid_index(repo_root)
+    guid_index = {} if args.no_scripts else build_guid_index(repo_root, force=args.refresh)
 
     # GameObject 名 / 组件归属
     names, comps = {}, {}

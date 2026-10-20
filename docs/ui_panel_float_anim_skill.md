@@ -1,15 +1,59 @@
 # UI 面板浮动 / 呼吸动画（弹入 + 循环呼吸）
 
 > 适用范围：TimeSpaceGirl1 项目（Unity 6000.6.5f1）
-> 更新时间：2026-10-20
-> 生成器脚本：`.workbuddy-ai/skills/ui-panel-float-anim/scripts/`（C# 模板 + Python 生成器 + prefab 树打印）
-> 现成实现：`Assets/Editor/FirstRechargeFloatAnimBuilder.cs`、`Assets/Art/UIAni/cn2-X1_UI_FirstRechargePanel_float.*`
+> 更新时间：2026-10-20（第 4 次落地后重整：新增体检脚本 + 十坑 + 三层验收）
+> 工具：`.workbuddy-ai/skills/ui-panel-float-anim/scripts/`
+> （`audit_panel.py` 体检 / `gen_float_anim_yaml.py` 生成 / `dump_prefab_tree.py` 看层级 / `UIPanelFloatAnimBuilder.template.cs` Unity 版）
+> 现成实现：`FirstRechargePanel`、`SupremeHeroPopup`、`ExpertPanel`、`DailyRechargePanel(原版)`
 
 给任意 UI 面板加「弹入 + 循环浮动/呼吸」动画（每日首充 `DailyRechargePanel` / `UI_effect_DailyRechargePanel` 那套观感）。
 
 结构就一句话：**根节点挂一个 Animator，两个状态** —— `start`（一次性弹入）→ `normal`（循环呼吸）。
 
 关键不是"整体上下平移"，而是**各部件相位错开**：标题类往上、内容类往下、按钮高频脉冲，看起来才像整块在浮动。
+
+**流水线**（顺序别换，跳过第 1 步就是唯一那类"白干"事故的来源）：
+
+```
+①体检 → ②挑配方 → ③dry-run 生成到 /tmp 并解析 → ④落盘 + 回读校验 → ⑤打 AB
+```
+
+---
+
+## 0. 开工前体检（60 秒，必做）
+
+```bash
+S=.workbuddy-ai/skills/ui-panel-float-anim/scripts
+python3 $S/audit_panel.py <prefab> --depth 3 --lua <面板>.lua          # ① 风险标记 + 锚点结论
+python3 $S/dump_prefab_tree.py <prefab> --depth 2                       # ② baseY（pos 的 y）
+```
+
+`audit_panel.py` 把 `m_IsActive`、Image 有无 sprite、锚点是否四边拉伸、LayoutGroup/ScrollRect、
+自带 Animator/legacy Animation、`PlayFlyAnim` 全从 prefab 里读出来，直接给结论。标记含义：
+
+| 标记 | 判据（prefab 内） | 结论 |
+|---|---|---|
+| `INACTIVE` | `GameObject.m_IsActive: 0` | **不写 start 曲线**；写了 `0→1` 的弹入，运行时被 `SetActive` 打开会卡在 0 |
+| `MASK` | Image `m_Sprite: {fileID: 0}` + 锚点四边拉伸 | 实色铺满块（多数是整屏遮罩）⇒ **只写 `m_Color.a`**，缩放会连边缘一起缩、露出场景底 |
+| `OWN_ANIM` | 该节点自带 `!u!95`（按钮几乎都是 `CommonButton`） | 只写它 clip **没写**的通道；父子两级写同一属性结果不可靠 |
+| `LEGACY` | 该节点自带 `!u!111` | 同上，且**绝不能选它当锚点** |
+| `LAYOUT` / `LAYOUT_CHILD` | 自身/父级挂 H/V/GridLayoutGroup | 位置每帧被重算 ⇒ **只写 scale** |
+| `SCROLL_DESC` | 严格祖先里有 `ScrollRect` | 位置归滚动/布局 ⇒ 不写位置 |
+| `PLAYFLY` | 挂 `PlayFlyAnim`（DOTween） | 同上，**不写位置**，只写 scale/alpha |
+| `CODE_POS` | `--lua` 里出现 `<名字>.localPosition =` 等赋值 | 插一个空容器承接位移（见附录 C「通用套路」） |
+
+它同时给出**锚点结论**与「其它节点上的 Animator / legacy Animation」清单（ExpertPanel 有 49 + 1 个）
+——那张清单就是"绝不取文件里第一个组件"的理由。
+
+> 已跟前三次落地的人工结论对过：`FirstRechargePanel` 命中 `PLAYFLY`(frame) + `LAYOUT`×2(rewardBg/tabsContent) + `OWN_ANIM`×2(按钮)；
+> `SupremeHeroPopup` 命中 `MASK`(Panel 遮罩) + `OWN_ANIM`(三个按钮/特效)；`ExpertPanel` 命中 `MASK`(bg) + `INACTIVE`×12(子活动页) + `OWN_ANIM`。
+> 三个都对得上，可以直接当开工依据。
+
+> 只想知道某个子树：`--name <关键字>`；刚生成过 controller 结果却显示 `Animator(?)`/`MB:xxxx`，
+> 是 guid 索引缓存旧了，加 `--refresh`（不是 guid 写错）。
+>
+> 🔴 **文档与 `scripts/` 必须同改**：判据（标记集、缓存 TTL、生成器默认行为）改了却不同步这里，
+> 下一轮就会照着过期的判据做——本次踩的「6 小时缓存」「四问里没有 MASK/INACTIVE」都是这么来的。
 
 ---
 
@@ -24,7 +68,7 @@
 | 说明区 | scaleX `0 → 1.15 → 0.9 → 1`（横向挤压回弹） |
 | 奖励格 | 逐个 scale `0 → 1.2 → 1`，彼此错开 0.06~0.1s |
 | 按钮 | scale `0 → 1.5 → 1`，位置从下方 18px 落位 |
-| 黑底遮罩 | Image alpha `0 → 0.588`（有遮罩才做） |
+| 黑底遮罩 | Image alpha `0 → 0.588`（有遮罩才做）；**只写 `m_Color.a`，不写缩放** |
 
 ### normal：循环呼吸（3.0s，`m_LoopTime = 1`）
 
@@ -44,23 +88,23 @@
 
 ## 2. 30 秒判断：这个面板能不能照搬
 
-按顺序问四个问题，任一命中就按"规避"列处理：
+按顺序问六个问题，任一命中就按"规避"列处理（除第 1 条，其余 `audit_panel.py` 都会直接打标记）：
 
 | # | 情况 | 怎么判断 | 规避 |
 |---|---|---|---|
 | 1 | 根节点有旧版 legacy `Animation` | prefab 根节点 `!u!111` | 删掉换 `Animator`（同一 GameObject 上二者不能共存） |
-| 2 | 有 `PlayFlyAnim`(DOTween) 在写某个节点的位置 | 节点上有 `PlayFlyAnim.cs`，看 `tweenSequeue[].targetObj` | **不要写那个节点的 anchoredPosition**，只写 scale |
-| 3 | 目标节点是布局组的子节点 | 父节点挂 `HorizontalLayoutGroup`（guid `30649d3a…`）/ `VerticalLayoutGroup` | **只能写 scale，不能写位置**（位置每帧被布局组重算） |
-| 4 | 目标节点自己挂着 Animator（按钮常见：`CommonButton`） | 该节点 `!u!95` 且 `m_Enabled: 1` | **不要写它 clip 里已有的属性**：父子两级写同一属性时结果不可靠（首充实测按钮的缩放脉冲不生效），优先只写它没写的通道 |
+| 2 | 目标节点是**整屏实色遮罩**（Image 无 sprite） | `m_Sprite: {fileID: 0}` + 锚点四边拉伸 | **只写 `m_Color.a`**。写缩放不会"呼吸"，是四周露底/露场景 |
+| 3 | 节点在 prefab 里就是**未激活**的 | `m_IsActive: 0`（`audit_panel.py` 的 `INACTIVE`） | **一条 start 曲线都别写**（含 `0→1` 弹入，否则被 `SetActive` 打开时卡在 0） |
+| 4 | 有 `PlayFlyAnim`(DOTween) 在写某个节点的位置 | 节点上有 `PlayFlyAnim.cs`，看 `tweenSequeue[].targetObj` | **不要写那个节点的 anchoredPosition**，只写 scale |
+| 5 | 目标节点是布局组的子节点 | 父节点挂 `HorizontalLayoutGroup`（guid `30649d3a…`）/ `VerticalLayoutGroup` | **只能写 scale，不能写位置**（位置每帧被布局组重算） |
+| 6 | 目标节点自己挂着 Animator（按钮常见：`CommonButton`） | 该节点 `!u!95` 且 `m_Enabled: 1` | **不要写它 clip 里已有的属性**：父子两级写同一属性时结果不可靠（首充实测按钮的缩放脉冲不生效），优先只写它没写的通道 |
 
-拿不准就先打印层级：
+> 第 2、3 条是 2026-10-20 落地 ExpertPanel 才暴露的：前三个面板都没有"整屏纯色遮罩"和"十几个未激活子页"。
+> 第 3 条尤其隐蔽——曲线写对了、`missing=0`、Unity 也不报错，只是**那个页面切过去时是 scale 0**。
 
-```bash
-python3 .workbuddy-ai/skills/ui-panel-float-anim/scripts/dump_prefab_tree.py <prefab> --depth 2
-python3 .../dump_prefab_tree.py <prefab> --name frame --depth 3   # 只看某个子树
-```
 
-输出每节点的 `pos / size / 组件（含脚本名、Animator 的控制器名）`，`pos` 的 y 就是曲线里的 `baseY`（曲线写的是绝对值，必须和 prefab 一致）。首跑约 15s 建 guid 索引，之后 6 小时命中 `/tmp` 缓存，约 0.3s。
+要连 `baseY` 一起取，就直接看层级：`dump_prefab_tree.py <prefab> --depth 2`（`--name` 只看子树）。
+输出的 `pos` 的 y 就是曲线里的 `baseY`——**曲线写的是绝对值**，必须和 prefab 一致。
 
 ---
 
@@ -88,12 +132,28 @@ N("frame/btn",      -600f,     1f,     3f,   1f,    1f,    0.72f, true, false, t
 
 ### 路 B：Unity 被占用（`lsof Temp/UnityLockfile` 有进程）
 
+**先 dry-run，再落盘。** 第一次跑几乎总会在 dry-run 阶段发现路径/锚点问题：
+
 ```bash
-python3 .workbuddy-ai/skills/ui-panel-float-anim/scripts/gen_float_anim_yaml.py \
-    --prefab <prefab 路径> --base <资源名前缀> [--out-dir /tmp/x] [--no-prefab]
+S=.workbuddy-ai/skills/ui-panel-float-anim/scripts
+# ① 干跑：只产出 clip 到 /tmp，不碰 prefab
+python3 $S/gen_float_anim_yaml.py --prefab <prefab> --base cn2-X1_UI_<面板>_float \
+    --config $S/configs/<面板>.json --out-dir /tmp/x --no-prefab
+# ② 解析 /tmp 里的 clip：曲线条数、首尾是否同值、path/attribute 哈希是否对得上
+# ③ 确认无误后再落盘（生成 clip/controller.meta + 改 prefab）
+python3 $S/gen_float_anim_yaml.py --prefab <prefab> --base cn2-X1_UI_<面板>_float \
+    --config $S/configs/<面板>.json
 ```
 
 直接写 `.anim` / `.controller` 并改 prefab，**不需要 Unity 参与**。已 diff 验证：输出与 Unity 生成的 clip **逐字节一致**。
+
+生成器现在会自己保证三件事（都是踩过坑才加的，别绕过）：
+
+| 行为 | 为什么 |
+|---|---|
+| 锚点**只由层级决定**（默认根节点，`--animator-go` 可指定） | prefab 里 `!u!111`/`!u!95` 的**文件顺序与层级无关**；ExpertPanel 第一个 `!u!111` 在 `downLayout/ContinuityRecharge` 上，"取第一个"会挂到子页 |
+| 根节点**没有**动画组件时**新建** Animator（`m_Component` 追一条 + 文件尾追 `!u!95`） | 老版只认 legacy `!u!111`，遇到"什么都没挂"的面板直接失败 |
+| 写盘前 `check_paths`：每条曲线路径 = 锚点路径 + `path`，`Find` 不到就 `SystemExit`、**不落盘** | Unity 对绑不上的曲线**不报错**，只在 Animation 窗口标 Missing |
 
 ### 两条路都要做的
 
@@ -119,25 +179,55 @@ python3 .workbuddy-ai/skills/ui-panel-float-anim/scripts/gen_float_anim_yaml.py 
 
 ---
 
-## 5. 六个坑
+## 5. 十个坑（前四个是"做完了但白干"类）
 
-| 坑 | 现象 | 原因 |
+| 坑 | 现象 | 原因 / 规避 |
 |---|---|---|
-| 手写 `.anim` 哈希算错 | 不报错，但完全不播 | 见上一节；改 path 必须同步改 `m_ClipBindingConstant` |
-| 复用别的面板的 controller | 不报错，也不播 | 曲线按**层级路径**绑定，`frame/bg` ≠ `frame/BG`（大小写敏感） |
-| 在 `OnEnable` 里手写 `Animator.Play` | 重复打开时弹入不重播 | 面板是缓存复用的；`KeepAnimatorStateOnDisable = 0` 才会在禁用后重置到默认状态 |
-| 写了 `sizeDelta` | 每帧 LayoutGroup 重建，掉帧 | 只写 `m_AnchoredPosition.*` / `m_LocalScale.*` / `m_Color.a` |
-| 曲线首尾不等 | 循环处"跳一下" | normal 的第一个 key 和最后一个 key 必须同值 |
-| 忘了 AB | 编辑器里好看，真机没变化 | prefab + 新 clip/controller 都要进包 |
+| ① 锚点取"文件里第一个 `!u!111`/`!u!95`" | Inspector 里曲线一片 Missing，根节点反而没动画；某个按钮自己的弹动也没了 | prefab 里组件块顺序与层级**无关**。必须按 `m_Father`/层级选锚点（已固化进生成器） |
+| ② 校验用**根节点** `Find(path)` | `missing=0` 却是假阳性，动画照样不播 | 曲线 `path` 是相对 **Animator 所在节点**解析的 ⇒ 必须 `animator.transform.Find(path)` |
+| ③ 给 `m_IsActive: 0` 的节点写 start 曲线 | 当时看不出来；切到那个页签/活动时**卡在 scale 0 或位置错** | 未激活节点不参与求值；`SetActive(true)` 只是打开，不会补播完的弹入 ⇒ 只写 normal，或先让页面常驻 |
+| ④ 给无 sprite 的整屏遮罩写缩放 | 弹入瞬间四周出现一圈场景/底板（实拍才看得见） | 它是 `Image.color` 铺满 rect，缩放就是缩这块实色 ⇒ 只写 `m_Color.a` |
+| ⑤ 手写 `.anim` 哈希算错 | 不报错，也完全不播 | `path`/`attribute` 都是 `zlib.crc32`，见第 4 节；改 path 必须同步改 `m_ClipBindingConstant` |
+| ⑥ 复用别的面板的 controller | 不报错，也不播 | 路径**大小写敏感**：`frame/bg` ≠ `frame/BG` |
+| ⑦ 在 `OnEnable` 里手写 `Animator.Play` | 重复打开时弹入不重播 | 面板缓存复用；`KeepAnimatorStateOnDisable: 0` 才会在禁用后重置默认状态 |
+| ⑧ 写了 `sizeDelta` | 掉帧 / 被布局组每帧改回去 | 只写 `m_AnchoredPosition.*` / `m_LocalScale.*` / `m_Color.a` |
+| ⑨ 曲线首尾不等 | 循环处"跳一下" | normal 第一个 key 与最后一个 key 必须同值（实拍对 n=0/n=1 取值） |
+| ⑩ 忘了 AB | 编辑器里好看，真机没变化 | 新 clip/controller 是 prefab 的依赖，必须重打 |
 
 ---
 
-## 6. 验收清单
+## 6. 验收（三层，缺一层就有看不见的坑）
 
-- [ ] Console 有 `loop=True`（或 clip 里 `m_LoopTime: 1`）
-- [ ] 第一次打开有弹入；关掉再开**不会**再弹（缓存复用，符合预期）
-- [ ] 静止 3 秒以上，各部件在轻微呼吸，循环处无跳变
-- [ ] 按钮点击态正常（没被子级 Animator 抢掉）
+**① 离线（不需要 Unity，落盘后立刻做）**
+
+| 检查 | 通过标准 |
+|---|---|
+| clip 长度/条数/循环 | `start` 1.000s、`normal` 3.000s，`m_LoopTime` 0/1 |
+| path/attribute 哈希 | 每条曲线与 `genericBindings` 一一对应（自写脚本按 `zlib.crc32` 复核） |
+| normal 首尾 | 每条曲线第一个 key == 最后一个 key |
+| guid 链 | prefab `m_Controller` → controller.meta → 两个 clip.meta 闭合 |
+| prefab diff | 只有预期的那几处（新增 Animator 时对象数 **+1**，换 controller 时不变） |
+
+**② Unity 回读（有 bridge 就做，能戳穿假阳性）**
+
+```csharp
+// 关键：missing 必须相对 animator.transform 算，不是 prefab 根
+foreach (var b in AnimationUtility.GetCurveBindings(clip))
+    if (anim.transform.Find(b.path) == null) miss++;
+```
+
+另外读一次状态的**默认值**（`bg` 的 alpha、各节点的 scale）——`start` 末值必须与 `normal` 的
+WriteDefaultValues 一致，否则 `start → normal` 切态会跳一下。
+
+**③ 实拍（唯一能发现"方向错了"的一层）**
+
+临时 additive 场景 + `ScreenSpaceCamera` + `RenderTexture`，按时间点截帧：
+
+- [ ] `t=0` 能看到场景色（遮罩还没盖上）→ `t≈0.25` 已盖住 ⇒ 遮罩淡入生效
+- [ ] 每一帧边缘**没有**一圈露底（露了 = 给无 sprite 的整屏块写了缩放）
+- [ ] `normal` 的 `n=0` 与 `n=1` 逐项取值完全相同（循环不跳）
+- [ ] 第一次打开有弹入；关掉再开**不会**再弹（面板缓存复用，符合预期）
+- [ ] 点按钮有正常点击态（没被子级 `CommonButton` 抢掉）
 - [ ] 切页签 / 反复开关 10 次，没有节点卡在 scale 0 或位置错乱
 - [ ] AB 重打后真机复验
 
@@ -316,10 +406,11 @@ prefab 的 diff 只有两处（根节点 `m_Component` 里那条 fileID + 组件
 
 ## 附录 D：经营面板落地（2026-10-20，ExpertPanel）
 
-**这个面板和前面两个都不一样**：根节点上**什么动画组件都没有**，而且文件里已经存在**别的节点的**
-legacy `Animation`（`downLayout/ContinuityRecharge` 自带的）和 10 个 `CommonButton` 的 `Animator`。
+**这个面板和前面两个都不一样**：根节点上**什么动画组件都没有**，而文件里已经躺着 **50 个别的节点的动画组件**
+（46 个 `CommonButton` 的 `Animator` + `LuckyCatPanel` 等面板自带控制器 + `downLayout/ContinuityRecharge` 的 legacy `Animation`）。
 所以"取第一个 `!u!111`/`!u!95`"会直接挂到子页面上——第一次跑就撞上了（`check_paths` 报
 曲线解析不到，锚点变成了 `ExpertPanel/downLayout/ContinuityRecharge`）。**校验拦住了，prefab 没落盘。**
+（现在 `audit_panel.py` 开工前就把这张清单打出来，不用再拿事故当发现手段。）
 
 **层级实况**（根子节点只有 4 个）：
 
@@ -351,12 +442,12 @@ legacy `Animation`（`downLayout/ContinuityRecharge` 自带的）和 10 个 `Com
 > 全屏 hub 不做 1.8 那种爆弹、也不缩到 1 以下——`start` 幅度整体压到 ±6%，靠**相位错开**（遮罩 0 →
 > 内容 .10 → 页签 .18 → banner .22 → 按钮 .30）出层次感。
 
-**生成器这次补的两个能力**（`gen_float_anim_yaml.py`）：
+**生成器这次补了两个能力**（已写进 §3 的「生成器保证」表）：
 
 | 能力 | 说明 |
 |---|---|
-| 目标节点既没 `Animation` 也没 `Animator` ⇒ **新增** | 往该 GameObject 的 `m_Component` 尾部追加一条 + 文件尾追加 `!u!95` 块（对象数 3070 → 3071） |
-| 锚点**只由层级决定** | 删掉 `pick_animator`（"取文件里第一个"就是附录 C 事故的根因），改成 `resolve_target_go`：默认根节点，`--animator-go` 显式指定；`_component_on(prefab, go, cls)` 只找挂在**这个** GO 上的组件 |
+| 目标节点既没 `Animation` 也没 `Animator` ⇒ **新增** | `m_Component` 追一条 + 文件尾追 `!u!95`（对象数 3070 → 3071） |
+| 锚点**只由层级决定** | 删掉 `pick_animator`（`!u!111` 文件顺序 ≠ 层级，本次第一个是 `downLayout/ContinuityRecharge`），改 `resolve_target_go` + `_component_on(prefab, go, cls)`（只找挂在**这个** GO 上的组件） |
 
 **验收记录**（Unity 回读 + 临时 additive 场景实拍）：
 

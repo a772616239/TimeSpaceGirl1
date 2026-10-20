@@ -225,3 +225,52 @@ prefab 的 diff 只有两处（根节点 `m_Component` 里那条 fileID + 组件
 - 每条 normal 曲线首尾同值（循环处不跳）
 - guid 链闭合：prefab → controller.meta → 两个 clip.meta
 - Python 生成器复跑，`diff` 出来的 clip 与已提交版本**逐字节一致**
+
+---
+
+## 附录 C：剑影迷踪弹窗落地（2026-10-20，SupremeHeroPopup）
+
+**先纠正一个误判**：这个面板根节点**早就有** `Animator` + `UI_effect_SupremeHeroPopup.controller`（start + normal 两状态），
+但那套曲线是按**老层级**绑的——`Panel/role`、`Panel/Middle/sword`、`Panel/Middle/PreviewBtn`、
+`Panel/Middle/di/TaskProgress` 在现在的 prefab 里**全都不存在**（改版成了 `Panel/hero`、`Panel/Middle/Reward/Panel1~3`…）。
+路径绑不上 Unity 不报错，所以那两个状态其实一直是空转。判断"有没有动画"不能看组件在不在，要看**路径能不能 Find 到**。
+
+**层级映射**（基准 y 都是 prefab 实测值，曲线写绝对值）：
+
+| 部件 | 路径 | baseY | start | normal |
+|---|---|---|---|---|
+| 黑底遮罩 | `Panel`（Image 0,0,0,0.706） | — | alpha 0 → 0.706（0→0.27s） | 不动 |
+| 主体（整块） | `Panel/Middle` | 47（只写缩放） | scale 0.92 → 1.04 → 0.99 → 1 | 不动 |
+| 底板 | `Panel/Middle/Image` | 106 | — | scale 1 → 1.02 → 1 |
+| 立绘 | `Panel/hero` | —（**不能写位置**） | scale 1 → 1.25 → 0.97 → 1 | 不动 |
+| 标题 | `Panel/Middle/Text` | −248 | scale 1 → 1.12 → 1（0.30 起） | y +5 |
+| 奖励区 | `Panel/Middle/Reward` | −395 | scale 0.86 → 1.04 → 1 + y 由 −413 落位 | y −10，scale 1.015 |
+| 奖励三格 | `Panel/Middle/Reward/Panel1..3` | 0 | scale 0 → 1.12 → 1，错开 0.08s | 不动 |
+| 按钮 | `Panel/Middle/DoneBtn` | −805 | y 由 −823 落位（**只写位置**） | y 双脉冲 +3 |
+| 进度 | `Panel/Middle/progress` | −715 | y 落位 18px | y −3 |
+| 活动时间 | `Panel/Middle/textTime`、`freshTime` | −907 | y 落位 18px | y −3 |
+
+**这个面板特有的三个坑**：
+
+| 坑 | 证据 | 处理 |
+|---|---|---|
+| `Panel/hero` 的位置归 Lua | `SupremeHeroPopup.lua:73` 非中文语言会把 `hero.transform.localPosition` 改成 `(338,266)` | Animator **只写 hero 的 scale**。写 `anchoredPosition.y` 会把它按回 0，立绘直接掉下去（切到 normal 时 `writeDefaultValues` 也会按回 prefab 的 0） |
+| `DoneBtn` / `Button_Go` / `Button_Get` 自带 `CommonButton` 控制器 | 三个按钮都是 `Animator(CommonButton.controller)` | 只写位置，不写缩放 |
+| 黑底遮罩就是 `Panel` 自己的 Image（不是独立节点） | `Panel` 的 Image `m_Color = (0,0,0,0.7058824)`，`btnBack` 只是 a=0.004 的点击层 | start 里给 `Panel` 写 `m_Color.a` 0 → 0.7058824（与 prefab 默认同值，切 normal 不跳） |
+
+**生成器这次补的两个能力**（`gen_float_anim_yaml.py`）：
+
+- `--config <json>`：换面板只加一个 JSON 配方（`scripts/configs/supreme_hero_popup.json`），不再改脚本里的 `CURVES`
+- `m_Color.a` 曲线（`attribute: 304273561`、`typeID: 114`、script 取组件自己的 `m_Script`）+ **prefab 已是 Animator 时只换 controller guid**（不再要求 legacy `!u!111`）
+
+**为什么这次走路 B**：Unity 停在 Play mode，脚本编译被阻塞 ⇒ 新写的 C# builder 编译不出来、菜单也点不了；
+而手写 clip 不依赖 Unity 编译。产出的 prefab diff 只有 **1 行**（`m_Controller` 的 guid），对象总数 296 → 296。
+
+**验收记录**：
+
+- Unity 回读：`start` 1.000s / 27 条曲线、`normal` 3.000s / 12 条曲线、`loopTime` 分别 False/True、`missingPaths=0`
+- 离线：13/13 与 8/8 条曲线的 `path`/`attribute` 哈希与 `genericBindings` 一一对应；normal 每条曲线首尾同值
+- 旧 `UI_effect_SupremeHeroPopup.controller`（+ `_start.anim` / `_normal.anim`）**原样留在** `Assets/Art/EffectsOld/Animation/`，只是不再被 prefab 引用（`_praticle_controller` 仍在用，别一起删）
+
+> Play mode 里 Unity 不会重导 prefab ⇒ `AssetDatabase.LoadAssetAtPath` 仍返回旧 controller（内存缓存），
+> 退出 Play mode（或重启编辑器）后才会看到新引用。别在 Play mode 里按 Ctrl+S 保存这个 prefab，会把内存里的旧数据写回去。

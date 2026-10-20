@@ -215,3 +215,82 @@ scripts/lua-bytes-sync.sh --check
 
 多语言：新增条目 **zh/en 全填**，jp/kr 只补常用国；`CountryConfig.GetName` 的回落顺序
 由 `当前语言 → zh` 改为 `当前语言 → en → zh`（日/韩玩家看拉丁字母比看简体中文可读）。
+
+---
+
+# 运行时 IP → 国家（P0，2026-10-20）
+
+## 为什么需要
+
+排行榜的旗子取 `PlayerManager.country`。上线后实测：线上 209 个号只有 44 个有值，
+战力榜 top20 里只有 2 个 —— 其余全部渲染成 `cn2-guoqi_xx` 灰色问号旗，看起来就是
+「排行榜没有国旗」。
+
+根因不在客户端：
+
+| 现象 | 实测 |
+|---|---|
+| `playerManager.ip` | **209/209 全空串**（`setIp` 只在注册那一次调用，客户端 `ipS` 为空） |
+| 运行时 IP→国家 | **不存在**（代码里没有任何 GeoIP；`a83247864` 只是一次性库回填） |
+| 关卡榜连有国籍的人也问号 | `AbstractRank.getRank` 同分重排重建 `UserRank` 时漏 `setCountry` |
+
+## 服务端设计
+
+```
+LoginRequestHandler.processWithProto
+  └─ PlayerCountryBootstrap.onLogin(user, session, clientIp)     ← 唯一入口
+       ├─ resolveIp: TCP 对端 IP（InetSocketAddress）→ 兜底 session.getIp() → 兜底客户端 ipS
+       ├─ pm.setIp(ip)                                           ← 变了才写
+       └─ country 空 或 source==RANDOM 时：
+            IpCountryResolver.lookup(ip)
+              ├─ 可信国家      → setCountry(cc),  source=2 (IP)
+              └─ 机房/VPN/无证据 → setCountry(random), source=3 (RANDOM)
+```
+
+`countrySource` 语义（`PlayerManager.countrySource`，服务端内部字段，不下发客户端）：
+
+| 值 | 含义 | 是否允许覆盖 |
+|---|---|---|
+| 0 | 老文档没记录 | 不覆盖（已有值就保留） |
+| 1 | 玩家手选（`SetPlayerCountryHandler`） | **永不覆盖** |
+| 2 | 登录 IP 解析 | 不覆盖 |
+| 3 | 随机猜测 | 一旦登录时出现可信 IP → 升级成 2 |
+
+## 离线表
+
+`server_game/tools/gen_ipcountry_table.py` 把 GeoLite2-Country + GeoLite2-ASN 压成
+`conf/ipcountry.bin`（magic `IPC2`，380k 条、12B/条、约 4.6MB）：
+
+```
+uint32 startIp | uint32 endIp | char[2] cc | uint8 flags(bit0=机房/VPN) | uint8 pad
+```
+
+🔴 **必须存 endIp**：表里只保留「有国家」的区间，空隙（未分配段、TEST-NET）不建记录。
+只存 startIp、靠「下一条 start-1」当上界的话，空隙里的 IP 会命中前一条
+（实测 `127.0.0.1 → JP`）。
+
+🔴 **不引第三方 jar**：主 jar 的 MANIFEST Class-Path 引了 47 个 lib，多引一个就要同步改
+jar 清单，漏改即 `NoSuchMethodError` → 登录卡死。表整个读进 `byte[]`，只做内存二分。
+
+🔴 **IP 串归一化顺序**：先剥 `/` → 再判 `::ffff:` → 最后才处理 `:port`。
+先取 `lastIndexOf(':')` 会把 `/1.2.3.4:5678` 截成 `5678`（`NettyGameSession.getIp()`
+的 `substring(1, len-6)` 也栽在同一个假设上，4 位端口时直接截坏）。
+
+## 随机分配的取舍
+
+线上大量玩家走 IKUUU 之类机场（`ASN 134972 IKUUU NETWORK LTD`，实测 103.151.172.x=HK、
+103.151.173.x=JP），出口国与本人无关；访问日志只留 31 天、游戏服日志只留 2~3 天，
+窗口外的老号永远没有 IP 证据。这类号给一个**随机**国籍，胜过一片灰问号。
+
+- 取值池＝客户端 `CountryConfig.List` 的 249 个可画国旗国家（去掉 `xx`），
+  保证随机出来的每个码都有旗子；
+- 主要市场（`COMMON_RAW`）3 倍权重，避免榜上一半是圣诞岛/布韦岛；
+- 🔴 `IpCountryResolver.COMMON_RAW` 与 `scripts/backfill_player_country.py`
+  的 `COMMON_CODES` 必须保持一致（登录路径与回填脚本同一口径）。
+
+## 回填
+
+`scripts/backfill_player_country.py --random-rest --seed 20261020 --apply`
+（2026-10-20 执行）：备份 → 165 条 `$set {country, countrySource}` → 审计写
+`gm_country_backfill`。结果 **209/209 有国籍**（1 条来自 Enecom 日本家宽证据，
+164 条随机）。备份 `/root/ts-country-backup-20261020-153959`。

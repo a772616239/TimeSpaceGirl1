@@ -78,37 +78,74 @@ def slug_of(path: Path) -> str:
 # ----------------------------------------------------------------------------- 提示词拼装
 # 🔴 提示词不能把文案写死。底板资源每张的文字都不同（8-DAY / 50x Rebate / …），
 #    写死一次就会在下一张图上画出上一张的字 —— 这是本管线最贵的错误（废一张图 = 一次额度 + 30 分钟）。
-PROMPT_TEMPLATE = """Restyle this mobile-game UI panel asset into {theme_en} style, keeping the EXACT same composition, layout, proportions, camera framing and visual hierarchy as the input image.
+PROMPT_TEMPLATE = """Restyle this mobile-game UI panel asset into {theme_en} style, {frame}.
 
-LAYOUT_LOCK (must not change):
+{heading}
 {layout}
 
-TEXT: keep every glyph exactly where it is; restyle the material only - {text_style}.
+TEXT: keep every glyph complete, sharp and readable; restyle the material only - {text_style}.
 
-CHARACTER: keep the same pose, position, scale and silhouette; change the outfit into {outfit}.
+CHARACTER: {character}
 
 EMPTY BODY: {body}.
 
 MOOD: {decor_sentence}; the upper banner background becomes {banner}. Rich glossy high-contrast mobile-game key art, crisp 2D anime illustration, sharp edges, cinematic lighting, no watermark, no extra text, no logos."""
 
 
-def build_prompt(name: str, layout: list[str] | None = None) -> str:
-    """把「主题字段 + 构图锁」拼成完整 prompt。
+# 构图自由度。lock = 老行为（姿势/位置/缩放全锁死），free = 允许重设计人物姿势换吸引力。
+# 🔴 free 不是「随便画」：它只放开「人」，仍然锁死三件功能约束（文案完整、底部空白区、
+#    画布比例与透明边）。放开的是美术，不是 UI 契约。
+COMPOSITIONS = {
+    "lock": {
+        "frame": "keeping the EXACT same composition, layout, proportions, camera framing "
+                 "and visual hierarchy as the input image",
+        "heading": "LAYOUT_LOCK (must not change):",
+        "character": "keep the same pose, position, scale and silhouette; change the outfit into {outfit}.",
+    },
+    "free": {
+        "frame": "re-composing the artwork freely for maximum visual appeal and stopping power, "
+                 "while keeping the panel's UI function intact",
+        "heading": "FRAME_RULES (functional constraints that must not change):",
+        "character": ("redesign the character for far stronger appeal: a new, dynamic, inviting pose "
+                      "and a more attractive camera angle - position, crop and scale may all change - "
+                      "with an expressive gesture and lively hair/cloth motion{pose_hint}; keep the "
+                      "SAME character identity (same face design, same hair color and style, same eye "
+                      "color, same art style and rendering quality) so it reads as the same heroine, "
+                      "only much more attractive; restyle the outfit into {outfit}."),
+    },
+}
 
-    主题只描述风格（配色 / 服装 / 空区 / 装饰），文案与构图一律由 layout 锁死，
+
+def build_prompt(name: str, layout: list[str] | None = None, composition: str | None = None) -> str:
+    """把「主题字段 + 构图规则」拼成完整 prompt。
+
+    主题只描述风格（配色 / 服装 / 空区 / 装饰），文案一律由 layout 锁死，
     这样同一个主题能套任意底板资源，不会串图。
+    composition=free 时只放开人物姿态（见 COMPOSITIONS），文案与版式仍受锁。
     """
     presets = load_presets()
     theme = theme_of(name)
     if "prompt" in theme:            # 兼容：老数据里整段写死的 prompt
         return theme["prompt"]
-    lines = layout if layout else presets.get("layout_default", [])
+    key = composition or presets.get("composition_default", "lock")
+    if key not in COMPOSITIONS:
+        raise SystemExit(f"未知 composition {key!r}；可选：{', '.join(COMPOSITIONS)}")
+    comp = COMPOSITIONS[key]
+    if layout:
+        lines = layout
+    else:
+        # 老数据只有 layout_default(=lock)，free 缺失时回落到它，但打印警告
+        lines = presets.get(f"layout_{key}") or presets.get("layout_default", [])
     return PROMPT_TEMPLATE.format(
         theme_en=theme.get("en", theme["zh"]),
+        frame=comp["frame"],
+        heading=comp["heading"],
         layout="\n".join(f"{i}) {ln}" if not ln[:2].strip().rstrip(")").isdigit() else ln
                        for i, ln in enumerate(lines, 1)),
         text_style=theme["text_style"],
-        outfit=theme["outfit"],
+        character=comp["character"].format(
+            outfit=theme["outfit"],
+            pose_hint=(". Ideal pose: " + theme["pose_hint"]) if theme.get("pose_hint") else ""),
         body=theme["body"],
         banner=theme["banner"],
         decor_sentence=theme["decor_sentence"],
@@ -218,7 +255,8 @@ def cmd_prepare(args) -> int:
 
     # 提示词在这里就定版落盘：provider 出图、Agent 手工出图、事后复盘都用同一份字符串。
     layout = read_layout(args.layout, work)
-    prompt = build_prompt(args.theme, layout)
+    composition = getattr(args, "composition", None) or load_presets().get("composition_default", "lock")
+    prompt = build_prompt(args.theme, layout, composition)
     (work / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
 
     state = {
@@ -238,6 +276,7 @@ def cmd_prepare(args) -> int:
         "work": str(work),
         "prompt_file": str(work / "prompt.txt"),
         "prompt_layout": "custom" if layout else "default",
+        "composition": composition,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "stages": [],
     }
@@ -248,6 +287,7 @@ def cmd_prepare(args) -> int:
     print(f"  alpha     : 透明 {100 * (1 - coverage):.2f}%  半透明 {state['pixels_partial_alpha']} px"
           f"（参照 {state['alpha_source']}）")
     print(f"  主题      : {args.theme}（{theme['zh']}）")
+    print(f"  构图      : {composition}（{'人物可重设计' if composition == 'free' else '姿势/版式全锁'}）")
     print(f"  work      : {work}")
     if coverage > 0.999:
         print("  ⚠ 源资源是整幅不透明（没有浮层）。若它本该有透明区，"
@@ -276,9 +316,10 @@ def read_layout(spec: str | None, work: Path | None = None) -> list[str] | None:
 def cmd_prompt(args) -> int:
     theme = theme_of(args.theme)
     layout = read_layout(getattr(args, "layout", None))
+    composition = getattr(args, "composition", None) or load_presets().get("composition_default", "lock")
     print(f"# theme={args.theme} size={theme.get('size')} quality={theme.get('quality')} "
-          f"input_fidelity={theme.get('input_fidelity')}")
-    print(build_prompt(args.theme, layout))
+          f"input_fidelity={theme.get('input_fidelity')} composition={composition}")
+    print(build_prompt(args.theme, layout, composition))
     return RC_OK
 
 
@@ -339,27 +380,48 @@ def synthetic_body(band: Image.Image, target: tuple[int, int], colors: list[str]
     return body + rng.normal(0.0, 1.2, body.shape).astype(np.float32)
 
 
-def source_body(src_rgb: np.ndarray, hb: int, colors: list[str]) -> np.ndarray:
-    """用**原资源下半截的明暗结构**重上色，而不是凭空造渐变。
+def source_body(src_rgb: np.ndarray, hb: int, colors: list[str],
+                src_alpha: np.ndarray | None = None) -> np.ndarray:
+    """用**原资源下半截的大尺度明暗**调制主题渐变，而不是凭空造渐变。
 
-    这类长条底板的下半截是「给 UI 用的空卡体」：一张自上而下变暗的渐变 + 暗角 + 噪点。
-    把它按亮度重映射到主题色，几何就与原图逐像素对齐（连卡片边缘的硬切都和原版一模一样），
-    也不用担心「合成渐变」跟上半截的接缝、明暗节奏对不上。
+    这类长条底板的下半截是「给 UI 用的空卡体」：一张自上而下变暗的渐变 + 暗角 + 噪点，
+    几何（卡片硬切、暗角位置）跟上半截是配套的。保留它的大结构、换掉颜色，接缝才不会有
+    「亮带子 / 黑卡体」的黑白切。
+
+    🔴 只保留**大尺度**明暗（先降采样再放大回来）。逐像素按亮度重映射会把两样东西放大：
+       1) 原图透明区 RGB 底下烤进去的**棋盘格**（导出时的透明度预览）；
+       2) 点阵/噪点，在 856 宽的卡体上变成花斑。
+       2026-10-20 超值底板下半截先出过蓝色花斑、再出过对称竖带，都是这个原因。
+    🔴 亮度只拿来当**调制**（±20%），不直接铺满调色板：原卡体亮度区间很窄，
+       铺满就成了「一块亮一块黑」，跟主题色也对不上。
     """
+    if hb >= src_rgb.shape[0]:
+        return np.zeros((0, src_rgb.shape[1], 3), dtype=np.float32)
     body = src_rgb[hb:].astype(np.float32)
+    n, w = body.shape[:2]
+    if src_alpha is not None:
+        a = (src_alpha[hb:].astype(np.float32) / 255.0)[..., None]
+        a = np.clip((a - 0.15) / 0.85, 0.0, 1.0)          # 极低 alpha 一律当 0
+        mean = (body * a).sum(axis=(0, 1)) / max(float(a.sum()), 1e-3)
+        body = body * a + mean[None, None, :] * (1 - a)
+
     lum = body.mean(axis=2)
-    lo, hi = np.percentile(lum, 2), np.percentile(lum, 98)
-    t = np.clip((lum - lo) / max(hi - lo, 1e-3), 0.0, 1.0)
-    # 🔴 原卡体的亮度只用了很窄的一段（顶部亮、往下略暗），直接铺满调色板会整片发黑，
-    #    接缝就成了「亮带子 / 黑卡体」的黑白切。先把 t 拉伸到真正用到的区间。
-    t = np.clip((t - 0.28) / 0.55, 0.0, 1.0)[..., None]
-    mid = np.array(hex_rgb(colors[0]), dtype=np.float32) * 1.50      # 主色提亮，别整片发黑
-    deep = (np.array(hex_rgb(colors[0]), dtype=np.float32) * 0.35
-            + np.array(hex_rgb(colors[-1]), dtype=np.float32) * 0.45)  # 暗部掺一点收尾色（松绿）
-    bright = np.clip(mid * 1.75 + 18, 0, 255)
-    lo_part = deep + (mid - deep) * np.clip(t / 0.55, 0, 1)
-    hi_part = mid + (bright - mid) * np.clip((t - 0.55) / 0.45, 0, 1)
-    return np.where(t < 0.55, lo_part, hi_part)
+    small = np.array(
+        Image.fromarray(lum.clip(0, 255).astype(np.uint8))
+        .resize((max(1, w // 40), max(1, n // 40)), Image.BOX)
+        .resize((w, n), Image.BILINEAR),
+        dtype=np.float32)
+    lo, hi = np.percentile(small, 10), np.percentile(small, 90)
+    t = np.clip((small - lo) / max(hi - lo, 1e-3), 0.0, 1.0)[..., None]
+
+    c0 = np.array(hex_rgb(colors[0]), dtype=np.float32)
+    c1 = np.array(hex_rgb(colors[-1]), dtype=np.float32)
+    v = np.linspace(0.0, 1.0, n, dtype=np.float32)[:, None, None]
+    grad = c0[None, None, :] * (1 - v) + c1[None, None, :] * v
+    # 调制幅度压到 ±10%：原卡体底部有一道真实的亮度台阶（发光收边），
+    # 调制一强就会在卡体中间留一条横线（2026-10-20 实测 ±20% 时肉眼可见）
+    out = grad * (0.90 + 0.20 * t)
+    return np.clip(out, 0, 255)
 
 
 def compose_band(band: Image.Image, body: np.ndarray, blend: int = 0) -> Image.Image:
@@ -441,7 +503,10 @@ def cmd_postprocess(args) -> int:
         use_source = (args.body_mode in ("auto", "source") and snap.is_file()
                       and Image.open(snap).size == target)
         if use_source:
-            body = source_body(np.array(Image.open(snap).convert("RGB")), hb, colors)
+            # 源快照按 RGBA 读：body 重上色要看 alpha（见 source_body 的棋盘格说明）
+            snap_im = Image.open(snap).convert("RGBA")
+            body = source_body(np.array(snap_im.convert("RGB")), hb, colors,
+                               np.array(snap_im.getchannel("A")))
             body_mode = "source"
         else:
             body = synthetic_body(band, target, colors)
@@ -852,6 +917,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("prompt", help="打印某主题的出图提示词与参数")
     p.add_argument("--theme", required=True)
     p.add_argument("--layout", default=None, help="构图锁：文件路径或多行文本（默认用预设里的通用规则）")
+    p.add_argument("--composition", choices=list(COMPOSITIONS), default=None,
+                   help="lock=姿势/版式全锁（默认）；free=允许重设计人物姿势与镜头，只锁文案/空白区/画布")
     p.set_defaults(func=cmd_prompt, key=None)
 
     p = sub.add_parser("prepare", help="校验源资源并建立工作目录")
@@ -863,6 +930,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--source-from", default=None,
                    help="改前参照图（默认=资源本身）；支持 git:HEAD:<path>")
     p.add_argument("--layout", default=None, help="构图锁：文件路径或多行文本（决定文案怎么保）")
+    p.add_argument("--composition", choices=list(COMPOSITIONS), default=None,
+                   help="lock=姿势/版式全锁（默认）；free=允许重设计人物姿势与镜头，只锁文案/空白区/画布")
     p.set_defaults(func=cmd_prepare)
 
     p = sub.add_parser("postprocess", help="去水印 + 尺寸归位 + 出双版本 + 对比图")

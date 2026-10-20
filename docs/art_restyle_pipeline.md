@@ -25,7 +25,8 @@ W=_output/art_restyle/<资源名>/<主题>
 
 $PY scripts/image/restyle_pipeline.py themes                     # 列内置主题
 $PY scripts/image/restyle_pipeline.py prompt --theme christmas   # 打印完整提示词（含参数）
-$PY scripts/image/restyle_pipeline.py prepare   --asset Assets/.../x.png --theme christmas [--layout F]
+$PY scripts/image/restyle_pipeline.py prompt --theme christmas --composition free   # 自由构图（人物可重设计）
+$PY scripts/image/restyle_pipeline.py prepare   --asset Assets/.../x.png --theme christmas [--layout F] [--composition free]
 $PY scripts/image/restyle_pipeline.py postprocess --work "$W" --gen "$W/inbox/gen.png" [--hero-band 930] [--watermark off]
 $PY scripts/image/restyle_pipeline.py verify    --work "$W"
 $PY scripts/image/restyle_pipeline.py graph     --work "$W" --out "$W/graph.md"
@@ -35,6 +36,11 @@ $PY scripts/image/restyle_pipeline.py restore   --asset Assets/.../x.png [--list
 # 不走 job，单跑 ChatGPT 出图通道（用你 Chrome 的登录态）
 $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "$W/prompt.txt" \
     --out "$W/inbox/gen_web.png" --crop-height 930 [--check-only]
+
+# 额度用尽 / 换号：接上 AdsPower 里已登录的 SunBrowser（不搬 cookie、不关窗口）
+$PY scripts/image/find_browser_cdp.py                     # 反查 CDP 端口
+$PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "$W/prompt.txt" \
+    --out "$W/inbox/gen_web.png" --crop-height 930 --reuse-cdp --port <端口>
 ```
 
 退出码：`0` 通过 / `1` 失败 / `2` 用法错误 / `3` 需要人看一眼（Jenkins 里 `--warn-rc 3` → 黄，不阻断）。
@@ -49,7 +55,9 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
 | `THEME` | `christmas` / `newyear` / `halloween` / `valentine`。新增主题只改 `scripts/image/theme_presets.json` |
 | `PROVIDER` | `chatgpt_web`（**默认**，用本机 Chrome 登录态驱动 chatgpt.com）／`manual`（图由人/Agent 出，放进 inbox 或用 `GEN_IMAGE` 指定） |
 | `GEN_IMAGE` | manual 时显式指定生成图；留空取 inbox 里最新的 |
+| `CDP_PORT` | 复用外部已登录浏览器（AdsPower/SunBrowser）的调试端口，`find_browser_cdp.py` 反查。留空=用本机 Chrome |
 | `LAYOUT` | 构图锁文本。**每张图的文案不同，所以文案一定写这里，不要写进主题预设** |
+| `COMPOSITION` | `lock`（默认，人物姿势/位置/缩放全锁，只换衣服与配色）／`free`（允许重设计人物姿势与镜头换吸引力）。见下节 |
 | `PROMPT_OVERRIDE` | 整段覆盖提示词（LAYOUT 不够用时才用） |
 | `HERO_BAND` | 超长条底板专用：英雄带像素高度（如 `930`）或 `auto`。留空=整幅等比 cover |
 | `BODY_MODE` | `auto`（默认）/ `source` / `synthetic`，见下 |
@@ -60,6 +68,38 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
 构建页能看到：环节表（JUnit）+ `summary.md` + 构建描述 + `artifacts/`（改前改后对比图、graph.md、
 prompt.txt、state.json、published.json）。节点图由 `graph` 生成，链路
 `prepare → generate → postprocess → verify → publish`，绿/红/灰三色。
+
+---
+
+## 构图自由度：`COMPOSITION=lock|free`
+
+换节日风格时会长出来的两种诉求，用一档参数切：
+
+| 档位 | 人物 | 文案 / 空白区 / 画布 | 适用 |
+|---|---|---|---|
+| `lock`（默认） | 姿势、位置、缩放、轮廓全锁，只换服装与配色 | 全锁 | 只换皮的批量活；出图可预期，返工率最低 |
+| `free` | **可完全重设计**：新姿势、新镜头角度、位置/裁切/缩放都能动 | 仍锁死 | 要「一眼更吸引人」的运营位（登录底板、充值/活动 banner） |
+
+`free` 放开的是**美术**，不是 UI 契约。三条硬约束照旧（写死在 `layout_free` 里）：
+
+1. **文案逐字不变**且完整可读、不被人物挡住、不出血；允许重排位置来换构图；
+2. **底部 UI 空白区**形状与边距不变 —— 那里要盖按钮和列表，画了东西就废；
+3. **画布比例、出血、圆角轮廓、透明区**不变（`publish` 沿用原 alpha）。
+
+主题可用 `pose_hint` 给 `free` 一个推荐姿势（人话描述，不写文案），例如圣诞：
+「playful leaning-forward pose presenting a small gift box toward the viewer…」。没有 `pose_hint` 也能跑，模型自己发挥。
+
+```bash
+$PY scripts/image/restyle_pipeline.py prompt --theme christmas --composition free   # 先看提示词再出图
+$PY scripts/image/restyle_pipeline.py prepare --asset Assets/... --theme christmas --composition free
+```
+
+🔴 工作目录必须分桶：`lock` 落 `_output/art_restyle/<资源>/<主题>`，`free` 落 `<主题>_free`
+（Jenkins 里自动加后缀）。同一张图的「锁姿势版」和「重设计版」要能同时留在磁盘上对比，
+混在一个目录里 `prepare` 会覆盖 `src/source.png`，对比图就变成「新版 vs 新版」。
+
+🔴 `free` 出图**必须人眼看**：模型重排文案时可能出现错字、缺字、字被人物压住。`verify` 只能量尺寸/alpha/
+水印残留，量不出「字错了」——这一步没有自动闸门，别开 `WRITE_BACK` 就撒手。
 
 ---
 
@@ -81,6 +121,28 @@ gen_chatgpt_web.py
 `--reuse-cdp`（复用已在跑的调试端口）/ `--check-only`（只验连通性与登录态）。
 
 退出码 `3` = 环境问题（不可达 / 未登录 / 人机验证 / 额度用尽），job 里标黄不阻断。
+
+### 额度用尽 / 换号：直接接上 AdsPower 的 SunBrowser
+
+免费版的出图额度是**按账号**算的，当天的图出完了就得换号。换号**不搬 cookie、不改代码**，
+把 driver 接到另一个已经登录好的浏览器上就行：
+
+```bash
+$PY scripts/image/find_browser_cdp.py            # 反查 CDP 端口 → best port=64757
+$PY scripts/image/gen_chatgpt_web.py --image ... --prompt-file ... --out ... \
+    --crop-height 930 --reuse-cdp --port 64757
+```
+
+- `--reuse-cdp` = **只连不断**：脚本不启动也不关闭浏览器（driver 里置 `PW_KEEP_BROWSER=1`，
+  不走 `browser.close()`），不会把你手上的窗口关掉。
+- driver 优先复用**已经开着的 chatgpt.com 标签**，没有才新开一个 —— 绝不导航走你正在看的页面。
+- 🔴 AdsPower 的 `--remote-debugging-port` **不在命令行里**（随机高位端口 bind），免费版还调不了
+  `/api/v1/user/list` 拿 `debug_port`。所以 `find_browser_cdp.py` 只能从「进程 → lsof 监听端口 →
+  逐个试 `/json/version`」反查；`pgrep -fl 9333` 这条思路在这里完全不成立。
+- 指纹浏览器自带代理/指纹，**不要**再传 `--proxy`（会把它的网络链路覆盖掉）。
+
+Reuse 与自起 Chrome 的区别：自起 Chrome（默认）用你本机真实 profile 的副本，**换号就断**；
+reuse 用指纹浏览器里的登录态，**换号只需在 AdsPower 里开另一个 profile**。
 
 实测（2026-10-20，free 计划）：856×930 英雄带 → 出图 1203×1308，`50x` / `Rebate` 文字与构图完整保真。
 
@@ -122,6 +184,22 @@ gen_chatgpt_web.py
 14. **不要把 cookie 导出来再 `addCookies` 重建登录态。** Chrome 155 的
     `__Secure-next-auth.session-token.0/.1` 分片重建后 Chromium 不认，页面照样是未登录营销页。
     唯一可行的是**整份 profile 交给 Chrome 自己读**（它自己解密）。
+15. **生成图的 alt 文案跟着界面语言走。** 只写「已生成图像」时，换一个日文界面的号（SunBrowser）
+    就永远认不出来：图早就画好了，driver 还在等，最后超时报错 —— 再重试一次就白烧一张额度。
+    现在 `GEN_ALT` 覆盖中/英/日/韩/西/法/德/葡，并用 `[data-testid*="generated-image"]` 做结构兜底，
+    同时用 `UPLOAD_ALT` 排除用户上传的参考图。
+16. **图已经画好但没认出来时，别再发一遍。** `gen_chatgpt_web.py --grab-existing` 直接取当前对话里
+    最新的那张生成图（取最后一张，不取最大——同一会话里可能有多张候选）。
+17. **免费额度按账号算，换号不要搬 cookie。** 在 AdsPower 里开另一个已登录的 profile，用
+    `find_browser_cdp.py` 反查端口 + `--reuse-cdp` 接上去：只连不断（不关用户窗口）、
+    优先复用已开的 chatgpt 标签（不抢 tab）。AdsPower 的调试端口不在命令行里，只能
+    「进程 → lsof → 试 `/json/version`」反查；免费版还调不了 `/api/v1/user/list`。
+18. **`BODY_MODE=source` 只能保留「大尺度」明暗。** 原图透明区的 RGB 底下有烤进去的棋盘格、
+    点阵底纹也有高频噪点，逐像素按亮度重映射会放大成蓝色花斑 / 对称竖带（同一天踩了两次）。
+    现在先按 alpha 把 RGB 压回不透明区平均色，再降采样 1/40 拿大结构，最后只做 ±10% 调制：
+    亮度是**调制**不是**色板**，幅度一大就会在卡体中间留一条横线（原卡体底部本来就有亮度台阶）。
+19. **`free` 构图没有自动闸门。** 模型重排文案可能错字/缺字/被人物压住，`verify` 只量尺寸、alpha、
+    水印残留。free 出图必须人眼看，看不过就 `restore` 回滚，别开着 `WRITE_BACK` 撒手。
 
 ---
 
@@ -130,8 +208,8 @@ gen_chatgpt_web.py
 这类 UI 底板（如 856×2048）的构成是「英雄带（角色 + 文案 + 点阵带）+ 一大片给 UI 覆盖层用的空卡体」。
 
 - `HERO_BAND=930` → 生成图按 `(宽, 930)` 做 cover（只横向裁一点，纵向一格不裁），贴顶；
-- 下半截 `BODY_MODE=source` → **拿原资源下半截的明暗结构按主题色重映射**：几何与原图逐像素对齐，
-  卡体的暗角、噪点、透明度剖面全部保留。比凭空合成渐变稳得多（合成渐变要跟上半截的明暗节奏对齐，很难）。
+- 下半截 `BODY_MODE=source` → **拿原资源下半截的「大尺度明暗」去调制主题渐变**：卡片暗角 / 卡体走向保留，
+  棋盘格和点阵噪点被滤掉（见红线 18）。比凭空合成渐变稳得多（合成渐变要跟上半截的明暗节奏对齐，很难）。
 - `BODY_MODE=synthetic` 是兜底（源快照缺失/尺寸不符）：接缝色（先横向平滑）→ 主题上色 → 主题下色。
 - `--blend N` 可把英雄带最后 N 行原位融进卡体；默认 0，保持原图那种直线切。
 

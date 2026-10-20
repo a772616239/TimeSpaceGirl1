@@ -51,27 +51,44 @@ const prompt = fs
   .join('\n')
   .trim();
 
-// 生成图的 alt 文案：中英文界面都要认（界面语言跟随账号设置）
-const GEN_ALT = ['已生成图像', 'Generated image', '生成图像'];
+// 生成图的 alt 文案：**界面语言跟随账号**，所以必须多语言都认。
+// 🔴 2026-10-20 踩过：只写了「已生成图像」，而 SunBrowser 里那个号是日文界面，
+//    图早就画好了，driver 一直认不出 → 白等到超时 + 又重发一次，白烧一次额度。
+const GEN_ALT = [
+  '已生成图像', '生成图像', 'Generated image', '生成された画像', '生成画像',
+  '생성된 이미지', 'Imagen generada', 'Image générée', 'Generiertes Bild', 'Imagem gerada',
+];
+// 用户自己传上去的参考图，alt 是「用户附件 / Attached / 添付」—— 必须排除
+const UPLOAD_ALT = ['用户附件', 'Attached', 'attachment', '添付', '첨부', 'Adjunto'];
 
-const snapshot = (alts) => ({
-  // 只认生成图：靠 alt 区分「已生成图像 N」与「用户附件」
-  imgs: Array.from(document.querySelectorAll('img'))
-    .filter((im) => alts.some((a) => (im.alt || '').includes(a)))
-    .map((im) => ({
-      src: im.currentSrc || im.src,
-      w: im.naturalWidth,
-      h: im.naturalHeight,
-      alt: im.alt,
-    }))
-    .filter((o) => o.w >= 300 && o.h >= 300),
-  // 生成中：停止按钮 / 进度百分比 / 「正在勾勒草图」
-  busy:
-    !!document.querySelector('[data-testid="stop-button"]') ||
-    /\d{1,3}\s*%/.test(document.body.innerText || '') ||
-    /正在(勾勒|生成|绘制|创建)|Creating image|Generating image/i.test(document.body.innerText || ''),
-  text: (document.body.innerText || '').slice(-600),
-});
+const snapshot = (alts) => {
+  const uploads = ['用户附件', 'Attached', 'attachment', '添付', '첨부', 'Adjunto'];
+  const isGen = (im) =>
+    alts.some((a) => (im.alt || '').includes(a)) ||
+    // 兜底：结构上就在「生成图」容器里（alt 文案没覆盖到的语言走这条）
+    (!!im.closest('[data-testid*="generated-image"]') &&
+      !uploads.some((a) => (im.alt || '').includes(a)));
+  return {
+    // 只认生成图：靠 alt 区分「已生成图像 N」与「用户附件」
+    imgs: Array.from(document.querySelectorAll('img'))
+      .filter(isGen)
+      .map((im) => ({
+        src: im.currentSrc || im.src,
+        w: im.naturalWidth,
+        h: im.naturalHeight,
+        alt: im.alt,
+      }))
+      .filter((o) => o.w >= 300 && o.h >= 300),
+    // 生成中：停止按钮 / 进度百分比 / 「正在勾勒草图」
+    busy:
+      !!document.querySelector('[data-testid="stop-button"]') ||
+      /\d{1,3}\s*%/.test(document.body.innerText || '') ||
+      /正在(勾勒|生成|绘制|创建)|Creating image|Generating image|画像を(生成|作成)|그림을 그리는/i.test(
+        document.body.innerText || ''
+      ),
+    text: (document.body.innerText || '').slice(-600),
+  };
+};
 
 const sig = (imgs) => imgs.map((i) => `${i.w}x${i.h}`).sort().join(',');
 
@@ -79,12 +96,25 @@ let browser;
 try {
   browser = await chromium.connectOverCDP(cdp);
   const ctx = browser.contexts()[0];
-  const page = ctx.pages()[0] ?? (await ctx.newPage());
+  // 复用外部浏览器（如 AdsPower 的 SunBrowser）时，那个 profile 里可能开着七八个标签页。
+  // 直接拿 pages()[0] 会把用户正在看的页面导航走，所以：已登录的 chatgpt 标签优先复用，
+  // 没有就新开一个，绝不抢别人的 tab。
+  const pages = ctx.pages();
+  const page =
+    pages.find((p) => /chatgpt\.com/.test(p.url())) ??
+    (pages.length && !process.env.PW_KEEP_BROWSER ? pages[0] : null) ??
+    (await ctx.newPage());
   page.setDefaultTimeout(60000);
 
   log('打开新对话');
-  await page.goto(chatUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await sleep(5000);
+  const grabExisting = argv.includes('--grab-existing');
+  if (grabExisting) {
+    // 图已经画好了，只是上次没认出来（或进程被杀）。再发一次就白烧一次额度。
+    log('--grab-existing：不发送，直接取当前对话里已有的生成图', page.url());
+  } else {
+    await page.goto(chatUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await sleep(5000);
+  }
 
   const url = page.url();
   if (/\/auth\/|\/log[-_]?in/.test(url)) {
@@ -103,29 +133,31 @@ try {
   }
 
   // 1) 上传参考图
-  log('上传参考图', imagePath);
-  const fileInput = page.locator('input[type="file"]').first();
-  await fileInput.setInputFiles(imagePath);
-  await sleep(4000);
+  if (!grabExisting) {
+    log('上传参考图', imagePath);
+    const fileInput = page.locator('input[type="file"]').first();
+    await fileInput.setInputFiles(imagePath);
+    await sleep(4000);
 
-  // 2) 填提示词并发送
-  const composer = page.locator('#prompt-textarea, div[contenteditable="true"]').first();
-  await composer.waitFor({ state: 'visible', timeout: 40000 });
-  await composer.click();
-  // insertText 比 fill 稳：contenteditable 里 fill 有时只写进第一行
-  await page.keyboard.insertText(prompt);
-  await sleep(1200);
+    // 2) 填提示词并发送
+    const composer = page.locator('#prompt-textarea, div[contenteditable="true"]').first();
+    await composer.waitFor({ state: 'visible', timeout: 40000 });
+    await composer.click();
+    // insertText 比 fill 稳：contenteditable 里 fill 有时只写进第一行
+    await page.keyboard.insertText(prompt);
+    await sleep(1200);
 
-  const sendBtn = page
-    .locator('button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="发送"]')
-    .first();
-  if (await sendBtn.count()) {
-    await sendBtn.click();
-  } else {
-    await page.keyboard.press('Enter');
+    const sendBtn = page
+      .locator('button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="发送"]')
+      .first();
+    if (await sendBtn.count()) {
+      await sendBtn.click();
+    } else {
+      await page.keyboard.press('Enter');
+    }
+    log('已发送，等出图…');
+    await sleep(4000);
   }
-  log('已发送，等出图…');
-  await sleep(4000);
 
   // 3) 等图：既要「有生成图」，又要「不在生成中」，还要连续两轮稳定
   const deadline = Date.now() + timeoutMs;
@@ -145,7 +177,10 @@ try {
       lastSig = s;
     }
     if (stable >= 2) {
-      picked = st.imgs.reduce((a, b) => (a.w * a.h >= b.w * b.h ? a : b));
+      // grab 模式取「最后一张」（当前对话最新的结果）；正常模式取面积最大的那张
+      picked = grabExisting
+        ? st.imgs[st.imgs.length - 1]
+        : st.imgs.reduce((a, b) => (a.w * a.h >= b.w * b.h ? a : b));
       break;
     }
     await sleep(4000);
@@ -185,9 +220,13 @@ try {
   log('异常', e?.message ?? e);
   process.exit(1);
 } finally {
-  try {
-    await browser?.close(); // 只断开 CDP 连接，不关用户的 Chrome
-  } catch {
-    /* ignore */
+  // 🔴 复用别人的浏览器时只断开连接，绝不能把它关掉（browser.close() 对 CDP 连接
+  //    可能真的把浏览器关掉，用户手上就少了一个登录好的窗口）
+  if (!process.env.PW_KEEP_BROWSER) {
+    try {
+      await browser?.close();
+    } catch {
+      /* ignore */
+    }
   }
 }

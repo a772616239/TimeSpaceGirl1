@@ -166,10 +166,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--profile", default=os.environ.get("CHROME_PROFILE", "Profile 5"))
     ap.add_argument("--port", type=int, default=9333)
     ap.add_argument("--timeout", type=int, default=360, help="等图上限（秒）")
+    ap.add_argument("--attempts", type=int, default=2,
+                    help="整轮尝试次数（Chrome 中途掉线时重起一次；不可达/未登录/额度用尽不重试）")
     ap.add_argument("--crop-height", type=int, default=0,
                     help="参考图先从顶部裁到这么高（超长条底板只把「英雄带」喂给模型；0=整幅）")
     ap.add_argument("--reuse-cdp", action="store_true",
                     help="复用已经在跑的 Chrome 调试端口（本机调试用，此时不启动也不关闭 Chrome）")
+    ap.add_argument("--grab-existing", action="store_true",
+                    help="不发送，直接取当前 chatgpt 对话里已有的生成图。"
+                         "图其实已经画好、只是 driver 没认出来时用它，别再烧一次额度")
     ap.add_argument("--check-only", action="store_true", help="只做连通性与登录态预检")
     args = ap.parse_args(argv)
 
@@ -196,6 +201,23 @@ def main(argv: list[str] | None = None) -> int:
         log(f"🔴 缺少依赖：node={node} playwright-core={pw}")
         return RC_WARN
 
+    # 🔴 Chrome 偶发在等待出图中途整页被关（实测 2026-10-20：driver 报
+    #    "Target page, context or browser has been closed"，5 分钟后整轮报废）。
+    #    这种是环境抖动、不消耗出图额度，值得自动重起一次；而「不可达/未登录/人机验证/
+    #    额度用尽」重试一万次也没用，必须直接返回 RC_WARN。
+    attempts = 1 if args.grab_existing else max(1, args.attempts)
+    last = RC_FAIL
+    for i in range(1, attempts + 1):
+        if i > 1:
+            log(f"↻ 第 {i}/{attempts} 次重试（上一次页面/浏览器被关，判定为环境抖动）")
+        last = run_once(args, image, prompt_file, out, node, pw)
+        if last == RC_OK or last in (RC_USAGE, RC_WARN):
+            return last
+    return last
+
+
+def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str) -> int:
+    """一次完整的「复制 profile → 起 Chrome → driver 出图」；失败由 main 决定是否重试。"""
     tmp = Path(tempfile.mkdtemp(prefix="chatgpt_web_"))
     chrome = None
     ref = image
@@ -241,11 +263,15 @@ def main(argv: list[str] | None = None) -> int:
         # 🔴 driver 要连 127.0.0.1，绝不能走 HTTP_PROXY（会 502）
         env["NO_PROXY"] = "127.0.0.1,localhost"
         env["no_proxy"] = "127.0.0.1,localhost"
-        drv = subprocess.run(
-            [node, str(DRIVER), "--cdp", f"http://127.0.0.1:{args.port}",
-             "--image", str(ref), "--prompt-file", str(prompt_file),
-             "--out", str(out), "--timeout", str(args.timeout), "--pw", pw],
-            timeout=args.timeout + 120, env=env)
+        if args.reuse_cdp:
+            # 复用外部浏览器（AdsPower/SunBrowser 等）时只连不断，别把人家窗口关了
+            env["PW_KEEP_BROWSER"] = "1"
+        drv_cmd = [node, str(DRIVER), "--cdp", f"http://127.0.0.1:{args.port}",
+                   "--image", str(ref), "--prompt-file", str(prompt_file),
+                   "--out", str(out), "--timeout", str(args.timeout), "--pw", pw]
+        if args.grab_existing:
+            drv_cmd.append("--grab-existing")
+        drv = subprocess.run(drv_cmd, timeout=args.timeout + 120, env=env)
         if drv.returncode == 0 and out.is_file():
             log(f"✅ 出图：{out}（{out.stat().st_size // 1024} KB）")
             return RC_OK

@@ -6,6 +6,7 @@
     {"name":"ASSET","type":"string","default":"Assets/ManagedResources/ArtFont_en/EightDayGiftPanelAtlas/cn2-X1_baridenglu_diban_en.png","description":"要换风格的资源（相对工程根）。目标尺寸取该图自身尺寸"},
     {"name":"THEME","type":"choice","choices":["christmas","newyear","halloween","valentine"],"default":"christmas","description":"节日主题。新增主题改 scripts/image/theme_presets.json 即可，不用改本 job"},
     {"name":"PROVIDER","type":"choice","choices":["chatgpt_web","manual"],"default":"chatgpt_web","description":"manual=把出好的图给本 job（GEN_IMAGE 或 inbox）；chatgpt_web=用本机 Chrome 登录态驱动 chatgpt.com 出图"},
+    {"name":"CDP_PORT","type":"string","default":"","description":"复用已登录的外部浏览器（AdsPower 的 SunBrowser 等）的调试端口：填了就 --reuse-cdp，不复制本机 Chrome profile（免费额度按账号算，换号就换这里）。端口用 scripts/image/find_browser_cdp.py 反查；留空=用本机 Chrome"},
     {"name":"GEN_IMAGE","type":"string","default":"","description":"provider=manual 时显式指定生成图绝对路径。留空 = 取 _output/art_restyle/<资源>/<主题>/inbox 下最新的图"},
     {"name":"PROMPT_OVERRIDE","type":"text","default":"","description":"覆盖预设提示词（留空=用 theme_presets.json 里的）。用于「同一主题但要改某句话」"},
     {"name":"ALPHA_FROM","type":"string","default":"","description":"alpha 参照图。资源被压成 RGB（丢了透明浮层）时用；支持 git:HEAD:<path> 直接从 git 取原版"},
@@ -126,6 +127,12 @@ ART_CROP=0
 if [[ "${HERO_BAND:-}" =~ ^[0-9]+$ ]]; then ART_CROP="$HERO_BAND"; fi
 
 if [[ "$PROVIDER" == "chatgpt_web" ]]; then
+  # CDP_PORT 有值 ⇒ 接外部已登录浏览器（只连不断），不复制本机 profile
+  CDP_ARGS=""
+  if [[ -n "${CDP_PORT:-}" ]]; then
+    CDP_ARGS="--reuse-cdp --port ${CDP_PORT}"
+    echo "复用外部浏览器：CDP 端口 ${CDP_PORT}（换号只换这个参数）"
+  fi
   # 🔴 这个 provider 走本机 Chrome 的登录态，出口封了就是 403/超时。
   #    失败只标黄（--warn-ok），因为「网络不可用」不是这份代码的缺陷。
   "$BASH" .jenkins/lib/run_stage.sh --name "chatgpt.com 出图" \
@@ -134,7 +141,7 @@ if [[ "$PROVIDER" == "chatgpt_web" ]]; then
          --image "$ART_WDIR/src/source.png" \
          --prompt-file "$TS_RUN_DIR/artifacts/prompt.txt" \
          --out "$ART_WDIR/inbox/gen_web.png" \
-         --crop-height "$ART_CROP"
+         --crop-height "$ART_CROP" $CDP_ARGS
   if [[ -f "$ART_WDIR/inbox/gen_web.png" ]]; then
     cp -f "$ART_WDIR/inbox/gen_web.png" "$TS_RUN_DIR/artifacts/gen.png"
     printf '%s\\n' "$ART_WDIR/inbox/gen_web.png" > "$TS_RUN_DIR/generated.path"

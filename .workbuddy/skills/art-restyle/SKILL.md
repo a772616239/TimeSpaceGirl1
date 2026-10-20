@@ -64,6 +64,17 @@ $PY scripts/image/restyle_pipeline.py publish --work "$W" --variant alpha --yes 
   `GEN_ALT` 已覆盖中/英/日/韩/西/法/德/葡。
 - 右下角**自带亮装饰带**的图（千抽底板那条青/白 V 形带）会把水印判据骗过去 ⇒ 传 `WATERMARK=off`。
 
+### 1.2 浮层图（画布上下有透明留白）走 free 构图时的两件事
+
+1. 🔴 **模型不会真输出透明，它会画棋盘格表示留白。** 直接整幅 `cover` 再套源 alpha，
+   棋盘格/留白交界处会漏白边。正确顺序：
+   `postprocess --alpha-mode keep`（先拿到整幅 flat）→
+   `$PY scripts/image/refit_band.py --work "$W"`（量生成图画区 bbox → 等比 cover 进**源可见带**矩形
+   → 再 `putalpha(源 alpha)`）→ 把 `state.json` 的 `alpha_mode` 记成 `source`（实际口径一致）再 `verify`。
+2. **这类图不要套紫框。** 源 alpha 常是「矩形画带 + 顶部 100px 柔化渐隐 + 底部硬切」，
+   框的顶边正好落在渐隐段里 ⇒ 又变成「框没画完」。左下还常有一块留给引擎写字的空文案板，
+   框的 inset 会啃掉它。`--frame none` 就是这一档的正解，别为了统一硬套。
+
 ## 2. 边框三定律
 
 ### 2.1 语言必须是游戏自己的，不是相框

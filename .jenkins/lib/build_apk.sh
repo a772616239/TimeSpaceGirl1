@@ -32,6 +32,7 @@ RUN_DIR="${TS_RUN_DIR:-$ROOT/.jenkins/run/$(date +%Y%m%d-%H%M%S)}"
 DO_BUMP=1
 SERVER_ENV=""   # 空 = 不干预（沿用 Assets/Resources/version.txt 现状）；非空 = build_envs.json 里的 key
 WHO="$(hostname -s)/$$"
+ORIGINAL_ARGS=("$@")
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-bump) DO_BUMP=0; shift ;;
@@ -40,6 +41,18 @@ while [[ $# -gt 0 ]]; do
     *) echo "build_apk: 未知参数 $1" >&2; exit 2 ;;
   esac
 done
+
+# 🔴 整个执行体（bump→注入→Unity→还原→定位产物）必须在 unity 锁内跑。
+#    锁原来只包 Unity 进程本身，注入/还原裸奔在锁外 —— 并行 job（TS-Resource-Build）
+#    在同一工作区跑自己的 apply/restore，它的备份基准会把我们的注入值覆盖掉：
+#    2026-10-21 TestPackage #15 实锤 —— 注入 192.168.3.82 后被 #7 的 restore 覆盖回
+#    129.226.213.65，包里打出的是别人的口径，服务器环境核验拦下（闸门立功但包白打）。
+#    做法：首跑时 exec 自身套锁重入（TSG_LOCKED 防递归），锁内完成全部步骤。
+if [[ -z "${TSG_LOCKED:-}" && -x "$HERE/lock.sh" ]]; then
+  exec env TSG_LOCKED=1 "$BASH_BIN" "$HERE/lock.sh" --name unity run \
+    --who "$WHO" --timeout 3600 -- \
+    "$BASH_BIN" "${BASH_SOURCE[0]}" "${ORIGINAL_ARGS[@]}"
+fi
 
 mkdir -p "$RUN_DIR/logs"
 cd "$PROJ" || exit 2
@@ -81,8 +94,8 @@ fi
 echo "→ Unity batchmode 出 APK（CLIBuilder.BuildAndroidAPK / 口径 MinimalGmOff）"
 echo "   🔒 需要 unity 锁（与 AAB 构建、手工 Unity 串行）"
 
-"$BASH_BIN" "$HERE/lock.sh" --name unity run --who "$WHO" --timeout 1800 -- \
-  "$UNITY" -projectpath "$PROJ" -batchmode -nographics \
+# 整个脚本已套在 unity 锁内（见头部 re-exec），这里直接起 Unity，不能再套锁（会死锁）。
+"$UNITY" -projectpath "$PROJ" -batchmode -nographics \
   -executeMethod CLIBuilder.BuildAndroidAPK \
   -logFile "$LOG" -quit
 RC=$?

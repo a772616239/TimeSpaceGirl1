@@ -172,6 +172,50 @@ const snapshot = ({ alts, quota, refusal }) => {
 
 const sig = (imgs) => imgs.map((i) => `${i.w}x${i.h}`).sort().join(',');
 
+// 🔴 2026-10-21 实测：复用 SunBrowser 时，标签页一多 Chromium 会把后台标签**冻结**
+//    （Runtime.evaluate 3s 无响应）。playwright 的 connectOverCDP 要逐个 attach 全部页面，
+//    碰到冻结页就整体超时 —— 报「browserType.connectOverCDP: Timeout 30000ms exceeded」，
+//    而 /json/version 明明是通的，很容易误判成「浏览器挂了」。
+//    解法：连之前先用**浏览器级 CDP** 把所有 page target 激活一遍（activateTarget 会解冻），
+//    实测同一个端口从 30s 超时变成 369ms 连上。
+const thawFrozenTabs = async (cdpUrl) => {
+  const base = cdpUrl.replace(/\/+$/, '');
+  try {
+    const ver = await (await fetch(`${base}/json/version`)).json();
+    const list = await (await fetch(`${base}/json/list`)).json();
+    const pages = (Array.isArray(list) ? list : []).filter((t) => t.type === 'page');
+    if (!pages.length || !ver.webSocketDebuggerUrl) return 0;
+    const ws = new WebSocket(ver.webSocketDebuggerUrl);
+    await new Promise((res, rej) => {
+      ws.onopen = res;
+      ws.onerror = rej;
+      setTimeout(() => rej(new Error('ws open timeout')), 5000);
+    });
+    let id = 0;
+    const send = (method, params) =>
+      new Promise((res) => {
+        const myId = ++id;
+        const h = (m) => {
+          const d = JSON.parse(m.data);
+          if (d.id === myId) {
+            ws.removeEventListener('message', h);
+            res(true);
+          }
+        };
+        ws.addEventListener('message', h);
+        ws.send(JSON.stringify({ id: myId, method, params }));
+        setTimeout(() => res(false), 3000);
+      });
+    let n = 0;
+    for (const t of pages) if (await send('Target.activateTarget', { targetId: t.id })) n++;
+    ws.close();
+    return n;
+  } catch (e) {
+    log('解冻标签页失败（忽略，继续直连）：', e?.message ?? e);
+    return 0;
+  }
+};
+
 // 失败证据：<out>.fail.json。让上层（gen_chatgpt_web.py / Jenkins）不必去解析控制台文本，
 // 也能把「为什么没图」当成结构化数据归档。
 const failPath = `${outPath}.fail.json`;
@@ -200,6 +244,9 @@ try {
 let browser;
 let page = null; // 提到模块作用域：writeFail 要在异常路径上也能取到当前 url
 try {
+  // 连之前先解冻后台标签（见 thawFrozenTabs 的注释：不解冻就必然 30s 超时）
+  const thawed = await thawFrozenTabs(cdp);
+  if (thawed) log(`已激活 ${thawed} 个标签页（防止后台冻结把 CDP attach 卡死）`);
   browser = await chromium.connectOverCDP(cdp);
   const ctx = browser.contexts()[0];
   // 复用外部浏览器（如 AdsPower 的 SunBrowser）时，那个 profile 里可能开着七八个标签页。

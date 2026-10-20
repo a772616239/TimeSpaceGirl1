@@ -129,6 +129,7 @@ APK=""
 LOG_APK="$(grep -a 'Build SUCCESS! APK:' "$LOG" 2>/dev/null | tail -1 | sed -E 's/.*Build SUCCESS! APK: ([^ ]+\.apk).*/\1/' || true)"
 if [[ -n "$LOG_APK" && -f "$LOG_APK" ]]; then
   APK="$LOG_APK"
+  echo "$APK" > "$RUN_DIR/apk.path"   # 下游环节（四重校验等）从这里 cat 路径
   echo "→ 产物路径取自本次 Unity 日志（mtime 不可信时也成立）"
 else
   if ! "$PY" "$HERE/find_artifact.py" 'apks/*/CLIBuild/*.apk' \

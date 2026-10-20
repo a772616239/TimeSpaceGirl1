@@ -175,19 +175,25 @@ JAVA_HOME=/usr/local/Cellar/openjdk@8/1.8.0-482/libexec/openjdk.jdk/Contents/Hom
 
 ## 5. 已上线/已应用的线上补丁
 
-### 5.1 聊天持久化 Redis 兜底（2026-10-10）
+### 5.1 聊天持久化 Redis 兜底（2026-10-10，保底 10 条 2026-10-20）
 
 **问题**：原版 `MessageCache` 的 sys/world/cross 通道是 static `LoopQueue`，**重启即清空**。
 
 **方案**：Redis list `serverId:CHAT_QUEUE:<sys|world|cross>`，元素 `mid#ts#Base64(ChatInfo)`，
-`rightPush + trim(-200,-1)`，`ensureLoaded()` 幂等。保留策略「**最近 5 条永久保底 + 其余 7 天**」。
+`rightPush + trim(-200,-1)`，`ensureLoaded()` 幂等。保留策略「**每通道最近 200 条 + 7 天 TTL**」，
+其中 **`sys` 通道恢复后不足 `MIN_KEEP` 条时用系统占位消息补满**（2026-10-20 由 3 条改为 **10 条**）。
+
+- `MIN_KEEP = 10`（源码 `serverlogic/.../chat/messge/MessageCache.java`），只作用于 `sys`；
+  `world` 为空是正常状态，**不补**（占位文案无 type 前缀会把客户端 `ChatManager` 解析打崩）；
+  `cross` 消息号由跨服服务统一下发，本地造号会顶高水位，**也不补**。
+- 占位消息：`SEED_TEXTS`（10 条文案，条数需 ≥ `MIN_KEEP`）+ `SEED_MSG_TYPE = Global.DEATH_PATH_FIRST`（=7）。
 
 ```bash
-~/ts-chat-patch-20261010/deploy-chat-patch.sh {verify|patch|restart|rollback}
+~/ts-chat-patch-20261010/deploy-chat-patch.sh {verify|patch|restart|rollback}   # 2026-10-10 初版脚本
 ```
 
 - 🔴 部署后必须 `PERSIST <key>` 清掉旧 TTL。
-- 🔴 **不伪造消息**（用户明确要求）。
+- 🔴 占位消息只补系统频道，不伪造玩家发言（用户明确要求）。
 
 ### 5.2 英雄升星「氪金点」恢复（2026-10-10）
 

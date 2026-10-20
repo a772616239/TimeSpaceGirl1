@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import shutil
 import sys
 from datetime import datetime
@@ -45,7 +46,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np                                         # noqa: E402
-from PIL import Image                                      # noqa: E402
+from PIL import Image, ImageDraw, ImageFilter               # noqa: E402
 
 import watermark_clean                                     # noqa: E402
 
@@ -449,6 +450,93 @@ def fit_width(im: Image.Image, width: int) -> Image.Image:
     return im.resize((width, h), Image.LANCZOS)
 
 
+# --------------------------------------------------------------------- 边框（frame）
+GOLD_DARK = (120, 78, 22)
+GOLD_HI = (255, 232, 168)
+FRAME_RED = (150, 20, 28)
+
+
+def _metal_band(d, box, i0, i1, c0, c1, peak_at: float = 0.35) -> None:
+    """沿矩形框画一条「金属剖面」色带：越靠近 peak_at 越亮，模拟受光的高光。"""
+    w, h = box
+    for i in range(i0, i1):
+        t = (i - i0) / max(i1 - i0 - 1, 1)
+        prof = max(0.0, 1 - abs(t - peak_at) / max(peak_at, 1 - peak_at)) ** 0.6
+        c = tuple(int(c0[k] + (c1[k] - c0[k]) * prof) for k in range(3))
+        d.rectangle([i, i, w - 1 - i, h - 1 - i], outline=c, width=1)
+
+
+def _medallion(d, cx: float, cy: float, R: int) -> None:
+    """四角徽章：暗底 -> 金环 -> 红心 -> 八角星。"""
+    d.ellipse([cx - R - 2, cy - R - 2, cx + R + 2, cy + R + 2], fill=(26, 15, 4, 255))
+    d.ellipse([cx - R, cy - R, cx + R, cy + R], fill=(158, 106, 36, 255))
+    d.ellipse([cx - R + 4, cy - R + 4, cx + R - 4, cy + R - 4], fill=(212, 158, 66, 255))
+    d.ellipse([cx - R + 6, cy - R + 6, cx + R - 6, cy + R - 6], fill=(120, 12, 18, 255))
+    pts = []
+    for k in range(16):
+        ang = math.pi / 2 * (k / 4.0)
+        rad = (R - 7) if k % 2 == 0 else (R - 14) * 0.95
+        pts.append((cx + rad * math.cos(ang), cy - rad * math.sin(ang)))
+    d.polygon(pts, fill=(255, 234, 172, 255), outline=(84, 52, 14, 255))
+    d.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=(255, 252, 238, 255))
+
+
+def decorate_frame(img: Image.Image, ratio: float = 0.041, inset: bool = True) -> Image.Image:
+    """给整幅底板套一圈「红金双层」画框，压住自由构图后硬切的四边。
+
+    为什么需要它：free 构图的人像是整幅矩形的（模型不会给你抠好的透明轮廓），
+    如果没有边框，四边就是硬切、上半截跟下半截卡体的接缝也像没画完。
+    这一圈框把「硬切」变成「装裱」，边角还有徽章呼应。
+
+    🔴 inset=True（默认）：把画面**缩进框里**（等比 cover 到内框，最多裁掉 1~2%），
+       框压在画布边界上而不是压在画面上。overlay（inset=False）会直接盖住画面最外
+       一圈 44px —— 这张图的「8-DAY」左边缘和帽子顶部就贴在这个位置上，一盖就变成
+       「字被吃掉一角」，所以默认必须 inset。
+    🔴 画布尺寸不变（资源槽位固定），只在画布内侧做。
+    """
+    w, h = img.size
+    bw = max(20, int(round(w * ratio)))
+    bw = min(bw, w // 6, h // 6)
+
+    if inset:
+        inner = (w - 2 * bw, h - 2 * bw)
+        art = fit_cover(img.convert("RGB"), inner)
+        canvas = Image.new("RGBA", (w, h), (28, 17, 5, 255))
+        canvas.paste(art, (bw, bw))
+    else:
+        canvas = img.convert("RGBA")
+
+    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(out)
+    d.rectangle([0, 0, w - 1, h - 1], outline=(26, 15, 4, 255), width=3)
+    _metal_band(d, (w, h), 3, max(4, int(bw * 0.32)), GOLD_DARK, GOLD_HI, peak_at=0.30)
+    _metal_band(d, (w, h), int(bw * 0.32), max(5, int(bw * 0.42)), (70, 8, 12), FRAME_RED, 0.5)
+    _metal_band(d, (w, h), int(bw * 0.42), int(bw * 0.78), GOLD_DARK, GOLD_HI, peak_at=0.45)
+    d.rectangle([bw - 4, bw - 4, w - 1 - bw + 3, h - 1 - bw + 3],
+                outline=(30, 18, 5, 255), width=3)
+    # 内侧投影：让画面「沉」进框里，不然相接处是死板的平贴
+    sh = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ds = ImageDraw.Draw(sh)
+    span = max(12, int(bw * 0.6))
+    for i in range(span):
+        ds.rectangle([bw + i, bw + i, w - 1 - bw - i, h - 1 - bw - i],
+                     outline=(0, 0, 0, int(95 * (1 - i / span) ** 1.5)), width=1)
+    out = Image.alpha_composite(out, sh.filter(ImageFilter.GaussianBlur(2.0)))
+    # 四角徽章 + 长边中点菱形
+    d = ImageDraw.Draw(out)
+    m = bw // 2
+    R = max(10, int(bw * 0.55))
+    for cx, cy in [(m, m), (w - 1 - m, m), (m, h - 1 - m), (w - 1 - m, h - 1 - m)]:
+        _medallion(d, cx, cy, R)
+    r = max(4, int(bw * 0.20))
+    for cx, cy in [(w // 2, m), (w // 2, h - 1 - m)]:
+        d.polygon([(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)],
+                  fill=(255, 240, 190, 255), outline=(70, 44, 10, 255))
+    canvas.alpha_composite(out)
+    return canvas.convert(img.mode if img.mode in ("RGB", "RGBA") else "RGBA")
+
+
+
 def cmd_postprocess(args) -> int:
     work = Path(args.work).expanduser().resolve()
     state = read_state(work)
@@ -522,13 +610,48 @@ def cmd_postprocess(args) -> int:
     out_dir = work / "out"
     opaque_path = out_dir / f"{base}_{suffix}_{target[0]}x{target[1]}.png"
     alpha_path = out_dir / f"{base}_{suffix}_{target[0]}x{target[1]}_alpha.png"
+
+    # 画框：free 构图的人像是整幅矩形，四边是硬切、上下半截的接缝也像没画完，
+    # 不套一圈框就是「贴图没处理干净」。lock 构图既有透明轮廓，框可有可无（默认 none）。
+    frame_mode = getattr(args, "frame", "none") or "none"
+    frame_ratio = float(getattr(args, "frame_ratio", 0.041) or 0.041)
+    inset = frame_mode != "gold-overlay"
+    if frame_mode in ("gold", "gold-overlay"):
+        flat = decorate_frame(flat, ratio=frame_ratio, inset=inset)
+        log("postprocess", f"套红金画框：框宽 {max(20, round(flat.width * frame_ratio))}px"
+                           f"（{'画面缩进框内' if inset else '压在画面上'}）")
+    elif frame_mode == "auto":
+        if state.get("composition") == "free":
+            flat = decorate_frame(flat, ratio=frame_ratio, inset=True)
+            log("postprocess", "套红金画框（auto：free 构图必套，画面缩进框内）")
+        else:
+            log("postprocess", "不套画框（auto：lock 构图保留原透明轮廓）")
     flat.save(opaque_path)
 
-    # 沿用源 alpha：游戏里这张是浮层（顶部只有文字/角色/装饰不透明），
-    # 换成不透明整幅会让 UI 背景被盖住，所以必须给一份轮廓一致的可替换件。
+    # alpha 三种取法，选错就是「人物被裁」这种硬伤：
+    #   source（默认）—— 沿用源 alpha。**只对 lock 构图成立**：轮廓没动，掩膜自然贴合。
+    #   keep  —— 整幅不透明。free 构图（人物重新摆姿势/改镜头）必须用这个：
+    #            源掩膜是按老姿势抠的，套到新人物上会把脸/头发整块切掉（2026-10-20 登录底板
+    #            就是这个症状：新人物头比原来高、比原来宽，源掩膜等于一把剪刀）。
+    #   free  —— 整幅不透明 + 顶边渐隐 N px（--feather-top），让上沿融进面板背景。
     src_alpha = Image.open(work / "src" / "source_alpha.png").convert("L").resize(target, Image.LANCZOS)
+    alpha_mode = getattr(args, "alpha_mode", "source") or "source"
+    if alpha_mode == "source" and state.get("composition") == "free":
+        log("postprocess", "🔴 free 构图却要用源 alpha —— 源掩膜按老姿势抠的，会把新人物裁掉；"
+                           "已自动改用 keep。要沿用源 alpha 请把 alpha-mode 显式写成 source")
+        alpha_mode = "keep"
+    if alpha_mode == "source":
+        alpha_img = src_alpha
+    else:
+        arr = np.full((target[1], target[0]), 255, dtype=np.uint8)
+        feather = max(0, int(getattr(args, "feather_top", 0) or 0))
+        if alpha_mode == "free" and feather:
+            f = min(feather, target[1])
+            ramp = np.clip(np.arange(f, dtype=np.float32) / max(f - 1, 1), 0.0, 1.0)
+            arr[:f, :] = (ramp[:, None] * 255).astype(np.uint8)
+        alpha_img = Image.fromarray(arr, "L")
     with_alpha = flat.convert("RGBA")
-    with_alpha.putalpha(src_alpha)
+    with_alpha.putalpha(alpha_img)
     with_alpha.save(alpha_path)
 
     compare_path = out_dir / "compare_before_after.jpg"
@@ -549,6 +672,8 @@ def cmd_postprocess(args) -> int:
         "fit_mode": "hero-band" if hb else "cover",
         "hero_band": hb,
         "body_mode": body_mode,
+        "alpha_mode": alpha_mode,
+        "frame": frame_mode,
         "watermark_mask_px": int(mask.sum()),
         "watermark_max_before": round(residue_before["max"], 2),
         "watermark_max_after": round(watermark_clean.residue_level(cleaned)["max"], 2),
@@ -603,6 +728,20 @@ def cmd_verify(args) -> int:
         if state["alpha_coverage"] > 0.999:
             # 整幅不透明的资源没有浮层可沿用，此时两个变体必然等价 —— 只提示不算缺陷
             check("alpha 覆盖率与源一致", True, "源为整幅不透明，无浮层可保留", hard=False)
+        elif state.get("alpha_mode", "source") != "source":
+            # free 构图换了轮廓，覆盖率必然比源高 —— 只要「不低于源」就说明没裁掉人物；
+            # 再用「生成图里的人物像素有没有被压成透明」做一次硬校验。
+            check("alpha 未裁掉新构图", coverage >= state["alpha_coverage"] - 0.002,
+                  f"{coverage:.4f} vs 源 {state['alpha_coverage']:.4f}（keep/free 模式只允许更不透明）")
+            gclean = work / "gen_clean.png"
+            if gclean.is_file():
+                g = np.array(Image.open(gclean).convert("RGB"))
+                a_small = np.array(Image.fromarray(alpha).resize(
+                    (g.shape[1], g.shape[0]), Image.BILINEAR))
+                bright = (g.max(axis=2) > 90) & (g.std(axis=2) > 18)   # 彩色高光=人物/文案
+                lost = float((bright & (a_small < 40)).sum()) / max(int(bright.sum()), 1)
+                check("人物/文案未被裁成透明", lost < 0.01,
+                      f"被裁掉的彩色像素 {100 * lost:.2f}%")
         else:
             check("alpha 覆盖率与源一致", abs(coverage - state["alpha_coverage"]) < 0.002,
                   f"{coverage:.4f} vs 源 {state['alpha_coverage']:.4f}")
@@ -950,6 +1089,17 @@ def main(argv: list[str] | None = None) -> int:
                         "synthetic=按主题色合成渐变（没有源快照时的兜底）；auto=能 source 就 source")
     p.add_argument("--blend", type=int, default=0,
                    help="接缝渐隐像素：把英雄带最后几行原位融进卡体（0=保持原图那种硬切，默认）")
+    p.add_argument("--alpha-mode", choices=["source", "keep", "free"], default="source",
+                   help="alpha 版怎么取：source=沿用源掩膜（只对 lock 构图成立，free 会被自动改成 keep）；"
+                        "keep=整幅不透明（free 构图默认语义）；free=整幅不透明 + 顶边渐隐")
+    p.add_argument("--feather-top", type=int, default=0,
+                   help="--alpha-mode free 时顶边渐隐像素（默认 0=不渐隐，避免糊掉贴顶的帽子/头发）")
+    p.add_argument("--frame", choices=["none", "auto", "gold", "gold-overlay"], default="none",
+                   help="画框：none=不画（默认）；auto=free 构图自动套红金框、lock 不套；"
+                        "gold=强制套红金框（画面等比缩进框内，不吃画面边缘）；"
+                        "gold-overlay=框直接压在画面最外一圈（会盖掉贴边的文字，慎用）")
+    p.add_argument("--frame-ratio", type=float, default=0.041,
+                   help="框宽 = 图宽 × 该比例（默认 0.041；1080 宽约 44px）")
     p.set_defaults(func=cmd_postprocess)
 
     p = sub.add_parser("verify", help="像素级验收")

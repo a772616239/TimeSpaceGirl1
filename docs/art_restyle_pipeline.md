@@ -61,6 +61,8 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
 | `PROMPT_OVERRIDE` | 整段覆盖提示词（LAYOUT 不够用时才用） |
 | `HERO_BAND` | 超长条底板专用：英雄带像素高度（如 `930`）或 `auto`。留空=整幅等比 cover |
 | `BODY_MODE` | `auto`（默认）/ `source` / `synthetic`，见下 |
+| `ALPHA_MODE` | `source`（默认，只对 lock 成立）/ `keep` / `free`。**`COMPOSITION=free` 时 `source` 会把人脸裁掉**，会被自动改成 `keep`，见上节 |
+| `FRAME` | `auto`（默认：free 套红金框、lock 不套）/ `gold` / `none` / `gold-overlay`，见上节 |
 | `ALPHA_FROM` / `SOURCE_FROM` | 资源已被换过、工作区里没原版时，用 `git:HEAD:<path>` 取回参照 |
 | `WRITE_BACK` | **替换原图**：验收通过后把 alpha 版写回资源，原图搬出工程。默认关 |
 | `BACKUP_ROOT` | 备份根，留空 = `ResBackpack/备份` |
@@ -84,7 +86,7 @@ prompt.txt、state.json、published.json）。节点图由 `graph` 生成，链�
 
 1. **文案逐字不变**且完整可读、不被人物挡住、不出血；允许重排位置来换构图；
 2. **底部 UI 空白区**形状与边距不变 —— 那里要盖按钮和列表，画了东西就废；
-3. **画布比例、出血、圆角轮廓、透明区**不变（`publish` 沿用原 alpha）。
+3. **画布尺寸、出血、底部卡体位置**不变。⚠️ 但**透明轮廓不能沿用源 alpha** —— 见下一节，这条踩过。
 
 主题可用 `pose_hint` 给 `free` 一个推荐姿势（人话描述，不写文案），例如圣诞：
 「playful leaning-forward pose presenting a small gift box toward the viewer…」。没有 `pose_hint` 也能跑，模型自己发挥。
@@ -100,6 +102,47 @@ $PY scripts/image/restyle_pipeline.py prepare --asset Assets/... --theme christm
 
 🔴 `free` 出图**必须人眼看**：模型重排文案时可能出现错字、缺字、字被人物压住。`verify` 只能量尺寸/alpha/
 水印残留，量不出「字错了」——这一步没有自动闸门，别开 `WRITE_BACK` 就撒手。
+
+---
+
+## `free` 的收尾：`ALPHA_MODE`（别裁人物）+ `FRAME`（画框把硬边装裱）
+
+`free` 让模型重画了姿势和镜头，于是有两个**只有 free 才会犯**的错，lock 版根本看不到：
+
+### 1）`ALPHA_MODE=source|keep|free`
+
+| 值 | 含义 | 什么时候用 |
+|---|---|---|
+| `source`（默认） | 沿用源资源掩膜 | **只对 `lock` 成立**：轮廓没动，掩膜自然贴合 |
+| `keep` | 整幅不透明 | `free` 的真实语义：人物换位置/变大了，源掩膜已经不贴合 |
+| `free` | 整幅不透明 + 顶边渐隐 `--feather-top N` px | 想让上沿虚进面板背景时用（顶边贴人物时不建议，会糊掉帽子） |
+
+🔴 **`free` 构图 + `source` alpha = 用一把老剪刀裁新人物。** 2026-10-20 登录底板就这么翻的车：
+源掩膜是按老的「站桩」姿势抠的，新版人物头更高、身体更宽，掩膜把**左脸、头发、帽子**整块切掉，
+图上看着就是「脸没了」。现在 `postprocess` 在 `composition=free` 且 `alpha-mode=source` 时
+**自动降级成 `keep`** 并打日志；真要沿用源掩膜必须显式写 `--alpha-mode source`。
+
+`verify` 也跟着改了口径：`keep/free` 模式不再要求「覆盖率等于源」（必然更高），
+改为两条硬校验 —— 覆盖率**不低于**源 + 生成图里的彩色高光（人物肤色/文案金边）**没有被压成透明**。
+
+### 2）`FRAME=auto|gold|none|gold-overlay`
+
+`free` 的成品是**整幅矩形**（模型不会给你抠好的透明轮廓），于是四边是硬切、上半截与下半截卡体的
+接缝也像没画完 —— 这种情况要「装裱」：套一圈红金双层画框（暗金剖面 + 红嵌线 + 内侧投影 + 四角徽章）。
+
+| 值 | 效果 |
+|---|---|
+| `auto`（推荐） | `free` 自动套框，`lock` 不套（lock 本来就有透明轮廓，不需要） |
+| `gold` | 强制套。**画面等比缩进框内**（cover 到内框，最多裁掉 1~2% 边），框压在画布边界上 |
+| `gold-overlay` | 框直接压在画面最外一圈。🔴 会盖掉贴边的字（这张图的 `8-DAY` 左边缘正好在 44px 内） |
+| `none` | 不套 |
+
+框宽 = 图宽 × `--frame-ratio`（默认 `0.041`，1080 宽 ≈ 44px）。资源尺寸不变，框只画在画布内侧。
+
+```bash
+$PY scripts/image/restyle_pipeline.py postprocess --work "$W" --gen "$W/inbox/gen_web.png" \
+    --alpha-mode keep --frame gold          # free 构图的定稿姿势
+```
 
 ---
 
@@ -200,6 +243,12 @@ reuse 用指纹浏览器里的登录态，**换号只需在 AdsPower 里开另�
     亮度是**调制**不是**色板**，幅度一大就会在卡体中间留一条横线（原卡体底部本来就有亮度台阶）。
 19. **`free` 构图没有自动闸门。** 模型重排文案可能错字/缺字/被人物压住，`verify` 只量尺寸、alpha、
     水印残留。free 出图必须人眼看，看不过就 `restore` 回滚，别开着 `WRITE_BACK` 撒手。
+20. **`free` 构图不能沿用源 alpha。** 源掩膜是按**老姿势**抠的；人物变高变宽后，掩膜就是一把剪刀，
+    把新画的脸/头发/帽子整块切掉（登录底板实测：左脸 + 帽子没了）。用 `ALPHA_MODE=keep`，
+    `postprocess` 在 free + source 时会自动降级并打日志。
+21. **`ALPHA_MODE=keep` 之后必须套画框（`FRAME=auto`）。** 透明轮廓一取消，四边就是硬切的矩形，
+    上半截和下半截卡体的接缝看着像没画完；一圈红金框 + 四角徽章把「裁切」变成「装裱」。
+    框走 **inset**（画面等比缩进框内）：overlay 会压掉贴边的字（`8-DAY` 左边缘正好在 44px 内）。
 
 ---
 

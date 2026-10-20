@@ -110,6 +110,8 @@ def main():
     ap.add_argument('--depth', type=int, default=2)
     ap.add_argument('--name', default=None, help='只展开名字包含该关键字的子树')
     ap.add_argument('--no-scripts', action='store_true', help='不解析脚本/控制器名（更快）')
+    ap.add_argument('--rect', action='store_true',
+                    help='额外打印 anchorMin-anchorMax / pivot（判断"四边拉满"：a(0,0)-(1,1) 时 sizeDelta.y = 比父级高多少）')
     ap.add_argument('--refresh', action='store_true', help='重建 guid 索引（刚生成的 controller 查不到时用）')
     args = ap.parse_args()
 
@@ -172,9 +174,14 @@ def main():
         node_name = names.get(go, '?')
         body = t['body']
         labels = [describe(c, b) for c, _, b in comps.get(go, []) if c not in (1, 4, 224)]
-        print('%s%-26s pos%-14s size%-16s [%s]' % (
+        extra = ''
+        if args.rect:
+            extra = '  a%s-%s p%s' % (vec(field(body, 'm_AnchorMin')),
+                                      vec(field(body, 'm_AnchorMax')),
+                                      vec(field(body, 'm_Pivot')))
+        print('%s%-26s pos%-14s size%-16s [%s]%s' % (
             '  ' * depth, node_name, vec(field(body, 'm_AnchoredPosition')),
-            vec(field(body, 'm_SizeDelta')), ', '.join(labels)))
+            vec(field(body, 'm_SizeDelta')), ', '.join(labels), extra))
         if depth >= args.depth:
             return
         for child in t['children']:

@@ -33,12 +33,21 @@ $PY scripts/image/gen_chatgpt_web.py ...      # 出图 → $W/inbox/gen_web.png�
 $PY scripts/image/restyle_pipeline.py postprocess --work "$W" --gen "$W/inbox/gen_web.png" \
     --alpha-mode keep --frame card --frame-rim violet [--hero-band 930 --body-mode source]
 $PY scripts/image/restyle_pipeline.py verify  --work "$W"          # 硬项全过才允许写回
-$PY scripts/image/restyle_pipeline.py publish --work "$W" --variant alpha --yes
+$PY scripts/image/restyle_pipeline.py publish --work "$W" --variant alpha --yes   # 直接替换源图（原图进备份）
 ```
 
 - 超长条底板（856×2048）= `--hero-band 930 --body-mode source`（**不能整幅 cover**，会横切 37%）。
 - `--composition free` 时源 alpha 是按老姿势抠的，会切掉新画的脸/帽子 ⇒ 自动降级 `keep`。
 - 写回成功 ≠ 进包：还要在 Unity 里重打该资源所在 AssetBundle（`FrameTool.BuildGameAssetBundles`）。
+
+### 1.0 两条定稿口径（用户 2026-10-20 明确，别再问）
+
+1. **统一紫框**：`--frame card --frame-rim violet`（就是登录底板那档紫白，别回 warm/gold）。
+2. **默认直接替换源图 + 原图搬备份**：验收过了就 `publish --variant alpha --yes`
+   （或 Jenkins `WRITE_BACK=true`）—— 原图进 `ResBackpack/备份/<资源相对路径>`、`_manifest.jsonl` 记台账、
+   `.meta` 永不动；回滚 `restyle_pipeline.py restore --asset <资源>`。
+   🔴 浮层类资源（顶部/底部有透明轮廓）套框必须配 `ALPHA_MODE=keep`：沿用 `source` 掩膜会把框的顶/底边
+   整段切掉，只剩左右两条亮线，看着像"框没画完"。
 
 ### 1.1 provider 怎么选：额度按账号算，本机 Chrome 用尽就换 SunBrowser
 

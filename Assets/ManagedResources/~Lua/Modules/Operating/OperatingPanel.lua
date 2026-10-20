@@ -60,6 +60,100 @@ local kMaxTab = #TabToContent
 local curIndex = 0
 local showType
 
+--==================== 开启动画：页签逐格翻入 + 内容区从上往下落位 ====================
+-- 参考 Assets/Art/UIAni/cn2-X1_UI_SevenDayCarnivalPanelV2.anim（9 条曲线）：
+--   ① bg/daysTabBg/tabsGroup/day_1..7 的 m_LocalScale.x 0→1，0.1667s/格，相邻错开 0.0333s；
+--   ② bg 上还有两条 m_FloatCurves：m_SizeDelta.y 110→0 + m_AnchoredPosition.y 55→0，
+--      合起来是「底边钉死、顶边从上方落下 110px」的前摇（参考里 bg 是全屏纯色遮罩、
+--      自身位移看不见，看得见的是 bg 下承内容的那一层；本面板落到同样四边拉满、pivot 0.5、
+--      基准 (0,0) 的 bg/pageContent 上，几何等价且看得见）。
+--
+-- 为什么不用静态 clip（流程判据见 docs/ui_anim_reproduce_skill.md §3）：
+--   ① 哪些页签可见由 RefreshTabStatus 按活动开放状态 SetActive 决定（福利 9 个 / 激励计划 5 个，且会变），
+--      未激活节点不参与动画求值 ⇒ 静态曲线会白写、还可能卡在 scale 0；
+--   ② 面板被 openedList 缓存复用，legacy Animation 只在 enable 时自动播一次 ⇒ 第二次打开不复播；
+--   ③ 切页签要单独翻高亮板，是事件驱动的。
+local kTabFlipDuration = 0.167
+local kTabFlipStep = 0.033
+local kTabFlipMaxSpan = 0.5     -- 可见页签多时压缩错开间隔，整体跨度不超过 0.5s
+local kPageDropDuration = 0.3667
+local kPageDropOffsetY = 110
+local tabFlipItems = {}         -- { tween = , tf = , anim = }
+local tabSelectTween = nil      -- 高亮板翻入
+local pageDropTween = nil       -- 内容区落位
+
+-- UnityEngine.Object 在 lua 侧是 userdata：Destroy 之后既不是 nil 也不能直接取字段
+-- （tolua fake-null），必须先 IsNull 判活。
+local function FlipAlive(obj)
+    if obj == nil then
+        return false
+    end
+    if type(obj) == "userdata" then
+        return not IsNull(obj)
+    end
+    return true
+end
+
+-- tolua 的枚举表是运行期注册的，取不到就不设：否则整段被 pcall 吃掉、什么都不动
+local function SetEaseSafe(tween, name)
+    local enum = _G.Ease
+    local value = enum and enum[name]
+    if value ~= nil then
+        tween:SetEase(value)
+    end
+    return tween
+end
+
+-- DOAnchorPos 是 RectTransform 的扩展方法；直接拿 transform 得到的是 Transform 类型，
+-- 那种 userdata 上没有这个方法。
+function this.GetPageContent()
+    local go = Util.GetGameObject(this.gameObject, "bg/pageContent")
+    if not FlipAlive(go) then
+        return nil
+    end
+    return go:GetComponent("RectTransform")
+end
+
+-- 回收落位 tween 并把位置复位。重播 / 关闭 / 销毁 / 出错都必须走这里：
+-- 中途关掉再打开会从半截位置起，漏复位则永久停在 +110。
+function this.StopPageDropIn()
+    if FlipAlive(pageDropTween) then
+        pageDropTween:Kill(false)
+    end
+    pageDropTween = nil
+    local rt = this.GetPageContent()
+    if FlipAlive(rt) then
+        rt.anchoredPosition = Vector2.New(0, 0)
+    end
+end
+
+-- 打开面板：内容区从上方落下 110px 落到原位（一次性，0.367s，两端缓入缓出）。
+function this.PlayPageDropIn()
+    this.StopPageDropIn()
+    local rt = this.GetPageContent()
+    if not FlipAlive(rt) then
+        return
+    end
+    local ok, err = pcall(function()
+        rt.anchoredPosition = Vector2.New(0, kPageDropOffsetY)
+        local tween = rt:DOAnchorPos(Vector2.New(0, 0), kPageDropDuration)
+        SetEaseSafe(tween, "InOutQuad")
+        tween:OnComplete(function()
+            if FlipAlive(rt) then
+                rt.anchoredPosition = Vector2.New(0, 0)
+            end
+        end)
+        pageDropTween = tween
+    end)
+    if not ok then
+        LogError("OperatingPanel: 内容区落位失败 " .. tostring(err))
+        if FlipAlive(rt) then
+            rt.anchoredPosition = Vector2.New(0, 0)
+        end
+    end
+end
+
+
 function OperatingPanel:InitComponent()
     self.btnBack = Util.GetGameObject(self.gameObject, "bg/btnBack")
 
@@ -146,6 +240,10 @@ function OperatingPanel:OnShow()
         this:GetPriorityIndex()
     end
     this:OnTabChanged()
+    -- 页签逐格翻入（放在 OnTabChanged 之后：这时才确定哪些页签开着、哪块高亮板被选中）
+    this:PlayTabFlipIn()
+    -- 内容区从上往下落位（与翻入同时起，和参考一致）
+    this:PlayPageDropIn()
 end
 
 function OperatingPanel:OnSortingOrderChange()
@@ -166,10 +264,14 @@ function OperatingPanel:RemoveListener()
 end
 
 function OperatingPanel:OnClose()
+    -- 翻到一半被关掉：必须把临时禁用的按钮 Animator 恢复、内容区落位复位，
+    -- 否则那颗页签以后没按下反馈、下次打开从半截位置起。
+    this:StopOpenAnims()
     this:ClearRedPoint()
 end
 
 function OperatingPanel:OnDestroy()
+    this:StopOpenAnims()
     SubUIManager.Close(self.HeadFrameView)
     SubUIManager.Close(self.UpView)
 end
@@ -194,6 +296,132 @@ function this:OnTabChanged()
         self.operatingContents[TabToContent[curIndex]]:OnShow(curIndex)
     else
         self.operatingContents[TabToContent[curIndex]]:OnShow()
+    end
+    -- 选中的高亮板翻一次（首次打开时会被随后的 PlayTabFlipIn 整格翻入接管）
+    this:PlayTabSelectFlip(curIndex)
+end
+
+-- 回收所有开启动画 tween，并把临时关掉的按钮 Animator 恢复。
+-- 🔴 漏恢复 = 那颗页签从此没有按下反馈；重播 / 关闭 / 销毁都必须走这里。
+function this.StopOpenAnims()
+    for i = #tabFlipItems, 1, -1 do
+        local item = tabFlipItems[i]
+        if FlipAlive(item.tween) then
+            item.tween:Kill(false)
+        end
+        if FlipAlive(item.tf) then
+            item.tf.localScale = Vector3.one
+        end
+        if FlipAlive(item.anim) then
+            item.anim.enabled = true
+        end
+        tabFlipItems[i] = nil
+    end
+    if FlipAlive(tabSelectTween) then
+        tabSelectTween:Kill(false)
+    end
+    tabSelectTween = nil
+    -- 落位同属开启动画，一起回收
+    this.StopPageDropIn()
+end
+
+-- 打开面板：可见页签按「版面上的顺序」逐格 scaleX 0→1 翻入。
+-- 顺序取 tabsContent 的子节点顺序（VerticalLayoutGroup 按 sibling 排版），不能用 tabs_N 的下标：
+-- 只有 UI 实际摆出来的顺序才是眼睛看到的顺序。
+function this.PlayTabFlipIn()
+    this.StopOpenAnims()
+    if not FlipAlive(this.tabsContent) then
+        return
+    end
+    local content = this.tabsContent.transform
+    local total = content.childCount
+    local visible = 0
+    for i = 0, total - 1 do
+        local tf = content:GetChild(i)
+        if FlipAlive(tf) and tf.gameObject.activeSelf then
+            visible = visible + 1
+        end
+    end
+    if visible <= 0 then
+        return
+    end
+    local step = kTabFlipStep
+    if visible > 1 and step * (visible - 1) > kTabFlipMaxSpan then
+        step = kTabFlipMaxSpan / (visible - 1)
+    end
+
+    local order = 0
+    local started = {}   -- 出错回滚用：{ tf, anim }
+    local ok, err = pcall(function()
+        for i = 0, total - 1 do
+            local tf = content:GetChild(i)
+            -- 未激活页签不参与动画：SetActive 打开时不会补播，写了只会卡在 scale 0
+            if FlipAlive(tf) and tf.gameObject.activeSelf then
+                local anim = tf:GetComponent("Animator")
+                -- 🔴 每个页签都挂 CommonButton 的 Animator，Normal 状态是单帧 clip、照样写
+                -- m_LocalScale=1，而且 Animator 在 Update 之后求值 ⇒ 不关掉它，下面的
+                -- DOTween 缩放会被每帧盖回去（现象：脚本跑完了但页签没动）。
+                if FlipAlive(anim) then
+                    anim.enabled = false
+                end
+                started[#started + 1] = { tf = tf, anim = anim }
+                tf.localScale = Vector3.New(0, 1, 1)
+                local tween = tf:DOScale(Vector3.one, kTabFlipDuration):SetDelay(order * step)
+                SetEaseSafe(tween, "OutQuad")
+                tween:OnComplete(function()
+                    if FlipAlive(tf) then
+                        tf.localScale = Vector3.one
+                    end
+                    if FlipAlive(anim) then
+                        anim.enabled = true
+                    end
+                end)
+                tabFlipItems[#tabFlipItems + 1] = { tween = tween, tf = tf, anim = anim }
+                order = order + 1
+            end
+        end
+    end)
+    if not ok then
+        -- DOTween 侧任何异常都不能把页签留在 scale 0 / Animator 禁用态
+        LogError("OperatingPanel: 页签翻入失败 " .. tostring(err))
+        for i = 1, #started do
+            local item = started[i]
+            if FlipAlive(item.tf) then
+                item.tf.localScale = Vector3.one
+            end
+            if FlipAlive(item.anim) then
+                item.anim.enabled = true
+            end
+        end
+        tabFlipItems = {}
+    end
+end
+
+-- 切换页签：高亮板翻一次。selected 节点没有 Animator，不会和 CommonButton 抢缩放通道。
+function this:PlayTabSelectFlip(index)
+    local go = self.selectTabs and self.selectTabs[index]
+    if not FlipAlive(go) then
+        return
+    end
+    if FlipAlive(tabSelectTween) then
+        tabSelectTween:Kill(false)
+    end
+    local tf = go.transform
+    tf.localScale = Vector3.New(0, 1, 1)
+    local ok, err = pcall(function()
+        tabSelectTween = tf:DOScale(Vector3.one, kTabFlipDuration)
+        SetEaseSafe(tabSelectTween, "OutQuad")
+        tabSelectTween:OnComplete(function()
+            if FlipAlive(tf) then
+                tf.localScale = Vector3.one
+            end
+        end)
+    end)
+    if not ok then
+        LogError("OperatingPanel: 高亮板翻入失败 " .. tostring(err))
+        if FlipAlive(tf) then
+            tf.localScale = Vector3.one
+        end
     end
 end
 

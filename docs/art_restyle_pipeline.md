@@ -1,21 +1,21 @@
 # UI 美术资源「换节日风格」流水线（skill）
 
-> 落地时间：2026-10-20（管线初版）／2026-10-20 晚（补「替换原图 + 原图搬出工程 + 超长条底板」）
-> 入口：Jenkins job **`TS-Art-Restyle`** ／ 命令行 `scripts/image/restyle_pipeline.py`
-> 🎯 一线操作手册（什么时候用哪条命令、边框三定律、验收清单、7 条红线）：
-> **`.workbuddy/skills/art-restyle/SKILL.md`** —— 先读它，本文只留原理与复盘。
-> 真机观感预览：`scripts/image/preview_ingame.py`（按 567px 显示宽贴回面板底 + 叠占位卡 + 边角特写）
-> 已实战：`EightDayGiftPanelAtlas/cn2-X1_baridenglu_diban_en.png`（1080×1644 登录底板 → 圣诞版）
+> 落地时间：2026-10-20（管线初版）／2026-10-20 晚（补「替换原图 + 原图搬出工程 + 超长条底板」）  
+> 入口：Jenkins job **`TS-Art-Restyle`** ／ 命令行 `scripts/image/restyle_pipeline.py`  
+> 🎯 一线操作手册（什么时候用哪条命令、边框三定律、验收清单、7 条红线）：  
+> **`.workbuddy/skills/art-restyle/SKILL.md`** —— 先读它，本文只留原理与复盘。  
+> 真机观感预览：`scripts/image/preview_ingame.py`（按 567px 显示宽贴回面板底 + 叠占位卡 + 边角特写）  
+> 已实战：`EightDayGiftPanelAtlas/cn2-X1_baridenglu_diban_en.png`（1080×1644 登录底板 → 圣诞版）  
 > 已实战：`OperatingPanelAtlas/cn2-X1_chaozhijj_diban_en.png`（856×2048 超值底板 → 圣诞版）
 
 ---
 
 ## 一句话
 
-**出图那一步交给 provider（人 / Agent / 浏览器登录态），其余每一步都可断言**：去水印 → 尺寸归位（绝不拉伸）
+**出图那一步交给 provider（人 / Agent / 浏览器登录态），其余每一步都可断言**：去水印 → 尺寸归位（绝不拉伸）  
 → 出「不透明版 + 沿用原 alpha 的浮层版」→ 像素级验收 → 可选写回（原图搬出工程到 `ResBackpack/备份`）。
 
-为什么要这样切：出图不可复现、有随机性、还会因为网络/额度失败。把它单独摘出去，Jenkins 才能对
+为什么要这样切：出图不可复现、有随机性、还会因为网络/额度失败。把它单独摘出去，Jenkins 才能对  
 后面九步做红绿判定；provider 挂了只红一个节点，不污染其余证据。
 
 ---
@@ -52,27 +52,27 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
 
 ## Jenkins `TS-Art-Restyle` 参数
 
-| 参数 | 作用 |
-|---|---|
-| `ASSET` | 目标资源（相对工程根）。**目标尺寸取该图自身尺寸**，不填尺寸 |
-| `THEME` | `christmas` / `newyear` / `halloween` / `valentine`。新增主题只改 `scripts/image/theme_presets.json` |
-| `PROVIDER` | `chatgpt_web`（**默认**，用本机 Chrome 登录态驱动 chatgpt.com）／`manual`（图由人/Agent 出，放进 inbox 或用 `GEN_IMAGE` 指定） |
-| `GEN_IMAGE` | manual 时显式指定生成图；留空取 inbox 里最新的 |
-| `CDP_PORT` | 复用外部已登录浏览器（AdsPower/SunBrowser）的调试端口，`find_browser_cdp.py` 反查。留空=用本机 Chrome |
-| `LAYOUT` | 构图锁文本。**每张图的文案不同，所以文案一定写这里，不要写进主题预设** |
-| `COMPOSITION` | `lock`（默认，人物姿势/位置/缩放全锁，只换衣服与配色）／`free`（允许重设计人物姿势与镜头换吸引力）。见下节 |
-| `PROMPT_OVERRIDE` | 整段覆盖提示词（LAYOUT 不够用时才用） |
-| `HERO_BAND` | 超长条底板专用：英雄带像素高度（如 `930`）或 `auto`。留空=整幅等比 cover |
-| `BODY_MODE` | `auto`（默认）/ `source` / `synthetic`，见下 |
-| `ALPHA_MODE` | `source`（默认，只对 lock 成立）/ `keep` / `free`。**`COMPOSITION=free` 时 `source` 会把人脸裁掉**，会被自动改成 `keep`，见上节 |
-| `FRAME` | `auto`（默认：free 套游戏卡框、lock 不套）/ `card` / `gold`（旧红金，兜底）/ `none`，见上节 |
-| `FRAME_RIM` | 卡框最外的亮边：`warm`（默认暖金）/ `ivory` / `violet` / `none`。**深色面板上不画亮边 = 框看不见**，见上节 |
-| `ALPHA_FROM` / `SOURCE_FROM` | 资源已被换过、工作区里没原版时，用 `git:HEAD:<path>` 取回参照 |
-| `WRITE_BACK` | **替换原图**：验收通过后把 alpha 版写回资源，原图搬出工程。默认关 |
-| `BACKUP_ROOT` | 备份根，留空 = `ResBackpack/备份` |
+| 参数                           | 作用                                                                                                  |
+| ---------------------------- | --------------------------------------------------------------------------------------------------- |
+| `ASSET`                      | 目标资源（相对工程根）。**目标尺寸取该图自身尺寸**，不填尺寸                                                                    |
+| `THEME`                      | `christmas` / `newyear` / `halloween` / `valentine`。新增主题只改 `scripts/image/theme_presets.json`       |
+| `PROVIDER`                   | `chatgpt_web`（**默认**，用本机 Chrome 登录态驱动 chatgpt.com）／`manual`（图由人/Agent 出，放进 inbox 或用 `GEN_IMAGE` 指定） |
+| `GEN_IMAGE`                  | manual 时显式指定生成图；留空取 inbox 里最新的                                                                      |
+| `CDP_PORT`                   | 复用外部已登录浏览器（AdsPower/SunBrowser）的调试端口，`find_browser_cdp.py` 反查。留空=用本机 Chrome                         |
+| `LAYOUT`                     | 构图锁文本。**每张图的文案不同，所以文案一定写这里，不要写进主题预设**                                                               |
+| `COMPOSITION`                | `lock`（默认，人物姿势/位置/缩放全锁，只换衣服与配色）／`free`（允许重设计人物姿势与镜头换吸引力）。见下节                                        |
+| `PROMPT_OVERRIDE`            | 整段覆盖提示词（LAYOUT 不够用时才用）                                                                              |
+| `HERO_BAND`                  | 超长条底板专用：英雄带像素高度（如 `930`）或 `auto`。留空=整幅等比 cover                                                      |
+| `BODY_MODE`                  | `auto`（默认）/ `source` / `synthetic`，见下                                                               |
+| `ALPHA_MODE`                 | `source`（默认，只对 lock 成立）/ `keep` / `free`。**`COMPOSITION=free` 时 `source` 会把人脸裁掉**，会被自动改成 `keep`，见上节 |
+| `FRAME`                      | `auto`（默认：free 套游戏卡框、lock 不套）/ `card` / `gold`（旧红金，兜底）/ `none`，见上节                                  |
+| `FRAME_RIM`                  | 卡框最外的亮边：`warm`（默认暖金）/ `ivory` / `violet` / `none`。**深色面板上不画亮边 = 框看不见**，见上节                          |
+| `ALPHA_FROM` / `SOURCE_FROM` | 资源已被换过、工作区里没原版时，用 `git:HEAD:<path>` 取回参照                                                            |
+| `WRITE_BACK`                 | **替换原图**：验收通过后把 alpha 版写回资源，原图搬出工程。默认关                                                              |
+| `BACKUP_ROOT`                | 备份根，留空 = `ResBackpack/备份`                                                                           |
 
-构建页能看到：环节表（JUnit）+ `summary.md` + 构建描述 + `artifacts/`（改前改后对比图、graph.md、
-prompt.txt、state.json、published.json）。节点图由 `graph` 生成，链路
+构建页能看到：环节表（JUnit）+ `summary.md` + 构建描述 + `artifacts/`（改前改后对比图、graph.md、  
+prompt.txt、state.json、published.json）。节点图由 `graph` 生成，链路  
 `prepare → generate → postprocess → verify → publish`，绿/红/灰三色。
 
 ---
@@ -81,10 +81,10 @@ prompt.txt、state.json、published.json）。节点图由 `graph` 生成，链�
 
 换节日风格时会长出来的两种诉求，用一档参数切：
 
-| 档位 | 人物 | 文案 / 空白区 / 画布 | 适用 |
-|---|---|---|---|
-| `lock`（默认） | 姿势、位置、缩放、轮廓全锁，只换服装与配色 | 全锁 | 只换皮的批量活；出图可预期，返工率最低 |
-| `free` | **可完全重设计**：新姿势、新镜头角度、位置/裁切/缩放都能动 | 仍锁死 | 要「一眼更吸引人」的运营位（登录底板、充值/活动 banner） |
+| 档位         | 人物                               | 文案 / 空白区 / 画布 | 适用                               |
+| ---------- | -------------------------------- | ------------- | -------------------------------- |
+| `lock`（默认） | 姿势、位置、缩放、轮廓全锁，只换服装与配色            | 全锁            | 只换皮的批量活；出图可预期，返工率最低              |
+| `free`     | **可完全重设计**：新姿势、新镜头角度、位置/裁切/缩放都能动 | 仍锁死           | 要「一眼更吸引人」的运营位（登录底板、充值/活动 banner） |
 
 `free` 放开的是**美术**，不是 UI 契约。三条硬约束照旧（写死在 `layout_free` 里）：
 
@@ -92,7 +92,7 @@ prompt.txt、state.json、published.json）。节点图由 `graph` 生成，链�
 2. **底部 UI 空白区**形状与边距不变 —— 那里要盖按钮和列表，画了东西就废；
 3. **画布尺寸、出血、底部卡体位置**不变。⚠️ 但**透明轮廓不能沿用源 alpha** —— 见下一节，这条踩过。
 
-主题可用 `pose_hint` 给 `free` 一个推荐姿势（人话描述，不写文案），例如圣诞：
+主题可用 `pose_hint` 给 `free` 一个推荐姿势（人话描述，不写文案），例如圣诞：  
 「playful leaning-forward pose presenting a small gift box toward the viewer…」。没有 `pose_hint` 也能跑，模型自己发挥。
 
 ```bash
@@ -100,11 +100,11 @@ $PY scripts/image/restyle_pipeline.py prompt --theme christmas --composition fre
 $PY scripts/image/restyle_pipeline.py prepare --asset Assets/... --theme christmas --composition free
 ```
 
-🔴 工作目录必须分桶：`lock` 落 `_output/art_restyle/<资源>/<主题>`，`free` 落 `<主题>_free`
-（Jenkins 里自动加后缀）。同一张图的「锁姿势版」和「重设计版」要能同时留在磁盘上对比，
+🔴 工作目录必须分桶：`lock` 落 `_output/art_restyle/<资源>/<主题>`，`free` 落 `<主题>_free`  
+（Jenkins 里自动加后缀）。同一张图的「锁姿势版」和「重设计版」要能同时留在磁盘上对比，  
 混在一个目录里 `prepare` 会覆盖 `src/source.png`，对比图就变成「新版 vs 新版」。
 
-🔴 `free` 出图**必须人眼看**：模型重排文案时可能出现错字、缺字、字被人物压住。`verify` 只能量尺寸/alpha/
+🔴 `free` 出图**必须人眼看**：模型重排文案时可能出现错字、缺字、字被人物压住。`verify` 只能量尺寸/alpha/  
 水印残留，量不出「字错了」——这一步没有自动闸门，别开 `WRITE_BACK` 就撒手。
 
 ---
@@ -115,68 +115,68 @@ $PY scripts/image/restyle_pipeline.py prepare --asset Assets/... --theme christm
 
 ### 1）`ALPHA_MODE=source|keep|free`
 
-| 值 | 含义 | 什么时候用 |
-|---|---|---|
-| `source`（默认） | 沿用源资源掩膜 | **只对 `lock` 成立**：轮廓没动，掩膜自然贴合 |
-| `keep` | 整幅不透明 | `free` 的真实语义：人物换位置/变大了，源掩膜已经不贴合 |
-| `free` | 整幅不透明 + 顶边渐隐 `--feather-top N` px | 想让上沿虚进面板背景时用（顶边贴人物时不建议，会糊掉帽子） |
+| 值            | 含义                                | 什么时候用                           |
+| ------------ | --------------------------------- | ------------------------------- |
+| `source`（默认） | 沿用源资源掩膜                           | **只对 `lock` 成立**：轮廓没动，掩膜自然贴合    |
+| `keep`       | 整幅不透明                             | `free` 的真实语义：人物换位置/变大了，源掩膜已经不贴合 |
+| `free`       | 整幅不透明 + 顶边渐隐 `--feather-top N` px | 想让上沿虚进面板背景时用（顶边贴人物时不建议，会糊掉帽子）   |
 
-🔴 **`free` 构图 + `source` alpha = 用一把老剪刀裁新人物。** 2026-10-20 登录底板就这么翻的车：
-源掩膜是按老的「站桩」姿势抠的，新版人物头更高、身体更宽，掩膜把**左脸、头发、帽子**整块切掉，
-图上看着就是「脸没了」。现在 `postprocess` 在 `composition=free` 且 `alpha-mode=source` 时
+🔴 **`free` 构图 + `source` alpha = 用一把老剪刀裁新人物。** 2026-10-20 登录底板就这么翻的车：  
+源掩膜是按老的「站桩」姿势抠的，新版人物头更高、身体更宽，掩膜把**左脸、头发、帽子**整块切掉，  
+图上看着就是「脸没了」。现在 `postprocess` 在 `composition=free` 且 `alpha-mode=source` 时  
 **自动降级成 `keep`** 并打日志；真要沿用源掩膜必须显式写 `--alpha-mode source`。
 
-`verify` 也跟着改了口径：`keep/free` 模式不再要求「覆盖率等于源」（必然更高），
+`verify` 也跟着改了口径：`keep/free` 模式不再要求「覆盖率等于源」（必然更高），  
 改为两条硬校验 —— 覆盖率**不低于**源 + 生成图里的彩色高光（人物肤色/文案金边）**没有被压成透明**。
 
 ### 2）`FRAME=auto|card|gold|none`
 
-`free` 的成品是**整幅矩形**（模型不会给你抠好的透明轮廓），于是四边是硬切、上半截与下半截卡体的
+`free` 的成品是**整幅矩形**（模型不会给你抠好的透明轮廓），于是四边是硬切、上半截与下半截卡体的  
 接缝也像没画完 —— 这种情况要「装裱」。
 
-🔴 **框必须说游戏自己的语言，别拿相框套海报。** 2026-10-20 首版做了「红金双层 + 四角八角星徽章」，
+🔴 **框必须说游戏自己的语言，别拿相框套海报。** 2026-10-20 首版做了「红金双层 + 四角八角星徽章」，  
 被否了：游戏里**一个鎏金圆徽章都找不到**，贴上去像给海报装了个相框。回头看游戏自己的边框只有三种：
 
-| 出处 | 语言 |
-|---|---|
-| `X1PublicAtlas/cn2-X1_tongyong_daojukuang_01~07`（道具槽） | 深色渐变 + **菱形网格纹** + 细亮描边 |
-| `cn2-X1_tongyong_yingxiongkuang_01~06`（英雄卡） | 实心色块 + **大斜切角** + 六边形 |
-| `StoryDialoguePanelAtlas/cn2-X1_yindao_duihuakuang_02`（对话框） | 紫色色块 + **硬投影** |
+| 出处                                                          | 语言                      |
+| ----------------------------------------------------------- | ----------------------- |
+| `X1PublicAtlas/cn2-X1_tongyong_daojukuang_01~07`（道具槽）       | 深色渐变 + **菱形网格纹** + 细亮描边 |
+| `cn2-X1_tongyong_yingxiongkuang_01~06`（英雄卡）                 | 实心色块 + **大斜切角** + 六边形   |
+| `StoryDialoguePanelAtlas/cn2-X1_yindao_duihuakuang_02`（对话框） | 紫色色块 + **硬投影**          |
 
 `card` 就是照这三条拼的：**亮边 + 墨色细带（菱形纹）+ 四周切角 + 内侧柔影**。
 
-🔴 **最外圈必须有亮边（`--frame-rim`）**：2026-10-20 第二版只有墨带，贴在八日礼包面板上
-**框直接消失**（用户原话「遇到黑色的时候不明显」）。实测面板底 `(17,17,25)`，墨带 `(18,16,24)`
+🔴 **最外圈必须有亮边（`--frame-rim`）**：2026-10-20 第二版只有墨带，贴在八日礼包面板上  
+**框直接消失**（用户原话「遇到黑色的时候不明显」）。实测面板底 `(17,17,25)`，墨带 `(18,16,24)`  
 —— 同亮度，等于没画。游戏自己的槽位框正是这么解决的，剖面只有三档：
 
-| 资源 | 剖面（从外到内） |
-|---|---|
-| `tongyong_daojukuang_01` | `57,61,74`×3px → **`238,240,243`×5px** → 槽内 `119,133,158` |
-| `tongyong_daojukuang_04` | `59,26,75`×3px → **`222,182,255`×5px** → 槽内 `105,57,136` |
-| `tongyong_daojukuang_05/06` | `75,38,26`×3px → **`255,227,182`×5px** → 槽内 |
+| 资源                          | 剖面（从外到内）                                                  |
+| --------------------------- | --------------------------------------------------------- |
+| `tongyong_daojukuang_01`    | `57,61,74`×3px → **`238,240,243`×5px** → 槽内 `119,133,158` |
+| `tongyong_daojukuang_04`    | `59,26,75`×3px → **`222,182,255`×5px** → 槽内 `105,57,136`  |
+| `tongyong_daojukuang_05/06` | `75,38,26`×3px → **`255,227,182`×5px** → 槽内               |
 
-即「暗带 3px + 亮边 5px」。所以 `card` 现在的结构是 **1px 暗描边 → 亮边（外侧最亮、内侧压一档，
+即「暗带 3px + 亮边 5px」。所以 `card` 现在的结构是 **1px 暗描边 → 亮边（外侧最亮、内侧压一档，  
 模拟斜面受光）→ 1px 暗切 → 墨带 + 菱纹 → 3px 暗槽 → 画面**。判据：亮边跟面板底的亮度差 **≥100**。
 
-🔴 这个判据要**按真机显示尺寸**验（`python3 scripts/image/preview_ingame.py <png> --cards 2x4`）：
+🔴 这个判据要**按真机显示尺寸**验（`python3 scripts/image/preview_ingame.py <png> --cards 2x4`）：  
 1080 宽的资源进游戏只有 567px，1:1 看着清楚的线缩完可能只剩 1px。
 
-| `--frame-rim` | 用在哪 |
-|---|---|
-| `warm`（默认） | 暖金 `255,238,200`。圣诞/新年这类暖色主题 |
-| `ivory` | 银白 `244,246,250`。冷色/金属主题 |
-| `violet` | 紫白 `206,158,246`。跟紫色面板同色系，最"服帖"（首版 `230,196,255` 偏灰白，用户要求「紫变深一档」后压深） |
-| `none` | 不画亮边 —— 🔴 只在浅色底上用，深色面板上框会看不见 |
+| `--frame-rim` | 用在哪                                                                  |
+| ------------- | -------------------------------------------------------------------- |
+| `warm`（默认）    | 暖金 `255,238,200`。圣诞/新年这类暖色主题                                         |
+| `ivory`       | 银白 `244,246,250`。冷色/金属主题                                             |
+| `violet`      | 紫白 `206,158,246`。跟紫色面板同色系，最"服帖"（首版 `230,196,255` 偏灰白，用户要求「紫变深一档」后压深） |
+| `none`        | 不画亮边 —— 🔴 只在浅色底上用，深色面板上框会看不见                                        |
 
-| 值 | 效果 |
-|---|---|
-| `auto`（推荐） | `free` 自动套 `card`，`lock` 不套（lock 本来就有透明轮廓，不需要） |
-| `card` | 强制套游戏卡框。**画面等比缩进框内**（cover 到内框，最多裁 1~2% 边），框压在画布边界 |
-| `gold` | 旧红金雕花框，仅兜底（游戏里没有这种语言，别再当默认） |
-| `none` | 不套 |
+| 值          | 效果                                                 |
+| ---------- | -------------------------------------------------- |
+| `auto`（推荐） | `free` 自动套 `card`，`lock` 不套（lock 本来就有透明轮廓，不需要）     |
+| `card`     | 强制套游戏卡框。**画面等比缩进框内**（cover 到内框，最多裁 1~2% 边），框压在画布边界 |
+| `gold`     | 旧红金雕花框，仅兜底（游戏里没有这种语言，别再当默认）                        |
+| `none`     | 不套                                                 |
 
-框宽 = **短边** × `--frame-ratio`（`card` 默认 `0.022`，1080 宽 ≈ 24px；`gold` 默认 `0.041`）。
-🔴 用短边不用宽边：`856×2048` 这种长条按宽算会得到一条比例失衡的粗框。
+框宽 = **短边** × `--frame-ratio`（`card` 默认 `0.022`，1080 宽 ≈ 24px；`gold` 默认 `0.041`）。  
+🔴 用短边不用宽边：`856×2048` 这种长条按宽算会得到一条比例失衡的粗框。  
 资源尺寸不变，框只画在画布内侧。
 
 ```bash
@@ -185,10 +185,11 @@ $PY scripts/image/restyle_pipeline.py postprocess --work "$W" --gen "$W/inbox/ge
 ```
 
 🔴 做框的坑（都踩过）：
-- **别用「错位硬投影」**：切角处矩形对不齐，会漏出一块黑三角，像磕坏了。改成沿切角多边形的
+
+- **别用「错位硬投影」**：切角处矩形对不齐，会漏出一块黑三角，像磕坏了。改成沿切角多边形的  
   高斯柔影（`GaussianBlur(bw//3)` + `1.6` 次幂），画面才像「沉」进带里。
 - **窄带里别塞两条线**：亮边之外再加一道内细线，会变成相框式双线（`--frame-hairline` 默认关）。
-- **别用 `ImageDraw.line(width=…)` 画框**：line 以路径为中线、拐角用 round join，45° 切角会被磨圆，
+- **别用 `ImageDraw.line(width=…)` 画框**：line 以路径为中线、拐角用 round join，45° 切角会被磨圆，  
   相邻两条线还会互相盖住（亮边只剩半宽）。改用多边形掩膜 `_ring_paste`，切角始终是硬 45°。
 
 ---
@@ -207,14 +208,14 @@ gen_chatgpt_web.py
   └─ 5. 无论成败都杀 Chrome、删临时 profile（🔴 里面是可解密的登录态）
 ```
 
-参数：`--image` 参考图 / `--prompt-file` / `--out` / `--crop-height N`（超长条只喂顶部英雄带）/
+参数：`--image` 参考图 / `--prompt-file` / `--out` / `--crop-height N`（超长条只喂顶部英雄带）/  
 `--reuse-cdp`（复用已在跑的调试端口）/ `--check-only`（只验连通性与登录态）。
 
 退出码 `3` = 环境问题（不可达 / 未登录 / 人机验证 / 额度用尽），job 里标黄不阻断。
 
 ### 额度用尽 / 换号：直接接上 AdsPower 的 SunBrowser
 
-免费版的出图额度是**按账号**算的，当天的图出完了就得换号。换号**不搬 cookie、不改代码**，
+免费版的出图额度是**按账号**算的，当天的图出完了就得换号。换号**不搬 cookie、不改代码**，  
 把 driver 接到另一个已经登录好的浏览器上就行：
 
 ```bash
@@ -223,15 +224,15 @@ $PY scripts/image/gen_chatgpt_web.py --image ... --prompt-file ... --out ... \
     --crop-height 930 --reuse-cdp --port 64757
 ```
 
-- `--reuse-cdp` = **只连不断**：脚本不启动也不关闭浏览器（driver 里置 `PW_KEEP_BROWSER=1`，
+- `--reuse-cdp` = **只连不断**：脚本不启动也不关闭浏览器（driver 里置 `PW_KEEP_BROWSER=1`，  
   不走 `browser.close()`），不会把你手上的窗口关掉。
 - driver 优先复用**已经开着的 chatgpt.com 标签**，没有才新开一个 —— 绝不导航走你正在看的页面。
-- 🔴 AdsPower 的 `--remote-debugging-port` **不在命令行里**（随机高位端口 bind），免费版还调不了
-  `/api/v1/user/list` 拿 `debug_port`。所以 `find_browser_cdp.py` 只能从「进程 → lsof 监听端口 →
+- 🔴 AdsPower 的 `--remote-debugging-port` **不在命令行里**（随机高位端口 bind），免费版还调不了  
+  `/api/v1/user/list` 拿 `debug_port`。所以 `find_browser_cdp.py` 只能从「进程 → lsof 监听端口 →  
   逐个试 `/json/version`」反查；`pgrep -fl 9333` 这条思路在这里完全不成立。
 - 指纹浏览器自带代理/指纹，**不要**再传 `--proxy`（会把它的网络链路覆盖掉）。
 
-Reuse 与自起 Chrome 的区别：自起 Chrome（默认）用你本机真实 profile 的副本，**换号就断**；
+Reuse 与自起 Chrome 的区别：自起 Chrome（默认）用你本机真实 profile 的副本，**换号就断**；  
 reuse 用指纹浏览器里的登录态，**换号只需在 AdsPower 里开另一个 profile**。
 
 实测（2026-10-20，free 计划）：856×930 英雄带 → 出图 1203×1308，`50x` / `Rebate` 文字与构图完整保真。
@@ -240,16 +241,18 @@ reuse 用指纹浏览器里的登录态，**换号只需在 AdsPower 里开另�
 
 ## 🔴 红线（踩过才写进来的）
 
-1. **提示词不能写死文案。** 初版把 `8-DAY` / `Login Premium Gift` 写进主题预设，换第二张图（`50x Rebate`）
-   就会把上一张的字画上去。现在主题只描述风格（配色/服装/空区/装饰），文案由 `LAYOUT` 锁成
+1. **提示词不能写死文案。** 初版把 `8-DAY` / `Login Premium Gift` 写进主题预设，换第二张图（`50x Rebate`）  
+   就会把上一张的字画上去。现在主题只描述风格（配色/服装/空区/装饰），文案由 `LAYOUT` 锁成  
    「逐字保持、只改材质」。
-2. **整幅 cover 会横切超长条。** 856×2048 比例 0.42，模型只出 0.67 左右；cover 到 0.42 要横向砍掉 37%，
+2. **整幅 cover 会横切超长条。** 856×2048 比例 0.42，模型只出 0.67 左右；cover 到 0.42 要横向砍掉 37%，  
    角色和文案全废。这类图必须走 `HERO_BAND`。
-3. **`HERO_BAND` 的高度要量，不能猜。** 取「角色 + 文案 + 点阵带」那一块的实际底边：逐行算 `row_std`，
+3. **`HERO_BAND` 的高度要量，不能猜。** 取「角色 + 文案 + 点阵带」那一块的实际底边：逐行算 `row_std`，  
    掉到 25 以下就是纯渐变区（那张卡在 y≈932）。我第一次按 540 取带，角色被切在 28% 处，白跑一张图。
-4. **水印 ROI 别开太大。** 原 ROI 是 `x>0.72W, y>0.90H`，而那张图的标题尾巴正好落在 0.72W 之后，
-   被当成水印硬替换掉，字少了一半（"Rebate" → "Reb"）。实测水印本体在 `0.918~0.986 W / 0.933~0.981 H`，
+4. **水印 ROI 别开太大。** 原 ROI 是 `x>0.72W, y>0.90H`，而那张图的标题尾巴正好落在 0.72W 之后，  
+   被当成水印硬替换掉，字少了一半（"Rebate" → "Reb"）。实测水印本体在 `0.918~0.986 W / 0.933~0.981 H`，  
    收紧到 `0.88 / 0.92`，膨胀核 21 → 15。
+
+
 5. **接缝处绝不能把「最后一行」往下广播。** 那一行是角色的身体，逐列颜色纵向拉长就是一条条竖光柱
    （这个坑踩了两次：一次在合成渐变、一次在接缝渐隐）。要渐隐就**原位逐行混合**。
 6. **验收判据要抗渐变。** 「角落最亮 − 中位」在平滑渐变上天生 60+，会假报警；改用水印细笔画造成的

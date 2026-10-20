@@ -1,0 +1,22 @@
+{
+  "id": "01_bag_open",
+  "title": "打开背包 → 道具列表渲染 → 关闭（面板生命周期不崩）",
+  "group": "func",
+  "draft": true,
+  "calibrate_hint": "① 背包入口坐标；② 打开面板的锚点日志（如 OpenPanel|Bag|背包）；③ 关闭按钮坐标（或直接用 key BACK）",
+  "timeout": 180,
+  "steps": [
+    {"action": "restart"},
+    {"action": "wait", "seconds": 12},
+    {"action": "tap", "x": 540, "y": 2150, "note": "背包入口（坐标待校准）"},
+    {"action": "wait_log", "pattern": "Bag|背包", "timeout": 60, "note": "面板打开锚点（待校准）"},
+    {"action": "wait", "seconds": 2},
+    {"action": "screenshot", "name": "bag-open"},
+    {"action": "key", "code": "BACK"},
+    {"action": "wait", "seconds": 2},
+    {"action": "assert_alive"},
+    {"action": "assert_no_crash"},
+    {"action": "assert_focus"},
+    {"action": "screenshot", "name": "bag-closed"}
+  ]
+}

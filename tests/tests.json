@@ -1,0 +1,44 @@
+{
+  "_说明": "测试清单（通用格式，执行器 jenkins-shared/lib/test_runner.py）。每个 suite 一个套件，kind 决定怎么跑：lua / dotnet / python / exec。给了 tests_dir 就「每个文件一个用例」，没给就「整条 command 一个用例」。新增一个 test_*.lua 会被自动发现，这里只为「要传参数 / 要分组 / 要临时停用」的用例补元数据。别再用老的 tests/lua-tests.json —— 那份已合并到本文件。",
+  "version": 2,
+  "suites": [
+    {
+      "name": "lua",
+      "title": "Lua 逻辑回归",
+      "kind": "lua",
+      "tests_dir": "scripts/lua-tests",
+      "pattern": "test_*.lua",
+      "workdir": "LuaEncoder/luajit_mac/64",
+      "interpreter": "LuaEncoder/luajit_mac/64/luajit",
+      "timeout": 120,
+      "baseline": "tests/lua-baseline.json",
+      "env": {
+        "LUA_PATH": "./?.lua;;",
+        "TS_ROOT": "{rel_project}"
+      },
+      "tests": {
+        "test_getservername.lua": {
+          "group": "多语言",
+          "title": "GetServerName 吃 LuaBytes 字节码（zh/en/jp/kr 四语言）",
+          "args": ["{project}/Assets/ManagedResources/LuaBytes/Common_functions_64.bytes"],
+          "_why": "这个用例不传字节码路径会直接 assert 失败（arg[1] 必填），是真机同路径的验证，别漏参数"
+        },
+
+        "test_afk_map_talk.lua":            {"group": "挂机", "title": "挂机气泡：场景吐槽池（40% 边界/未知地图回退）"},
+        "test_afk_talk_dedupe.lua":         {"group": "挂机", "title": "挂机气泡：台词去重"},
+        "test_afk_ult_talk.lua":            {"group": "挂机", "title": "挂机：大招前摇台词（槽位/段数/55% 边界）"},
+        "test_fightpoint_panel_lifecycle.lua": {"group": "挂机", "title": "挂机界面子模块生命周期（Destroy 后再 OnShow）"},
+        "test_skill_bar_timer.lua":         {"group": "战斗", "title": "技能名条停留计时"},
+        "test_ult_card_follow_bar.lua":     {"group": "战斗", "title": "大招小卡挂到技能栏子节点"},
+        "test_country_rank.lua":            {"group": "榜单", "title": "国家排行榜纯逻辑"},
+        "test_country_flag_select_popup.lua": {"group": "榜单", "title": "国家旗帜选择面板（重复开关/单选）"},
+        "test_rank_head_flag.lua":          {"group": "榜单", "title": "排行榜前三名国家小旗 + 我的排名旗"},
+        "test_app_review_key_level.lua":    {"group": "登录", "title": "Play 内评价：关键关卡弹窗闸门"},
+        "test_confirm_bind_countdown.lua":  {"group": "登录", "title": "绑定手机：验证码倒计时协程生命周期"},
+        "test_baoku_card_data.lua":         {"group": "功能", "title": "易经宝库：卡位数据"},
+        "test_first_recharge_live_loop.lua": {"group": "功能", "title": "首充面板：立绘轮播协程生命周期"},
+        "test_notice_popup_destroyed_text.lua": {"group": "功能", "title": "公告面板：迟到 HTTP 回调撞已销毁 Text"}
+      }
+    }
+  ]
+}

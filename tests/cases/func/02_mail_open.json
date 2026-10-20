@@ -1,0 +1,23 @@
+{
+  "id": "02_mail_open",
+  "title": "打开邮件 → 一键领取 → 关闭（领取回调不撞已销毁节点）",
+  "group": "func",
+  "draft": true,
+  "calibrate_hint": "① 邮件入口坐标；② 「一键领取」坐标；③ 领取成功的锚点日志（如 GetMailReward|领取）；④ 邮件为空时先 disabled —— 空邮箱领不到东西，会变成假失败",
+  "timeout": 240,
+  "steps": [
+    {"action": "restart"},
+    {"action": "wait", "seconds": 12},
+    {"action": "tap", "x": 800, "y": 2150, "note": "邮件入口（坐标待校准）"},
+    {"action": "wait_log", "pattern": "Mail|邮件", "timeout": 60, "note": "邮件面板锚点（待校准）"},
+    {"action": "wait", "seconds": 2},
+    {"action": "tap", "x": 960, "y": 300, "note": "一键领取（坐标待校准）"},
+    {"action": "wait_log", "pattern": "GetMailReward|领取成功", "timeout": 60, "note": "领取锚点（待校准）"},
+    {"action": "screenshot", "name": "mail-claimed"},
+    {"action": "assert_alive"},
+    {"action": "assert_no_crash"},
+    {"action": "key", "code": "BACK"},
+    {"action": "wait", "seconds": 2},
+    {"action": "assert_alive"}
+  ]
+}

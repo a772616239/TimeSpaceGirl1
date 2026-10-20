@@ -1,0 +1,24 @@
+{
+  "id": "02_battle_finish",
+  "title": "打完一场 → 结算面板 → 奖励到账（战斗全链路不崩）",
+  "group": "battle",
+  "draft": true,
+  "calibrate_hint": "① 需要先过 01_enter_stage；② 结算锚点日志（如 FightEnd|Settlement|Win）；③ 结算面板「确定」坐标；④ 战斗时长不可控，timeout 给足（默认 300s）",
+  "timeout": 360,
+  "steps": [
+    {"action": "restart"},
+    {"action": "wait", "seconds": 12},
+    {"action": "tap", "x": 960, "y": 2000, "note": "战斗入口（坐标待校准）"},
+    {"action": "wait", "seconds": 3},
+    {"action": "tap", "x": 540, "y": 1700, "note": "开始战斗（坐标待校准）"},
+    {"action": "wait_log", "pattern": "FightEnd|Settlement|结算", "timeout": 300,
+     "note": "战斗结束锚点（待校准）"},
+    {"action": "screenshot", "name": "settlement"},
+    {"action": "assert_alive"},
+    {"action": "assert_no_crash"},
+    {"action": "tap", "x": 540, "y": 1800, "note": "结算「确定」（坐标待校准）"},
+    {"action": "wait", "seconds": 2},
+    {"action": "assert_alive"},
+    {"action": "screenshot", "name": "back-to-main"}
+  ]
+}

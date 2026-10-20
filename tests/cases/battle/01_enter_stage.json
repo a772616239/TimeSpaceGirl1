@@ -1,0 +1,20 @@
+{
+  "id": "01_enter_stage",
+  "title": "主界面 → 进关卡 → 战斗场景加载完（不崩、有画面）",
+  "group": "battle",
+  "draft": true,
+  "calibrate_hint": "① 关卡入口按钮坐标（主界面右下「战斗/关卡」）；② 战斗场景加载完成的锚点日志（如 LoadScene|FightStart|BattleScene）；③ 首次进战斗常有新手引导遮罩，要先把引导点掉或关掉",
+  "timeout": 300,
+  "steps": [
+    {"action": "restart"},
+    {"action": "wait", "seconds": 12},
+    {"action": "tap", "x": 960, "y": 2000, "note": "战斗入口（坐标待校准）"},
+    {"action": "wait", "seconds": 3},
+    {"action": "tap", "x": 540, "y": 1700, "note": "选第一个关卡 / 开始（坐标待校准）"},
+    {"action": "wait_log", "pattern": "FightStart|BattleScene|EnterFight", "timeout": 120,
+     "note": "战斗开始锚点（待校准）"},
+    {"action": "assert_alive"},
+    {"action": "assert_no_crash"},
+    {"action": "screenshot", "name": "battle-loaded"}
+  ]
+}

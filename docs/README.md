@@ -12,6 +12,8 @@
 |---|---|
 | **把全流程跑起来 / 各环节看结论（CI）** | **`jenkins_ci.md`** |
 | 打包 / 发版 / 传 Google Play | **`android_release_runbook.md`** |
+| **拿打好的 APK 在模拟器/真机上自动跑一遍（冒烟）** | **`android_emulator_smoke.md`** |
+| **测各个功能（登录/战斗/背包/邮件…）自动化** | **`functional_test_automation.md`** |
 | 知道有哪些脚本、怎么调、退出码是什么 | **`scripts_reference.md`** |
 | 改 Lua / 配置表 / 资源，改完不生效 | **`client_build_chain.md`** |
 | 起服 / 开区服 / 改线上 / 每日巡检 | **`server_ops_runbook.md`** |

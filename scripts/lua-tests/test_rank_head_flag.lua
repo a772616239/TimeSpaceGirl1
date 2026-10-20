@@ -62,6 +62,10 @@ RankingManager = {
     ClearData = function() end,
     InitData = function() end,
     GetTabTextData = function() return {} end,
+    -- 公会战力榜的「我的排名」要查会长国籍（RankingSingleListPanel:ResolveMyGuildFlag）。
+    -- 之前没桩，跑到 [9] 公会榜就崩在 attempt to call field 'GetGuildForeInfo' (a nil value)，
+    -- 于是 [9]~[11] 的断言从来没被执行过 —— 用例「全过」是假的。
+    GetGuildForeInfo = function() return {} end,
 }
 
 Vector3 = setmetatable({}, { __call = function(_, a, b, c)

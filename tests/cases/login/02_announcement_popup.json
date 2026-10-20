@@ -1,0 +1,20 @@
+{
+  "id": "02_announcement_popup",
+  "title": "公告弹窗：出现 → 关闭 → 回主界面（线上「迟到的 HTTP 回调」事故的现场回归）",
+  "group": "login",
+  "draft": true,
+  "calibrate_hint": "① 公告弹窗的关闭按钮坐标；② 如果登录后没有公告（配置为空），这条用例先 disabled —— 别让它变成假失败",
+  "timeout": 240,
+  "steps": [
+    {"action": "restart"},
+    {"action": "wait", "seconds": 10},
+    {"action": "wait_log", "pattern": "Notice|公告", "timeout": 60,
+     "note": "公告拉取日志（锚点待校准）"},
+    {"action": "tap", "x": 540, "y": 1900, "note": "关闭公告（坐标待校准）"},
+    {"action": "wait", "seconds": 2},
+    {"action": "assert_alive"},
+    {"action": "assert_no_crash"},
+    {"action": "assert_focus"},
+    {"action": "screenshot", "name": "after-notice"}
+  ]
+}

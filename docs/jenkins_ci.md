@@ -1,6 +1,6 @@
 # Jenkins 全流程 CI（`.jenkins/` + 本机 Jenkins）
 
-> 更新时间：2026-10-12
+> 更新时间：2026-10-20
 > 目标实例：本机 Jenkins **2.568**，`http://127.0.0.1:8080/`（Homebrew 装的，`~/.jenkins`）
 > 一句话：**把散在 `scripts/` 与 `~/ts-*` 里的全流程收口成 7 个 Jenkins job，并且每个环节的结论都要能在 Jenkins 界面上直接看到，而不是让人去翻几百行控制台。**
 
@@ -51,6 +51,7 @@
 │   ├── TS-Pipeline-Overview.groovy     只读总览（8 个环节一次看完）
 │   ├── TS-Android-Release.groovy       AAB + APK 全链路
 │   ├── TS-Android-TestPackage.groovy   测试 APK
+│   ├── TS-Android-SmokeTest.groovy     已打包 APK 的装机冒烟（模拟器 / 真机 / 远程）
 │   ├── TS-Client-Resources.groovy      Lua 源码 ↔ 字节码
 │   ├── TS-Server-Health.groovy         生产服巡检（定时）
 │   ├── TS-Server-Ops.groovy            服务端/区服运维动作
@@ -75,14 +76,18 @@
 │       └── local_shard.sh         本地 10002 区服体检（只看本机，秒级）
 └── run/                       ← 🔴 运行态产物，**不入库**（.gitignore 已忽略）
     ├── rendered/              渲染出的 config.xml
-    └── <BUILD_TAG>/          每次构建的证据目录（stages/ logs/ junit.xml summary.md）
+    └── <BUILD_TAG>/          每次构建的证据目录（stages/ logs/ junit.xml summary.md smoke/）
 ```
+
+装包冒烟的执行口不在工程里，在共享库（`jenkins-shared/lib/android/`，与工程无关）：
+`device.sh`（probe / up / install / smoke / down / resolve）+ `checks_to_junit.py` + `selftest.sh`。
+理由见 `docs/android_emulator_smoke.md` 第 5 节：换平台只改 `TARGET` 分支，不复制一份脚本。
 
 ---
 
-## 3. 八个 job
+## 3. 十五个 job
 
-视图：**「时空美少女 · 全流程」**（`ListView`，含全部 8 个 job，带状态球/天气/上次成功/耗时/构建按钮列）。
+视图：**「时空美少女 · 全流程」**（`ListView`，含全部 15 个 job，带状态球/天气/上次成功/耗时/构建按钮列）。
 
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
@@ -109,11 +114,33 @@
 > - 产物**只留最近 3 份 / 14 天**（META `artifactKeep` / `artifactDays`）。不设限则 30 次 × 965MB ≈ 29GB。
 > - 本次没产出 APK 时，post 段会**清空** `workspace/artifacts/`：宁可不给下载，也不把上一次的旧包当本次产物挂上去。
 
+| **TS-Android-SmokeTest** | **已打包 APK 的装机冒烟**：定位包 → 环境体检 → 起/连设备 → 装包启动 → 等 N 秒断言 → 截图 + logcat 归档 | `APK=` `TARGET=auto` `SERIAL=` `AVD_NAME=ts-smoke-api33` `SYSTEM_IMAGE=system-images;android-33;google_apis;x86_64` `SMOKE_SECONDS=30` `BOOT_TIMEOUT=300` `REVERSE_PORTS=8081:8081,16081:16081` `PACKAGE=` `ACTIVITY=` `UNINSTALL_FIRST=False` `KEEP_DEVICE=False` `ALLOW_NO_DEVICE=True` | — | **禁止** |
+
+> **`TS-Android-SmokeTest`（2026-10-20 新增）**：把「已经打好的 APK」装进设备拉起来，回答
+> **「会不会崩、画面出不出得来」**。只测不打包、不上传，与发版红线无关。
+> - 包从哪来：`APK` 参数 → 留空则取 `apks/` 下 mtime 最新的一份（**不回退旧包**）。
+> - 设备从哪来：`TARGET=auto` 先复用已连设备（真机/已在跑的模拟器），没有再起本地 headless 模拟器；
+>   另有 `已连接设备` / `本地模拟器` / `远程 adb` 三条显式路线。
+> - 🔴 **本机起不了模拟器**（`kern.hv_support=0`，无嵌套虚拟化；且 SDK 缺 `emulator` 包）⇒
+>   体检 rc=3 → 记「需关注」并跳过装包，**黄球不是绿球**：它表示「没测」，不是「通过」。
+>   `ALLOW_NO_DEVICE=False` 可把它变成红球（接了定时任务、缺设备本身就要报警时用）。
+> - 断言 6~8 条：进程存活 / 无 FATAL·ANR / 前台是本包 / 引擎已初始化 / 截图取证 /
+>   画面非纯色（启发式，只标黄）/ 端口反向 / 自定义流程。**崩溃判红，环境问题判黄。**
+> - 产物：`evidence/smoke/screenshot.png` + `logcat*.txt` + `smoke/junit.xml`（趋势），
+>   构建描述写成 `… · 1.2.51_vc77_021047.apk · vivo V2002A | Android 10 (API 29) · 断言 8 过 0 败`。
+> - 实现与换平台（Linux KVM / Apple Silicon / Windows / 云真机 / GitHub Actions）：
+>   见 **`docs/android_emulator_smoke.md`**；无设备时可跑 `jenkins-shared/lib/android/selftest.sh` 自测。
+
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |
 | **TS-Server-Ops** | 服务端/区服运维动作统一入口 | `ACTION=health` `CONFIRM=` `REASON=` | — | 允许 |
 | **TS-Server-Release** | **服务端代码发包正式服**：切 release 分支 → JDK8 编译 → 与线上逐条目 CRC 比对 → 审批 → 备份 → 注入差异类 → 重启 → 自检 → 回写发布记录 | `ACTION=release` `SOURCE_BRANCH=x1-tag-1.2.2` `RELEASE_BRANCH=` `DEPLOY=False` `CONFIRM=` `AUTO_APPROVE=False` `ONLY_CLASSES=` `EXCLUDE_CLASSES=` `RESTART=gameserver` `ALLOW_DIRTY=False` `PUSH_BRANCH=True` `ROLLBACK_DIR=` `NOTES=` `SEND_MAIL=False` | — | **禁止** |
 | **TS-Play-Watch** | Play 轨道 + 16KB 合规巡检 | `DRY_RUN=True` `NO_MAIL=False` `AAB=` `TO=` | `H 9 * * *` | 允许 |
+| **TS-Test-Lua** | **客户端 Lua 逻辑回归**（headless luajit，**不需要设备**）：15 个 `test_*.lua`，429 条断言，约 1 秒 | `ONLY=` `GROUP=全部` | `H 4 * * *` | 允许 |
+| **TS-Test-Login** | 登录链路设备用例（`tests/cases/login/*.json`） | `APK=` `TARGET=auto` `SERIAL=` `CASES=` `CALIBRATE=False` `CASE_SCALE=1` `REVERSE_PORTS=8081:8081,16081:16081` `UNINSTALL_FIRST=False` `KEEP_DEVICE=False` `ALLOW_NO_DEVICE=True` | — | **禁止** |
+| **TS-Test-Battle** | 战斗/关卡设备用例（`battle/*.json`） | 同上 | — | **禁止** |
+| **TS-Test-Func** | 功能点设备用例（`func/*.json`：背包/邮件/商店） | 同上 | — | **禁止** |
+| **TS-Test-Suite** | **全量总入口**：Lua + 三组设备用例，一份报告 | `GROUPS=全部` `SKIP_LUA=False` + 设备类参数 | `H 5 * * *` | **禁止** |
 
 ### 3.1 送审红线（三层闸门 + 一层代码级自检）
 
@@ -339,6 +366,66 @@ git tag -d rel-20261019-2030 && git push origin --delete rel-20261019-2030
 | ⑨ 报 `zip -u 失败` | 看 `deploy-staging/<stamp>/` 下的 `*.list`；条目名含空格/中文时 `zip` 会当作多个参数 |
 | ⑩ 注入复核失败 | 说明 `zip -u` 没写进去。最常见原因：**没 `touch`**（zip 按 mtime 2 秒粒度判更新，同秒文件会被静默跳过） |
 | 想回滚 | 同一 job 选 `ACTION=rollback` + `DEPLOY=true` + `CONFIRM=回滚`；或手工 `server_release.sh rollback` |
+
+### 3.5 装机冒烟（`TS-Android-SmokeTest`，2026-10-20 新增）
+
+**它解决的是「包能出 ≠ 能跑」。** 打包链只能证明 APK 合法，装上去闪退这件事以前只能靠人肉试。
+
+六个环节，一环节一行结论：
+
+| 环节 | 结论怎么来 | 判红/判黄 |
+|---|---|---|
+| ② 定位被测包 | `APK` 参数 / `apks/` 最新 | 没包 ⇒ 红 |
+| ③ 设备与环境体检 | `device.sh probe`：adb / 设备 / 虚拟化 / 镜像 | **rc=3 ⇒ 黄（跳过）**，其余 ⇒ 红 |
+| ④ 设备就绪 | 起模拟器等 `sys.boot_completed` / `adb connect` / 复用 | 起不来 ⇒ 红 |
+| ⑤ 装包与启动 | `aapt2` 读包名 → `adb install -r -g` → `adb reverse` → `am start -W` → `pidof` | 装不上/启动即崩 ⇒ 红 |
+| ⑥ 冒烟断言 | 8 条 CHECK → `smoke/junit.xml` | **崩了就是红**，环境问题不在这里 |
+| 收尾（post） | 只关「自己起的」模拟器、只断「自己连的」远程设备 | 恒为通过 |
+
+**为什么「环境不具备」判黄而不是红**：这台机器（macOS in VM，`kern.hv_support=0`）根本起不了
+模拟器，判红只会训练人忽略红灯。黄球的信息量是「**没测**」，构建描述里也这么写。
+真要它红，勾 `ALLOW_NO_DEVICE=False`。
+
+**为什么实现放在共享库**：`jenkins-shared/lib/android/device.sh` 与工程无关（包名从 APK 读、
+端口走参数、SDK 自动探测）。换平台只加一个 `TARGET` 分支，不复制脚本 —— 复制就会漂移，
+这是共享库存在的理由（见 `jenkins-shared/README.md`）。
+
+**没有设备也能验证**：
+
+```bash
+/usr/local/bin/bash /Users/wangxufeng/Documents/jenkins-shared/lib/android/selftest.sh
+# 假 adb 跑通 resolve→up→install→smoke→down，再灌一条 FATAL 确认能报红
+```
+
+详细参数、断言判据、排障对照表、以及「换到 Linux KVM / Apple Silicon / Windows / 云真机 /
+GitHub Actions」的具体改法：**`docs/android_emulator_smoke.md`**。
+
+### 3.6 功能自动化（`TS-Test-*`，2026-10-20 新增）
+
+**按「跑法节奏」分 job，按「功能」写用例。** 加一个功能测试 = 加一个 JSON，不新建 job。
+
+| job | 需要设备 | 内容 | 实测 |
+|---|---|---|---|
+| `TS-Test-Lua` | ❌ | 15 个 headless Lua 测试，429 条断言 | **14/15 通过、0.9s**（本机已跑） |
+| `TS-Test-Login` / `Battle` / `Func` | ✅ | `tests/cases/<组>/*.json` 设备用例 | 无设备 → 黄球跳过 |
+| `TS-Test-Suite` | 部分 | Lua + 三组用例一次跑完 | Lua 段有效，设备段跳过 |
+
+两个关键设计（细节见 **`docs/functional_test_automation.md`**）：
+
+1. **`draft` 用例只记 skip，不判红。** 没在真机量过坐标的用例必然乱点，把「点错地方」判成
+   「功能坏了」比不测更糟。勾 `CALIBRATE=true` 只出「重启 + 3/8/15s 截图 + logcat」，
+   照着填坐标与日志锚点，再把 `draft` 改 `false`。
+2. **已知失败走基线**（`tests/lua-baseline.json`）：失败条数 ≤ 基线记黄并写明原因，
+   超过基线记红 —— **基线不会把新坏的也一起吞掉**；用例哪天自己绿了会提示删基线。
+
+Lua 段的判定要认四种断言标记（`✅/❌`、`[PASS]/[FAIL]`、`N passed, M failed`、
+`结果：N 通过 / M 失败`），最终以退出码为准；需要参数的用例在 `tests/tests.json` 的
+`suites[0].tests` 里配 `args`。执行器是通用的 `jenkins-shared/lib/test_runner.py`
+（`kind: lua`），同一个 job 模板换 `kind` 就能跑 C#/Python 测试 —— 见共享库 README「通用测试能力」。
+
+> 本次顺手修了一个「假绿」：`test_rank_head_flag.lua` 缺 `RankingManager.GetGuildForeInfo` 桩，
+> 跑到 [9] 就崩，`[9]~[11]` 的断言从来没执行过。补桩后跑出 32 过 1 失败，
+> 那 1 条是**口径冲突**（产品注释说公会榜查不到会长就退回画自己，用例却期望隐藏）⇒ 进基线待产品拍板。
 
 ---
 

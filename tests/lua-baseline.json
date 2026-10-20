@@ -1,0 +1,8 @@
+{
+  "_说明": "已知失败基线：失败但已定性、暂时不该把流水线染红的用例。规则见 jenkins-shared/lib/test_runner.py 顶部注释 —— 失败条数 ≤ failures 记黄，超过记红（新坏的不会被吞），哪天绿了会提示删除本行。",
+  "test_rank_head_flag.lua": {
+    "failures": 1,
+    "since": "2026-10-20",
+    "reason": "断言「公会榜 → 我的排名旗隐藏」与产品注释冲突：RankingSingleListPanel:RefreshMyRankFlag 明确写了「公会榜查不到会长时退回画自己」，用例却期望隐藏。需产品二选一后再删基线（要么改用例、要么改产品）。"
+  }
+}

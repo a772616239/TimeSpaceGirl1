@@ -8,6 +8,8 @@
     {"name":"BUMP_VERSION","type":"bool","default":true,"description":"构建前把 versionCode +1。CLI 打包不自增；Play 各轨道共享 versionCode 空间，重复号一律被拒"},
     {"name":"BUILD_APK","type":"bool","default":true,"description":"**默认是**：打完 AAB 后接着出一份同 versionCode 的 universal APK（upload key 签名），方便直接装手机测试。APK 失败不阻断 AAB 发版，但会标成关注"},
     {"name":"REUSE_AAB","type":"string","default":"","description":"复用已有 AAB 的路径（填了就跳过 Unity 构建，只做校验/上传）"},
+    {"name":"REBUILD_RESOURCES","type":"bool","default":true,"description":"打包前先调 TS-Resource-Build：同步 Lua 字节码 + **重建 AB 并复制到 StreamingAssets**（约 5-8 分钟）。默认开 —— 少了这步，改了配置或 Lua 后打出来的包还是旧资源。只改 C# 代码 / 纯热修可关掉"},
+    {"name":"EXPORT_TABLES","type":"bool","default":false,"description":"调 TS-Resource-Build 时是否**连导表一起做**（xlsx → 客户端 Lua + 服务端 txt）。默认关：导表会用 xlsx 覆盖手改过的 lua，确认改过配置表才勾。改过 xlsx 却忘了导表时，② 的「配置表是否已导」会黄球提醒"},
     {"name":"ALLOW_NO_LUA","type":"bool","default":false,"description":"强行跳过「未发现 Lua bundle」闸门（风险自负，会打出没有 Lua 的废包）"},
     {"name":"UPLOAD","type":"bool","default":true,"description":"是否上传到 Google Play。**默认是**。只出包不传时才取消勾选"},
     {"name":"TRACK","type":"choice","choices":["internal","alpha","beta","production"],"default":"internal","description":"上传轨道。默认 internal=内部测试（不面向公众、免常规审核、几分钟可装）；选 production/beta/alpha 会「上传并发布」，其 completed/inProgress 仍要求勾 PUBLISH"},
@@ -53,6 +55,8 @@ pipeline {
           env.TS_PUBLISH   = params.PUBLISH.toString()
           env.TS_AUTOAPPROVE = params.AUTO_APPROVE.toString()
           env.TS_NOTES     = params.NOTES
+          env.TS_REBUILD_RES = params.REBUILD_RESOURCES.toString()
+          env.TS_EXPORT_TABLES = params.EXPORT_TABLES.toString()
           env.TS_BUILD_START = (System.currentTimeMillis() / 1000L).toString()
         }
         sh(script: '''#!/usr/local/bin/bash
@@ -95,6 +99,35 @@ cd "$PROJ"
   -- "$BASH" .jenkins/lib/checks/repo_hygiene.sh
 ''')
           }
+        }
+      }
+    }
+
+    stage('②-2 配置表是否已导（提醒）') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+# rc=1 只作提醒（黄球）：改了 xlsx 没导表时包里会是旧配置，但不该因此判红。
+"$BASH" .jenkins/lib/run_stage.sh --name "配置表是否已导" \
+  --group "发布安全" --slug tables-exported --timeout 120 --warn-rc 1 \
+  -- "$BASH" scripts/check_tables_exported.sh
+''')
+      }
+    }
+
+    stage('③-0 资源准备（调 TS-Resource-Build）') {
+      when { expression { params.REBUILD_RESOURCES } }
+      steps {
+        script {
+          def rb = build job: 'TS-Resource-Build', wait: true, propagate: true, parameters: [
+            booleanParam(name: 'EXPORT_TABLES', value: params.EXPORT_TABLES),
+            booleanParam(name: 'SYNC_BYTES',    value: true),
+            booleanParam(name: 'REBUILD_AB',    value: true),
+            string(name: 'SERVER_ENV',          value: params.SERVER_ENV),
+            string(name: 'LUA_FILES',           value: '')
+          ]
+          echo "资源构建完成：TS-Resource-Build #${rb.number}（${rb.result}）"
         }
       }
     }

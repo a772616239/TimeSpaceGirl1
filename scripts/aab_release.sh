@@ -121,6 +121,11 @@ fail()  { printf '\033[1;31m  ✗ %s\033[0m\n' "$*" >&2; exit 1; }
 restore_build_env() {
     if [[ -n "${SERVER_ENV:-}" ]]; then
         "$VENV_PY" scripts/apply_build_env.py restore >/dev/null 2>&1 || true
+        # StreamingAssets 里的 version.txt 快照同样要还原（见下方 sync 说明）
+        if [[ -f "${PROJECT_ROOT}/.workbuddy/tmp/build-env/version.snapshot.orig" ]]; then
+            cp "${PROJECT_ROOT}/.workbuddy/tmp/build-env/version.snapshot.orig" \
+               "${PROJECT_ROOT}/Assets/StreamingAssets/Android/Resources/version.txt" 2>/dev/null || true
+        fi
     fi
 }
 if [[ -n "$SERVER_ENV" ]]; then
@@ -283,6 +288,23 @@ if [[ -n "$NEWEST_AB" ]]; then
 fi
 
 # --------------------------------------------------------------------------- #
+# 0.6 Lua bundle 新鲜度（硬闸门）
+#
+# 🔴 上面那条判据太弱：它拿 bundle 和 ResourcePathConfig.asset 比 mtime，而**导表根本不改**
+#    这个文件 ⇒「字节码更新了、bundle 没重建」这种情况静默放过。2026-10-20 实测：
+#    包内还是旧配置，一路过到包内环境校验才暴露（构建 #7）。
+#    正确判据：bundle 不得早于任何一个 LuaBytes/*_64.bytes。
+#    复用 --aab / --skip-build 时跳过（包是既成事实，与 StreamingAssets 现状无关）。
+# --------------------------------------------------------------------------- #
+if [[ "$SKIP_BUILD" -eq 0 ]]; then
+    if ! /usr/local/bin/bash "${PROJECT_ROOT}/scripts/check_lua_bundle_fresh.sh"; then
+        fail "Lua 字节码比 bundle 新 —— 包内会是没有最新配置的旧 Lua。
+    修复：scripts/resource_build.sh --action ab --server-env ${SERVER_ENV:-<环境>}
+    或在 Jenkins 里勾 REBUILD_RESOURCES=true 重跑（会先调 TS-Resource-Build）。"
+    fi
+fi
+
+# --------------------------------------------------------------------------- #
 # 1. 提升 versionCode
 # --------------------------------------------------------------------------- #
 if [[ "$SKIP_BUILD" -eq 1 ]]; then
@@ -319,6 +341,29 @@ else
         "$VENV_PY" scripts/apply_build_env.py apply "$SERVER_ENV" \
             || fail "注入打包环境失败（可选环境见 scripts/build_envs.json）"
         ok "已注入出包环境：${SERVER_ENV}"
+
+        # ------------------------------------------------------------------- #
+        # 🔴 同步 StreamingAssets 里的 version.txt 快照
+        #
+        # 包内实际生效的是 Assets/StreamingAssets/Android/Resources/version.txt ——
+        # 它由 FrameTool.CopyAssetBundleToStreamingAssets() 在**重建 AB 时**从
+        # Assets/Resources 整目录快照而来。只注入 Assets/Resources 的话：
+        #   · 重建过 AB 的工程 → 快照里是「重建那一刻」的地址（可能不是本次选的）；
+        #   · 没重建过 AB 的工程 → 快照里是上一次的地址。
+        # 两种情况都会静默打出错服的包（2026-10-20 构建 #7 实测：注入正式服、包里却是测试服）。
+        # 这里在 Unity 启动前把快照对齐到本次环境，EXIT 时还原。
+        # ------------------------------------------------------------------- #
+        SNAP_DIR="${PROJECT_ROOT}/Assets/StreamingAssets/Android/Resources"
+        SNAP_FILE="${SNAP_DIR}/version.txt"
+        SNAP_BAK="${PROJECT_ROOT}/.workbuddy/tmp/build-env/version.snapshot.orig"
+        if [[ -d "$SNAP_DIR" ]]; then
+            mkdir -p "$(dirname "$SNAP_BAK")"
+            [[ -f "$SNAP_FILE" ]] && cp "$SNAP_FILE" "$SNAP_BAK"
+            cp "${PROJECT_ROOT}/Assets/Resources/version.txt" "$SNAP_FILE"
+            ok "已同步 StreamingAssets 里的 version.txt 快照（包内真正生效的那份）"
+        else
+            warn "StreamingAssets/Android/Resources 不存在 —— 可能从未重建过 AB，包内环境将不可控"
+        fi
     fi
 
     # ----------------------------------------------------------------------- #

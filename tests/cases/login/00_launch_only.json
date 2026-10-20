@@ -1,0 +1,16 @@
+{
+  "id": "00_launch_only",
+  "title": "冷启动 15s：不崩、前台是本包、有画面",
+  "group": "login",
+  "draft": false,
+  "_why": "唯一不需要校准坐标的用例：不点任何东西，只验证「装上能起来」。它是用例引擎的第一条真实用例，真机接上就能跑出绿/红",
+  "timeout": 180,
+  "steps": [
+    {"action": "restart"},
+    {"action": "wait", "seconds": 15},
+    {"action": "assert_alive"},
+    {"action": "assert_no_crash"},
+    {"action": "assert_focus"},
+    {"action": "screenshot", "name": "launch-15s"}
+  ]
+}

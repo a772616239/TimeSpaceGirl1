@@ -1,0 +1,19 @@
+{
+  "id": "01_guest_login",
+  "title": "游客登录 → 进主界面",
+  "group": "login",
+  "draft": true,
+  "calibrate_hint": "① 用 --calibrate 出 3/8/15s 三张图，确认「开始游戏」按钮坐标；② 从 logcat 里挑一条只在登录成功后才出现的锚点日志，填进 wait_log.pattern",
+  "timeout": 240,
+  "steps": [
+    {"action": "restart"},
+    {"action": "wait", "seconds": 8},
+    {"action": "tap", "x": 540, "y": 1600, "note": "开始游戏 / 游客登录（坐标待校准）"},
+    {"action": "wait_log", "pattern": "LoginSuccess|登录成功|EnterMainScene", "timeout": 120,
+     "note": "锚点日志待校准：换成真机上确实会打出来的那句"},
+    {"action": "assert_alive"},
+    {"action": "assert_no_crash"},
+    {"action": "assert_focus"},
+    {"action": "screenshot", "name": "main-panel"}
+  ]
+}

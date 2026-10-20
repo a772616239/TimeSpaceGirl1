@@ -855,6 +855,19 @@ public class SocketClient
     }
 
 
+    /// <summary>
+    /// 注销某个回包 msgId 上挂着的回调。
+    /// 用途：Lua 侧放弃一个卡死的请求（Network:AbortPending）后，迟到/重发的响应不应该再
+    /// 回调到旧的 Lua 闭包，否则会推进已经走过的加载步骤，导致连环跳步。
+    /// </summary>
+    public void RemoveCallback(int receiveMsgId)
+    {
+        if (callbacks.ContainsKey(receiveMsgId))
+        {
+            callbacks.Remove(receiveMsgId);
+        }
+    }
+
     public void SendMessageWithCallBack(int msgId, int receiveMsgId, ByteBuffer message, LuaFunction callback)
     {
         if (!IsConnected())

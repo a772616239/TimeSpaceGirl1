@@ -20,6 +20,7 @@ function Network.New(type, socket)
     instance.maxSendWaitTime = 5 --消息重发等待时间（秒），超过该时间会重发消息
     instance.sendFunc = nil --请求缓存
     instance.sendFuncQueue = Queue.New() --请求缓存列表，当一帧发送多个请求时，缓存等待上一个请求收到回调时，执行下一个请求
+    instance.pendingReMsgId = nil --当前在途请求期待的回包 msgId（AbortPending 用来清掉 C# 侧的回调注册）
 
     instance.re_resendTimes = 0 --记录断线重发次数
     instance.reconnectFlag = false --记录断线重连标记
@@ -158,6 +159,7 @@ function Network:SendMessageWithCallBack(nMsgId, nReMsgId, sMsg, func, isHideMas
         end
         self.sendFlag = true
         self.sendWaitTime = 0
+        self.pendingReMsgId = nReMsgId
 
         -- if not isHideMask then
         --     RequestPanel.Show(self.resendTimes > 0 and GetLanguageStrById(23017) or GetLanguageStrById(23016))
@@ -165,6 +167,7 @@ function Network:SendMessageWithCallBack(nMsgId, nReMsgId, sMsg, func, isHideMas
         self.socket:SendMessageWithCallBack(nMsgId, nReMsgId, buffer, function(b)
             self.sendFlag = false
             self.resendTimes = 0
+            self.pendingReMsgId = nil
             if self.sendFuncQueue.size > 0 then
                 self.sendFuncQueue:Dequeue()
             end
@@ -176,8 +179,38 @@ function Network:SendMessageWithCallBack(nMsgId, nReMsgId, sMsg, func, isHideMas
                 --该参数为空时，会在请求时显示全屏遮罩，防止误点击
                 RequestPanel.Hide()
             end
+            -- 同一个包的回调里（加载链会在这里入队下一步）立刻把下一个请求发出去，
+            -- 不用等下一帧 Update：登录链 40 多步，每步省一帧，欧洲长链路能省 1s 以上。
+            self:Flush()
         end)
     end)
+    self:Flush()
+end
+
+-- 队列里还有待发请求且当前没有在途请求时，立刻发一个（等价于 Update 里的那段逻辑）
+function Network:Flush()
+    if self.sendFlag then return end
+    if self.sendFuncQueue.size <= 0 then return end
+    self.sendFunc = self.sendFuncQueue:Peek()
+    MyPCall(self.sendFunc)
+end
+
+-- 放弃当前在途的请求：清掉"等待响应"状态、丢弃队首，并注销 C# 侧的回调注册。
+-- 只给登录加载链的看门狗用：那条链只靠回调推进，某个响应永远不来时整个发送队列会堵死，
+-- 之后所有请求都发不出去（现象＝加载条永久停在某个百分比、客户端静默无请求但心跳还在走）。
+-- 注销回调是为了让迟到的响应被直接丢弃，不会再回调到已经推进过的步骤，造成连环跳步。
+function Network:AbortPending()
+    local reMsgId = self.pendingReMsgId
+    self.pendingReMsgId = nil
+    self.sendFlag = false
+    self.resendTimes = 0
+    self.sendWaitTime = 0
+    if self.sendFuncQueue.size > 0 then
+        self.sendFuncQueue:Dequeue()
+    end
+    if reMsgId and self.socket and self.socket.RemoveCallback then
+        MyPCall(function() self.socket:RemoveCallback(reMsgId) end)
+    end
 end
 
 function Network:ReceiveErrorInfo(buffer)
@@ -195,6 +228,7 @@ function Network:ReceiveErrorInfo(buffer)
 
     self.sendFlag = false
     self.resendTimes = 0
+    self.pendingReMsgId = nil
     if self.sendFuncQueue.size > 0 then
         self.sendFuncQueue:Dequeue()
     end
@@ -294,6 +328,9 @@ function Network:Update()
         if self.sendWaitTime > self.maxSendWaitTime then
             if self.resendTimes < self.maxResendTimes then
                 --logError("重发次数 :: " .. self.resendTimes)
+                -- 重发后必须把等待时间清零：原来不重置，超过 5s 之后每一帧都会重发一次
+                -- （3 帧内打完 3 次重发额度），请求在服务端被重复处理，日志里也是刷屏的重复包。
+                self.sendWaitTime = 0
                 MyPCall(self.sendFunc)
             elseif self.resendTimes == self.maxResendTimes then
                 RequestPanel.Hide()

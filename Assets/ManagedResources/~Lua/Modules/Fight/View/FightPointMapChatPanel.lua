@@ -59,6 +59,18 @@ function this:InitComponent(chatPanel, parent)
     this.systemItem = Util.GetGameObject(this.ChatPanel, "content/system")
     this.chatItem = Util.GetGameObject(this.ChatPanel, "content/chat")
 
+    --[[
+     * 三个都是"条目模板"，不是真消息：ScrollFitterView 每条消息 Instantiate 一份挂到
+     * scrollroot/grid 下（命名 item1..N），模板本身留在 content 里。
+     * friend/system 在预制体里是关的，**content/chat 却是开着的**（chat 锚点 (0,1)、y=-392），
+     * 一旦它里面的 leftchat 也是开的，模板就会在聊天区中间偏下固定画出一个空左气泡，
+     * 看起来像一条空消息（新号世界频道没几条、没人盖住它时最明显，2026-10-21 排查）。
+     * 这里显式关掉，不依赖美术在预制体里手关（漏一次就复现一次）。
+    --]]
+    this.friendItem:SetActive(false)
+    this.systemItem:SetActive(false)
+    this.chatItem:SetActive(false)
+
     this.input = Util.GetGameObject(this.ChatPanel, "bottom/input")
     this.inputText = Util.GetGameObject(this.ChatPanel, "bottom/input/InputField"):GetComponent("InputField")
     this.btnSend = Util.GetGameObject(this.ChatPanel, "bottom/input/send")
@@ -520,6 +532,20 @@ function this.ChatItemAdapter(node, data, isShowTime, isShowServerName)
         contentStr = data.msg
     end
 
+
+    --[[
+     * 空内容不画气泡：服务端可能下发 "" / "0|"（只有协议头没有正文，例如运营后台直发、
+     * 历史脏数据），AnalysisGlobalChat 会解析出 content=""，而气泡底板是独立 Image，
+     * Text 为空时照样画出一块 690x136 的空框 —— 表现就是"一条空消息"。
+     * 这里把左右气泡都收掉：条目高度塌成 0，只剩容器 spacing 的一点空隙。
+     * 注意不能关条目根节点（go）：ScrollFitterView 用 item.isActive 记状态，
+     * 手动 SetActive(false) 后它不会再把该条目重新打开，条目被复用时就会一直是空的。
+    --]]
+    if contentStr == nil or contentStr == "" then
+        right:SetActive(false)
+        left:SetActive(false)
+        return
+    end
 
     -- 基础信息
     content.text = contentStr

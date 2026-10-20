@@ -120,16 +120,27 @@ if [[ $RC -ne 0 ]]; then
 fi
 
 # ---- 定位本次产物 -----------------------------------------------------------
-if ! "$PY" "$HERE/find_artifact.py" 'apks/*/CLIBuild/*.apk' \
-      --root "$PROJ" --after "$START" --out "$RUN_DIR/apk.path" >/dev/null; then
-  "$PY" "$ROOT/.jenkins/lib/stage_report.py" add --run "$RUN_DIR" \
-    --name "定位本次 APK 产物" --group "构建" --status fail \
-    --detail "构建声称成功，但没有找到本次新产出的 .apk" || true
-  echo "🔴 没有找到本次产出的 APK"
-  exit 1
+# 🔴 优先信 Unity 日志，其次才用 mtime：
+#    Unity 出包走 File.Copy（保留源文件 mtime）+ Gradle 增量构建 UP-TO-DATE 时
+#    源文件不刷新 ⇒ 本次真产物可能带着**旧 mtime**，`find_artifact.py --after`
+#    会把它误判成「本次没产出」（2026-10-21 TS-Android-TestPackage #11 实测）。
+#    日志里的 `Build SUCCESS! APK: <path>` 是本次运行自己写的，最权威。
+APK=""
+LOG_APK="$(grep -a 'Build SUCCESS! APK:' "$LOG" 2>/dev/null | tail -1 | sed -E 's/.*Build SUCCESS! APK: ([^ ]+\.apk).*/\1/' || true)"
+if [[ -n "$LOG_APK" && -f "$LOG_APK" ]]; then
+  APK="$LOG_APK"
+  echo "→ 产物路径取自本次 Unity 日志（mtime 不可信时也成立）"
+else
+  if ! "$PY" "$HERE/find_artifact.py" 'apks/*/CLIBuild/*.apk' \
+        --root "$PROJ" --after "$START" --out "$RUN_DIR/apk.path" >/dev/null; then
+    "$PY" "$ROOT/.jenkins/lib/stage_report.py" add --run "$RUN_DIR" \
+      --name "定位本次 APK 产物" --group "构建" --status fail \
+      --detail "构建声称成功，但没有找到本次新产出的 .apk" || true
+    echo "🔴 没有找到本次产出的 APK"
+    exit 1
+  fi
+  APK="$(cat "$RUN_DIR/apk.path")"
 fi
-
-APK="$(cat "$RUN_DIR/apk.path")"
 echo "✅ 本次产物：$APK"
 ls -la "$APK" "$APK.release.json" 2>/dev/null || true
 "$PY" "$ROOT/.jenkins/lib/stage_report.py" add --run "$RUN_DIR" \

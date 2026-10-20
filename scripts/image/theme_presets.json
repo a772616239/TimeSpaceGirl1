@@ -22,6 +22,8 @@
     "   free 用 layout_free，lock 用 layout_default；主题可用 pose_hints 给 free 模式几个候选姿势。",
     "🔴 pose_hints 必须是「数组 + 手里不拿新道具」：早期写死成 pose_hint 单条且指定『递出一个礼盒』，",
     "   结果每张 free 图都变成同一个抱礼物姿势（不是随机，是硬编码）。现在每次随机抽一条，--pose N 可指定，--pose none 关掉。",
+    "主题分档（画法/参数配方）与批量出图见 docs/art_restyle_themes.md；新增主题跑 `restyle_pipeline.py themes --check` 自检后再用。",
+    "现役主题：christmas / newyear / halloween / valentine / summer_surf / provence / thanksgiving / cyber（名字→文件名后缀用 suffix 字段）。",
     "   候选句一律用空手/动作表达吸引力（撩发、扶帽、回身、甩披风…），要拿道具只能拿原图本来就有的那个。"
   ],
   "defaults": {
@@ -77,7 +79,7 @@
         "elegant three-quarter turn looking back over her shoulder with both hands raised in a loose relaxed gesture, hair and fur cape caught mid-swing, chin slightly lifted",
         "dynamic low-angle stance with one leg forward and both arms loosely folded, chin up, a confident grin, no held object at all",
         "carefree mid-step pose, both arms open outward in a welcoming gesture, hair and cape flowing, head tilted with a bright laugh",
-        "playful leaning-forward pose presenting a small gift box toward the viewer with one hand while the other hand is raised, slight head tilt and a warm confident smile"
+        "playful leaning-forward pose presenting a small gift box toward the viewer with one hand while the other hand is raised, slight head tilt and a warm confident smile (opt-in prop)"
       ]
     },
     "newyear": {
@@ -129,14 +131,16 @@
         "南瓜灯",
         "蝙蝠",
         "蜘蛛网",
+        "墓碑",
         "糖果",
+        "枯枝",
         "月光"
       ],
       "text_style": "pumpkin-orange faces with a dark purple outline",
-      "outfit": "a playful witch version: dark violet dress with orange trim, small pointed hat, tiny bat charm",
+      "outfit": "a playful witch version: deep violet dress with orange trim and a small pointed hat, striped stockings, a tiny bat charm at her collar",
       "body": "a deep violet-black gradient with a faint spider-web pattern, clean center",
       "banner": "deep midnight purple with moon glow",
-      "decor_sentence": "replace the orange/yellow confetti triangles with Halloween decorations - jack-o-lanterns, bats, spider webs, candy",
+      "decor_sentence": "replace the orange/yellow confetti triangles with Halloween decorations - jack-o-lanterns, bats, spider webs, bare branches, floating candy and a cold moon glow",
       "body_colors": [
         "#2b1a3d",
         "#140f22"
@@ -145,7 +149,8 @@
         "mischievous forward-leaning pose with one hand pulling her hat brim down and the other reaching toward the viewer, one step forward and a cheeky grin, hands otherwise EMPTY",
         "playful backwards lean with both hands clasped loosely in front of her, head tilted, a sly grin, no held object",
         "dynamic spin pose with her dress and hair flaring outward, both arms swept sideways, chin up, a wicked laugh",
-        "crouched slightly with one knee forward, one hand on her knee and the other beckoning, looking straight at the viewer with a teasing smile"
+        "crouched slightly with one knee forward, one hand on her knee and the other beckoning, looking straight at the viewer with a teasing smile",
+        "mischievous lean with one hand cupping a small glowing jack-o-lantern up beside her cheek and the other hand on her hat, a cheeky grin (opt-in prop)"
       ]
     },
     "valentine": {
@@ -181,6 +186,152 @@
         "reaching-forward pose with one hand extended toward the viewer as if inviting them, the other hand loose at her side, a bright open smile",
         "relaxed stance with both arms loose and slightly open, hair and lace fluttering, head tilted with a playful smile, no held object"
       ]
+    },
+    "summer_surf": {
+      "zh": "夏日冲浪",
+      "en": "sunny summer beach surf",
+      "suffix": "summer_surf",
+      "palette": [
+        "#0aa3c2",
+        "#ffd166",
+        "#ff7a59",
+        "#fff6e5",
+        "#1a4f6e"
+      ],
+      "decoration": [
+        "椰树叶",
+        "海浪泡沫",
+        "贝壳",
+        "海星",
+        "沙滩球",
+        "太阳光斑",
+        "冲浪板"
+      ],
+      "text_style": "glossy white-cream faces with a deep-teal outline and a thin sunlit rim on top",
+      "outfit": "a sporty summer surf version: cropped teal-and-cream rash guard with a hibiscus print, board-short trim, a shell anklet and a tropical flower tucked above her ear",
+      "body": "a bright turquoise-to-warm-sand gradient with soft wave foam shapes, clean center",
+      "banner": "bright turquoise summer sky with sun flare and palm leaves",
+      "decor_sentence": "replace the orange/yellow confetti triangles with summer beach decorations - palm leaves, wave foam, seashells, starfish, a beach ball, and warm sun glare",
+      "body_colors": [
+        "#0aa3c2",
+        "#1a4f6e"
+      ],
+      "pose_hints": [
+        "dynamic pose with one hand shading her eyes against the sun and the other resting on her hip, hair lifted by the sea breeze, bright open smile, hands otherwise EMPTY",
+        "carefree mid-turn with both arms swept outward, hair and light cloth whipping sideways, head tilted with a laughing expression, no held object",
+        "relaxed lean with one hand pushing her hair back and the other loose at her side, shoulders angled toward the viewer, confident sunlit smile",
+        "playful crouched-forward pose with both hands on her knees, looking straight at the viewer with a challenge in her eyes",
+        "one hand resting on a surfboard planted beside her while the other shades her eyes, hip cocked, a confident grin (opt-in prop)"
+      ],
+      "notes": "高饱和蓝+黄：带文案的图别把字放在天空区域，容易被太阳光斑吃掉对比度；白浪泡沫密集，验收时留意「高光过曝」误判"
+    },
+    "provence": {
+      "zh": "普罗旺斯",
+      "en": "romantic Provence lavender fields",
+      "suffix": "provence",
+      "palette": [
+        "#6f5aa8",
+        "#b9a7d6",
+        "#e8d6a8",
+        "#8ea86b",
+        "#fdf8ef"
+      ],
+      "decoration": [
+        "薰衣草穗",
+        "麦穗",
+        "橄榄枝",
+        "亚麻布褶",
+        "暖阳斜光",
+        "陶罐"
+      ],
+      "text_style": "warm ivory faces with a muted lavender outline and a soft golden highlight",
+      "outfit": "a dreamy Provence version: off-shoulder lavender-print sundress with cream lace trim, a woven straw hat hanging behind her shoulders, small pearl earrings",
+      "body": "a soft lavender-to-warm-cream gradient with a faint dried-flower texture, clean center",
+      "banner": "pale lavender sky with warm afternoon haze",
+      "decor_sentence": "replace the orange/yellow confetti triangles with Provence field decorations - lavender sprigs, wheat ears, olive branches, linen folds, warm afternoon haze and soft bokeh",
+      "body_colors": [
+        "#6f5aa8",
+        "#e8d6a8"
+      ],
+      "pose_hints": [
+        "gentle three-quarter turn with one hand tucking hair behind her ear as if a breeze just passed, the other hand resting lightly at her waist, soft warm smile, hands EMPTY",
+        "quiet standing pose with both hands loosely clasped in front of her, chin slightly down, calm gaze at the viewer, no held object",
+        "soft lean with one shoulder forward and both arms hanging relaxed, hair drifting, eyes half-lidded with a serene smile",
+        "walking toward the viewer with both arms slightly open, light dress and hair flowing, head tilted with a bright serene smile"
+      ],
+      "notes": "低饱和紫+奶油白：整体偏柔，验收别追高对比；深色 UI 面板上这版会显得发灰，需要时把紫框改成 ivory 提亮"
+    },
+    "thanksgiving": {
+      "zh": "感恩节",
+      "en": "warm Thanksgiving harvest",
+      "suffix": "thanksgiving",
+      "palette": [
+        "#8a3b1f",
+        "#c9752f",
+        "#e8b64c",
+        "#5c6b3f",
+        "#fdf3e3"
+      ],
+      "decoration": [
+        "南瓜",
+        "枫叶",
+        "橡果",
+        "玉米",
+        "麦穗捆",
+        "暖灯串"
+      ],
+      "text_style": "warm ivory faces with a deep maple-brown outline and a golden sheen",
+      "outfit": "a cozy Thanksgiving version: burnt-orange knit cardigan with cream cable trim over a linen shirt, a small maple-leaf brooch, a plaid scarf resting on her shoulders",
+      "body": "a deep pumpkin to warm-brown gradient with a faint leaf-vein pattern, clean center",
+      "banner": "harvest-orange evening sky with drifting maple leaves",
+      "decor_sentence": "replace the orange/yellow confetti triangles with Thanksgiving harvest decorations - pumpkins, maple leaves, acorns, corn cobs, wheat sheaves and warm string lights",
+      "body_colors": [
+        "#8a3b1f",
+        "#c9752f"
+      ],
+      "pose_hints": [
+        "cozy forward-leaning pose with both hands tucked into her cardigan pockets, shoulders slightly raised, warm relaxed smile, no held object",
+        "half-turn looking back over her shoulder with one hand lifting the edge of her scarf, hair and scarf caught mid-motion, gentle confident smile",
+        "relaxed lean with one hand brushing hair from her face and the other resting on her hip, soft warm smile, hands otherwise EMPTY",
+        "open welcoming pose with both arms spread wide at shoulder height, head tilted, bright laugh"
+      ],
+      "notes": "暖橙棕：跟圣诞红绿区分开——圣诞是深红+松绿，感恩是南瓜橙+麦金，别混用；秋冬衣料厚，free 构图容易把人画胖，注意保留腰线"
+    },
+    "cyber": {
+      "zh": "赛博朋克",
+      "en": "neon cyberpunk night city",
+      "suffix": "cyber",
+      "palette": [
+        "#0a0f1e",
+        "#00e5ff",
+        "#ff2d95",
+        "#7b2cff",
+        "#e6f7ff"
+      ],
+      "decoration": [
+        "霓虹管",
+        "全息面板",
+        "数字雨",
+        "扫描线",
+        "电路纹",
+        "故障色块"
+      ],
+      "text_style": "glossy white faces with a cyan neon outline and a faint magenta bloom, crisp edges",
+      "outfit": "a sleek cyberpunk version: black techwear jacket with neon piping and holographic trim, a translucent visor pushed up on her forehead, a circuit-pattern sleeve and a slim utility harness",
+      "body": "a deep navy-to-black gradient with scanlines, faint glitch blocks and a cyan edge glow, clean center",
+      "banner": "neon night-city skyline with magenta and cyan glow",
+      "decor_sentence": "replace the orange/yellow confetti triangles with cyberpunk decorations - neon tubes, holographic panels, digital rain, scanline glitches, circuit traces and magenta/cyan bloom",
+      "body_colors": [
+        "#0a0f1e",
+        "#7b2cff"
+      ],
+      "pose_hints": [
+        "confident low-angle stance with one hand raised to adjust her visor and the other at her side, chin up, sharp smirk, hands otherwise EMPTY",
+        "dynamic pivot with both arms swept sideways and jacket flaring, hair snapping with the motion, eyes locked on the viewer, no held object",
+        "cool half-turn glance over her shoulder with both hands in her jacket pockets, shoulders squared, unimpressed smirk",
+        "forward step with one hand extended flat toward the viewer in a stop gesture, the other loose behind her, intense stare"
+      ],
+      "notes": "霓虹描边是双刃剑：带中文文案的图描边会跟字抢注意力，字要单独锁材质（LAYOUT 里写死）；深蓝底 + 紫框容易糊成一片，需要时 rim 改 ivory"
     }
   }
 }

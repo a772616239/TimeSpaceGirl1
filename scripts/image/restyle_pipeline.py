@@ -38,6 +38,7 @@ import hashlib
 import json
 import math
 import random
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -367,10 +368,132 @@ def cmd_prompt(args) -> int:
 
 def cmd_themes(args) -> int:
     presets = load_presets()
+    if getattr(args, "check", False):
+        return lint_presets(presets)
     print(f"{'key':12s} {'中文':8s} {'后缀':14s} 说明")
     for key, t in presets["themes"].items():
         print(f"{key:12s} {t['zh']:8s} {t['suffix']:14s} {', '.join(t.get('decoration', [])[:6])}")
     print(f"\n默认出图参数：{presets.get('defaults', {})}")
+    print("自检：themes --check（必填字段/hex/英文纯净/pose_hints 不得手持道具）")
+    return RC_OK
+
+
+# ---------------------------------------------------------------- 预设自检（themes --check）
+THEME_REQUIRED = ("zh", "en", "suffix", "palette", "decoration", "text_style",
+                  "outfit", "body", "banner", "decor_sentence", "body_colors")
+# 进 prompt 的字段：必须是纯英文（中文留给人看，进 prompt 会让模型乱画）
+THEME_PROMPT_FIELDS = ("en", "text_style", "outfit", "body", "banner", "decor_sentence")
+# 已知字段全集：多出来的字段基本是拼错了名字（比如 decor_sentece），改完不生效还查不出来
+THEME_KNOWN = set(THEME_REQUIRED) | set(THEME_PROMPT_FIELDS) | {"pose_hints", "notes", "zh", "suffix"}
+# 「手里塞道具」的看门狗动词：命中即要求这条 hint 明确标 opt-in
+# 🔴 不收 `held`：'no held object' 这种兜底短语会被误判（第一版就是这么假报 8 条的）
+PROP_VERB_RE = re.compile(
+    r"\b(holding|holds|carrying|carries|cradling|gripping|clutching|presenting|"
+    r"offering|raising an?|waving an?|swinging an?|handing over)\b", re.I)
+CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def lint_presets(presets: dict | None = None) -> int:
+    """把「预设能不能直接拿去出图」变成可执行的检查。
+
+    🔴 起因：主题里写死过一条 `pose_hint="… presenting a small gift box …"`，四张图全变成抱礼盒。
+       这类错误肉眼看 preset 看不出来（字段都在、JSON 也合法），只能靠规则卡住。
+    返回 0=全过（可能有 warn），1=有 error。
+    """
+    presets = presets or load_presets()
+    errors, warns = [], []
+
+    def err(where: str, msg: str) -> None:
+        errors.append(f"✗ {where}: {msg}")
+
+    def warn(where: str, msg: str) -> None:
+        warns.append(f"⚠ {where}: {msg}")
+
+    if presets.get("composition_default") not in COMPOSITIONS:
+        err("presets", f"composition_default={presets.get('composition_default')!r} 不在 {list(COMPOSITIONS)}")
+    for key in ("layout_default", "layout_free"):
+        if not presets.get(key):
+            err("presets", f"{key} 缺失或为空（free/lock 会退化成无构图锁）")
+
+    seen_suffix: dict[str, str] = {}
+    themes = presets.get("themes") or {}
+    if not themes:
+        err("presets", "themes 为空")
+
+    for key, t in themes.items():
+        label = f"theme[{key}]"
+        for f in THEME_REQUIRED:
+            if not t.get(f):
+                err(label, f"缺必填字段 {f}")
+        for f in t:
+            if f not in THEME_KNOWN:
+                warn(label, f"未知字段 {f!r}（拼错了？多出来的字段不会进 prompt，改完等于没改）")
+
+        suffix = str(t.get("suffix") or "")
+        if not re.fullmatch(r"[a-z0-9_]{2,20}", suffix):
+            err(label, f"suffix={suffix!r} 必须是小写字母/数字/下划线（会进文件名）")
+        elif suffix in seen_suffix:
+            err(label, f"suffix={suffix!r} 与 theme[{seen_suffix[suffix]}] 重复（产出会互相覆盖）")
+        else:
+            seen_suffix[suffix] = key
+
+        for f, need in (("palette", 3), ("body_colors", 2)):
+            v = t.get(f) or []
+            if not isinstance(v, list) or len(v) < need:
+                err(label, f"{f} 至少要 {need} 个颜色")
+                continue
+            for c in v:
+                if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(c)):
+                    err(label, f"{f} 里的 {c!r} 不是 #RRGGBB")
+            if f == "body_colors" and len(v) != 2:
+                err(label, "body_colors 必须正好 2 个（接缝色→上色→下色的两端）")
+
+        if not isinstance(t.get("decoration"), list) or not t.get("decoration"):
+            err(label, "decoration 必须是非空数组（人看的元素清单）")
+
+        # 英文纯净度：中文混进 prompt 会让模型把汉字画上去
+        for f in THEME_PROMPT_FIELDS:
+            v = str(t.get(f) or "")
+            if CJK_RE.search(v):
+                err(label, f"{f} 里混了中文，进 prompt 会让模型画汉字：{CJK_RE.search(v).group()}")
+
+        ts = str(t.get("text_style") or "")
+        if ts and "face" not in ts.lower():
+            warn(label, "text_style 没提到 faces（规范是只说字的材质/描边，不说内容）")
+        ds = str(t.get("decor_sentence") or "")
+        if ds and not ds.lower().startswith("replace"):
+            warn(label, "decor_sentence 建议以 replace 开头（描述「把原装饰换掉」而不是「加什么」）")
+
+        # 姿势池：这是本轮 bug 的看门狗
+        ph = t.get("pose_hints")
+        if not ph:
+            err(label, "缺 pose_hints（free 构图会退化成没有姿势引导，模型自己塞道具）")
+            continue
+        if not isinstance(ph, list):
+            err(label, "pose_hints 必须是数组（单条 pose_hint 已废弃：会把每张 free 图钉成同一个姿势）")
+            continue
+        if len(ph) < 3:
+            warn(label, f"pose_hints 只有 {len(ph)} 条，随机池太小，容易出现「怎么又是这个姿势」")
+        for i, h in enumerate(ph, 1):
+            h = str(h)
+            if len(h) > 260:
+                warn(label, f"pose_hints[{i}] 长度 {len(h)} > 260，模型容易只执行前半句")
+            if CJK_RE.search(h):
+                err(label, f"pose_hints[{i}] 含中文")
+            if PROP_VERB_RE.search(h) and "opt-in" not in h.lower():
+                verb = PROP_VERB_RE.search(h).group()
+                err(label, f"pose_hints[{i}] 出现手持动词 {verb!r} 但没标 (...) (opt-in prop) "
+                           f"⇒ 会成为默认姿势（就是「每张图都抱礼物」那次的成因）")
+
+    for line in (f"  {w}" for w in warns):
+        print(line)
+    for line in (f"  {e}" for e in errors):
+        print(line)
+    print(f"\n主题自检：{len(themes)} 个主题 · ❌ {len(errors)} · ⚠ {len(warns)}")
+    if errors:
+        print("🔴 有硬错误，先修再出图（这些错误在出图阶段只会表现为「画得不对」，很难回头定位）")
+        return RC_FAIL
+    print("✓ 预设可以直接用来出图")
     return RC_OK
 
 
@@ -1252,6 +1375,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("themes", help="列出内置主题")
+    p.add_argument("--check", action="store_true",
+                   help="只跑预设自检：必填字段 / hex / 英文纯净度 / pose_hints 不得手持道具（CI 与提交前用）")
     p.set_defaults(func=cmd_themes)
 
     p = sub.add_parser("prompt", help="打印某主题的出图提示词与参数")

@@ -1,0 +1,52 @@
+{
+  "_note": [
+    "批量换皮清单。defaults 先铺一遍，items 里只写「跟默认不一样」的那几项（dict 深合并）。",
+    "跑法：python scripts/image/batch_restyle.py scripts/image/batch_example.json --dry-run 先看命令，再去掉 --dry-run。",
+    "🔴 assets 支持 glob：同一套 UI 的 zh/en/jp 三份必须一起换，只换一份会变成「中文圣诞、英文原样」的花脸。",
+    "🔴 出图是单浏览器串行的：一批跑完再换主题，别开两个批处理抢同一个 CDP 端口。",
+    "🔴 每组一次出图 = 一份 ChatGPT 额度。额度/登录失效（rc=3）脚本会停整批，去 AdsPower 换已登录 profile。",
+    "publish=false 是安全默认：确认这一批画得对，再加 --publish 或改成 true（写回后要重打 AssetBundle）。"
+  ],
+  "defaults": {
+    "themes": ["christmas"],
+    "composition": "lock",
+    "provider": "chatgpt_web",
+    "gen": {
+      "reuse_cdp": true,
+      "port": 64757,
+      "timeout": 420,
+      "attempts": 1
+    },
+    "postprocess": {
+      "watermark": "off",
+      "alpha_mode": "keep",
+      "frame": "card",
+      "frame_rim": "violet"
+    },
+    "variant": "auto",
+    "preview": true,
+    "publish": false
+  },
+  "items": [
+    {
+      "_why": "整幅不透明的大底板（1080x1744 RGBA），三语一起换：glob 铺开，variant 自动选 alpha",
+      "assets": ["Assets/ManagedResources/ArtFont_*/DailyRechargeAtlasnew/cn2-X1_jinrishouchong_diban_*.png"]
+    },
+    {
+      "_why": "RGB 源（无 alpha）：variant=auto 会自动选 opaque 写回，别用 alpha 把资源模式改了",
+      "assets": [
+        "Assets/ManagedResources/ArtFont_*/GrowthManualPanelAtlas/cn2-X1_chengzhangshouce_banner_*.png"
+      ]
+    },
+    {
+      "_why": "横条 banner 带文案（1080x360 RGBA）：中/英/日文案都交给模型按原位置重绘，出图后必须 1:1 看字",
+      "asset": "Assets/ManagedResources/ArtFont_en/MainRechargePanelAtlas/cn2-X1_chongzhi_banner_en.png"
+    },
+    {
+      "_why": "允许重设计姿势：free + pose=none（不注入候选姿势，只留 Hands EMPTY 硬约束）",
+      "asset": "Assets/ManagedResources/ArtFont_en/NiuQiChongTianPanelAtlas/cn2-X1_jixiantupo_banner_en.png",
+      "composition": "free",
+      "pose": "none"
+    }
+  ]
+}

@@ -2,6 +2,9 @@
 
 > 落地时间：2026-10-20（管线初版）／2026-10-20 晚（补「替换原图 + 原图搬出工程 + 超长条底板」）
 > 入口：Jenkins job **`TS-Art-Restyle`** ／ 命令行 `scripts/image/restyle_pipeline.py`
+> 🎯 一线操作手册（什么时候用哪条命令、边框三定律、验收清单、7 条红线）：
+> **`.workbuddy/skills/art-restyle/SKILL.md`** —— 先读它，本文只留原理与复盘。
+> 真机观感预览：`scripts/image/preview_ingame.py`（按 567px 显示宽贴回面板底 + 叠占位卡 + 边角特写）
 > 已实战：`EightDayGiftPanelAtlas/cn2-X1_baridenglu_diban_en.png`（1080×1644 登录底板 → 圣诞版）
 > 已实战：`OperatingPanelAtlas/cn2-X1_chaozhijj_diban_en.png`（856×2048 超值底板 → 圣诞版）
 
@@ -154,6 +157,9 @@ $PY scripts/image/restyle_pipeline.py prepare --asset Assets/... --theme christm
 
 即「暗带 3px + 亮边 5px」。所以 `card` 现在的结构是 **1px 暗描边 → 亮边（外侧最亮、内侧压一档，
 模拟斜面受光）→ 1px 暗切 → 墨带 + 菱纹 → 3px 暗槽 → 画面**。判据：亮边跟面板底的亮度差 **≥100**。
+
+🔴 这个判据要**按真机显示尺寸**验（`python3 scripts/image/preview_ingame.py <png> --cards 2x4`）：
+1080 宽的资源进游戏只有 567px，1:1 看着清楚的线缩完可能只剩 1px。
 
 | `--frame-rim` | 用在哪 |
 |---|---|

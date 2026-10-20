@@ -1,11 +1,17 @@
 # 作弊快速排查 Skill（判「这个号是不是挂」）
 
-> 更新时间：2026-10-18
+> 更新时间：2026-10-20
 > 一句话定位：**拿到一个 UID / 昵称，30 秒内给出「确证作弊 / 可疑 / 干净」三分结论，并附完整证据链。**
-> 配套：`scripts/cheat_scan.py`（本文所有检查的可执行版本）、`gm_abuse_incident_playbook.md`（确认后怎么封）、
-> `server_ops_runbook.md`（生产环境事实）。
 >
-> 本文的判据全部来自 2026-10-18 的真实排查（Sieg / Mozart / оня / Sakuya 四个号、四种手法），
+> **操作入口（2026-10-20 起）**：`.workbuddy/skills/cheat-forensics/SKILL.md`（流程卡）+ `scripts/cheatctl.py`（工具）
+> —— `scan` 判号、`hunt` 全服粗筛、`purge` 一键处置（备份→删产物→清榜→封号→校验）。
+> 本文降级为**判据原理与逐条复盘**（阈值出处、误判清单、手工命令），工具实现见 `scripts/cheat/`。
+> 老脚本 `scripts/cheat_scan.py` 仍可用，但缺 BI 流水与 heroForceSort 两条判据（见 §5 补充）。
+>
+> 配套：`gm_abuse_incident_playbook.md`（确认后怎么封/怎么清榜）、`cheat_incident_10000224_20261020.md`
+> （2026-10-10 GM 通道全开事故）、`server_ops_runbook.md`（生产环境事实）。
+>
+> 本文的判据全部来自 2026-10-18 / 10-20 的真实排查（Sieg / Mozart / оня / Sakuya / 朗曼梅西 五个号、五种手法），
 > **每个阈值都有实测依据，不是拍脑袋**。
 
 ---
@@ -534,3 +540,40 @@ S1~S5 任一命中 ────────────────────�
 
 > 封禁名单当前 6 个：`10000240 / 10000153 / 10000013 / 10000198 / 10000034 / 10000016`
 > 查当前名单：`python3 scripts/cheat_scan.py --ban-list`
+
+---
+
+## 10. 2026-10-20 补充：两条旧判据抓不到的作弊（朗曼梅西案）
+
+### 10.1 BI 文件流水才是「全生命周期账本」
+
+Mongo `itemLog` 对 10000221–10000225 这一段**整段为空**（不是他一个人的问题，是队列 flush 断档），
+任何「收支对账」在空表上都恒闭合。真正留痕的是游戏自身的文件流水：
+
+```bash
+# 目录按天分，保留期 ≥30 天（srvlog 只有 2~3 天）
+ssh gs 'grep -h "10000224" /home/java/gameserver/assets/log/jl_item/*/item0.log' \
+  | grep "reason=28" | wc -l        # 48
+```
+
+- `reason=28` = `BIReason.GM_REWARD`；`addHero` 有、对应 `addItem` 没有 ⇒ 直接建英雄实体，不是发卡。
+- 模板 ID 从 10001 递增到 10079、间隔 1~2.4s ⇒ 脚本循环调 `GlobalGm.HERO_STAR=4`。
+- 对应工具：`scan` 的 `bi_gm_reward`（hard）与 `purge --apply`。
+
+### 10.2 `heroForceSort` 是「删英雄」的隐形地雷
+
+`HeroManager.heroForceSort` 只存「≥100 级英雄的战力前 5」，且
+`HeroForceRank.refreshHeroForceSort` 在结果为空时**不回写**（`HeroForceRank.java:168`）。
+只删 `heroMap` 不清它，会留下 5 个指向已删英雄的成员：
+
+- `getMyInfo` → `getHero(heroId)` 为 null → 打日志后 return（「我的排名」空白）；
+- `getOptional` → 同一处直接 NPE（`HeroForceRank.java:88-89`），**全服点英雄战力榜都报错**。
+
+处置口径：删英雄时同步 `$set heroManager.heroForceSort = {}`，并 `ZREM` 掉
+`10001:HERO_FORCE_RANK:` 里 `uid:heroId` 的复合成员。工具已内置。
+
+### 10.3 不要改 `maxForce`
+
+`PlayerManager.maxForce` 是**当前阵容队伍战力**（`PlayerLogic.java:369` 写入），不是英雄战力总和。
+GM 发的英雄若从未编入 `teamPosManager`，战力完全没被污染（朗曼梅西 4948，与同级 3 人完全一致）。
+删英雄后去「重算 maxForce」只会造出假数据。

@@ -234,6 +234,49 @@ return out;
         self._record('mongo.refs', refs)
         return refs
 
+    def clean_player_refs(self):
+        """删号前清「玩家间引用」：好友 / 黑名单 / 申请列表 / 体力互赠表。
+
+        2026-10-20 教训（同一根因家族第二次复发）：只删 `user`、不清别人家的
+        `friendManager`，对方下次登录走 `GET_FRIEND_INFO` 时
+        `CBean2Proto.getFriendInfo → UserManager.getUser` 会抛
+        「1-UserManager::getUser null exception」，整包好友信息失败，
+        登录链停在第 26/57 步 ⇒ 客户端进度条永远卡 45%（Sakuya 10000017 实测）。
+        所以删号三步曲必须是 clean_ranks → clean_player_refs → clean_mongo_refs → delete_account。
+        """
+        js = """
+var U=%d, out={friends:0, black:0, apply:0, myApply:0, give:0, haveReward:0};
+db.user.find({"friendManager":{$exists:true}}).forEach(function(d){
+  var fm=d.friendManager||{};
+  if((fm.friends||[]).indexOf(U)>=0) out.friends++;
+  if((fm.blackFriends||[]).indexOf(U)>=0) out.black++;
+  if((fm.applyFriends||[]).indexOf(U)>=0) out.apply++;
+  if((fm.myApplyFriends||[]).indexOf(U)>=0) out.myApply++;
+  if(fm.giveMap && fm.giveMap[String(U)]!==undefined) out.give++;
+  if(fm.haveRewardMap && fm.haveRewardMap[String(U)]!==undefined) out.haveReward++;
+});
+return out;
+""" % self.uid
+        refs = self.r.mongo(js) or {}
+        total = sum(int(refs.get(k) or 0) for k in
+                    ('friends', 'black', 'apply', 'myApply', 'give', 'haveReward'))
+        self._log('玩家间引用：friends=%s black=%s apply=%s myApply=%s giveMap=%s haveReward=%s'
+                  % (refs.get('friends', 0), refs.get('black', 0), refs.get('apply', 0),
+                     refs.get('myApply', 0), refs.get('give', 0), refs.get('haveReward', 0)))
+        if self.apply and total:
+            self.r.mongo_eval("""
+var U=%d;
+db.user.find({"friendManager":{$exists:true}}).forEach(function(d){
+  db.user.updateOne({_id:d._id},{
+    $pull:{"friendManager.friends":U,"friendManager.blackFriends":U,
+           "friendManager.applyFriends":U,"friendManager.myApplyFriends":U},
+    $unset:{"friendManager.giveMap."+U:"","friendManager.haveRewardMap."+U:""}
+  });
+});
+""" % self.uid)
+        self._record('player.refs', refs)
+        return total
+
     def _check_guild_leaders(self):
         js = """
 var bad=[];
@@ -327,6 +370,7 @@ return {exists:true, heroN:n, maxLv:mx, n100:n100,
             #    于是 `uid:heroId` 复合成员永远留在 zset 里，成为幽灵榜一，
             #    下一次某个玩家打开排行榜就 getFirst NPE（2026-10-20 复现）。
             self.clean_ranks()
+            self.clean_player_refs()
             self.clean_mongo_refs()
             self.delete_account()
         else:

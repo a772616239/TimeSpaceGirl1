@@ -307,9 +307,8 @@ def main():
         return
 
     # ---------------- 写入 ----------------
-    bak = os.path.join(BASE, "_backup_before_tune")
-    if not os.path.isdir(bak):
-        os.makedirs(bak)
+    from backup_paths import ensure as _bak_ensure
+    bak = _bak_ensure("_backup_before_tune")   # 工程外，避免被导表/打包扫进去
     for f in (F_MAIN, F_GROUP, F_ITEM):
         shutil.copy2(f, os.path.join(bak, os.path.basename(f)))
     print(f"\n已备份到 {bak}")

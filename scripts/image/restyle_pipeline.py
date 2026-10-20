@@ -37,6 +37,7 @@ import argparse
 import hashlib
 import json
 import math
+import random
 import shutil
 import sys
 from datetime import datetime
@@ -109,7 +110,9 @@ COMPOSITIONS = {
         "heading": "FRAME_RULES (functional constraints that must not change):",
         "character": ("redesign the character for far stronger appeal: a new, dynamic, inviting pose "
                       "and a more attractive camera angle - position, crop and scale may all change - "
-                      "with an expressive gesture and lively hair/cloth motion{pose_hint}; keep the "
+                      "with an expressive gesture and lively hair/cloth motion. Hands must stay EMPTY: "
+                      "never invent an object and put it in her hands (the only prop she may hold is one "
+                      "the input artwork already shows){pose_hint}; keep the "
                       "SAME character identity (same face design, same hair color and style, same eye "
                       "color, same art style and rendering quality) so it reads as the same heroine, "
                       "only much more attractive; restyle the outfit into {outfit}."),
@@ -117,7 +120,38 @@ COMPOSITIONS = {
 }
 
 
-def build_prompt(name: str, layout: list[str] | None = None, composition: str | None = None) -> str:
+def resolve_pose_hint(theme: dict, pose: str | int | None = None) -> str:
+    """free 模式的「推荐姿势」句（带 `. Ideal pose: ` 前缀），拿不到就返回空串。
+
+    🔴 这里曾经是硬编码单条 pose_hint，且写死了「递出一个礼盒」⇒ 每张 free 图都是同一个
+       抱礼物姿势（不是随机，是配置里就那一句）。现在改成候选数组：
+         pose=None  → 每次随机抽一条（同一个主题连续跑也不重样）
+         pose=N     → 指定第 N 条（1 起，方便复现）
+         pose=none  → 完全不注入姿势，交给模型自由发挥
+         pose=其它  → 原样当自定义姿势句用
+    """
+    hints = [h.strip() for h in (theme.get("pose_hints") or []) if str(h).strip()]
+    legacy = theme.get("pose_hint")           # 兼容老数据：单条
+    if legacy:
+        hints += [legacy] if isinstance(legacy, str) else [str(x) for x in legacy]
+    spec = "" if pose is None else str(pose).strip()
+    if spec.lower() in {"none", "off", "no", "0", "-"}:
+        return ""
+    if spec:
+        if spec.isdigit():
+            idx = int(spec) - 1
+            if not 0 <= idx < len(hints):
+                raise SystemExit(f"--pose {spec} 越界：{theme.get('en') or theme.get('zh')} "
+                                 f"只有 {len(hints)} 条候选姿势")
+            return ". Ideal pose: " + hints[idx]
+        return ". Ideal pose: " + spec
+    if not hints:
+        return ""
+    return ". Ideal pose: " + random.choice(hints)
+
+
+def build_prompt(name: str, layout: list[str] | None = None, composition: str | None = None,
+                 pose_hint: str = "") -> str:
     """把「主题字段 + 构图规则」拼成完整 prompt。
 
     主题只描述风格（配色 / 服装 / 空区 / 装饰），文案一律由 layout 锁死，
@@ -146,7 +180,7 @@ def build_prompt(name: str, layout: list[str] | None = None, composition: str | 
         text_style=theme["text_style"],
         character=comp["character"].format(
             outfit=theme["outfit"],
-            pose_hint=(". Ideal pose: " + theme["pose_hint"]) if theme.get("pose_hint") else ""),
+            pose_hint=pose_hint),
         body=theme["body"],
         banner=theme["banner"],
         decor_sentence=theme["decor_sentence"],
@@ -257,7 +291,8 @@ def cmd_prepare(args) -> int:
     # 提示词在这里就定版落盘：provider 出图、Agent 手工出图、事后复盘都用同一份字符串。
     layout = read_layout(args.layout, work)
     composition = getattr(args, "composition", None) or load_presets().get("composition_default", "lock")
-    prompt = build_prompt(args.theme, layout, composition)
+    pose_hint = resolve_pose_hint(theme, getattr(args, "pose", None)) if composition == "free" else ""
+    prompt = build_prompt(args.theme, layout, composition, pose_hint)
     (work / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
 
     state = {
@@ -278,6 +313,7 @@ def cmd_prepare(args) -> int:
         "prompt_file": str(work / "prompt.txt"),
         "prompt_layout": "custom" if layout else "default",
         "composition": composition,
+        "pose_hint": pose_hint.replace(". Ideal pose: ", "") or None,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "stages": [],
     }
@@ -289,6 +325,8 @@ def cmd_prepare(args) -> int:
           f"（参照 {state['alpha_source']}）")
     print(f"  主题      : {args.theme}（{theme['zh']}）")
     print(f"  构图      : {composition}（{'人物可重设计' if composition == 'free' else '姿势/版式全锁'}）")
+    if pose_hint:
+        print(f"  姿势      : {pose_hint.replace('. Ideal pose: ', '')}")
     print(f"  work      : {work}")
     if coverage > 0.999:
         print("  ⚠ 源资源是整幅不透明（没有浮层）。若它本该有透明区，"
@@ -318,9 +356,12 @@ def cmd_prompt(args) -> int:
     theme = theme_of(args.theme)
     layout = read_layout(getattr(args, "layout", None))
     composition = getattr(args, "composition", None) or load_presets().get("composition_default", "lock")
+    pose_hint = resolve_pose_hint(theme, getattr(args, "pose", None)) if composition == "free" else ""
     print(f"# theme={args.theme} size={theme.get('size')} quality={theme.get('quality')} "
           f"input_fidelity={theme.get('input_fidelity')} composition={composition}")
-    print(build_prompt(args.theme, layout, composition))
+    if composition == "free":
+        print(f"# pose={'随机候选' if getattr(args, 'pose', None) is None else args.pose}")
+    print(build_prompt(args.theme, layout, composition, pose_hint))
     return RC_OK
 
 

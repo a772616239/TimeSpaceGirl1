@@ -35,7 +35,10 @@ import monetization_sim as SIM
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = os.path.join(ROOT, "data_execl", "base_data")
-BACKUP_ROOT = os.path.join(BASE, "_backup_before_monetization_content")
+# 备份必须落在工程外（base_data 是导表输入目录，放进去会被当成表扫到）
+from backup_paths import sub as _bak_sub  # noqa: E402
+
+BACKUP_ROOT = _bak_sub("_backup_before_monetization_content")
 F_RECHARGE = "RechargeCommodityConfig"
 DATA_START_ROW = 6
 

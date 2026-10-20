@@ -38,7 +38,11 @@ except ImportError:
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = os.path.join(ROOT, "data_execl", "base_data")
-BACKUP_ORIG = os.path.join(BASE, "_backup_before_monetize", "20261020-205817")  # 改版前基准
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from backup_paths import sub as _bak_sub  # noqa: E402
+
+# 改版前基准（备份在工程外，见 backup_paths.py）
+BACKUP_ORIG = os.path.join(_bak_sub("_backup_before_monetize"), "20261020-205817")
 
 DATA_START_ROW = 6
 

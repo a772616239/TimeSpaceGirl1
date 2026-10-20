@@ -31,7 +31,9 @@ SERVER = os.path.join(ROOT, "TimeSpaceServer", "skzc", "home", "java", "gameserv
 HEADER_ROWS = 6
 NEW_GROUPS = {20101, 20102, 20103}
 NEW_ITEM_IDS = set(range(990000, 990103))
-SAFE_BAK = os.path.join(BASE, "_backup_before_revert")
+# 备份一律在工程外，避免被导表/打包扫进去（见 backup_paths.py）
+from backup_paths import sub as _bak_sub
+SAFE_BAK = _bak_sub("_backup_before_revert")
 
 
 def _num(x):

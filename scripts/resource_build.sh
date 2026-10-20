@@ -43,8 +43,22 @@ case "$ACTION" in
 esac
 
 [[ -x "$UNITY_BIN" ]] || { echo "✗ 找不到 Unity：$UNITY_BIN" >&2; exit 2; }
-if [[ ! -f "$ROOT/Library/SourceAssetDB-lock" ]] && pgrep -f "Unity.*-projectPath $ROOT" >/dev/null 2>&1; then
-    echo "✗ 本工程有 Unity 编辑器在跑，batchmode 会失败" >&2; exit 2
+
+# 🔴 2026-10-20 修：旧判定有两处错，等于**从来没拦过**。
+#   ① pgrep -f "Unity.*-projectPath $ROOT" 区分大小写，而 Unity Hub 拉起 GUI 时命令行是
+#      小写 `-projectpath`（本机实测 PID 72958）⇒ 永远不命中；
+#   ② 前置条件 `[[ ! -f Library/SourceAssetDB-lock ]]` 恰好在该文件**存在**时把检查整个跳过，
+#      而那个 lock 正是「编辑器持有本工程」的产物 ⇒ 条件写反了。
+# 后果：GUI 开着照样往下跑，两个实例争同一个 Library，最坏写坏库。
+# 现在：只要命令行里带 -projectpath <本工程> 的 Unity 进程在（GUI 或别人的 batchmode），一律拒绝。
+# ⚠️ 必须限定到**本工程**：本机常年有其它项目的 Unity 在跑，无条件 pgrep 会误伤。
+UNITY_LIST=$(pgrep -fl "Unity.app/Contents/MacOS/Unity" 2>/dev/null || true)
+UNITY_BUSY=$(printf '%s\n' "$UNITY_LIST" | grep -iF -- "-projectpath $ROOT" || true)
+if [[ -n "$UNITY_BUSY" ]]; then
+    echo "✗ 本工程的 Unity 进程正在运行，batchmode 会争抢 Library：${UNITY_BUSY%%$'\n'*}" >&2
+    printf '%s\n' "$UNITY_BUSY" >&2
+    echo "  请先关闭 GUI Unity：osascript -e 'tell application \"Unity\" to quit'" >&2
+    exit 2
 fi
 
 restore_env() {

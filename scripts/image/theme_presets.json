@@ -19,7 +19,10 @@
     "body_colors: 长条底板（banner + 大片空白区）的续接渐变两端色，postprocess --hero-band 用。",
     "composition（构图自由度，--composition 或 COMPOSITION=）：lock=人物姿势/位置/缩放全锁，只换衣服与配色（默认，可预期）；",
     "   free=允许重设计人物姿势与镜头换吸引力，但**仍然锁死**文案完整可读、底部 UI 空白区、画布比例与透明边。",
-    "   free 用 layout_free，lock 用 layout_default；主题可用 pose_hint 给 free 模式一个推荐姿势。"
+    "   free 用 layout_free，lock 用 layout_default；主题可用 pose_hints 给 free 模式几个候选姿势。",
+    "🔴 pose_hints 必须是「数组 + 手里不拿新道具」：早期写死成 pose_hint 单条且指定『递出一个礼盒』，",
+    "   结果每张 free 图都变成同一个抱礼物姿势（不是随机，是硬编码）。现在每次随机抽一条，--pose N 可指定，--pose none 关掉。",
+    "   候选句一律用空手/动作表达吸引力（撩发、扶帽、回身、甩披风…），要拿道具只能拿原图本来就有的那个。"
   ],
   "defaults": {
     "size": "1024x1536",
@@ -69,7 +72,13 @@
         "#0b1a33",
         "#123a2b"
       ],
-      "pose_hint": "playful leaning-forward pose presenting a small gift box toward the viewer with one hand while the other hand is raised, slight head tilt and a warm confident smile"
+      "pose_hints": [
+        "playful leaning-forward pose with one hand tucking a strand of hair behind her ear and the other hand on her hip, slight head tilt, warm confident smile, hands otherwise EMPTY",
+        "elegant three-quarter turn looking back over her shoulder with both hands raised in a loose relaxed gesture, hair and fur cape caught mid-swing, chin slightly lifted",
+        "dynamic low-angle stance with one leg forward and both arms loosely folded, chin up, a confident grin, no held object at all",
+        "carefree mid-step pose, both arms open outward in a welcoming gesture, hair and cape flowing, head tilted with a bright laugh",
+        "playful leaning-forward pose presenting a small gift box toward the viewer with one hand while the other hand is raised, slight head tilt and a warm confident smile (opt-in only: 5th of 5)"
+      ]
     },
     "newyear": {
       "zh": "新年",
@@ -98,7 +107,12 @@
         "#3b0f1f",
         "#1a1030"
       ],
-      "pose_hint": "elegant three-quarter turn raising a red envelope, long hair swept by a light breeze, slight head tilt and a confident smile"
+      "pose_hints": [
+        "elegant three-quarter turn with one hand lifting the edge of her long sleeve and the other resting at her waist, hair swept by a light breeze, confident smile, hands otherwise EMPTY",
+        "dynamic pose with both arms swept sideways by movement, hair and sleeves flowing outward, chin slightly raised, a proud smile, no held object",
+        "relaxed yet poised stance, one hand on her hip and the other touching her hairpin, slight head tilt, a soft knowing smile",
+        "graceful half-turn looking over her shoulder, both hands loosely behind her back, hair and ribbons fluttering, a bright laugh"
+      ]
     },
     "halloween": {
       "zh": "万圣节",
@@ -127,7 +141,12 @@
         "#2b1a3d",
         "#140f22"
       ],
-      "pose_hint": "mischievous forward-leaning pose holding a glowing jack-o-lantern up beside her face, one step forward and a cheeky grin"
+      "pose_hints": [
+        "mischievous forward-leaning pose with one hand pulling her hat brim down and the other reaching toward the viewer, one step forward and a cheeky grin, hands otherwise EMPTY",
+        "playful backwards lean with both hands clasped loosely in front of her, head tilted, a sly grin, no held object",
+        "dynamic spin pose with her dress and hair flaring outward, both arms swept sideways, chin up, a wicked laugh",
+        "crouched slightly with one knee forward, one hand on her knee and the other beckoning, looking straight at the viewer with a teasing smile"
+      ]
     },
     "valentine": {
       "zh": "情人节",
@@ -156,7 +175,12 @@
         "#5c1330",
         "#2a0d1b"
       ],
-      "pose_hint": "soft leaning pose with both hands cupping a heart-shaped balloon near her cheek, gentle head tilt and a sweet smile"
+      "pose_hints": [
+        "soft leaning pose with both hands cupped near her cheek in a shy gesture, gentle head tilt and a sweet smile, hands empty",
+        "gentle half-turn with one hand tucking hair behind her ear and the other resting on her chest, eyes slightly lowered, a warm smile",
+        "reaching-forward pose with one hand extended toward the viewer as if inviting them, the other hand loose at her side, a bright open smile",
+        "relaxed stance with both arms loose and slightly open, hair and lace fluttering, head tilted with a playful smile, no held object"
+      ]
     }
   }
 }

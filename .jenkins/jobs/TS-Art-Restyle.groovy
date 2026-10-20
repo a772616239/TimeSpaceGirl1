@@ -13,6 +13,7 @@
     {"name":"SOURCE_FROM","type":"string","default":"","description":"改前参照图。默认=资源本身；资源已换过要重跑时填 git:HEAD:<path>，否则对比图会变成「新版 vs 新版」"},
     {"name":"LAYOUT","type":"text","default":"","description":"构图锁（锁文案/角色/空区）。留空=预设里的通用规则：一律保字、只改材质。某张图有特殊要求时填这里，别改 theme_presets.json"},
     {"name":"COMPOSITION","type":"choice","choices":["lock","free"],"default":"lock","description":"构图自由度：lock=人物姿势/位置/缩放全锁，只换衣服与配色（默认，可预期）；free=允许重设计人物姿势与镜头换吸引力，但文案完整可读、底部 UI 空白区、画布比例与透明边仍锁死（出图需人眼过一遍）"},
+    {"name":"POSE","type":"string","default":"","description":"free 模式的姿势。留空=每次从主题候选里随机抽一条（推荐：同一主题连跑也不会每张都是同一个姿势）；数字=指定第 N 条；none=不注入姿势；其它文字=自定义姿势句。🔴 曾经这段是硬编码单条「递礼盒」，导致每张 free 图都抱着礼物"},
     {"name":"HERO_BAND","type":"string","default":"","description":"超长条底板用（如 856x2048）：填英雄带像素高度（如 930）或 auto。生成图只当这条带子贴顶，下方补空卡体；留空=整幅等比 cover（适合比例接近 3:4 的图）"},
     {"name":"BODY_MODE","type":"choice","choices":["auto","source","synthetic"],"default":"auto","description":"HERO_BAND 模式下空卡体怎么来：source=用原资源下半截的明暗结构重上色（几何与原图逐像素对齐，首选）；synthetic=按主题色合成渐变（兜底）；auto=能 source 就 source"},
     {"name":"ALPHA_MODE","type":"choice","choices":["source","keep","free"],"default":"source","description":"alpha 版怎么取：source=沿用源掩膜（只对 lock 构图成立，free 会被自动改成 keep）；keep=整幅不透明；free=整幅不透明+顶边渐隐。COMPOSITION=free 时源掩膜按老姿势抠的，会把人脸/头发裁掉"},
@@ -85,11 +86,11 @@ if [[ -n "${PROMPT_OVERRIDE:-}" ]]; then
 else
   if [[ -n "${LAYOUT:-}" ]]; then
     printf '%s\\n' "${LAYOUT}" > "$TS_RUN_DIR/artifacts/layout.txt"
-    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --layout "$TS_RUN_DIR/artifacts/layout.txt" > "$PROMPT_FILE"
-    echo "提示词来源：LAYOUT 参数 + scripts/image/theme_presets.json（$ART_THEME / $ART_COMP）"
+    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --pose "${POSE:-}" --layout "$TS_RUN_DIR/artifacts/layout.txt" > "$PROMPT_FILE"
+    echo "提示词来源：LAYOUT 参数 + scripts/image/theme_presets.json（$ART_THEME / $ART_COMP / pose=${POSE:-随机}）"
   else
-    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" > "$PROMPT_FILE"
-    echo "提示词来源：scripts/image/theme_presets.json（$ART_THEME / $ART_COMP）"
+    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --pose "${POSE:-}" > "$PROMPT_FILE"
+    echo "提示词来源：scripts/image/theme_presets.json（$ART_THEME / $ART_COMP / pose=${POSE:-随机}）"
   fi
 fi
 echo "--- 提示词开头 ---"
@@ -111,7 +112,7 @@ EXTRA=""
 "$BASH" .jenkins/lib/run_stage.sh --name "资源体检与基线" \
   --group "美术资源链" --slug art-prepare --timeout 300 \
   -- "$PY" scripts/image/restyle_pipeline.py prepare \
-       --asset "$ART_ASSET" --theme "$ART_THEME" --work "$ART_WDIR" --composition "$ART_COMP" $EXTRA
+       --asset "$ART_ASSET" --theme "$ART_THEME" --work "$ART_WDIR" --composition "$ART_COMP" --pose "${POSE:-}" $EXTRA
 ''')
       }
     }

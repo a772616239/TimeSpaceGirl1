@@ -22,6 +22,7 @@
 - 🔴 `reason=1`（挂机/探险）**永不产出钻石**；钻石只来自 `reason=2`（≈33 颗/次）、邮件、`reason=28`(GM_REWARD)。任何"刷钻石"结论先自证此条。
 - `tolua` fake-null 只能 `IsNull()` 判活；红点 `BindObjs[rpType]` 不幂等；`Timer.New` 第 4 参 UI 传 `true`（三条各崩过一次）。
 - 改配置表真源 `data_execl/base_data/*.xlsx`，改后同步 CRC32 + 客户端 lua + LuaBytes + 服务端 `conf/server/*.txt`；新增行列别手改 packed lua。
+- 🔴 配置表备份**禁止**落在 `data_execl/base_data/`（那是导表输入目录，`_backup_*/x.xlsx` 会被当表重扫、还会被打包）。统一走 `scripts/backup_paths.py` → `~/Documents/TimeSpaceGirl1-config-bak/`（可用 `TSG_CONFIG_BACKUP_ROOT` 覆盖）。
 - 正式服 `server.debug` 必须 false（GM 走公网 `GM_REQUEST` 10606，唯一闸门 `isDebug()`）。
 - versionCode 只增不减、同号只能上一次；送审默认不上传，`--status draft` 是 production 不送审的唯一姿势。
 - 删号/删英雄必须清 rank 成员、`heroForceSort` 与玩家间引用（`cheatctl rank-audit` / `refs-audit`），否则崩榜、登录撞 `getUser null`。

@@ -82,6 +82,19 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode 'json={"parameter":[]}' \
   这就是为什么 ⑩ 要用 `verify-selected` 重新拉线上 jar 逐条目核对 CRC，而不是看 `zip` 的 rc。
 - 现状：演练 `#1/#2/#4` SUCCESS；**`DEPLOY=true` 未实跑**（写生产 + 重启踢线），首次需明确授权。
 
+## 🔴 导表在 CI 里的位置（2026-10-20 核）
+- **只有 `TS-Resource-Build` 的 ② 会导表**（`EXPORT_TABLES` 默认 true）→ `scripts/resource_build.sh --action export`
+  → Unity batchmode `GameEditor.Core.DataConfig.BatchResourceBuild.ExportTables()`
+  → `~Lua/Config/Data/<X>.lua` + `TimeSpaceServer/skzc/home/java/gameserver/conf/server/<X>.txt`。
+- `TS-Client-Resources` **不导表**（只 lua↔LuaBytes + AB 体检）；`TS-Android-Release` 的 `EXPORT_TABLES` **默认 false**
+  （导表会用 xlsx 覆盖手改 lua），只在 ②-2 `scripts/check_tables_exported.sh` 用 mtime 判黄球；`TS-Pipeline-Overview` 不链 job。
+- **至今没有一次成功导表**：#1 `resource_build.sh` 同行 `local` 展开 ⇒ `tag: unbound`；#2 Unity 编译错
+  `BatchResourceBuild.cs:174/176` 少 `global::` ⇒ 被解析成 `GameEditor.GameEditor.FrameTool`；#3~#6 一律 `导表=false`。
+- 🔴 batch 导表**不刷新** `DataConfigMD5Record`、**不删孤儿 lua**（GUI `excelALLConfig` 两件都做）⇒ 导完 CRC 与磁盘不一致、
+  已删表的 lua 会残留进包。
+- 🔴 服务端 txt 落在 `TimeSpaceServer/skzc/`，客户端仓 `git status -- TimeSpaceServer` 恒空 ⇒ ⑥ 变更清单看不到，必须去服务端仓提交。
+- 判「有没有导过」最快：比 `data_execl/base_data` 最新 xlsx 与 `~Lua/Config/Data` 最新 lua 的 mtime。
+
 ## 状态（2026-10-13 傍晚实跑核对）
 - 7 个 job 定义与视图已核对：`lint.sh` 四道全绿（7/7 语法通过）、`apply-jobs.sh --dry-run` **7/0**。
 - **已实跑拿到绿 / 黄球（无红球）**：

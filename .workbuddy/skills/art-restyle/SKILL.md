@@ -7,14 +7,19 @@ description: TimeSpaceGirl1 美术 UI 资源换节日风格 / 换皮肤 / 给整
 
 > 深水区原理与逐条复盘：**`docs/art_restyle_pipeline.md`**
 > （provider=chatgpt_web 的登录态驱动、HERO_BAND 卡体、去水印判据、写回台账）。
-> 工具：`scripts/image/restyle_pipeline.py`、`scripts/image/preview_ingame.py`、
-> `scripts/image/gen_chatgpt_web.py`、Jenkins `TS-Art-Restyle`。
+> 🎨 主题生产卡：**`docs/art_restyle_themes.md`** —— 8 个主题（圣诞/新年/万圣/情人节/夏日冲浪/
+> 普罗旺斯/感恩节/赛博）的设计意图与禁忌、四类图的参数配方、新主题接入 7 步、批量与额度纪律。
+> 工具：`scripts/image/restyle_pipeline.py`、`scripts/image/batch_restyle.py`（批量）、
+> `scripts/image/preview_ingame.py`、`scripts/image/gen_chatgpt_web.py`、Jenkins `TS-Art-Restyle`。
+> 出图前必跑 `restyle_pipeline.py themes --check`（预设自检，能拦下「写死一条抱礼物的姿势」这类错）。
 
 ## 什么时候用
 
 | 用户说 | 走哪条 |
 |---|---|
 | 「这张图换成圣诞/春节风格」 | §1 五段式，主题取 `themes` 里的 key |
+| 「这批图都换」「三语一起换」「一次出好几个主题」 | §1.4 `batch_restyle.py`（先 `--dry-run` 数组数） |
+| 「加个夏日冲浪/普罗旺斯/万圣/感恩/赛博主题」 | 改 `theme_presets.json` → `themes --check` → `docs/art_restyle_themes.md` §4 |
 | 「换皮肤但人物姿势也重设计」 | `--composition free`，必配 `--alpha-mode keep` + `--frame auto` |
 | 「套个边框」「边框不好看」 | §2 边框三定律，**先做真机预览再给用户看** |
 | 「黑底上看不见框」 | §2.2 亮边，一条 `--frame-rim` 解决 |
@@ -97,6 +102,21 @@ free 构图提示词 ⇒ **每张 free 图都是同一个「抱着礼盒递出�
 - 🔴 **不要在 LAYOUT 里再写「拿着 X」**：layout 是这张图专用的一段，写进去就等于把随机池钉死。
 - `state.json` 的 `pose_hint` 记录了本次实际用的那句，出图不理想时按它复现或换一条。
 - `lock` 构图不注入姿势（`{pose_hint}` 只出现在 free 分支），`--pose` 对 lock 无副作用。
+
+### 1.4 一次要换一批（多资源 / 多主题）走 batch_restyle.py
+
+```bash
+$PY scripts/image/batch_restyle.py scripts/image/batch_example.json --dry-run   # 先数清组数：N×M 组＝N×M 份额度
+$PY scripts/image/batch_restyle.py my.json --only chaozhilibao                   # 只跑名字含该子串的
+$PY scripts/image/batch_restyle.py my.json --no-gen                              # 复用已有出图，不烧额度
+$PY scripts/image/batch_restyle.py my.json --publish                             # verify 过了才写回
+```
+
+- **`assets` 支持 glob**：同一套 UI 的 `zh/en/jp` 三份必须一起换，只换一份＝「中文圣诞、英文原样」的花脸。
+- 出图是**单浏览器串行**的，别开两个批处理抢同一个 CDP 端口；`rc=3`（额度/登录）会停整批，去 AdsPower 换 profile 再反查端口。
+- `variant` 自动：源 `RGB`→`opaque`、源 `RGBA`→`alpha`。🔴 别把 RGB 写成 RGBA（导入/压缩口径会变）。
+- 汇总落在 `_output/art_restyle/_batch/<时间戳>/summary.md`，逐组日志在 `logs/<slug>__<theme>.<step>.log`。
+- 主题设计意图、每类图该配什么参数、新主题接入步骤：**`docs/art_restyle_themes.md`**。
 
 ## 2. 边框三定律
 

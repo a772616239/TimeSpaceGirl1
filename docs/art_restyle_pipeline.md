@@ -4,6 +4,8 @@
 > 入口：Jenkins job **`TS-Art-Restyle`** ／ 命令行 `scripts/image/restyle_pipeline.py`  
 > 🎯 一线操作手册（什么时候用哪条命令、边框三定律、验收清单、7 条红线）：  
 > **`.workbuddy/skills/art-restyle/SKILL.md`** —— 先读它，本文只留原理与复盘。  
+> 🎨 主题生产卡（8 个主题的设计意图/禁忌、四类图的参数配方、新主题接入 7 步、批量管线与额度纪律）：  
+> **`docs/art_restyle_themes.md`**  
 > 真机观感预览：`scripts/image/preview_ingame.py`（按 567px 显示宽贴回面板底 + 叠占位卡 + 边角特写）  
 > 已实战：`EightDayGiftPanelAtlas/cn2-X1_baridenglu_diban_en.png`（1080×1644 登录底板 → 圣诞版）  
 > 已实战：`OperatingPanelAtlas/cn2-X1_chaozhijj_diban_en.png`（856×2048 超值底板 → 圣诞版）

@@ -232,11 +232,8 @@ VER="$("$PY" scripts/bump_version.py --show 2>/dev/null | tr '\n' ' ')"
   echo ""
   echo "侧载：adb install -r \"$APK\""
   if [[ "${TS_SERVER_ENV:-}" == "测试服" ]]; then
-    echo "🔴 本包连的是本机（serverUrl=127.0.0.1:8081），真机侧载后必须先做端口反向映射，"
-    echo "   否则登录会一直转圈："
-    echo "     adb reverse tcp:8081 tcp:8081    # 登录服 + 区服列表"
-    echo "     adb reverse tcp:16081 tcp:16081  # 游戏服"
-    echo "   并确认本机 start-local.sh status 里 8081/16081 都在 LISTEN。"
+    echo "ℹ️ 测试服口径 = http://192.168.3.82:8081/（局域网直连，无需 adb reverse），"
+    echo "   真机需与本机同一局域网；并确认本机 start-local.sh status 里 8081/16081 都在 LISTEN。"
   fi
   echo "🔴 若手机已装 Play 版，必须先卸载 —— 本包用 upload key（beauty.keystore）签名，"
   echo "   与 Play 的 app signing key 不同，签名不匹配会装不上去。"

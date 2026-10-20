@@ -90,7 +90,7 @@ end
 function CountryFlagSelectPopup:OnOpen(callback)
     this._callback = callback
     this.titleText.text = GetLanguageStrByStr("选择你的国家")
-    this.tipText.text = GetLanguageStrByStr("默认按设备地区自动选择，可随时修改")
+    this.tipText.text = GetLanguageStrByStr("选择国家/地区")
 end
 
 function CountryFlagSelectPopup:OnShow()

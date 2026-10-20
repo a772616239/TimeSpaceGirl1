@@ -532,7 +532,7 @@ def build_select_popup():
 
     tip = board.add(Node("tip", 0, -116, 700, 36, anchor_min=(0.5, 1),
                          anchor_max=(0.5, 1), pivot=(0.5, 0.5)))
-    tip.text("默认按设备地区自动选择，可随时修改", size=22, align=4, color=TEXT_DIM)
+    tip.text("选择国家/地区", size=22, align=4, color=TEXT_DIM)
 
     close = board.add(Node("btnClose", -28, -26, 84, 84, anchor_min=(1, 1),
                            anchor_max=(1, 1), pivot=(1, 1)))

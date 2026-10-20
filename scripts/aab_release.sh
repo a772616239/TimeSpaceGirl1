@@ -371,10 +371,14 @@ else
     # ----------------------------------------------------------------------- #
     step "Unity batchmode 打包 AAB（约 10-15 分钟）"
     rm -f "${PROJECT_ROOT}/Library/SourceAssetDB-lock" 2>/dev/null || true
-    # 🔴 清理 StreamingAssets 里的 Unity 临时文件（.filename.XXXXXX）：
-    #    macOS 上 Unity 打 AB / CopyAssetBundleToStreamingAssets 会残留 atomic-write 临时文件，
-    #    它们会被 BuildPipeline.BuildPlayer 打进 AAB，导致包体积翻倍（实测 416MB 冗余）。
+    # 🔴 清理 StreamingAssets + Gradle intermediates 里的 Unity 临时文件（.filename.XXXXXX）：
+    #    macOS 上 Gradle 的 MergeAssets 任务在增量构建时会残留 atomic-write 临时文件，
+    #    它们会被打进 AAB/APK，导致包体积翻倍（实测 2742 个临时文件 = 416MB 冗余）。
     find "${PROJECT_ROOT}/Assets/StreamingAssets" -name ".*" -type f ! -name ".DS_Store" -delete 2>/dev/null || true
+    GRADLE_MERGE="${PROJECT_ROOT}/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/assets"
+    if [[ -d "$GRADLE_MERGE" ]]; then
+      find "$GRADLE_MERGE" -name ".*" -type f ! -name ".DS_Store" -delete 2>/dev/null || true
+    fi
     BUILD_T0=$(date +%s)
     if ! "$UNITY_BIN" \
         -projectpath "$PROJECT_ROOT" \

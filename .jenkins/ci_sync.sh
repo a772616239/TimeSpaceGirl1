@@ -80,7 +80,8 @@ fi
 echo "→ 镜像不入库资产（真源：${DEV_PROJ}）"
 rsync -a --delete "$DEV_PROJ/.secrets/"  "$CI/.secrets/"  && echo "   ✓ .secrets/"
 rsync -a --delete "$DEV_PROJ/keystore/"  "$CI/keystore/"  && echo "   ✓ keystore/"
-rsync -a --delete "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/" \
-  && echo "   ✓ TimeSpaceServer/（独立服务端仓，随开发目录同状态）"
+rsync -a --inplace "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/" \
+  && echo "   ✓ TimeSpaceServer/（独立服务端仓，随开发目录同状态；--inplace 直写，
+            不带 --delete：CI 目录不是真源，残留旧文件无害且沙箱拦 unlink）"
 
 echo "✅ 同步完成：$(git -C "$CI" log -1 --format='%h %s (%ci)')"

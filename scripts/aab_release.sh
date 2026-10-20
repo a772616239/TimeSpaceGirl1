@@ -47,7 +47,12 @@
 # =============================================================================
 set -euo pipefail
 
-PROJECT_ROOT="/Users/wangxufeng/Documents/TimeSpaceGirl1"
+# 🔴 工程根必须跟着「脚本所在工程」走，不能写死开发目录：
+#    Jenkins 的 TS-Android-Release 在**打包目录**（TimeSpaceGirl1-build）里 cd 过去再调本脚本，
+#    写死开发目录会让 Unity 实际去构建开发目录 —— 那里常开着 GUI Unity，占用检查必拦，
+#    而且产物落在开发目录、Jenkins 的 stage ⑥ 在打包目录里按 --after 找不到 ⇒ 整条链白跑。
+#    优先级：显式 PROJ 环境变量 > 脚本所在工程的上一级目录。
+PROJECT_ROOT="${PROJ:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 UNITY_BIN="/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity"
 VENV_PY="/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python"
 BUILD_LOG="${PROJECT_ROOT}/build_log_aab_main.txt"

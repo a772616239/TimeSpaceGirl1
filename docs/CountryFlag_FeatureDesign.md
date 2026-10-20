@@ -133,6 +133,23 @@ PlayerPrefs["device_country"]   （CountryRegionUtil 按设备地区写入）
 
 ---
 
+### 首次进主界面的弹出时机：选择国家 > 新手引导（2026-10-20）
+
+主界面 `OnShow` 末尾调 `CountryRankManager.TryShowFirstEnterGuide()`：**先同步置「占屏」标记**，
+再 0.6s 后弹面板。`MainPanel` 的 `UI.OnOpen` 在 `OnShow` **之后**才派发，强制引导的
+`openType==4` 正好监听它 —— 那一刻 `GuideManager.ShowGuide` 会看到占屏标记，把引导
+排进 `_PendingGuideList`，等面板关闭后再放行；反过来若 `GuidePanel` 已经开着，面板等它关掉再弹。
+
+- `CountryRankManager.IsFirstEnterPopupShowing()`：**待弹（延时中）和已弹都算占屏**。
+  只判「已弹」会留下 0.6s 空档，引导正好从这个空档插到前面 —— 这就是修复前的线上表现；
+- 两处兜底：`UIManager.OpenPanel` 返回 nil（缺资源）时立刻解除占屏；待弹标记带 2s 超时，
+  防止弹窗链路整段挂掉后把新手引导永久堵在队列里；
+- 队列放行用 `GuideManager.FlushPendingGuides()`，内部再延 0.15s —— 关窗回调还在
+  `UIManager.CloseStackPanel` 的收尾流程里，立刻开面板会被它接着改层级；
+- 用例：`scripts/lua-tests/test_country_popup_vs_guide.lua`（正常时序 / 反向时序 / 两个兜底）。
+
+---
+
 ## 5. 已知边界 / 后续
 
 | 项 | 说明 |

@@ -53,6 +53,137 @@ local BoxPool = require("Modules/Expert/BoxPool")--扭蛋
 local curIndex = 0
 local isBindRedPoint = false
 
+--============================== 页签翻入动画 ==============================
+-- 参考七日狂欢 cn2-X1_UI_SevenDayCarnivalPanelV2：day_1..7 各自 scaleX 0→1（0.167s），
+-- 相邻两格错开 0.033s，整体 0.367s、loop=1（那边常驻循环）。本面板页签最多 32 个、
+-- 数量随活动开关变化 ⇒ 只播一次，打开时逐格翻入。
+local kTabFlipDuration = 0.167
+local kTabFlipStep = 0.033
+local kTabFlipMaxSpan = 0.5   -- 可见页签多时压缩错开间隔，整体不超过 0.5s
+local tabFlipItems = {}       -- { tween = , tf = , anim = }
+local tabSelectTween = nil    -- 高亮板翻入
+
+-- UnityEngine.Object 在 lua 侧是 userdata：Destroy 之后既不是 nil 也不能直接取字段
+-- （tolua fake-null），必须先 IsNull 判活。
+local function FlipAlive(obj)
+    if obj == nil then
+        return false
+    end
+    if type(obj) == "userdata" then
+        return not IsNull(obj)
+    end
+    return true
+end
+
+-- 回收所有翻入 tween，并把临时关掉的按钮 Animator 恢复。
+-- 🔴 漏恢复 = 那颗页签从此没有按下反馈；重播 / 关闭 / 销毁都必须走这里。
+function this.StopTabAnims()
+    for i = #tabFlipItems, 1, -1 do
+        local item = tabFlipItems[i]
+        if FlipAlive(item.tween) then
+            item.tween:Kill(false)
+        end
+        if FlipAlive(item.tf) then
+            item.tf.localScale = Vector3.one
+        end
+        if FlipAlive(item.anim) then
+            item.anim.enabled = true
+        end
+        tabFlipItems[i] = nil
+    end
+    if FlipAlive(tabSelectTween) then
+        tabSelectTween:Kill(false)
+    end
+    tabSelectTween = nil
+end
+
+-- 打开面板：可见页签按「版面上的顺序」逐格 scaleX 0→1 翻入。
+-- 顺序取 tabsContent 的子节点顺序（VerticalLayoutGroup 按 sibling 排），不能用 tab 下标：
+-- TabSort 会按 ActivityGroups.Sort 调 SetSiblingIndex，下标顺序 ≠ 显示顺序。
+function this.PlayTabFlipIn()
+    this.StopTabAnims()
+    local content = Util.GetGameObject(this.gameObject, "tabs/viewPort/tabsContent")
+    if not FlipAlive(content) then
+        return
+    end
+    local total = content.transform.childCount
+    local visible = 0
+    for i = 0, total - 1 do
+        local tf = content.transform:GetChild(i)
+        if tf.name ~= "btn" and tf.gameObject.activeSelf then
+            visible = visible + 1
+        end
+    end
+    if visible <= 0 then
+        return
+    end
+    local step = kTabFlipStep
+    if visible > 1 and step * (visible - 1) > kTabFlipMaxSpan then
+        step = kTabFlipMaxSpan / (visible - 1)
+    end
+
+    local order = 0
+    local started = {}   -- 出错回滚用：{ tf, anim }
+    local ok, err = pcall(function()
+        for i = 0, total - 1 do
+            local tf = content.transform:GetChild(i)
+            -- 跳过克隆模板 btn 自身，以及本活动没开的页签（未激活节点不参与动画）
+            if tf.name ~= "btn" and tf.gameObject.activeSelf then
+                local anim = tf:GetComponent("Animator")
+                -- 🔴 每格都挂 CommonButton 的 Animator，Normal 状态是单帧 clip、照样写
+                -- m_LocalScale=1，而且 Animator 在 Update 之后求值 ⇒ 不关掉它，下面的
+                -- DOTween 缩放会被每帧盖回去（现象：脚本跑完了但页签没动）。
+                if FlipAlive(anim) then
+                    anim.enabled = false
+                end
+                started[#started + 1] = { tf = tf, anim = anim }
+                tf.localScale = Vector3.New(0, 1, 1)
+                local tween = tf:DOScale(Vector3.one, kTabFlipDuration)
+                    :SetDelay(order * step)
+                    :SetEase(Ease.OutQuad)
+                tween:OnComplete(function()
+                    if FlipAlive(tf) then
+                        tf.localScale = Vector3.one
+                    end
+                    if FlipAlive(anim) then
+                        anim.enabled = true
+                    end
+                end)
+                tabFlipItems[#tabFlipItems + 1] = { tween = tween, tf = tf, anim = anim }
+                order = order + 1
+            end
+        end
+    end)
+    if not ok then
+        -- DOTween 侧任何异常都不能把页签留在 scale 0 / Animator 禁用态
+        LogError("ExpertPanel: 页签翻入失败 " .. tostring(err))
+        for i = 1, #started do
+            local item = started[i]
+            if FlipAlive(item.tf) then
+                item.tf.localScale = Vector3.one
+            end
+            if FlipAlive(item.anim) then
+                item.anim.enabled = true
+            end
+        end
+        tabFlipItems = {}
+    end
+end
+
+-- 切换页签：高亮板翻一次。selected 节点没有 Animator，不会和 CommonButton 抢缩放通道。
+function this.PlayTabSelectFlip(index)
+    local go = tabSelectBtns[index]
+    if not FlipAlive(go) then
+        return
+    end
+    if FlipAlive(tabSelectTween) then
+        tabSelectTween:Kill(false)
+    end
+    local tf = go.transform
+    tf.localScale = Vector3.New(0, 1, 1)
+    tabSelectTween = tf:DOScale(Vector3.one, kTabFlipDuration):SetEase(Ease.OutQuad)
+end
+
 --初始化组件（用于子类重写）
 function ExpertPanel:InitComponent()
     this.btnBack = Util.GetGameObject(self.gameObject, "btnBack")
@@ -139,6 +270,8 @@ function ExpertPanel:OnShow()
         this:GetPriorityIndex()
     end
     this:ActivityRewardShow()
+    -- 页签逐格翻入（放在 ActivityRewardShow 之后：先确定哪些页签开着、哪个被选中）
+    this.PlayTabFlipIn()
 end
 
 function ExpertPanel:OnSortingOrderChange()
@@ -150,11 +283,14 @@ end
 
 --界面关闭时调用（用于子类重写）
 function ExpertPanel:OnClose()
+    -- 翻到一半被关掉：必须把临时禁用的按钮 Animator 恢复，否则这颗页签以后没按下反馈
+    this.StopTabAnims()
     PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 --界面销毁时调用（用于子类重写）
 function ExpertPanel:OnDestroy()
+    this.StopTabAnims()
     SubUIManager.Close(this.HeadFrameView)
     SubUIManager.Close(self.UpView)
     this:ClearRedPoint()
@@ -166,6 +302,8 @@ function this:ShowActivityData()
     for i = 1, allActivityNum do
         tabSelectBtns[i]:SetActive(i == curIndex)
     end
+    -- 选中的高亮板翻一次（切换页签 / 首次打开都走这里）
+    this.PlayTabSelectFlip(curIndex)
 end
 
 function this.RefreshActivity()

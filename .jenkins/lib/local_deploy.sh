@@ -310,7 +310,7 @@ cmd_diff() {
   n="$(wc -l < "$LOCAL_RUN/inject.list" | tr -d ' ')"
   echo "  待注入 ${n} 条（清单 $LOCAL_RUN/inject.list）"
   if [[ "$n" -eq 0 ]]; then
-    warn "代码与本地服完全一致 —— 无需注入（不做重启）"
+    echo "    [info] 代码与本地服完全一致 —— 无需注入（不做重启）"
     return 3
   fi
   return 0
@@ -319,11 +319,11 @@ cmd_diff() {
 cmd_deploy() {
   local rc
   if [[ ! -s "$LOCAL_RUN/inject.list" ]]; then
-    cmd_diff || { rc=$?; [[ $rc -eq 3 ]] && { ok "无变化，跳过部署"; return 3; }; return $rc; }
+    cmd_diff || { rc=$?; [[ $rc -eq 3 ]] && { ok "无变化，跳过部署（不做重启）"; return 0; }; return $rc; }
   fi
   local n
   n="$(wc -l < "$LOCAL_RUN/inject.list" | tr -d ' ')"
-  [[ "$n" -eq 0 ]] && { ok "无变化，跳过部署"; return 3; }
+  [[ "$n" -eq 0 ]] && { ok "无变化，跳过部署（不做重启）"; return 0; }
 
   # ---- 1. 备份 -------------------------------------------------------------
   local stamp bak
@@ -421,6 +421,18 @@ cmd_health() {
     warn ":${PORT} 150s 内没起来"
     collect_log_after; tail -n 25 "$LOCAL_RUN/after.log" 2>/dev/null | sed 's/^/    | /'
     return 1
+  fi
+
+  if [[ ! -f "$LOCAL_RUN/backup-path.txt" ]]; then
+    log "② 启动完成标志 —— 本轮没有部署（无差异或演练），跳过日志增量自检"
+    echo "    [info] 只做端口/进程与协议连通检查；要看启动质量请先真正部署一版"
+    if [[ "${SKIP_PROTO:-0}" != "1" ]] && [[ -f "$PROJ/scripts/verify/protocol_selftest.py" ]]; then
+      log "③ 协议连通探测（只读）"
+      "$PY" "$PROJ/scripts/verify/protocol_selftest.py" --host 127.0.0.1 --port $PORT \
+        --redis 127.0.0.1:6379 --timeout 4 --json-out "$LOCAL_RUN/proto.json" 2>&1 | tail -6 | sed 's/^/    /'
+      [[ ${PIPESTATUS[0]} -eq 0 ]] && ok "协议全通" || { warn "协议探测有需关注项/失败"; rc=3; }
+    fi
+    return $rc
   fi
 
   log "② 启动完成标志（本轮新增日志）"

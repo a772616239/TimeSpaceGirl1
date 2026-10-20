@@ -1,0 +1,30 @@
+{
+  "_comment": "UpGradePackagePanel（升级礼包/牌脸礼包面板）浮动动画配方。体检关键结论：根节点无任何动画组件 ⇒ 新建 Animator 挂根；show 上有一个 m_PlayAutomatically=1 的 legacy clip（cn2-X1_UI_UpGradePackagePanel_show_1.anim）负责 Button 的 m_LocalScale 脉冲、Image/tabBox 的 m_SizeDelta.y 展开、tab select 的 sizeDelta+alpha、arrows 的 m_IsActive —— 这些通道一律不写，只写 m_AnchoredPosition.y。btnBack 是全屏无 sprite 黑底遮罩（黑 + alpha 0.5882353）⇒ 只写 m_Color.a。rewards1 是奖励格容器（Grid 子节点挂 GridLayoutGroup，位置归布局）⇒ 位置/缩放都写在 rewards1 本身。基准 y：bg 0 / rewards1 -220 / tabBox -560 / endTime -660 / Button -765。bg 宽 1080 = 画布宽 ⇒ 缩放只放大不缩小（<1 会左右露边）。"
+  ,"clips": {
+    "start": {
+      "stop": 1.0,
+      "loop": false,
+      "curves": [
+        ["alpha", "show/btnBack", [[0, 0], [0.12, 0.5882353]]],
+        ["scale", "show/bg", [[0, 1], [0.14, 1.06], [0.26, 1], [0.34, 1]]],
+        ["scale", "show/rewards1", [[0.16, 0.92], [0.30, 1.04], [0.40, 1]]],
+        ["float", "show/rewards1", [[0.16, -240], [0.40, -220]]],
+        ["float", "show/tabBox", [[0.15, -578], [0.37, -560]]],
+        ["float", "show/endTime", [[0.30, -678], [0.52, -660]]],
+        ["float", "show/Button", [[0.43, -783], [0.63, -765]]]
+      ]
+    },
+    "normal": {
+      "stop": 3.0,
+      "loop": true,
+      "curves": [
+        ["scale", "show/bg", [[0, 1], [1.5, 1.015], [3, 1]]],
+        ["float", "show/rewards1", [[0, -220], [1.5, -229], [3, -220]]],
+        ["scale", "show/rewards1", [[0, 1], [1.5, 0.996], [3, 1]]],
+        ["float", "show/tabBox", [[0, -560], [1.5, -555], [3, -560]]],
+        ["float", "show/endTime", [[0, -660], [1.5, -663], [3, -660]]],
+        ["float", "show/Button", [[0, -765], [0.7333333, -762], [1.5, -765], [2.3333333, -762], [3, -765]]]
+      ]
+    }
+  }
+}

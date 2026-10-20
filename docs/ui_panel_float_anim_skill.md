@@ -457,3 +457,50 @@ prefab 的 diff 只有两处（根节点 `m_Component` 里那条 fileID + 组件
 - prefab diff 只有 2 处（`m_Component` 多一条 + 文件尾 `!u!95`），对象总数 3070 → 3071
 - 实拍：t=0 四周还是场景色，t=0.26 遮罩已盖住 ⇒ 遮罩淡入生效
 - **待做**：重打 AB（新 clip/controller 是 prefab 的依赖，不打资源包真机还是旧包）
+
+---
+
+## 附录 E：升级礼包面板落地（2026-10-20，UpGradePackagePanel）
+
+**这次的新情况：目标面板上已有一个「还在播」的 legacy clip**。`show` 节点带 `Animation`（`m_Enabled: 1`、
+`m_PlayAutomatically: 1`），引 `cn2-X1_UI_UpGradePackagePanel_show_1.anim`（0.767s、`m_LoopTime: 1`）。
+它已经在写：
+
+| 路径 | 属性 | 干了什么 |
+|---|---|---|
+| `Button` | `m_LocalScale.x/y/z` | 按钮弹入 0 → 1.3 → 1.1 → 1.2（prefab 基准是 1.2，不是 1） |
+| `Image` / `tabBox` | `m_SizeDelta.y` | 分割线、页签条 0 → 124.7 展开 |
+| `tabBox/box/tab(Clone)/select` | `m_SizeDelta.y` + `m_Color.a` | 页签选中态脉冲 |
+| `arrows` / `tabBox` | `m_IsActive` | 箭头闪烁 |
+| `rewards/Grid` | `m_LocalScale` | **死曲线**（改版后节点叫 `rewards1/Grid`，路径绑不上） |
+
+⇒ 这些通道一律不写；新 Animator 挂**根节点**，只写 `m_AnchoredPosition.y`、`m_Color.a` 和没人碰的
+`show/bg`、`show/rewards1` 的 `m_LocalScale`。**不要为了"挂 Animator"去删这个 legacy Animation**：它承担着
+按钮弹入与页签展开，删了这些动效就没了。
+
+**层级与基准 y**：`bg` 0（1080 宽 = 画布宽 ⇒ 缩放**只放大不缩小**，缩了左右露边）/ `rewards1` −220 /
+`tabBox` −560 / `endTime` −660 / `Button` −765（scale 1.2）。`btnBack` 是全屏无 sprite 黑底（alpha 0.5882353）⇒ 只写 alpha。
+
+| 阶段 | 部件 | 曲线 |
+|---|---|---|
+| start 1.0s | `show/btnBack` alpha | 0 / .12 → 0, 0.5882353 |
+| | `show/bg` | scale 1 / 1.06 / 1（.14/.26，只放大） |
+| | `show/rewards1` | scale .92 / 1.04 / 1（.16/.30/.40）；y −240 → −220 |
+| | `show/tabBox` | y −578 → −560（.15–.37，与 legacy 展开同窗口） |
+| | `show/endTime` | y −678 → −660（.30–.52） |
+| | `show/Button` | y −783 → −765（.43–.63，**只写位置**） |
+| normal 3.0s | `show/bg` | scale 1 / 1.015 / 1 |
+| | `show/rewards1` | y −220 / −229 / −220；scale 1 / 0.996 / 1 |
+| | `show/tabBox` | y −560 / −555 / −560（与内容反相） |
+| | `show/endTime` | y −660 / −663 / −660 |
+| | `show/Button` | y −765 / −762 / −765 / −762 / −765（双脉冲） |
+
+**产物**：`Assets/Art/UIAni/cn2-X1_UI_UpGradePackagePanel_float_{start,normal}.anim` +
+`.controller`；配方 `.workbuddy-ai/skills/ui-panel-float-anim/scripts/configs/upgrade_package_panel.json`。
+prefab diff 只有 2 处（`m_Component` +1 条、文件尾 `!u!95`），对象总数 141 → 142，3 个 legacy `!u!111` 原样保留。
+
+**离线验收**：start 1.000s / 11 条编辑器曲线（7 条绑定）、normal 3.000s / 10 条（6 条绑定），`m_LoopTime` 0/1；
+11/11 与 10/10 条曲线 `path` 哈希与 `genericBindings` 一一对应；normal 每条首尾同值；guid 链
+prefab → controller(`9c44e0eb`) → 两个 clip 闭合；`m_WriteDefaultValues: 1` 且 `start` 末值 = prefab 默认值（切态不跳）。
+
+**待做**：重打 AB（Unity 当前停在 Play mode 占着 `Temp/UnityLockfile`，batchmode 跑不了）。

@@ -71,7 +71,7 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
 | `FRAME`                      | `auto`（默认：free 套游戏卡框、lock 不套）/ `card` / `gold`（旧红金，兜底）/ `none`，见上节                                  |
 | `FRAME_RIM`                  | 卡框最外的亮边：`warm`（默认暖金）/ `ivory` / `violet` / `none`。**深色面板上不画亮边 = 框看不见**，见上节                          |
 | `ALPHA_FROM` / `SOURCE_FROM` | 资源已被换过、工作区里没原版时，用 `git:HEAD:<path>` 取回参照                                                            |
-| `WRITE_BACK`                 | **替换原图**：验收通过后把 alpha 版写回资源，原图搬出工程。默认关                                                              |
+| `WRITE_BACK`                 | **替换原图（默认开）**：验收通过后把成品写回资源，**原图先搬进 `BACKUP_ROOT`** 再覆盖，`.meta` 不动。传 `false` 只出图不改资源                                                              |
 | `BACKUP_ROOT`                | 备份根，留空 = `ResBackpack/备份`                                                                           |
 
 构建页能看到：环节表（JUnit）+ `summary.md` + 构建描述 + `artifacts/`（改前改后对比图、graph.md、  
@@ -351,11 +351,18 @@ $PY scripts/image/gen_chatgpt_web.py --image ... --prompt-file ... --out ... \
 publish 顺序：验收闸门 → 原图搬进 ResBackpack/备份/<资源相对路径> → 校验哈希 → 覆盖资源 → 复核哈希 → 记台账
 ```
 
+- **默认就写回**（2026-10-21 起 job 的 `WRITE_BACK` 默认 `true`）：图出完 → 验收 → 自动替换资源 + 原图入背包，
+  不再需要人每次手勾。#7 那轮就是「图出好了、资源没换」，白看一遍对比图。只出图不改工程时才传 `false`。
+- **变体按源图模式自动选**（`publish --variant auto`）：源 `RGB` → `opaque`，源 `RGBA` → `alpha`。
+  🔴 别在 job 里写死：写死 `alpha` 会让 RGB 资源（本来没有透明区）在写回这步假红；写死 `opaque`
+  又会让浮层的透明轮廓被整幅不透明盖住（799KB→1.6MB 的纹理口径变化也是这么来的）。
 - 备份按**资源相对路径镜像**（`ResBackpack/备份/Assets/ManagedResources/.../x.png`），不同图集的同名文件不会互相覆盖；
 - 台账 `ResBackpack/备份/_manifest.jsonl`：一行一次操作（时间 / 资源 / 主题 / 变体 / 备份路径 / 前后 sha256 / 尺寸 / 构建号）；
 - 已经有一份更早的原图时**绝不覆盖它**：再换一次会另存 `x__20261020-173000_christmas.png`；
 - 回滚：`restore --asset <资源>`（`--list` 看有哪些版本，`--version <时间戳>` 指定），回滚前会把当前文件先留档到
   `ResBackpack/备份/_replaced/`；
+- **写回 ≠ 进包**：真机要重打该资源所在 AssetBundle（`FrameTool.BuildGameAssetBundles`）。job 会在写回后把
+  备份路径与回滚命令打进控制台，但**不会**替你重打 AB。
 - `ResBackpack/` 已在 `.gitignore`：体积大、纯二进制、远端 PUBLIC 仓库塞不下。
 
 ---

@@ -1224,6 +1224,13 @@ def cmd_publish(args) -> int:
     state = read_state(work)
     outputs = state.get("outputs") or {}
     variant = args.variant
+    # 🔴 variant=auto：按**源图模式**选变体，而不是一律 alpha。
+    #    源是 RGB（本来就没有透明区）时没有 alpha 变体，硬写 alpha 会让「图已经出好了」
+    #    的构建在写回这一步假红；源是 RGBA（浮层）时又必须写 alpha，否则整幅不透明
+    #    会把游戏背景盖掉。所以默认 auto，别在 job 里写死。
+    if variant == "auto":
+        variant = "opaque" if str(state.get("source_mode", "")).upper() == "RGB" else "alpha"
+        log("publish", f"变体自动选择：源模式 {state.get('source_mode') or '?'} → {variant}")
     src = Path(outputs.get(variant, ""))
     if not src.is_file():
         log("publish", f"🔴 变体 {variant} 不存在，先跑 postprocess")
@@ -1452,7 +1459,8 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("publish", help="写回原资源（破坏性，需 --yes；原图搬出工程到 ResBackpack/备份）")
     p.add_argument("--work", required=True)
-    p.add_argument("--variant", choices=["alpha", "opaque"], default="alpha")
+    p.add_argument("--variant", choices=["auto", "alpha", "opaque"], default="auto",
+                   help="写回哪个变体。auto=按源图模式选（RGB→opaque / RGBA→alpha，默认）")
     p.add_argument("--backup-root", default=None,
                    help="备份根目录（默认 ResBackpack/备份，按资源相对路径镜像）")
     p.add_argument("--note", default="", help="台账备注（job 里传 BUILD_TAG，方便追溯哪次构建换的图）")

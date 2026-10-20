@@ -22,7 +22,9 @@ pipeline {
   }
 
   environment {
-    PROJ  = '/Users/wangxufeng/Documents/TimeSpaceGirl1'
+    // 🔴 打包目录 = 独立 clone（TimeSpaceGirl1-build）：开发目录开着 Unity 也能打包，
+    //    同步靠 ①-1 的 ci_sync.sh（fetch + reset + 资产镜像），别把开发目录路径改回来。
+    PROJ  = '/Users/wangxufeng/Documents/TimeSpaceGirl1-build'
     PY    = '/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python'
     BASH  = '/usr/local/bin/bash'
     UNITY = '/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity'
@@ -54,6 +56,19 @@ mkdir -p "$TS_RUN_DIR/logs"
   echo "用途：出测试 APK（侧载前须先卸载 Play 版 —— 签名不同）"
   echo "取证：$TS_RUN_DIR"
 } | tee "$TS_RUN_DIR/context.txt"
+''')
+      }
+    }
+
+    stage('①-1 代码同步（打包目录 pull）') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+# 打包目录无条件向 origin/<分支> 对齐：stash 快照本地残留 → reset --hard → 镜像 .secrets/服务端仓
+"$BASH" .jenkins/lib/run_stage.sh --name "代码同步（fetch+reset+资产镜像）" \
+  --group "同步" --slug ci-sync --timeout 1800 \
+  -- "$BASH" .jenkins/ci_sync.sh
 ''')
       }
     }

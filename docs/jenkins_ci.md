@@ -908,3 +908,32 @@ org.dom4j.DocumentException: … invalid XML character (Unicode: 0x1b)
   不阻断流水线；要恢复本地 10002 区服见记忆 `REF-shard10002.md`。
 - 打包类 job 的 `android_env.sh` rc=3（编辑器占着工程）今天**没有出现**：
   当前只有 Unity Hub 在跑、无编辑器实例，故「打包环境预检」是 ✅ 而非黄球。
+
+## 11. 打包目录（TimeSpaceGirl1-build，2026-10-20 起）
+
+**结论：打包类 job 不再在开发目录构建。** `TS-Android-Release` / `TS-Android-TestPackage` /
+`TS-Resource-Build` 的 `PROJ` 已切到独立 clone `/Users/wangxufeng/Documents/TimeSpaceGirl1-build`，
+开发目录开着 Unity 编辑器也能打包 —— 两个 Unity 实例各锁各的工程
+（`android_env.sh` / `resource_build.sh` 的占用检查按 `-projectpath` 精确匹配，互不误伤）。
+
+### 同步口径（`.jenkins/ci_sync.sh`，job 的 ①-1 阶段自动跑）
+
+1. `git fetch origin <分支>`（origin = GitHub）
+2. 工作区若有改动（上次构建/导表残留）→ `git stash` 快照（可恢复）→ `reset --hard origin/<分支>`。
+   **打包目录的本地改动一律不是真源。**
+3. 从开发目录镜像不入库资产：`.secrets/`、`keystore/`、`TimeSpaceServer/`（凭据与独立服务端仓
+   git 拉不到，开发目录是真源）。
+
+### 边界与红线
+
+- 🔴 `ci_sync.sh` 只允许在打包目录跑（`.jenkins/run/.CI_BUILD_DIR` 标记 + origin 必须是 GitHub），
+  误在开发目录执行会 `reset --hard` 掉未提交工作，防呆必须挡死。
+- **Library / BuildABs / StreamingAssets 不在 ci_sync 职责内**：Library 首次从开发目录播种后由
+  打包目录自己维护（Unity 增量）；AB 过期由 `check_ab_ready.sh` 闸门拦住 → 重跑
+  `TS-Resource-Build` 在打包目录重建。
+- 改了 xlsx / Lua / 资源想打进包：**先在开发目录 commit + push，再触发打包** —— 打包目录只认
+  origin，开发目录未推送的改动打不进包（这是特性不是 bug）。
+- 其余 job（Server-* / Pipeline-Overview / Test-* / Art-Restyle / Client-Resources）**仍在开发目录**，
+  不受本次切换影响。
+- 首次播种清单（rsync 自开发目录，仅一次）：`Library/`（12G，省首次导入）、`BuildABs/`（843M）、
+  `Assets/StreamingAssets/Android/`（432M）、未跟踪的零散工作文件。

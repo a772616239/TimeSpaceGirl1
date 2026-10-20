@@ -22,7 +22,9 @@ pipeline {
   }
 
   environment {
-    PROJ = '/Users/wangxufeng/Documents/TimeSpaceGirl1'
+    // 🔴 打包目录 = 独立 clone（TimeSpaceGirl1-build）：开发目录开着 Unity 也能导表/重建 AB，
+    //    同步靠 ①-1 的 ci_sync.sh（fetch + reset + 资产镜像），别把开发目录路径改回来。
+    PROJ = '/Users/wangxufeng/Documents/TimeSpaceGirl1-build'
     PY   = '/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python'
     BASH = '/usr/local/bin/bash'
   }
@@ -57,6 +59,19 @@ mkdir -p "$TS_RUN_DIR/logs"
   echo "🔴 为什么 AB 必须带环境：CopyAssetBundleToStreamingAssets 会把 Assets/Resources"
   echo "   整目录快照到 StreamingAssets，快照里的 serverUrl 才是真正打进包里的值。"
 } | tee "$TS_RUN_DIR/context.txt"
+''')
+      }
+    }
+
+    stage('①-1 代码同步（打包目录 pull）') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+# 打包目录无条件向 origin/<分支> 对齐：stash 快照本地残留 → reset --hard → 镜像 .secrets/服务端仓
+"$BASH" .jenkins/lib/run_stage.sh --name "代码同步（fetch+reset+资产镜像）" \
+  --group "同步" --slug ci-sync --timeout 1800 \
+  -- "$BASH" .jenkins/ci_sync.sh
 ''')
       }
     }

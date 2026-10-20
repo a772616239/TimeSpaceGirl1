@@ -30,9 +30,10 @@ JSON 配方格式（值可写表达式吗？不行——只写数字）：
   curve 类型：scale（缩放，绑 Transform）、float（m_AnchoredPosition.y，绑 RectTransform）、
              alpha（m_Color.a，绑 UnityEngine.UI.Image）
 
-prefab 补丁的两种情况：
+prefab 补丁的三种情况：
   * 根节点还是 legacy Animation（!u!111）→ 换成 Animator（新 fileID），并改 m_Component 里那条
   * 根节点已经是 Animator（!u!95）→ 只换 m_Controller 的 guid，并把 KeepAnimatorStateOnDisable 置 0
+  * 根节点既没 Animation 也没 Animator → 新建 Animator 挂上去（往 m_Component 追加一条 + 文件尾追加组件块）
 """
 import argparse
 import json
@@ -282,41 +283,6 @@ def _go_path(go_id, names, rt_of_go, father, rt2go):
     return '/'.join(reversed(parts))
 
 
-def pick_animator(prefab_text, animator_go=None):
-    """选出"动画该挂哪个 Animator"。
-
-    🔴 关键：prefab 文件里 !u!95 块的先后顺序与层级无关，取第一个会挂到子节点上，
-    结果是该子节点播放一份路径全错的动画（Inspector 里一片 Missing），根节点反而没动画。
-    默认取挂在根节点（Transform.m_Father == 0）上的那个。
-    """
-    names, rt_of_go, father, rt2go, animators = _parse_tree(prefab_text)
-    if not animators:
-        raise SystemExit('prefab 里既没有 legacy Animation（!u!111）也没有 Animator（!u!95）')
-
-    def label(m, gid):
-        return _go_path(gid, names, rt_of_go, father, rt2go) if gid else '<未知>'
-
-    if animator_go:
-        want = animator_go.strip('/')
-        for m, gid in animators:
-            if label(m, gid) == want:
-                return m, gid
-        raise SystemExit('--animator-go=%s 找不到；现有 Animator 在：%s'
-                         % (want, ', '.join(label(m, g) for m, g in animators)))
-
-    roots = {rt2go[rt] for rt, f in father.items() if f == '0' and rt in rt2go}
-    root_hits = [(m, gid) for m, gid in animators if gid in roots]
-    if len(root_hits) == 1:
-        return root_hits[0]
-    if not root_hits:
-        if len(animators) == 1:
-            return animators[0]
-        raise SystemExit('prefab 有 %d 个 Animator，都不在根节点上：%s\n'
-                         '请用 --animator-go 指定要挂动画的那个（取第一个会挂错，导致曲线全部丢失）'
-                         % (len(animators), ', '.join(label(m, g) for m, g in animators)))
-    raise SystemExit('根节点上有 %d 个 Animator，请用 --animator-go 指定' % len(root_hits))
-
-
 def check_paths(prefab_text, anim_go, paths):
     """校验每条曲线路径能否从 animator 所在节点解析出来；返回解析不到的路径列表。"""
     names, rt_of_go, father, rt2go, _ = _parse_tree(prefab_text)
@@ -330,31 +296,66 @@ def check_paths(prefab_text, anim_go, paths):
     return base, missing
 
 
+def root_go_id(prefab_text):
+    """prefab 根节点的 GameObject fileID（m_Father == 0 的那条 RectTransform 的 m_GameObject）。"""
+    names, rt_of_go, father, rt2go, _ = _parse_tree(prefab_text)
+    for rt, f in father.items():
+        if f == '0' and rt in rt2go:
+            return rt2go[rt]
+    raise SystemExit('找不到 prefab 根节点')
+
+
+def resolve_target_go(prefab_text, animator_go=None):
+    """动画锚点该是哪个 GameObject：显式 --animator-go 优先，否则根节点。
+
+    🔴 绝不能"取文件里第一个 !u!111 / !u!95"：prefab 文件里组件块的排列顺序与层级无关，
+    子面板自带的 Animation / 按钮自带的 CommonButton Animator 常常排在前面。
+    锚点错了曲线会全部 Missing（Unity 不报错），所以锚点只由层级决定。
+    """
+    if not animator_go:
+        return root_go_id(prefab_text)
+    names, rt_of_go, father, rt2go, _ = _parse_tree(prefab_text)
+    want = animator_go.strip('/')
+    for go in rt_of_go:
+        if _go_path(go, names, rt_of_go, father, rt2go) == want:
+            return go
+    raise SystemExit('--animator-go=%s 找不到该节点' % want)
+
+
+def _component_on(prefab_text, go_id, cls):
+    """找挂在指定 GameObject 上的某个组件块（cls 是 YAML classID）。"""
+    for m in re.finditer(r'^--- !u!%s &(-?\d+)\n(.*?)(?=^--- |\Z)' % cls,
+                         prefab_text, flags=re.M | re.S):
+        owner = re.search(r'^  m_GameObject: \{fileID: (-?\d+)\}', m.group(2), flags=re.M)
+        if owner and owner.group(1) == go_id:
+            return m
+    return None
+
+
 def patch_prefab(prefab_text, ctrl_guid, animator_go=None):
-    """把动画挂到 prefab：legacy Animation → 新建 Animator；已有 Animator → 只换 controller。"""
-    anim = re.search(r'^--- !u!111 &(-?\d+)\n(.*?)(?=^--- |\Z)', prefab_text, flags=re.M | re.S)
+    """把动画挂到 prefab：目标节点有 legacy Animation → 换成 Animator；
+    目标节点已有 Animator → 只换 controller；两者都没有 → 新增 Animator。"""
+    go_id = resolve_target_go(prefab_text, animator_go)
+
+    anim = _component_on(prefab_text, go_id, '111')
     if anim:
         old_id = anim.group(1)
-        # Animator 必须挂在原来那个 Animation 所在的 GameObject 上（别去猜"根节点"，
-        # prefab 里第一个 GameObject 不一定是根，实测会挂错）
-        owner = re.search(r'm_GameObject: \{fileID: (-?\d+)\}', anim.group(2))
-        if not owner:
-            raise SystemExit('Animation 组件没有 m_GameObject 字段')
-
         new_id = random.randint(10 ** 18, 9 * 10 ** 18)
         while str(new_id) in prefab_text:
             new_id = random.randint(10 ** 18, 9 * 10 ** 18)
 
         prefab_text = re.sub(r'--- !u!111 &%s\n.*?(?=^--- |\Z)' % old_id,
-                             ANIMATOR_BLOCK % (new_id, owner.group(1), ctrl_guid),
+                             ANIMATOR_BLOCK % (new_id, go_id, ctrl_guid),
                              prefab_text, count=1, flags=re.S | re.M)
         prefab_text = prefab_text.replace('- component: {fileID: %s}' % old_id,
                                           '- component: {fileID: %d}' % new_id, 1)
         return prefab_text, 'Animation -> Animator (id=%d)' % new_id
 
-    animator, anim_go = pick_animator(prefab_text, animator_go)
+    animator = _component_on(prefab_text, go_id, '95')
+    if not animator:
+        return add_animator(prefab_text, ctrl_guid, go_id)
 
-    block = animator.group(3)
+    block = animator.group(2)
     new_block, n = re.subn(r'm_Controller: \{fileID: 9100000, guid: \w+, type: 2\}',
                            'm_Controller: {fileID: 9100000, guid: %s, type: 2}' % ctrl_guid,
                            block, count=1)
@@ -363,11 +364,38 @@ def patch_prefab(prefab_text, ctrl_guid, animator_go=None):
     # 面板是缓存复用的，必须禁用后重置回默认状态，否则第二次打开不再弹入
     new_block = re.sub(r'm_KeepAnimatorStateOnDisable: \d',
                        'm_KeepAnimatorStateOnDisable: 0', new_block, count=1)
-    prefab_text = prefab_text[:animator.start(3)] + new_block + prefab_text[animator.end(3):]
+    prefab_text = prefab_text[:animator.start(2)] + new_block + prefab_text[animator.end(2):]
 
     names, rt_of_go, father, rt2go, _ = _parse_tree(prefab_text)
-    where = _go_path(anim_go, names, rt_of_go, father, rt2go)
+    where = _go_path(go_id, names, rt_of_go, father, rt2go)
     return prefab_text, 'Animator(现有) 换 controller -> guid=%s @ %s' % (ctrl_guid, where)
+
+
+def add_animator(prefab_text, ctrl_guid, go_id):
+    """目标节点上既没 legacy Animation 也没 Animator 时，新建一个挂上去。"""
+    new_id = random.randint(10 ** 18, 9 * 10 ** 18)
+    while str(new_id) in prefab_text:
+        new_id = random.randint(10 ** 18, 9 * 10 ** 18)
+
+    # 往该 GameObject 的 m_Component 列表尾部追加一条（顺序不影响引用解析）
+    m = re.search(r'^--- !u!1 &%s\n(.*?)(?=^--- |\Z)' % go_id, prefab_text, flags=re.M | re.S)
+    if not m:
+        raise SystemExit('找不到目标 GameObject 块：%s' % go_id)
+    body = m.group(1)
+    comps = list(re.finditer(r'^  - component: \{fileID: -?\d+\}\n', body, flags=re.M))
+    if not comps:
+        raise SystemExit('目标 GameObject 没有 m_Component 列表')
+    last = comps[-1]
+    body_new = body[:last.end()] + '  - component: {fileID: %d}\n' % new_id + body[last.end():]
+    prefab_text = prefab_text[:m.start(1)] + body_new + prefab_text[m.end(1):]
+
+    if not prefab_text.endswith('\n'):
+        prefab_text += '\n'
+    prefab_text += ANIMATOR_BLOCK % (new_id, go_id, ctrl_guid)
+
+    names, rt_of_go, father, rt2go, _ = _parse_tree(prefab_text)
+    where = _go_path(go_id, names, rt_of_go, father, rt2go)
+    return prefab_text, '新增 Animator(id=%d, ctrl=%s) @ %s' % (new_id, ctrl_guid, where)
 
 
 def main():
@@ -379,7 +407,7 @@ def main():
     ap.add_argument('--out-dir', default=None, help='先写到别处（不指定则直接落到 --dir 和 --prefab）')
     ap.add_argument('--no-prefab', action='store_true', help='只生成资源，不动 prefab')
     ap.add_argument('--animator-go', default=None,
-                    help='动画挂到哪个节点（相对 prefab 根的路径，默认自动取根节点上的 Animator）')
+                    help='动画挂到哪个节点（相对 prefab 根的路径，默认根节点）；曲线 path 相对它解析')
     args = ap.parse_args()
 
     curves, clip_meta = load_config(args.config) if args.config else (CURVES, CLIP_META)
@@ -425,7 +453,7 @@ def main():
     with open(args.prefab, encoding='utf-8') as f:
         prefab = f.read()
 
-    _, anim_go = pick_animator(prefab, args.animator_go)
+    anim_go = resolve_target_go(prefab, args.animator_go)
     prefab, how = patch_prefab(prefab, guids['ctrl'], args.animator_go)
 
     # 🔴 打完补丁必须校验：曲线 path 是相对 Animator 所在节点解析的，

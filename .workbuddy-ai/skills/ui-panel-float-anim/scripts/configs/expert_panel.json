@@ -1,0 +1,28 @@
+{
+  "_comment": "ExpertPanel（经营/活动总入口，全屏面板）浮动动画配方。层级实况：根子节点只有 bg / downLayout / tabs / btnBack。bg 是**全屏黑底遮罩**（Image 无 sprite、color 黑、alpha=1），所以只写 m_Color.a 淡入，绝不写它的缩放（缩放会四周露边，见 docs 坑位 1）。downLayout 是无图的透明容器，承载所有活动页（子页由 Lua SetActive 切换，故不给子页写曲线），呼吸/落位都写在它身上。tabs 是左侧页签列（ScrollRect，底板 cn2-X1_yingxiongxiangqing_yeqiandiban），页签按钮是 Lua 运行时克隆的 tab1..32，所以只写 tabs 容器本身，不碰 viewPort/tabsContent（布局组每帧重算它们的位置）。btnBack 自带 CommonButton 控制器 ⇒ 只写位置。基准 y：downLayout/tabs = 0，btnBack = 73.5。"
+  ,"clips": {
+    "start": {
+      "stop": 1.0,
+      "loop": false,
+      "curves": [
+        ["alpha", "bg", [[0, 0], [0.12, 1]]],
+        ["float", "downLayout", [[0.10, -22], [0.44, 0]]],
+        ["scale", "downLayout", [[0.10, 0.94], [0.26, 1.02], [0.38, 0.99], [0.46, 1]]],
+        ["float", "tabs", [[0.18, -16], [0.50, 0]]],
+        ["scale", "tabs", [[0.18, 0.88], [0.32, 1.06], [0.44, 0.99], [0.54, 1]]],
+        ["scale", "downLayout/expertRewardGrid/banner", [[0.22, 0.94], [0.36, 1.02], [0.48, 1]]],
+        ["float", "btnBack", [[0.30, 55.5], [0.52, 73.5]]]
+      ]
+    },
+    "normal": {
+      "stop": 3.0,
+      "loop": true,
+      "curves": [
+        ["float", "downLayout", [[0, 0], [1.5, -9], [3, 0]]],
+        ["scale", "downLayout", [[0, 1], [1.5, 1.006], [3, 1]]],
+        ["float", "tabs", [[0, 0], [1.5, 5], [3, 0]]],
+        ["float", "btnBack", [[0, 73.5], [1.5, 75.5], [3, 73.5]]]
+      ]
+    }
+  }
+}

@@ -177,7 +177,9 @@ return {
   loginTime: Number(pm.loginTime||0), offLineTime: Number(pm.offLineTime||0),
   fightId: Number(mlm.fightId||0), fightState: Number(mlm.state||0),
   gold: Number((im["14"]||{}).itemNum||0),
-  diamond: Number((im["3"]||{}).itemNum||0),
+  diamond: Number((im["16"]||{}).itemNum||0),   // 16=钻石；item["3"] 是英雄经验（2026-10-18 误封根因）
+  heroExp: Number((im["3"]||{}).itemNum||0),
+  exp: Number((im["17"]||{}).itemNum||0),
   heroCount: Object.keys(hm).length,
   heroMaxStar: stars.length?Math.max.apply(null,stars):0,
   heroMaxLevel: hlv.length?Math.max.apply(null,hlv):0,

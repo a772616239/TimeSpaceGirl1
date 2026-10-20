@@ -15,11 +15,15 @@
      「heroLog 干净」证明不了什么；`Hero_Star` 造出来的英雄是 `level=openLevel(star)`、
      `star=maxRank`，且**创建即该属性**。
   3. **「英雄等级高」本身不是证据**：要有同级分位对照 + 创建时间突发（脚本按模板 ID 顺序发）。
+  4. 🔴 **货币 id 不许写死**：2026-10-18 的误封源于 `itemMap["3"]`（英雄经验）被当成钻石。
+     现在 id→名字一律走 `currency.load_names()`（读 `conf/server/ItemConfig.txt`+`Language.txt`），
+     字段常量见 `currency.DIAMOND/GOLD/HERO_EXP/PLAYER_EXP`（16/14/3/17）。
 """
 import datetime
 import re
 import time
 
+from . import currency
 from .remote import js_int
 
 # ------------------------------------------------------------------ 阈值
@@ -113,7 +117,10 @@ return {exists:true, uid:U, nick:pm.nickName||"", openId:pm.openId||"",
   level:Number(pm.level||0), force:Number(pm.maxForce||0), vip:Number(pm.vipLevel||0),
   createTime:Number(pm.createTime||0), loginTime:Number(pm.loginTime||0),
   guildId:Number(pm.guildId||0),
-  gold:Number((im["14"]||{}).itemNum||0), diamond:Number((im["3"]||{}).itemNum||0),
+  gold:Number((im["14"]||{}).itemNum||0), diamond:Number((im["16"]||{}).itemNum||0),
+  heroExp:Number((im["3"]||{}).itemNum||0), exp:Number((im["17"]||{}).itemNum||0),
+  items:(function(){var c={},ids=[3,4,7,8,14,16,17,19,20,79];
+    for(var i=0;i<ids.length;i++){var k=""+ids[i];c[k]=Number(((im[k]||{}).itemNum)||0);}return c;})(),
   heroes:heroes, heroN:heroes.length,
   heroMaxLv: lv.length?Math.max.apply(null,lv):0,
   heroMaxStar: st.length?Math.max.apply(null,st):0,
@@ -152,15 +159,21 @@ return {peerN:arr.length, lvBand:[Math.max(0,lv0-BAND),lv0+BAND],
 GOLD_JS = """
 var cnt={};
 db.itemLog.aggregate([{$group:{_id:"$uid", n:{$sum:1}}}]).forEach(function(d){ cnt[d._id]=d.n; });
-var act=[];
+var gold=[], dia=[];
 db.user.find({}).forEach(function(u){
+  if((cnt[u._id]||0)<500) return;            // 只取活跃号（itemLog ≥500 条）
   var im=(u.itemManager&&u.itemManager.itemMap)||{};
-  var g=Number((im["14"]||{}).itemNum||0);
-  if((cnt[u._id]||0)>=500) act.push(g);
+  gold.push(Number((im["14"]||{}).itemNum||0));
+  dia.push(Number((im["16"]||{}).itemNum||0));   // 16=钻石（3 是英雄经验，别再用错）
 });
-act.sort(function(a,b){return a-b;});
-function pct(p){ return act.length?act[Math.min(act.length-1,Math.floor(act.length*p))]:0; }
-return {activePlayers:act.length, goldP50:pct(0.5), goldP90:pct(0.9)};
+function pct(a,p){
+  var b=a.slice().sort(function(x,y){return x-y;});
+  return b.length?b[Math.min(b.length-1,Math.floor(b.length*p))]:0;
+}
+function mx(a){var b=a.slice().sort(function(x,y){return x-y;});return b.length?b[b.length-1]:0;}
+return {activePlayers:gold.length,
+        goldP50:pct(gold,0.5), goldP90:pct(gold,0.9),
+        diaP50:pct(dia,0.5), diaP90:pct(dia,0.9), diaP99:pct(dia,0.99), diaMax:mx(dia)};
 """
 
 
@@ -168,6 +181,8 @@ class Detector(object):
     def __init__(self, remote, uid=None):
         self.r = remote
         self.uid = uid
+        # id→名字只在启动时读一次配置表（本地 conf 优先，其次远端）
+        self.currency_names, self.currency_src = currency.load_names(remote)
 
     # ------------------------------------------------------------ 单号
     def scan(self, uid=None, deep=True):
@@ -263,16 +278,26 @@ class Detector(object):
 
     def _check_gold(self, rep, prof):
         gold = prof.get('gold', 0)
-        if not gold:
+        if not gold and not prof.get('diamond'):
             return
         base = self.r.mongo(GOLD_JS) or {}
         rep.profile['gold_base'] = base
         p90 = base.get('goldP90', 0)
-        if p90 and gold > p90 * TH['gold_outlier_x']:
+        if gold and p90 and gold > p90 * TH['gold_outlier_x']:
             rep.add(SOFT, 'gold_outlier',
                     '金币 %d 是活跃号 P90(%d) 的 %.1f 倍' % (gold, p90, gold / float(p90)),
                     '注意：GM 只发英雄时金币可能完全正常（本次事故就是），此项只作辅助',
                     {'gold': gold, 'p90': p90})
+        # 钻石只报 INFO：真钻石靠 GM_REWARD(reason=28) 注入，本项只用来一眼看出量级。
+        dia = prof.get('diamond', 0)
+        d99 = base.get('diaP99', 0)
+        if dia and d99 and dia > d99:
+            rep.add(INFO, 'diamond_outlier',
+                    '钻石 %d 高于活跃号 P99(%d)' % (dia, d99),
+                    '只作线索、不参与裁决：请先查 reason=28(GM_REWARD)、reason=16/52(邮件/直购)。'
+                    '全服活跃号 P50=%s / P90=%s / P99=%s / max=%s' % (
+                        base.get('diaP50'), base.get('diaP90'), d99, base.get('diaMax')),
+                    {'diamond': dia, 'base': base})
 
     def _check_ranks(self, rep, uid):
         hits = []
@@ -370,7 +395,7 @@ return {total:total, suspects:out};
         return rows[:limit] if limit else rows
 
 
-def fmt_report(rep):
+def fmt_report(rep, remote=None):
     """终端可读输出。"""
     L = []
     p = rep.profile or {}
@@ -380,6 +405,9 @@ def fmt_report(rep):
     L.append('英雄 %s 个 / 最高 %s 级 / 最高 %s 星 / heroForceSort %s 条' % (
         p.get('heroN', '-'), p.get('heroMaxLv', '-'), p.get('heroMaxStar', '-'),
         p.get('heroForceSortN', '-')))
+    if p.get('exists'):
+        names, src = currency.load_names(remote=remote)
+        L.append('货币: %s   [id 名取自配置表:%s]' % (currency.describe(p, names), src))
     L.append('日志: itemLog %s / heroLog %s / fightLog %s   GM_REWARD %s 条' % (
         p.get('itemLogN', '-'), p.get('heroLogN', '-'), p.get('fightLogN', '-'),
         p.get('gmRewardN', '-')))

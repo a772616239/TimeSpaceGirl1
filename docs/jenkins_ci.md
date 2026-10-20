@@ -141,7 +141,7 @@
 | **TS-Test-Battle** | 战斗/关卡设备用例（`battle/*.json`） | 同上 | — | **禁止** |
 | **TS-Test-Func** | 功能点设备用例（`func/*.json`：背包/邮件/商店） | 同上 | — | **禁止** |
 | **TS-Test-Suite** | **全量总入口**：Lua + 三组设备用例，一份报告 | `GROUPS=全部` `SKIP_LUA=False` + 设备类参数 | `H 5 * * *` | **禁止** |
-| **TS-Local-Deploy** | **本地测试服一键部署**（本机 `~/home/java`，游戏服 `127.0.0.1:16081`）：体检 → JDK8 编译 → 逐条目比 CRC → 备份 → **副本注入** → CRC 复核 → **原子替换** → 重启 → 自检 | `SOURCE=本地工作区` `FETCH=True` `SKIP_BUILD=False` `GRADLE_ARGS=--offline` `SKIP_VERIFY=False` `DRY_RUN=False` `NOTES=` | — | **禁止** |
+| **TS-Local-Deploy** | **本地测试服一键部署**（本机 `~/home/java`，游戏服 `127.0.0.1:16081`）：体检 → JDK8 编译 → 逐条目比 CRC（**主 jar + lib 下 6 个 module jar**）→ 备份 → **副本注入** → CRC 复核 → **原子替换** → 重启 → 自检 | `SOURCE=本地工作区` `FETCH=True` `SKIP_BUILD=False` `GRADLE_ARGS=--offline` `SKIP_VERIFY=False` `DRY_RUN=False` `NOTES=` | — | **禁止** |
 
 ### 3.1 送审红线（三层闸门 + 一层代码级自检）
 
@@ -478,10 +478,10 @@ Lua 段的判定要认四种断言标记（`✅/❌`、`[PASS]/[FAIL]`、`N pass
 | # | 环节 | 干什么 | 判红 / 判黄 |
 |---|---|---|---|
 | ① | 参数与影响说明 | 打印这次会动什么、影响面（本机测试号掉线一次） | — |
-| ② | 源码就绪与部署前体检 | JDK8 / 源码状态 / jar 与 lib 一致性；`SOURCE=origin 干净副本` 时用 worktree 拉远端 | 依赖集合变了 ⇒ **红**（注入带不上新依赖） |
+| ② | 源码就绪与部署前体检 | JDK8 / 源码状态 / jar 与 lib **文件名集合 + 内容 CRC** 一致性；`SOURCE=origin 干净副本` 时用 worktree 拉远端 | 依赖集合变了 ⇒ **红**（注入带不上新依赖） |
 | ③ | 编译 | JDK8 + `:serverlogic:jar :serverlogic:copyJars`，默认 `--offline` | 编译失败 ⇒ 红 |
-| ④ | 差异分析 | 编译产物 vs 本地 jar 逐条目 CRC：变更 / 新增 / 排除 / 仅本地保留 | 无差异 ⇒ **黄**（`rc=3`，跳过部署、不重启） |
-| ⑤ | 部署 | 备份 → **在副本上 `zip -u`** → 逐条目 CRC 复核 → `mv` 原子替换 → 重启 | 复核不符 ⇒ 红（正式 jar 未动） |
+| ④ | 差异分析 | 主 jar（`serverlogic`）**与 lib 下 6 个 module jar** 各自逐条目 CRC：变更 / 新增 / 排除 / 仅本地保留；两边条数合计决定要不要部署 | 合计无差异 ⇒ **黄**（`rc=3`，跳过部署、不重启） |
+| ⑤ | 部署 | 备份（主 jar + 将改动的 lib module）→ 两边都**在副本上 `zip -u`** → 逐条目 CRC 复核 → `mv` 原子替换（先 lib 后主 jar）→ 重启 | 复核不符 ⇒ 红（对应文件未动） |
 | ⑥ | 自检 | 端口 / `Started GameApplication` / 表数量（基线 280）/ 致命关键字 / ERROR 行数 / 协议探测 | 有 ERROR 或协议告警 ⇒ 黄 |
 | ⑦ | 部署报告 | `artifacts/local-deploy.md` + `userContent/TS-Local-Deploy-latest.md` | — |
 
@@ -497,6 +497,32 @@ Lua 段的判定要认四种断言标记（`✅/❌`、`[PASS]/[FAIL]`、`N pass
 ⇒ 只注入 CRC 真变了的条目，其余一律不碰。实测第一次跑：`变更 53 / 新增 3 / 排除 4 / 仅本地保留 1`
 （那 1 条就是 `logback-boot.xml`，正好证明排除规则在起作用）。
 
+#### 🔴 只注入主 jar 是不够的：lib 下 6 个 module jar 必须一起同步
+
+`gameSrv-1.0.0.jar` 只是 `serverlogic` 的产物。`common` / `netty` / `gamecommon` / `hotfix` /
+`fightmanager` / `tablemanager` 是**各自独立的 lib jar**，靠 MANIFEST 的 `Class-Path` 加载。
+只注入主 jar ⇒ 改了 module 的方法签名后，运行期才炸：
+
+```
+Exception in thread "h-5" java.lang.NoSuchMethodError:
+    com.ljsd.common.mogodb.MongoUpdateCacheThreadLocal.clear()I
+    at com.ljsd.jieling.core.HandlerLogicThread.doWork(HandlerLogicThread.java:211)
+```
+
+2026-10-20 实际踩了一次：`common` 新增 `public static int clear()`，产物 20:15 就编出来了，
+但部署只带了主 jar ⇒ `lib/common-1.0.0.jar` 还是 10-18 的旧版 ⇒ **每处理一条消息就打死一个
+`h-N` 逻辑线程**，回包丢失 ⇒ 玩家侧的体感就是「老要重登」。更坑的是它带个假象：
+主 jar 那 1999 条 CRC 完全一致，`diff` 判「无变化」，整次部署被跳过。
+
+现在这 6 个 jar 也走「逐条目 CRC 差异注入」，与主 jar 同一套副本注入 + 复核 + 原子替换。
+三条约束：
+
+- **先 lib 后主 jar**：lib 多出方法不碍事，缺方法才炸；反序失败会留下「主 jar 新、lib 旧」。
+- **`gamecommon` 排除 `util/SysUtil.class`**：那是「本地 lib 带补丁、gradle 重建后没补丁」的类，
+  误注入会静默丢补丁（少加载配置表）。排除规则写死在 `LIB_MODULES` 第三列。
+- **备份同批次配对**：`backup/lib-<stamp>/` 只放真正被改动的 jar，
+  `rollback` 按 `gameSrv-<stamp>.jar ⇔ lib-<stamp>/` 一起还原。
+
 #### 为什么是「副本注入 + 原子 mv」而不是「停服再改正式 jar」
 
 1. `zip -u` 是**就地写**。运行中的 JVM 后续懒加载到被改过的条目 ⇒ 一半旧类一半新类 ⇒ `LinkageError`。
@@ -511,7 +537,7 @@ Lua 段的判定要认四种断言标记（`✅/❌`、`[PASS]/[FAIL]`、`N pass
 | 现象 | 真因 | 修法 |
 |---|---|---|
 | 自检全绿，**构建一结束进程就没了** | Jenkins `ProcessTreeKiller` 按 `HUDSON_COOKIE` / `JENKINS_SERVER_COOKIE` 环境变量杀光属于本次构建的进程 —— 它是按**环境变量**找进程的，`nohup`/`setsid` 都拦不住 | 拉起子进程时把 `HUDSON_COOKIE`/`JENKINS_SERVER_COOKIE`/`BUILD_*`/`WORKSPACE` 从环境里摘掉，再 `start_new_session=True` |
-| `launchctl bootstrap` **恒 rc=5**（`Input/output error`），`install gs` 必失败 | Jenkins / agent shell 不在 Aqua 登录会话，无 launchd 写权限 | **全程不碰托管状态**：托管中就用 `launchctl kickstart -k` 原地重启；未托管就用独立会话拉起。plist 仍在 `~/Library/LaunchAgents`，下次登录自动恢复托管 |
+| `launchctl bootstrap` **恒 rc=5**（`Input/output error`），`install gs` 必失败 | Jenkins / agent shell 不在 Aqua 登录会话，无 launchd 写权限（`launchctl load -wF` 同样 5，老接口也没用） | **全程不碰托管状态**：托管中就用 `launchctl kickstart -k` 原地重启；未托管就用独立会话拉起。要真正恢复托管：**双击 `~/home/java/install-autostart.command`**（在 Terminal.app 会话里跑 `start-local.sh install`，失败会自动回退为手动启动） |
 | `[[ 0\n0 -ge 0 ]]` 语法错、`ERROR 行统计` 崩 | `grep -c` 无匹配时**输出 0 且退出码 1** ⇒ `|| echo 0` 又追加一行 0 | 只兜空不兜零：`x="$(grep -c ... \|\| true)"; x="${x:-0}"` |
 
 还有一个：备份用 `cp -p` 会保留**被备份 jar 的 mtime**，所以 `ls -t` 排不出「最近一份」，回滚会挑错备份

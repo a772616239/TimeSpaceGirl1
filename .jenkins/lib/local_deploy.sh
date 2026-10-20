@@ -18,6 +18,12 @@
 #   local_deploy.sh rollback [备份名]    还原最近（或指定）备份并重启
 #   local_deploy.sh all                 一条龙（等价 job 里点一次构建）
 #
+# 🔴 部署范围不只是 gameSrv-1.0.0.jar：lib/ 下的 module jar（common / netty /
+#    gamecommon / hotfix / fightmanager / tablemanager）同样按逐条目 CRC 同步。
+#    只注入主 jar 时，一旦改了某个 module 的方法签名，运行期必炸 NoSuchMethodError
+#    （2026-10-20 实测：common 新增 MongoUpdateCacheThreadLocal.clear()I，主 jar 进去了、
+#      common jar 没进去 ⇒ 每条消息打死一个逻辑线程 ⇒ 客户端反复重连）。
+#
 # 环境变量：
 #   PROJ           工程根（默认 /Users/wangxufeng/Documents/TimeSpaceGirl1）
 #   SRC_DIR        编译源码目录（默认 $PROJ/TimeSpaceServer/Server_x1tag1.2.2/server_game）
@@ -52,7 +58,21 @@ GRADLE_ARGS="${GRADLE_ARGS---offline}"
 DRY_RUN="${DRY_RUN:-0}"
 PORT=16081
 
-RUN_DIR="${TS_RUN_DIR:-$PROJ/.jenkins/run/adhoc-$(date +%Y%m%d-%H%M%S)}"
+# 证据目录：job 会传 TS_RUN_DIR（一次构建内 diff/deploy/health 共用一个目录）。
+# 手动连着敲 deploy 再 health 时没传变量 —— 若各自新建目录，health 就读不到本轮的
+# backup-path.txt / log-baseline.txt，会误报「本轮没有部署」。所以复用 30 分钟内的最近目录。
+if [[ -n "${TS_RUN_DIR:-}" ]]; then
+  RUN_DIR="$TS_RUN_DIR"
+else
+  _latest="$(ls -1dt "$PROJ"/.jenkins/run/adhoc-* 2>/dev/null | head -1)"
+  _now="$(date +%s)"; _mt=0
+  [[ -n "$_latest" ]] && _mt="$(stat -f %m "$_latest" 2>/dev/null || echo 0)"
+  if [[ -n "$_latest" && $((_now - _mt)) -lt 1800 ]]; then
+    RUN_DIR="$_latest"
+  else
+    RUN_DIR="$PROJ/.jenkins/run/adhoc-$(date +%Y%m%d-%H%M%S)"
+  fi
+fi
 LOCAL_RUN="$RUN_DIR/local"
 mkdir -p "$LOCAL_RUN" "$BACKUP_DIR"
 
@@ -129,8 +149,8 @@ restart_gs() {
   spawn_detached
   wait_port_listen $PORT 150 || die "独立会话启动后 :${PORT} 150s 内没起来，看 ${GS_LOG}"
   ok "已在 :${PORT} 重新监听（pid=$(port_pid $PORT)）"
-  echo "    [info] 本次登录会话内非 launchd 托管（launchctl bootstrap 在 Jenkins shell 里恒 rc=5）"
-  echo "    [info] 后果：进程崩了不会自动拉起；重新登录 Mac 时 LaunchAgents 里的 plist 会自动恢复托管"
+  echo "    [info] 本次登录会话内非 launchd 托管（launchctl bootstrap/load 在 agent/Jenkins shell 里恒 rc=5）"
+  echo "    [info] 后果：进程崩了不会自动拉起。要恢复托管：双击 ~/home/java/install-autostart.command"
   return 0
 }
 
@@ -180,6 +200,122 @@ git_snapshot() {  # 写到 $LOCAL_RUN/git.txt，同时打印
   } | tee "$LOCAL_RUN/git.txt" | sed 's/^/    /'
 }
 
+# ------------------------------------------------------------ lib module 同步 --
+# 🔴 为什么需要它：gameSrv-1.0.0.jar 只是 serverlogic 的产物，common / netty /
+#    gamecommon / hotfix / fightmanager / tablemanager 是**各自独立的 lib jar**。
+#    只注入主 jar ⇒ 改了 module 的方法签名后运行期 NoSuchMethodError。
+#    （2026-10-20 案例：common 新增 public static int clear()I，主 jar 部署了、
+#      lib/common-1.0.0.jar 还是 10-18 的旧版 ⇒ 每处理一条消息就打死一个 h-N 逻辑线程
+#      ⇒ 玩家侧表现「老要重登」。）
+#
+# 🔴 为什么这些 jar 也不能整包覆盖：gamecommon 的 util/SysUtil.class 是「本地 lib 带补丁、
+#    gradle 重建后没有补丁」的版本（补丁丢了会静默少加载配置表）。整包覆盖 = 丢补丁。
+#    ⇒ 一律走「逐条目 CRC 差异注入」，并把 SysUtil 显式排除。
+#
+# 格式：<SRC_DIR 下的构建产物相对路径>|<本地 lib 文件名>|<额外排除正则，可空>
+LIB_MODULES=(
+  "common/build/libs/common-1.0.0.jar|common-1.0.0.jar|"
+  "netty/build/libs/netty-1.0.0.jar|netty-1.0.0.jar|"
+  "gamecommon/build/libs/gamecommon-1.0.0-SNAPSHOT.jar|gamecommon-1.0.0-SNAPSHOT.jar|^util/SysUtil\\.class$"
+  "hotfix/build/libs/hotfix.jar|hotfix.jar|"
+  "fightmanager/build/libs/fightmanager.jar|fightmanager.jar|"
+  "tablemanager/build/libs/tablemanager.jar|tablemanager.jar|"
+)
+
+lib_plan() {   # 每个 module 产出 <name>.list / staging；总计写入 lib/total.txt
+  local rel name excl src dst d n total=0
+  mkdir -p "$LOCAL_RUN/lib"
+  : > "$LOCAL_RUN/lib/summary.txt"
+  for spec in "${LIB_MODULES[@]}"; do
+    IFS='|' read -r rel name excl <<< "$spec"
+    src="$SRC_DIR/$rel"; dst="$GS_HOME/lib/$name"
+    d="$LOCAL_RUN/lib/$name"; mkdir -p "$d"; : > "$d/inject.list"
+    if [[ ! -f "$src" ]]; then
+      printf '    %-38s %s\n' "$name" "— 无编译产物（gradle 跳过），不动" >> "$LOCAL_RUN/lib/summary.txt"
+      continue
+    fi
+    if [[ ! -f "$dst" ]]; then
+      printf '    %-38s %s\n' "$name" "⚠ 本地 lib 缺这个 jar（需整包安装）" >> "$LOCAL_RUN/lib/summary.txt"
+      continue
+    fi
+    local -a exarg=()
+    [[ -n "$excl" ]] && exarg=(--exclude "$excl")
+    "$PY" "$DIFF_SCRIPT" --src "$src" --dst "$dst" \
+      --json "$d/diff.json" --list "$d/inject.list" --staging "$d/staging" \
+      ${exarg[@]+"${exarg[@]}"} --quiet || return 1
+    n="$(wc -l < "$d/inject.list" | tr -d ' ')"
+    total=$((total + n))
+    if [[ "$n" -gt 0 ]]; then
+      printf '    %-38s 待注入 %s 条\n' "$name" "$n" >> "$LOCAL_RUN/lib/summary.txt"
+    else
+      printf '    %-38s 一致\n' "$name" >> "$LOCAL_RUN/lib/summary.txt"
+    fi
+  done
+  printf '%s\n' "$total" > "$LOCAL_RUN/lib/total.txt"
+  return 0
+}
+
+lib_apply() {  # $1 = stamp。全部在副本上做，逐个复核通过后才统一 mv
+  local stamp="$1" rel name excl src dst d n tmp i=0
+  local -a pending=()
+  : > "$LOCAL_RUN/lib/replaced.txt"
+  for spec in "${LIB_MODULES[@]}"; do
+    IFS='|' read -r rel name excl <<< "$spec"
+    d="$LOCAL_RUN/lib/$name"
+    [[ -s "$d/inject.list" ]] || continue
+    dst="$GS_HOME/lib/$name"
+    n="$(wc -l < "$d/inject.list" | tr -d ' ')"
+    tmp="$GS_HOME/lib/.$name.$stamp.new"
+    cp -p "$dst" "$tmp" || die "复制副本失败：$dst"
+    rm -rf "$d/batches"; mkdir -p "$d/batches"
+    split -l 40 "$d/inject.list" "$d/batches/b."
+    local b nbatch=0
+    for b in "$d"/batches/b.*; do
+      ( cd "$d/staging" && /usr/bin/zip -u -q "$tmp" -@ < "$b" ) \
+        || { rm -f "$tmp"; die "zip -u 失败：${name}（该 jar 未改动）"; }
+      nbatch=$((nbatch + 1))
+    done
+    # 复核：逐条目 CRC 比回编译产物
+    local bad
+    bad="$("$PY" - "$SRC_DIR/$rel" "$tmp" "$d/inject.list" <<'PYEOF'
+import sys, zipfile
+src, dst, lst = sys.argv[1:4]
+names = [l.strip() for l in open(lst, encoding="utf-8") if l.strip()]
+with zipfile.ZipFile(src) as zs, zipfile.ZipFile(dst) as zd:
+    have = {i.filename: i.CRC for i in zd.infolist() if not i.is_dir()}
+    want = {i.filename: i.CRC for i in zs.infolist() if not i.is_dir()}
+print("\n".join(x for x in names if have.get(x) != want.get(x)))
+PYEOF
+)"
+    if [[ -n "$bad" ]]; then
+      rm -f "$tmp"
+      printf '%s\n' "$bad" | head -5 | sed 's/^/    ✗ /'
+      die "$name 有 $(printf '%s\n' "$bad" | wc -l | tr -d ' ') 个条目没注入成功（该 jar 未改动）"
+    fi
+    ok "${name}：注入 ${n} 条 / ${nbatch} 批，CRC 复核通过"
+    pending+=("$tmp|$dst")
+    i=$((i + 1))
+  done
+  # 全部复核通过 → 逐个原子替换
+  local pair
+  for pair in ${pending[@]+"${pending[@]}"}; do
+    tmp="${pair%%|*}"; dst="${pair##*|}"
+    mv -f "$tmp" "$dst" || die "mv 替换失败：$dst"
+    printf '%s\n' "$dst" >> "$LOCAL_RUN/lib/replaced.txt"
+  done
+  [[ "$i" -gt 0 ]] && ok "lib module 已同步 ${i} 个 jar"
+  return 0
+}
+
+lib_report() {  # 只读摘要，diff / precheck / info 共用
+  local total
+  total="$(cat "$LOCAL_RUN/lib/total.txt" 2>/dev/null || echo 0)"
+  if [[ -f "$LOCAL_RUN/lib/summary.txt" ]]; then
+    sed 's/^    /    /' "$LOCAL_RUN/lib/summary.txt"
+  fi
+  printf '%s' "${total:-0}"
+}
+
 # ------------------------------------------------------------------- 子命令 --
 cmd_info() {
   log "本地测试服现状"
@@ -189,7 +325,8 @@ cmd_info() {
   if /bin/launchctl print "gui/$(id -u)/com.ts.localserver.gameserver" >/dev/null 2>&1; then
     ok "launchd 托管：loaded（进程退出会被拉起）"
   else
-    warn "launchd 托管：NOT loaded（当前是独立会话进程；本次登录会话内不会自动拉起，重新登录后 plist 自动恢复托管）"
+    warn "launchd 托管：NOT loaded —— 崩了不会自动拉起。恢复办法：双击 ~/home/java/install-autostart.command"
+    warn "（launchctl bootstrap/load 在 agent 与 Jenkins shell 里恒 rc=5，只能在 Terminal.app 里做）"
   fi
   local lp
   lp="$(port_pid 8081)"
@@ -260,6 +397,25 @@ cmd_precheck() {
   else
     warn "缺 lib 目录，跳过一致性检查"
   fi
+
+  log "⑤ lib module jar 内容一致性（集合一致 ≠ 内容一致）"
+  # 文件名集合一样但类不同，是最难查的一类：main jar 引用了 module 里新加的方法，
+  # 运行期才 NoSuchMethodError。这里提前算出来（deploy 会一并注入）。
+  if [[ -d "$GS_HOME/lib" ]]; then
+    if lib_plan; then
+      cat "$LOCAL_RUN/lib/summary.txt" 2>/dev/null
+      local lt
+      lt="$(cat "$LOCAL_RUN/lib/total.txt" 2>/dev/null || echo 0)"
+      if [[ "${lt:-0}" -gt 0 ]]; then
+        echo "    [info] 共 ${lt} 个条目待同步 —— deploy 阶段会一起注入，不必手工处理"
+      else
+        ok "lib module jar 与编译产物逐条目一致"
+      fi
+    else
+      warn "lib module 差异分析失败（看 $LOCAL_RUN/lib/）"
+      rc=1
+    fi
+  fi
   return $rc
 }
 
@@ -297,8 +453,8 @@ cmd_build() {
 cmd_diff() {
   [[ -f "$SRC_JAR" ]] || die "没有编译产物：${SRC_JAR}（先跑 build）"
   [[ -f "$GS_JAR" ]]  || die "没有本地 jar：$GS_JAR"
-  log "差异分析（编译产物 vs 本地服 jar）"
-  local rc
+  log "① 主 jar 差异（serverlogic 编译产物 vs 本地 gameSrv）"
+  local rc n
   "$PY" "$DIFF_SCRIPT" \
     --src "$SRC_JAR" --dst "$GS_JAR" \
     --json "$LOCAL_RUN/diff.json" \
@@ -306,39 +462,76 @@ cmd_diff() {
     --staging "$LOCAL_RUN/staging"
   rc=$?
   [[ $rc -ne 0 ]] && die "差异分析失败（rc=${rc}）"
-  local n
   n="$(wc -l < "$LOCAL_RUN/inject.list" | tr -d ' ')"
-  echo "  待注入 ${n} 条（清单 $LOCAL_RUN/inject.list）"
-  if [[ "$n" -eq 0 ]]; then
+  echo "    待注入 ${n} 条（清单 $LOCAL_RUN/inject.list）"
+
+  log "② lib module jar 差异（common / netty / gamecommon / hotfix / fightmanager / tablemanager）"
+  lib_plan || die "lib module 差异分析失败"
+  cat "$LOCAL_RUN/lib/summary.txt" 2>/dev/null || true
+  local ln total
+  ln="$(cat "$LOCAL_RUN/lib/total.txt" 2>/dev/null || echo 0)"
+  ln="${ln:-0}"
+  total=$((n + ln))
+  echo "  合计待注入：主 jar ${n} 条 + lib module ${ln} 条 = ${total} 条"
+  if [[ "$total" -eq 0 ]]; then
     echo "    [info] 代码与本地服完全一致 —— 无需注入（不做重启）"
     return 3
+  fi
+  if [[ "$n" -eq 0 ]]; then
+    echo "    [info] 主 jar 无变化，只同步 lib module —— 但这些类要重启才生效"
   fi
   return 0
 }
 
 cmd_deploy() {
   local rc
-  if [[ ! -s "$LOCAL_RUN/inject.list" ]]; then
-    cmd_diff || { rc=$?; [[ $rc -eq 3 ]] && { ok "无变化，跳过部署（不做重启）"; return 0; }; return $rc; }
-  fi
-  local n
-  n="$(wc -l < "$LOCAL_RUN/inject.list" | tr -d ' ')"
-  [[ "$n" -eq 0 ]] && { ok "无变化，跳过部署（不做重启）"; return 0; }
+  # 总是重算一次差异：主 jar 可能没变、只有 lib module 变了（2026-10-20 就是这样），
+  # 只看 inject.list 会误判「无变化」而跳过部署，问题原样留在服上。
+  cmd_diff; rc=$?
+  if [[ $rc -eq 3 ]]; then ok "无变化，跳过部署（不做重启）"; return 0; fi
+  [[ $rc -ne 0 ]] && return $rc
+
+  local n ln total
+  n="$(wc -l < "$LOCAL_RUN/inject.list" 2>/dev/null | tr -d ' ' || true)"; n="${n:-0}"
+  ln="$(cat "$LOCAL_RUN/lib/total.txt" 2>/dev/null || echo 0)"; ln="${ln:-0}"
+  total=$((n + ln))
+  [[ "$total" -eq 0 ]] && { ok "无变化，跳过部署（不做重启）"; return 0; }
 
   # ---- 1. 备份 -------------------------------------------------------------
   local stamp bak
   stamp="$(date +%Y%m%d-%H%M%S)"
   bak="$BACKUP_DIR/gameSrv-$stamp.jar"
-  log "① 备份当前 jar"
+  log "① 备份当前 jar（主 jar + 将要改动的 lib module）"
   if [[ "$DRY_RUN" == "1" ]]; then
     echo "    [dry-run] cp -p \"$GS_JAR\" \"$bak\""
+    echo "    [dry-run] 备份 ${ln} 条待同步 lib module 条目 → $BACKUP_DIR/lib-$stamp/"
   else
     cp -p "$GS_JAR" "$bak" || die "备份失败（无备份绝不注入）"
     shasum -a 256 "$bak" | awk '{print $1}' > "$bak.sha256"
-    ok "备份：${bak}（$(du -h "$bak" | cut -f1)）"
+    ok "备份主 jar：${bak}（$(du -h "$bak" | cut -f1)）"
     printf '%s\n' "$bak" > "$LOCAL_RUN/backup-path.txt"
+
+    # lib module 只备份真正要动的那些，manifest 供 rollback 逐字还原
+    : > "$LOCAL_RUN/lib/backup-manifest.txt"
+    if [[ "$ln" -gt 0 ]]; then
+      local libbak="$BACKUP_DIR/lib-$stamp" spec rel name excl d
+      mkdir -p "$libbak"
+      for spec in "${LIB_MODULES[@]}"; do
+        IFS='|' read -r rel name excl <<< "$spec"
+        d="$LOCAL_RUN/lib/$name"
+        [[ -s "$d/inject.list" ]] || continue
+        cp -p "$GS_HOME/lib/$name" "$libbak/$name" || die "备份失败：lib/$name"
+        printf '%s\n' "$name" >> "$LOCAL_RUN/lib/backup-manifest.txt"
+      done
+      ok "备份 lib module：$(wc -l < "$LOCAL_RUN/lib/backup-manifest.txt" | tr -d ' ') 个 → ${libbak}"
+      printf '%s\n' "$libbak" > "$LOCAL_RUN/lib-backup-path.txt"
+    fi
+
     ls -1 "$BACKUP_DIR"/gameSrv-*.jar 2>/dev/null | sort -r | tail -n +16 | while read -r old; do
       rm -f "$old" "$old.sha256"
+    done
+    ls -1d "$BACKUP_DIR"/lib-* 2>/dev/null | sort -r | tail -n +6 | while read -r oldd; do
+      rm -rf "$oldd"
     done
   fi
 
@@ -354,8 +547,10 @@ cmd_deploy() {
   #    副本注入 + mv 原子替换：运行中的进程始终读旧 inode，替换是瞬时的；
   #    失败时正式 jar 一个字节都没动，服务照旧。
   local tmpjar="$GS_HOME/.gameSrv-$stamp.new"
-  log "② 在副本上注入 ${n} 个差异条目（zip -u 分批，staging 已 touch 过 mtime）"
-  if [[ "$DRY_RUN" == "1" ]]; then
+  log "② 主 jar 注入（${n} 个差异条目，zip -u 分批，staging 已 touch 过 mtime）"
+  if [[ "$n" -eq 0 ]]; then
+    echo "    [info] 主 jar 无差异，跳过"
+  elif [[ "$DRY_RUN" == "1" ]]; then
     echo "    [dry-run] cp -p $GS_JAR $tmpjar"
     echo "    [dry-run] cd staging && zip -u -q $tmpjar -@ < inject.list"
   else
@@ -374,8 +569,10 @@ cmd_deploy() {
   fi
 
   # ---- 4. 复核副本 ---------------------------------------------------------
-  log "③ 注入复核（逐条目 CRC 比回编译产物）"
-  if [[ "$DRY_RUN" == "1" ]]; then
+  log "③ 主 jar 注入复核（逐条目 CRC 比回编译产物）"
+  if [[ "$n" -eq 0 ]]; then
+    echo "    [info] 跳过"
+  elif [[ "$DRY_RUN" == "1" ]]; then
     echo "    [dry-run] 跳过复核"
   else
     local bad
@@ -398,14 +595,26 @@ PYEOF
     ok "全部 ${n} 条 CRC 与编译产物一致"
   fi
 
-  # ---- 5. 原子替换 + 重启 --------------------------------------------------
-  log "④ 原子替换正式 jar 并重启"
+  # ---- 5. lib module 同步（先于主 jar：lib 多方法不碍事，缺方法才炸）--------
+  log "④ lib module jar 同步（逐条目注入 → CRC 复核 → 原子替换）"
+  if [[ "$ln" -eq 0 ]]; then
+    echo "    [info] lib module 无差异，跳过"
+  elif [[ "$DRY_RUN" == "1" ]]; then
+    echo "    [dry-run] 同步 ${ln} 条：$(tr '\n' ' ' < "$LOCAL_RUN/lib/backup-manifest.txt" 2>/dev/null)"
+  else
+    lib_apply "$stamp" || die "lib module 同步失败 —— 用 .jenkins/lib/local_deploy.sh rollback 还原"
+  fi
+
+  # ---- 6. 原子替换 + 重启 --------------------------------------------------
+  log "⑤ 原子替换正式 jar 并重启"
   if [[ "$DRY_RUN" == "1" ]]; then
     echo "    [dry-run] mv -f $tmpjar $GS_JAR && 重启游戏服"
   else
-    mv -f "$tmpjar" "$GS_JAR" || die "mv 替换失败"
-    ok "jar 已替换（$(du -h "$GS_JAR" | cut -f1)）"
-    restart_gs || die "替换成功但重启失败 —— 用 $BASH .jenkins/lib/local_deploy.sh rollback 回到备份"
+    if [[ "$n" -gt 0 ]]; then
+      mv -f "$tmpjar" "$GS_JAR" || die "mv 替换失败"
+      ok "jar 已替换（$(du -h "$GS_JAR" | cut -f1)）"
+    fi
+    restart_gs || die "替换成功但重启失败 —— 用 .jenkins/lib/local_deploy.sh rollback 回到备份"
   fi
   return 0
 }
@@ -527,6 +736,24 @@ cmd_rollback() {
     want="$(cat "$target.sha256")"
     have="$(shasum -a 256 "$target" | awk '{print $1}')"
     [[ "$want" == "$have" ]] && ok "备份校验和一致" || die "备份文件已损坏（sha256 不符）"
+  fi
+  # 同批次 lib module 备份：gameSrv-<stamp>.jar ⇔ lib-<stamp>/
+  local stamp libbak
+  stamp="$(basename "$target" .jar)"; stamp="${stamp#gameSrv-}"
+  libbak="$BACKUP_DIR/lib-$stamp"
+  if [[ -d "$libbak" ]]; then
+    ok "找到同批次 lib module 备份：$(ls -1 "$libbak" 2>/dev/null | wc -l | tr -d ' ') 个 jar"
+  else
+    echo "    [info] 没有同批次 lib 备份（那次部署没改 lib module）"
+  fi
+  # 与 deploy 顺序对称：先 lib 后主 jar
+  if [[ -d "$libbak" ]]; then
+    local f
+    for f in "$libbak"/*.jar; do
+      [[ -f "$f" ]] || continue
+      cp -p "$f" "$GS_HOME/lib/$(basename "$f")" || die "还原失败：lib/$(basename "$f")"
+    done
+    ok "lib module 已还原"
   fi
   # 与 deploy 走同一条替换路径：副本 → 原子 mv → restart_gs（不碰 launchd 托管）
   local tmpjar="$GS_HOME/.gameSrv-rollback-$(date +%Y%m%d-%H%M%S).new"

@@ -31,7 +31,10 @@
 ## 挂机气泡 / UI 布局 / IAP / 诱导评分
 - 细节已拆到 `REF-client-misc.md`（气泡 280×78 两行上限、CanvasScaler match=0、IAP 入口收口、AppReview 闸门）。
 
-## 美术资源换节日风格（→ docs/art_restyle_pipeline.md、Jenkins `TS-Art-Restyle`）
+## 美术资源换节日风格（→ **skill `.workbuddy/skills/art-restyle/SKILL.md`**、docs/art_restyle_pipeline.md、Jenkins `TS-Art-Restyle`）
+- 🔴 边框类改动**必须按真机显示宽验**（1080 资源进游戏只有 567px，1:1 看清的线缩完全是 1px）：
+  `python3 scripts/image/preview_ingame.py old.png new.png --cards 2x4`（贴回面板底+叠卡占位）、
+  `--zoom 3` 看切角/亮边毛刺。给用户看必须配「改前」，且**改前文件不能按文件名猜**（备份存的是被替换掉的上一版）。
 - 🔴 **provider 默认 `chatgpt_web`**（用本机 Chrome 登录态走订阅额度，不读 API key）。坑：cookie 导出再
   `addCookies` 重建**无效**（Chrome 155 的 `session-token.0/.1` 分片不被认）⇒ 必须整份 profile 交 Chrome 自解密；
   Chrome 要 `--no-sandbox --disable-gpu`；生成图是 **blob + alt「已生成图像 N」**（上传图 alt「用户附件」），
@@ -42,6 +45,8 @@
 - 🔴 接缝**绝不能把最后一行往下广播**（那就是角色身体，会变竖光条）；要渐隐就原位逐行混合。
 - 🔴 `WRITE_BACK=true` = 验收闸门 → 原图搬出工程到 `ResBackpack/备份/<资源相对路径>`（gitignore）→ 校验哈希 → 覆盖 → `_manifest.jsonl` 记台账；回滚 `restyle_pipeline.py restore --asset …`。`.meta` 永不改动（曾出现 guid 被换：`3b0b0d5e`→`042a30ad`，Unity 引用全断）。
 - 🔴 写回 ≠ 进包，必须重打该资源所在 AssetBundle。
+- 🔴 卡框（`--frame card`）**最外圈必须有亮边**（`--frame-rim warm|ivory|violet`，默认暖金）：面板底 `(17,17,25)` 与墨带 `(18,16,24)` 同亮度，只画墨带在黑底上等于没框（用户原话「遇到黑色的时候不明显」）。这是游戏道具槽自己的剖面（`tongyong_daojukuang_01/04/05`：暗带 3px + 亮边 5px），判据＝亮边与底的亮度差 ≥100。
+- 🔴 框线**不能用 `ImageDraw.line(width=…)`**：以路径为中线、round join 把 45° 切角磨圆，相邻两条线还会互相盖住（亮边只剩半宽）⇒ 用多边形掩膜 `_ring_paste`。内细线默认关（`--frame-hairline` 才开），否则是相框式双线。
 
 ## 国家旗帜（→ docs/CountryFlag_FeatureDesign.md）
 - 🔴 250 国（ISO 3166-1）、旗 132×88：新增 png 必须补 `.meta`（textureType 8/spriteMode 1/spritePackingTag）+ `ResourcePathConfig.asset` 登记，否则 `Util.LoadSprite` 空白。
@@ -70,7 +75,14 @@
 - `RankFirstHandler`(11756) → `RankLogic.getRankFirstInfo` **遍历全部 rankTypes**，任一榜 `getFirst` 抛错 ⇒ 整包响应失败 ⇒ **排行榜打不开**。
 - 🔴 `HeroForceRank.getFirst/getOptional` 原直接 `getHero(heroId).getTemplateId()`（无判空）；`AbstractRank.getOneUserRank` 有判空，所以**只有英雄战力榜会崩**。代码已判空（`54d36e83`，未发版）。
 - 🔴 崩榜根因＝**删号只删 `user`，没清 `HERO_FORCE_RANK` 的 `uid:heroId` 复合成员**；旧 `Purger.run` 的 `--account` 分支 `what=[]` ⇒ 完全没调 `clean_ranks`。已修为「clean_ranks→clean_mongo_refs→delete_account」+ 结尾自动体检（`06b47bde6`）。
+- 🔴 删号可逆一半：`/root/incident_*` 有 `mongoexport` 快照 ⇒ 回灌 `db.user` 即整档复活（10-20 已实操 10000013）。
+  三坑：`{"$date":{"$numberLong":..}}` 要还原成 `new Date(-28800000)`；`guildInfo` 只抽 members 不减 `totalMembers`；
+  该 uid 的 `itemLog/heroLog/fightLog/storeLog` 是物理删，事后无流水可查。`FORCE_CURR_RANK` 注 `maxForce` 即可，
+  `MAIN_LEVEL_RANK`=`virtureId+force/1e8`、`HERO_FORCE_RANK`=英雄单体战力，靠 `addRank` 自愈。
 - 🔴 排行榜打不开先跑 `python3 scripts/cheatctl.py rank-audit [--repair]`（应为 0 条失效）。判据＝成员 uid 不在 `user`（user_gone）/ heroId 不在 heroMap（hero_gone）；**只对 `^1\d{7}$` 处理，公会榜 guildId 不能碰**。
+- 🔴 好友残留引用（删号没清 `friendManager`）⇒ 引用方登录 `GET_FRIEND_INFO` 撞 `getUser null`，卡进度 45%：
+  体检 `cheatctl.py refs-audit [--repair]`（默认只读）；字段含 `friends/blackFriends/applyFriends/myApplyFriends/giveMap/haveRewardMap`，
+  手扫最容易漏 `myApplyFriends`。`Purger` 已有 `clean_player_refs`，顺序 `clean_ranks→clean_player_refs→clean_mongo_refs→delete_account`。
 - 🔴 删英雄必须同步 `heroForceSort` 置空（`refreshHeroForceSort` 结果为空时不回写）；`maxForce` 是当前阵容战力（`PlayerLogic:369`），删英雄别重算。`itemLog` 会整段断档（10000221–225 全 0），真账本是 BI 文件流水 `reason=28 = GM_REWARD`。`cheat_scan.py` 对 GM 改英雄是**假阴性**。
 - 活体风险：改包客户端仍在发 `GM_REQUEST`（`10#1#0` TIME_INFO 探测），说明洞在外面流通；`GM_LOGIN_BY_UID=40` 可顶号。
 
@@ -87,3 +99,25 @@
 - 凭据一律 `.secrets/`（700/600）；远端 PUBLIC、4 个 keystore 在库（决定不处置）。
 - 后台长任务不能 `nohup &`/`disown` ⇒ `Popen(..., start_new_session=True, DEVNULL)`；shell 坑：`pipefail`+`|head` 假失败、BSD `find` 无 `-newermt`/`timeout`、沙箱 `ps` 不可用（用 `pgrep -fl`）、`grep` 不认 `\|`（用 `-E`）、源码常为 GBK 需 `grep -a`。
 - 改系统级状态必须当场验证并标注重启后是否有效；`BattlePanel.prefab` 工作区副本会被 Unity 重写成 13.8 万行 ⇒ 打补丁先 `git show HEAD:path`。
+
+## 🔴 登录加载链（卡百分比必看）
+- **现已 20 格**（f79243431 并行分组后）：15 个串行步 + 4 个并行分组 + 1 个末步，`maxValue=19`；
+  百分比＝`int(curIndex/19*100)`，**已经没有 45% 这一格**（8→42%、9→47%）。
+  分组前的旧口径：43 步 / `maxValue=42` / 45%=第 19 步好友聊天（对照历史日志时用）。
+  改 `LoginPanel.ExecuteLoading` 增删步骤会让所有"卡 x%"口径平移。
+- `ExecuteLoading` 现在是 `addStep(name, fire)` / `addGroup(name, {member(name, fire)})` 的 DSL。
+  **加分组必须满足三条**（写在函数头）：组内无数据依赖；**回包协议号互不相同**
+  （C# `callbacks` 以回包 msgId 为 key，同号并发会让后注册的回调被丢弃 ⇒ 该成员永不回调，
+  这也是 `RequestGetFriendInfo(1)/(3)` 只能串行的原因）；只放纯展示数据。
+  已知会内部再发一次的：`GetActivityAllRewardRequest`（→BoxPoolList）、`GetWorldArenaInfoRequest`
+  （UNLOCK→取数据）——靠 `parallelBatch` 粘性标志，回调里再发的请求也走并发通道。
+- 并发通道：`Network.parallelBatch>0` ⇒ `SendMessageWithCallBack` 转 `SendParallelMessage`
+  （不进 `sendFuncQueue`、不动 `sendFlag`、不重发）；批次内报错只算该成员失败
+  （`LoadingPanel.GroupMemberFailed`），**不能**推进整条链。
+- 链只靠回调推进 ⇒ 任一回调不来/抛错就永久停住，且 `Network.sendFlag` 卡死会把后续请求全堵在队列里，
+  但心跳照走（日志上看着"连接正常"）。已加 8s/格看门狗（分组按"最慢成员"计时）+ `Network:AbortPending`。
+- 服务端 `ProtocolsManager.addEntry` 按 `userId % HANDLER_THREAD_NUM` 路由 ⇒ 同一玩家的包始终同一个
+  `HandlerLogicThread` 串行按序处理，所以并发分组只折 RTT，不会引入服务端并发写。
+- 反证别用 `grep msgId=>16637`：`MessageUtil.wrappedBuffer` 对聊天包是故意不打日志的。
+- 每步耗时≈一个 RTT：国内号实测 102ms/步，欧洲号 288ms/步（Asia 服），整链 ~12s vs ~4.5s
+  ⇒ 分组后理论 ~6s vs ~2s（待真机确认）。再想快只能继续减少串行跳数。

@@ -5,6 +5,9 @@
 > 工具：`.workbuddy-ai/skills/ui-panel-float-anim/scripts/`
 > （`audit_panel.py` 体检 / `gen_float_anim_yaml.py` 生成 / `dump_prefab_tree.py` 看层级 / `UIPanelFloatAnimBuilder.template.cs` Unity 版）
 > 现成实现：`FirstRechargePanel`、`SupremeHeroPopup`、`ExpertPanel`、`DailyRechargePanel(原版)`
+>
+> 📎 本篇是**配方 + 逐面板落地记录**。要"拿别人的动画来复刻"，先看流程篇 **`ui_anim_reproduce_skill.md`**
+> （反解 → 定阵营 → 落地 → 三层验收，含"只读 `m_ScaleCurves` 导致漏曲线"那类事故的完整因果链）。
 
 给任意 UI 面板加「弹入 + 循环浮动/呼吸」动画（每日首充 `DailyRechargePanel` / `UI_effect_DailyRechargePanel` 那套观感）。
 

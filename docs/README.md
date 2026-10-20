@@ -16,6 +16,8 @@
 | **测各个功能（登录/战斗/背包/邮件…）自动化** | **`functional_test_automation.md`** |
 | 知道有哪些脚本、怎么调、退出码是什么 | **`scripts_reference.md`** |
 | 改 Lua / 配置表 / 资源，改完不生效 | **`client_build_chain.md`** |
+| **看到一个动画要在别的面板复刻（反解 → 落地 → 验收流程）** | **`ui_anim_reproduce_skill.md`** |
+| 给面板加"弹入 + 呼吸"浮空动画（配方数字 / 11 个坑） | `ui_panel_float_anim_skill.md` |
 | 起服 / 开区服 / 改线上 / 每日巡检 | **`server_ops_runbook.md`** |
 | **查某个玩家是不是开挂（判定）** | **`cheat_detection_skill.md`** |
 | **玩家作弊 / 数据异常 / 封号处置（动作）** | **`gm_abuse_incident_playbook.md`** |

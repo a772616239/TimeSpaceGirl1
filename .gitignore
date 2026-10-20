@@ -65,3 +65,11 @@ service-account*.json
 
 # 临时工作目录（探针/回放/一次性快照，不入库）
 .workbuddy/tmp/
+.workbuddy-ai/tmp/
+
+# 资源构建日志（resource_build.sh 每次跑都会新增一份）
+build_log_resource_*.txt
+
+# Unity 异常退出后的恢复目录（编辑器自动生成，不属于工程资产）
+Assets/_Recovery/
+Assets/_Recovery.meta

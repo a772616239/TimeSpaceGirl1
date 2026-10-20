@@ -493,6 +493,18 @@ CARD_INK = (18, 16, 24)
 CARD_INK_TOP = (34, 30, 50)
 CARD_VIOLET = (146, 78, 232)
 CARD_IVORY = (226, 214, 194)
+# 🔴 亮边（rim）：第一版只有墨带，贴在**深色面板**上轮廓直接消失——八日礼包面板底色
+#    实测 (17,17,25)，跟墨带 (18,16,24) 亮度几乎一样，等于没框。
+#    游戏自己的槽位框就是这么解决的黑底问题：暗带 3px + **亮边 5px**
+#    （tongyong_daojukuang_01 = 57,61,74 带 + 238,240,243 边；04 = 59,26,75 + 222,182,255；
+#      05/06 = 75,38,26 + 255,227,182）。所以亮边是游戏语言，不是加装饰。
+CARD_RIMS = {
+    # 名字      亮边            内侧过渡（亮边的下半坡）      带色（rim 里侧）
+    "warm": ((255, 238, 200), (226, 176, 120), (58, 26, 30)),
+    "ivory": ((244, 246, 250), (162, 170, 190), (44, 46, 62)),
+    "violet": ((230, 196, 255), (156, 108, 216), (52, 28, 74)),
+    "none": (None, None, None),
+}
 
 
 def _chamfer_rect(w: int, h: int, inset: int, c: int) -> list[tuple[int, int]]:
@@ -518,24 +530,63 @@ def _lattice_layer(size: tuple[int, int], step: int = 22,
     return Image.fromarray(px, "RGBA")
 
 
-def frame_card(img: Image.Image, band_ratio: float = 0.024,
-               chamfer_ratio: float = 0.028, shadow: int = 7) -> Image.Image:
-    """给整幅底板套「游戏卡片」外框：墨色细带 + 菱形纹 + 切角 + 硬投影 + 紫内线。
+def _ring_mask(w: int, h: int, inset: int, width: int, chamfer: int) -> Image.Image:
+    """切角矩形的「环」掩膜：外圈多边形减内圈多边形。"""
+    m = Image.new("L", (w, h), 0)
+    md = ImageDraw.Draw(m)
+    md.polygon(_chamfer_rect(w, h, inset, chamfer), fill=255)
+    if width > 0:
+        md.polygon(_chamfer_rect(w, h, inset + width, max(2, chamfer - width)), fill=0)
+    return m
+
+
+def _ring_paste(base: Image.Image, w: int, h: int, inset: int, width: int,
+                color: tuple[int, int, int], alpha: int = 255, chamfer: int = 0) -> None:
+    """把一条环带**实心**贴上去。
+
+    🔴 不要用 `ImageDraw.line(width=rw)` 画框：line 是以路径为中线、端点用 round join，
+       45° 切角会被磨成圆角，两条相邻的线还会互相盖住（亮边只剩半宽）。
+       多边形掩膜是像素精确的，切角始终是硬 45°。
+    """
+    if width <= 0:
+        return
+    m = _ring_mask(w, h, inset, width, chamfer)
+    layer = Image.new("RGBA", (w, h), color + (255,))
+    if alpha < 255:
+        m = m.point(lambda v: v * alpha // 255)
+    base.paste(layer, (0, 0), m)
+
+
+def frame_card(img: Image.Image, band_ratio: float = 0.026,
+               chamfer_ratio: float = 0.028, shadow: int = 7,
+               rim: str = "warm", hairline: bool = False) -> Image.Image:
+    """给整幅底板套「游戏卡片」外框：亮边 + 墨色细带 + 菱形纹 + 切角 + 内细线。
 
     🔴 画面是**等比缩进框内**（cover 到内框，横竖最多裁 1~2%），不是把框盖在画面上：
        登录底板的 `8-DAY` 左缘离画布边只有 ~27px，overlay 一格就会咬掉字角。
     🔴 画布尺寸必须与原资源一致（资源槽位固定），框只在画布内侧做。
+    🔴 最外圈必须有**亮边**（rim）：墨带本身 (18,16,24) 跟面板底 (17,17,25) 同亮度，
+       黑底上等于没有框。亮度差要 ≥ 100 才算「看得见轮廓」。
     """
     w, h = img.size
     short = min(w, h)
-    bw = max(14, int(round(short * band_ratio)))
+    bw = max(16, int(round(short * band_ratio)))
     bw = min(bw, short // 8)
     c = max(16, int(round(short * chamfer_ratio)))
 
-    # 1) 带底：墨色竖向渐变 + 菱形网纹
+    rim_c, rim_c2, band_c = CARD_RIMS.get(rim if rim in CARD_RIMS else "warm")
+    # 亮边厚度：跟着带宽走，但留够墨带空间（亮边太厚会变成「白框照片」）
+    rw = 0 if rim_c is None else max(3, int(round(bw * 0.30)))
+    rw = min(rw, max(3, bw // 3))
+    e = 1  # 最外 1px 暗描边：让亮边跟面板底之间有硬边，不然 jpg 压缩下会糊成灰
+
+    # 1) 带底：竖向渐变 + 菱形网纹（rim 的带色偏暖/偏紫，跟亮边同色系）
     t = np.linspace(0.0, 1.0, h, dtype=np.float32)[:, None, None]
-    top = np.array(CARD_INK_TOP, np.float32)[None, None, :]
-    bot = np.array(CARD_INK, np.float32)[None, None, :]
+    top_c = band_c if band_c else CARD_INK_TOP
+    bot_c = CARD_INK
+    # 上亮下暗：带色给上半，下半回到墨色，避免整圈都是一个色块
+    top = np.array([min(255, v + 14) for v in top_c], np.float32)[None, None, :]
+    bot = np.array(bot_c, np.float32)[None, None, :]
     grad = np.repeat(top * (1 - t) + bot * t, w, axis=1)
     canvas = Image.fromarray(
         np.dstack([grad, np.full((h, w, 1), 255, np.float32)]).astype(np.uint8), "RGBA")
@@ -560,13 +611,24 @@ def frame_card(img: Image.Image, band_ratio: float = 0.024,
     canvas = Image.alpha_composite(canvas, Image.fromarray(sh, "RGBA"))
 
     d = ImageDraw.Draw(canvas)
-    art_pts = [(x + bw, y + bw) for x, y in _chamfer_rect(iw, ih, 0, c)]
-    d.line(art_pts + [art_pts[0]], fill=CARD_INK + (255,), width=4, joint="curve")
-    # 带内侧的紫色细线：内缩 6px 的切角（切角量要跟着收 3px 才是等距平移）
-    pin = _chamfer_rect(w, h, bw - 6, c - 4)
-    d.line(pin + [pin[0]], fill=CARD_VIOLET + (120,), width=1, joint="curve")
-    # 画布外沿一道墨线（不再加象牙细线：两条线挤在 20px 带里会显脏）
-    d.rectangle([0, 0, w - 1, h - 1], outline=CARD_INK + (255,), width=3)
+    # 4) 亮边：两段模拟「斜面受光」——外侧最亮，内侧压一档，看起来是凸起的边而不是白线
+    if rim_c is not None:
+        r1 = max(1, int(round(rw * 0.55)))
+        r2 = max(1, rw - r1)
+        _ring_paste(canvas, w, h, e, r1, rim_c, 255, c)                 # 最外道高光
+        _ring_paste(canvas, w, h, e + r1, r2, rim_c2, 255, c)           # 斜面下半坡
+        _ring_paste(canvas, w, h, e + rw, 1, (0, 0, 0), 130, c)         # 与墨带的硬切
+
+    # 5) 画面四周的暗槽：框住画面但不压画面本身（原来 line 会吃掉 1.5px 画面）
+    _ring_paste(canvas, w, h, bw - 3, 3, (6, 4, 10), 255, c)
+    # 可选的第二道内细线：默认关掉——亮边 + 内细线挤在窄带里会变成「相框」那种双线
+    if hairline:
+        _ring_paste(canvas, w, h, bw - 6, 1,
+                    rim_c if rim_c is not None else CARD_VIOLET, 120, c)
+    # 画布最外沿 1px 暗描边（撑住轮廓，防止亮边在缩放时糊掉）
+    d.rectangle([0, 0, w - 1, h - 1], outline=(10, 8, 14, 255), width=1)
+    # 画布最外沿 1px 暗描边（撑住轮廓，防止亮边在缩放时糊掉）
+    d.rectangle([0, 0, w - 1, h - 1], outline=(10, 8, 14, 255), width=1)
     return canvas.convert(img.mode if img.mode in ("RGB", "RGBA") else "RGBA")
 
 
@@ -705,19 +767,21 @@ def cmd_postprocess(args) -> int:
     frame_mode = getattr(args, "frame", "none") or "none"
     ratio_arg = float(getattr(args, "frame_ratio", 0) or 0)
     frame_ratio = ratio_arg if ratio_arg > 0 else (
-        0.024 if frame_mode in ("card", "auto") else 0.041)
+        0.022 if frame_mode in ("card", "auto") else 0.041)
+    frame_rim = getattr(args, "frame_rim", "warm") or "warm"
+    frame_hair = bool(getattr(args, "frame_hairline", False))
     inset = frame_mode != "gold-overlay"
     if frame_mode == "card":
-        flat = frame_card(flat, band_ratio=frame_ratio)
-        log("postprocess", f"套游戏卡框（墨带+菱纹+切角）：带宽 "
-                           f"{max(14, round(min(flat.size) * frame_ratio))}px，画面缩进框内")
+        flat = frame_card(flat, band_ratio=frame_ratio, rim=frame_rim, hairline=frame_hair)
+        log("postprocess", f"套游戏卡框（亮边/{frame_rim}+墨带+菱纹+切角）：带宽 "
+                           f"{max(16, round(min(flat.size) * frame_ratio))}px，画面缩进框内")
     elif frame_mode in ("gold", "gold-overlay"):
         flat = decorate_frame(flat, ratio=frame_ratio, inset=inset)
         log("postprocess", f"套红金画框：框宽 {max(20, round(flat.width * frame_ratio))}px"
                            f"（{'画面缩进框内' if inset else '压在画面上'}）")
     elif frame_mode == "auto":
         if state.get("composition") == "free":
-            flat = frame_card(flat, band_ratio=frame_ratio)
+            flat = frame_card(flat, band_ratio=frame_ratio, rim=frame_rim, hairline=frame_hair)
             log("postprocess", "套游戏卡框（auto：free 构图必套，画面缩进框内）")
         else:
             log("postprocess", "不套画框（auto：lock 构图保留原透明轮廓）")
@@ -769,6 +833,7 @@ def cmd_postprocess(args) -> int:
         "body_mode": body_mode,
         "alpha_mode": alpha_mode,
         "frame": frame_mode,
+        "frame_rim": frame_rim if frame_mode in ("card", "auto") else None,
         "watermark_mask_px": int(mask.sum()),
         "watermark_max_before": round(residue_before["max"], 2),
         "watermark_max_after": round(watermark_clean.residue_level(cleaned)["max"], 2),
@@ -1192,11 +1257,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--frame", choices=["none", "auto", "card", "gold", "gold-overlay"],
                    default="none",
                    help="外框：none=不画（默认）；auto=free 构图自动套游戏卡框、lock 不套；"
-                        "card=游戏卡框（墨色细带+菱形纹+切角+硬投影，参考道具槽/英雄卡，画面缩进框内）；"
+                        "card=游戏卡框（亮边+墨带+菱形纹+切角，参考道具槽/英雄卡，画面缩进框内）；"
                         "gold=红金雕花框（旧版，游戏里没有这种语言，仅兜底）；"
                         "gold-overlay=框压在画面最外一圈（会盖掉贴边的文字，慎用）")
+    p.add_argument("--frame-rim", choices=list(CARD_RIMS), default="warm",
+                   help="卡框最外那道亮边（跟游戏道具槽一致：暗带+亮边）。warm=暖金（默认，配圣诞）；"
+                        "ivory=银白；violet=紫白（跟紫色面板同色系）；"
+                        "none=不画亮边（🔴 深色面板上框会看不见，只在浅底上用）")
+    p.add_argument("--frame-hairline", action="store_true",
+                   help="在带内侧再加一道细线（默认关：亮边+内细线挤在窄带里会变成相框式双线）")
     p.add_argument("--frame-ratio", type=float, default=0.0,
-                   help="框宽 = 短边 × 该比例；0=按样式用默认值（card 0.024 / gold 0.041）")
+                   help="框宽 = 短边 × 该比例；0=按样式用默认值（card 0.022 / gold 0.041）")
     p.set_defaults(func=cmd_postprocess)
 
     p = sub.add_parser("verify", help="像素级验收")

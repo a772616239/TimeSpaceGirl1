@@ -63,6 +63,7 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
 | `BODY_MODE` | `auto`（默认）/ `source` / `synthetic`，见下 |
 | `ALPHA_MODE` | `source`（默认，只对 lock 成立）/ `keep` / `free`。**`COMPOSITION=free` 时 `source` 会把人脸裁掉**，会被自动改成 `keep`，见上节 |
 | `FRAME` | `auto`（默认：free 套游戏卡框、lock 不套）/ `card` / `gold`（旧红金，兜底）/ `none`，见上节 |
+| `FRAME_RIM` | 卡框最外的亮边：`warm`（默认暖金）/ `ivory` / `violet` / `none`。**深色面板上不画亮边 = 框看不见**，见上节 |
 | `ALPHA_FROM` / `SOURCE_FROM` | 资源已被换过、工作区里没原版时，用 `git:HEAD:<path>` 取回参照 |
 | `WRITE_BACK` | **替换原图**：验收通过后把 alpha 版写回资源，原图搬出工程。默认关 |
 | `BACKUP_ROOT` | 备份根，留空 = `ResBackpack/备份` |
@@ -139,7 +140,27 @@ $PY scripts/image/restyle_pipeline.py prepare --asset Assets/... --theme christm
 | `cn2-X1_tongyong_yingxiongkuang_01~06`（英雄卡） | 实心色块 + **大斜切角** + 六边形 |
 | `StoryDialoguePanelAtlas/cn2-X1_yindao_duihuakuang_02`（对话框） | 紫色色块 + **硬投影** |
 
-`card` 就是照这三条拼的：**墨色细带（菱形纹）+ 四周切角 + 内侧柔影 + 紫色内细线**。
+`card` 就是照这三条拼的：**亮边 + 墨色细带（菱形纹）+ 四周切角 + 内侧柔影**。
+
+🔴 **最外圈必须有亮边（`--frame-rim`）**：2026-10-20 第二版只有墨带，贴在八日礼包面板上
+**框直接消失**（用户原话「遇到黑色的时候不明显」）。实测面板底 `(17,17,25)`，墨带 `(18,16,24)`
+—— 同亮度，等于没画。游戏自己的槽位框正是这么解决的，剖面只有三档：
+
+| 资源 | 剖面（从外到内） |
+|---|---|
+| `tongyong_daojukuang_01` | `57,61,74`×3px → **`238,240,243`×5px** → 槽内 `119,133,158` |
+| `tongyong_daojukuang_04` | `59,26,75`×3px → **`222,182,255`×5px** → 槽内 `105,57,136` |
+| `tongyong_daojukuang_05/06` | `75,38,26`×3px → **`255,227,182`×5px** → 槽内 |
+
+即「暗带 3px + 亮边 5px」。所以 `card` 现在的结构是 **1px 暗描边 → 亮边（外侧最亮、内侧压一档，
+模拟斜面受光）→ 1px 暗切 → 墨带 + 菱纹 → 3px 暗槽 → 画面**。判据：亮边跟面板底的亮度差 **≥100**。
+
+| `--frame-rim` | 用在哪 |
+|---|---|
+| `warm`（默认） | 暖金 `255,238,200`。圣诞/新年这类暖色主题 |
+| `ivory` | 银白 `244,246,250`。冷色/金属主题 |
+| `violet` | 紫白 `230,196,255`。跟紫色面板同色系，最"服帖" |
+| `none` | 不画亮边 —— 🔴 只在浅色底上用，深色面板上框会看不见 |
 
 | 值 | 效果 |
 |---|---|
@@ -148,19 +169,21 @@ $PY scripts/image/restyle_pipeline.py prepare --asset Assets/... --theme christm
 | `gold` | 旧红金雕花框，仅兜底（游戏里没有这种语言，别再当默认） |
 | `none` | 不套 |
 
-框宽 = **短边** × `--frame-ratio`（`card` 默认 `0.024`，1080 宽 ≈ 26px；`gold` 默认 `0.041`）。
+框宽 = **短边** × `--frame-ratio`（`card` 默认 `0.022`，1080 宽 ≈ 24px；`gold` 默认 `0.041`）。
 🔴 用短边不用宽边：`856×2048` 这种长条按宽算会得到一条比例失衡的粗框。
 资源尺寸不变，框只画在画布内侧。
 
 ```bash
 $PY scripts/image/restyle_pipeline.py postprocess --work "$W" --gen "$W/inbox/gen_web.png" \
-    --alpha-mode keep --frame card          # free 构图的定稿姿势
+    --alpha-mode keep --frame card --frame-rim warm      # free 构图的定稿姿势
 ```
 
-🔴 两个做框的坑（都踩过）：
+🔴 做框的坑（都踩过）：
 - **别用「错位硬投影」**：切角处矩形对不齐，会漏出一块黑三角，像磕坏了。改成沿切角多边形的
   高斯柔影（`GaussianBlur(bw//3)` + `1.6` 次幂），画面才像「沉」进带里。
-- **20px 的带里别塞两条线**：外沿象牙细线 + 内侧紫细线挤在一起会显脏，只留内侧那条紫线。
+- **窄带里别塞两条线**：亮边之外再加一道内细线，会变成相框式双线（`--frame-hairline` 默认关）。
+- **别用 `ImageDraw.line(width=…)` 画框**：line 以路径为中线、拐角用 round join，45° 切角会被磨圆，
+  相邻两条线还会互相盖住（亮边只剩半宽）。改用多边形掩膜 `_ring_paste`，切角始终是硬 45°。
 
 ---
 
@@ -267,6 +290,9 @@ reuse 用指纹浏览器里的登录态，**换号只需在 AdsPower 里开另�
 21. **`ALPHA_MODE=keep` 之后必须套画框（`FRAME=auto`）。** 透明轮廓一取消，四边就是硬切的矩形，
     上半截和下半截卡体的接缝看着像没画完；一圈切角卡框把「裁切」变成「装裱」。
     框走 **inset**（画面等比缩进框内）：overlay 会压掉贴边的字（`8-DAY` 左边缘正好在 44px 内）。
+22. **框必须在深色底上看得见。** 只画墨带（`18,16,24`）时，八日礼包面板底 `17,17,25` 跟它同亮度，
+    框等于没画（「遇到黑色的时候不明显」）。最外圈要有亮边（`--frame-rim warm|ivory|violet`），
+    亮度差 ≥100；这是游戏道具槽自己的做法（暗带 3px + 亮边 5px），不是加装饰。
 
 ---
 

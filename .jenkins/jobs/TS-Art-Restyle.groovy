@@ -16,7 +16,8 @@
     {"name":"HERO_BAND","type":"string","default":"","description":"超长条底板用（如 856x2048）：填英雄带像素高度（如 930）或 auto。生成图只当这条带子贴顶，下方补空卡体；留空=整幅等比 cover（适合比例接近 3:4 的图）"},
     {"name":"BODY_MODE","type":"choice","choices":["auto","source","synthetic"],"default":"auto","description":"HERO_BAND 模式下空卡体怎么来：source=用原资源下半截的明暗结构重上色（几何与原图逐像素对齐，首选）；synthetic=按主题色合成渐变（兜底）；auto=能 source 就 source"},
     {"name":"ALPHA_MODE","type":"choice","choices":["source","keep","free"],"default":"source","description":"alpha 版怎么取：source=沿用源掩膜（只对 lock 构图成立，free 会被自动改成 keep）；keep=整幅不透明；free=整幅不透明+顶边渐隐。COMPOSITION=free 时源掩膜按老姿势抠的，会把人脸/头发裁掉"},
-    {"name":"FRAME","type":"choice","choices":["auto","card","gold","none"],"default":"auto","description":"外框：auto=free 构图自动套游戏卡框、lock 不套；card=游戏卡框（墨色细带+菱形纹+切角+紫内线+内侧柔影，参考道具槽/英雄卡，画面缩进框内）；gold=旧红金雕花框（游戏里没有这种语言，仅兜底）；none=不套"},
+    {"name":"FRAME","type":"choice","choices":["auto","card","gold","none"],"default":"auto","description":"外框：auto=free 构图自动套游戏卡框、lock 不套；card=游戏卡框（亮边+墨带+菱形纹+切角，参考道具槽/英雄卡，画面缩进框内）；gold=旧红金雕花框（游戏里没有这种语言，仅兜底）；none=不套"},
+    {"name":"FRAME_RIM","type":"choice","choices":["warm","ivory","violet","none"],"default":"warm","description":"卡框最外那道亮边（跟游戏道具槽一致的「暗带+亮边」）。warm=暖金（配圣诞等暖色主题）；ivory=银白；violet=紫白（跟紫色面板同色系）；none=不画亮边——🔴 深色面板(17,17,25)上墨带跟底色同亮度，框会直接看不见"},
     {"name":"WRITE_BACK","type":"boolean","default":false,"description":"替换原图：验收通过后把 alpha 版写回资源，**原图搬出工程**到 BACKUP_ROOT（.meta 不动）。默认关；可用 restore 回滚"},
     {"name":"BACKUP_ROOT","type":"string","default":"","description":"原图备份根目录。留空=ResBackpack/备份（按资源相对路径镜像，_manifest.jsonl 记台账）"}
   ]
@@ -163,7 +164,7 @@ cd "$PROJ"
 GEN_SRC="$(cat "$TS_RUN_DIR/generated.path")"
 EXTRA=""
 [[ -n "${HERO_BAND:-}" ]] && EXTRA="$EXTRA --hero-band ${HERO_BAND} --body-mode ${BODY_MODE:-auto}"
-EXTRA="$EXTRA --alpha-mode ${ALPHA_MODE:-source} --frame ${FRAME:-auto}"
+EXTRA="$EXTRA --alpha-mode ${ALPHA_MODE:-source} --frame ${FRAME:-auto} --frame-rim ${FRAME_RIM:-warm}"
 "$BASH" .jenkins/lib/run_stage.sh --name "去水印与尺寸归位" \
   --group "美术资源链" --slug art-postprocess --timeout 600 \
   -- "$PY" scripts/image/restyle_pipeline.py postprocess \

@@ -73,8 +73,9 @@ end
 --- 打开队列里的下一个（队列空闲时才真正开）
 function PopupQueue.TryOpenNext()
     if advanceTimer ~= nil then
-        advanceTimer:Stop()
-        advanceTimer = nil
+        -- 刚关掉一个、正在等那 0.15s 的空档：交给定时器处理，
+        -- 此刻开新界面还是会被 CloseStackPanel 的收尾流程改层级
+        return
     end
 
     if current ~= nil then

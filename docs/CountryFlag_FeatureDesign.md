@@ -259,7 +259,7 @@ LoginRequestHandler.processWithProto
 ## 离线表
 
 `server_game/tools/gen_ipcountry_table.py` 把 GeoLite2-Country + GeoLite2-ASN 压成
-`conf/ipcountry.bin`（magic `IPC2`，380k 条、12B/条、约 4.6MB）：
+`conf/ipcountry.dat`（magic `IPC2`，38 万条、12B/条、约 4.4MB）：
 
 ```
 uint32 startIp | uint32 endIp | char[2] cc | uint8 flags(bit0=机房/VPN) | uint8 pad
@@ -268,6 +268,11 @@ uint32 startIp | uint32 endIp | char[2] cc | uint8 flags(bit0=机房/VPN) | uint
 🔴 **必须存 endIp**：表里只保留「有国家」的区间，空隙（未分配段、TEST-NET）不建记录。
 只存 startIp、靠「下一条 start-1」当上界的话，空隙里的 IP 会命中前一条
 （实测 `127.0.0.1 → JP`）。
+
+命名用 `.dat` 而不是 `.bin`：`server_game/.gitignore` 有 `*.bin` 规则（构建产物），
+数据表要进仓库，换个后缀最省事。中间缓存（`~/.cache/ts-geo/ipcountry.ranges`，
+mmdb 遍历一次约 10 分钟）不进仓库，指纹里带 mmdb 的 size/mtime + 关键字表 sha1，
+改了关键字不会命中旧缓存。
 
 🔴 **不引第三方 jar**：主 jar 的 MANIFEST Class-Path 引了 47 个 lib，多引一个就要同步改
 jar 清单，漏改即 `NoSuchMethodError` → 登录卡死。表整个读进 `byte[]`，只做内存二分。

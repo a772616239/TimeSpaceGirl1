@@ -660,8 +660,22 @@ curl -X POST -u "$U:$T" -H "$CRUMB" \
 | `-X POST --data 'delay=0sec' /build?delay=0sec` | 400 |
 | **`POST /buildWithParameters` + `--data-urlencode 'json={"parameter":[]}'`** | **201 ✅** |
 
-带参数时把 `json` 换成 `{"parameter":[{"name":"SKIP_PLAY","value":"true"}, …]}`。
-（`--data-urlencode` 是必须的：`json` 里含 `{` `}` `"`。）
+带参数时**用表单字段，不要用 `json`**（2026-10-20 实测纠正）：
+
+```bash
+# ✅ 这样传真的生效（实测 NOTES 进了构建描述与 parameters API）
+curl -X POST -u "$U:$T" -H "$CRUMB" \
+  --data-urlencode 'NOTES=验证 XX 修复' \
+  --data-urlencode 'SOURCE=origin 干净副本' \
+  "http://localhost:8080/job/TS-Local-Deploy/buildWithParameters"
+
+# ❌ 这样传**不生效**：构建能起来（201），但所有参数取默认值，
+#    parameters API 里看到的是 defaultValue，NOTES=''。
+#      --data-urlencode 'json={"parameter":[{"name":"NOTES","value":"x"}]}'
+```
+
+（`json` 只用于**无参数**构建：`--data-urlencode 'json={"parameter":[]}'` —— 这条是有效的。
+之前的文档写成"带参数把 json 换掉即可"，实测在本机 Jenkins 2.568 上不行，已纠正。）
 
 ---
 

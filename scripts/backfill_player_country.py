@@ -23,6 +23,17 @@
 （conflict 时人工可复核）。私网/回环 IP 丢弃；GeoIP 查不到的国家跳过，绝不瞎猜
 ——客户端 CountryConfig 里有 `xx` 兜底，宁可留空也不写假数据。
 
+`--random-rest`（2026-10-20 起）
+--------------------------------
+纯 IP 口径只能覆盖「最近 3 天有直连日志」的号；访问日志 31 天窗口之外的老号永远没证据，
+而线上又有一大批玩家走 IKUUU 之类的机场节点（出口国 = 落地国，跟本人无关）。
+这些号在排行榜上就是一片灰问号旗。加 `--random-rest` 后：
+  · 有可信住宅 IP 的 → 仍按 IP 写（countrySource=2）
+  · 只有机场/机房 IP 的、票数不占优的、以及完全没证据的 → **随机**给一个国籍
+    （从客户端 CountryConfig.List 的 249 个可画国旗的国家里挑，countrySource=3）
+countrySource 让服务端能区分「手选/真 IP/猜的」：玩家手选（=1）永不被覆盖，
+猜出来的（=3）一旦登录时出现可信 IP 就会升级成真值（见 PlayerCountryBootstrap）。
+
 数据源
 ------
 GeoLite2-Country.mmdb（P3TERX 的免 key 镜像），首次运行自动下到 ~/.cache/ts-geo/。
@@ -33,6 +44,7 @@ GeoLite2-Country.mmdb（P3TERX 的免 key 镜像），首次运行自动下到 ~
 ----
   python3 scripts/backfill_player_country.py                 # 只分析，打印 + 出 CSV
   python3 scripts/backfill_player_country.py --apply         # 备份 → 写库 → 写审计
+  python3 scripts/backfill_player_country.py --apply --random-rest   # 剩下的给随机国籍
   python3 scripts/backfill_player_country.py --uid 10000017  # 只看一个号
   python3 scripts/backfill_player_country.py --apply --no-backup
 
@@ -44,6 +56,7 @@ import csv
 import ipaddress
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -87,6 +100,50 @@ AUDIT_COLLECTION = 'gm_country_backfill'
 
 # 两位小写字母，与 SetPlayerCountryHandler.COUNTRY_PATTERN 一致
 COUNTRY_RE = re.compile(r'^[a-z]{2}$')
+
+# country 来源标记，必须与服务端 PlayerCountryBootstrap 的常量对齐
+SOURCE_USER = 1     # 玩家手选
+SOURCE_IP = 2       # 登录 IP 解析
+SOURCE_RANDOM = 3   # 随机猜测（可被可信 IP 升级）
+
+# 客户端国家表的唯一真源：随机分配只从这里取，保证每个码都有旗子可画
+COUNTRY_CONFIG_LUA = os.path.join(
+    PROJECT_ROOT, 'Assets', 'ManagedResources', '~Lua', 'Modules', 'CountryRank',
+    'CountryConfig.lua')
+COUNTRY_CODE_RE = re.compile(r'code\s*=\s*"([a-z]{2})"')
+
+# 主要玩家市场：随机时给 3 倍权重，免得排行榜一半是圣诞岛/布韦岛。
+# 🔴 必须与 IpCountryResolver.COMMON_RAW 保持一致（服务端登录时用的是同一口径）。
+COMMON_CODES = set((
+    'cn tw hk mo jp kr us gb de fr it es ru br ca au mx ar sg th vn id my ph in tr sa ae '
+    'nl be ch at se pl pt gr ua il eg cl co pe nz za').split())
+
+
+def weighted_pool(pool, repeat=3):
+    """按权重展开：COMMON 出现 repeat 次，其余 1 次。"""
+    out = []
+    for c in pool:
+        out.append(c)
+        if c in COMMON_CODES:
+            out.extend([c] * (repeat - 1))
+    return out
+
+
+def load_random_pool(path=COUNTRY_CONFIG_LUA):
+    """从客户端 CountryConfig.lua 取可画国旗的国家码（去掉 xx 占位）。"""
+    try:
+        with open(path, encoding='utf-8') as f:
+            text = f.read()
+    except OSError as e:
+        sys.stderr.write('[error] 读不到客户端国家表 %s: %s\n' % (path, e))
+        return []
+    codes = []
+    for c in COUNTRY_CODE_RE.findall(text):
+        if c == 'xx' or c in codes:
+            continue
+        codes.append(c)
+    return codes
+
 
 
 # ----------------------------------------------------------------------------
@@ -352,6 +409,10 @@ def main():
     ap.add_argument('--include-vpn', action='store_true',
                     help='连「只有机房/机场 IP」的玩家也写（默认跳过，避免 VPN 落地国被当成国籍）')
     ap.add_argument('--no-asn', action='store_true', help='不加载 ASN 库（跳过机房判定）')
+    ap.add_argument('--random-rest', action='store_true',
+                    help='没证据/只有机场 IP/票数不占优的号，随机给一个国籍（countrySource=3）')
+    ap.add_argument('--seed', type=int, default=None,
+                    help='--random-rest 的随机种子（便于复现/审计）')
     args = ap.parse_args()
 
     access = fetch_access_log()
@@ -392,9 +453,41 @@ def main():
     ok = [r for r in rows if r['new_country'] and COUNTRY_RE.match(r['new_country'])
           and r['share'] >= args.min_share]
     vpn = [r for r in ok if r['vpn']]
-    ready = ok if args.include_vpn else [r for r in ok if not r['vpn']]
+    ready_ip = [r for r in ok if not r['vpn']]
     no_ip = [r for r in rows if not r['new_country']]
     low = [r for r in rows if r['new_country'] and r['share'] < args.min_share]
+    for r in ready_ip:
+        r['method'] = 'ip-geolite2'
+        r['source'] = SOURCE_IP
+    # 显式 --include-vpn 才认「机场落地国」；与 --random-rest 同时给时以后者为准
+    if args.include_vpn and not args.random_rest:
+        for r in vpn:
+            r['method'] = 'ip-geolite2-vpn'
+            r['source'] = SOURCE_IP
+        ready_ip = ready_ip + vpn
+
+    # --random-rest：IP 口径拿不准的号全部随机补一个国籍，避免排行榜一片问号
+    ready_random = []
+    if args.random_rest:
+        pool = load_random_pool()
+        if len(pool) < 200:
+            sys.stderr.write('[error] 客户端国家表只解析出 %d 个国家，拒绝随机分配\n'
+                             % len(pool))
+            return 5
+        rng = random.Random(args.seed)
+        wpool = weighted_pool(pool)
+        assigned = {r['uid'] for r in ready_ip}
+        for r in rows:
+            if r['uid'] in assigned:
+                continue
+            r['new_country'] = rng.choice(wpool)
+            r['share'] = 0.0
+            r['method'] = 'random'
+            r['source'] = SOURCE_RANDOM
+            ready_random.append(r)
+        sys.stderr.write('[info] 随机池 %d 个国家（展开权重后 %d），来自 CountryConfig.lua，seed=%s\n'
+                         % (len(pool), len(wpool), args.seed))
+    ready = ready_ip + ready_random
 
     # ---- 报告 ----
     os.makedirs(REPORT_DIR, exist_ok=True)
@@ -403,33 +496,40 @@ def main():
     with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.DictWriter(f, fieldnames=['uid', 'nick', 'level', 'old_country',
                                           'new_country', 'share', 'ips', 'vpn',
-                                          'asn', 'evidence'])
+                                          'asn', 'method', 'source', 'evidence'])
         w.writeheader()
-        for r in sorted(rows, key=lambda x: (x['new_country'] or 'zz', x['uid'])):
+        for r in sorted(rows, key=lambda x: (x.get('method', ''),
+                                             x['new_country'] or 'zz', x['uid'])):
             w.writerow(r)
 
     dist = collections.Counter(r['new_country'] for r in ready)
+    dist_ip = collections.Counter(r['new_country'] for r in ready_ip)
+    dist_rand = collections.Counter(r['new_country'] for r in ready_random)
     print('=' * 72)
     print('玩家总数 %d | 缺国籍 %d | 有 IP 证据 %d | 无 IP 证据 %d'
           % (len(players), len(targets), len(ok) + len(low), len(no_ip)))
-    print('本次可写 %d 个；跳过：机房/机场 IP %d 个、票数占比 < %.2f %d 个'
-          % (len(ready), 0 if args.include_vpn else len(vpn), args.min_share, len(low)))
-    print('国家分布: ' + ', '.join('%s:%d' % kv for kv in dist.most_common()))
+    print('本次可写 %d 个（IP 证据 %d / 随机 %d）'
+          % (len(ready), len(ready_ip), len(ready_random)))
+    print('IP 证据分布: ' + (', '.join('%s:%d' % kv for kv in dist_ip.most_common()) or '-'))
+    if dist_rand:
+        print('随机分配分布（前 12）: '
+              + ', '.join('%s:%d' % kv for kv in dist_rand.most_common(12)))
+    print('合并国家分布(前 15): ' + ', '.join('%s:%d' % kv for kv in dist.most_common(15)))
     print('报告: %s' % csv_path)
-    if no_ip:
+    if no_ip and not args.random_rest:
         print('无 IP 证据（登录记录早于访问日志保留窗口）: %d 个' % len(no_ip))
-    if vpn and not args.include_vpn:
-        print('机房/机场 IP（VPN 落地国不可当国籍，待人工确认）: %d 个' % len(vpn))
-        for r in vpn:
+    if vpn and not args.random_rest:
+        print('机房/机场 IP（落地国不可当国籍）: %d 个' % len(vpn))
+        for r in vpn[:10]:
             print('    %s lv%-3s %-14s → %s  %s'
                   % (r['uid'], r['level'], r['nick'][:12], r['new_country'], r['asn'][:40]))
     print('=' * 72)
 
     if not args.apply:
         for r in ready[:20]:
-            print('  %s lv%-3s %-14s → %s (%.2f)  %s'
+            print('  %s lv%-3s %-14s → %s (%.2f) [%s] %s'
                   % (r['uid'], r['level'], r['nick'][:12], r['new_country'],
-                     r['share'], r['evidence'][:70]))
+                     r['share'], r['method'], r['evidence'][:60]))
         if len(ready) > 20:
             print('  ... 其余 %d 条见 CSV' % (len(ready) - 20))
         print('\n[dry-run] 未写库。加 --apply 执行。')
@@ -455,12 +555,14 @@ def main():
             return 3
 
     # ---- 写库 ----
+    # 只覆盖「当前仍是空」的文档（$in 里的 null 同时匹配字段缺失），避免覆盖玩家手选
     ops = []
     for r in ready:
         ops.append(
             '{updateOne:{filter:{_id:%s,"playerManager.country":{$in:["",null]}},'
-            'update:{$set:{"playerManager.country":"%s"}}}}'
-            % (r['uid'], r['new_country']))
+            'update:{$set:{"playerManager.country":"%s",'
+            '"playerManager.countrySource":%d}}}}'
+            % (r['uid'], r['new_country'], r['source']))
     audit = []
     now = int(datetime.now().timestamp() * 1000)
     for r in ready:
@@ -468,7 +570,7 @@ def main():
             'uid': int(r['uid']), 'country': r['new_country'],
             'share': r['share'], 'ips': r['ips'], 'vpn': bool(r['vpn']),
             'asn': r['asn'], 'evidence': r['evidence'],
-            'method': 'ip-geolite2', 'ts': now,
+            'method': r['method'], 'source': r['source'], 'ts': now,
         })
     js = ('var ops=[%s];\n'
           'var res=db.user.bulkWrite(ops);\n'

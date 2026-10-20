@@ -62,7 +62,7 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
 | `HERO_BAND` | 超长条底板专用：英雄带像素高度（如 `930`）或 `auto`。留空=整幅等比 cover |
 | `BODY_MODE` | `auto`（默认）/ `source` / `synthetic`，见下 |
 | `ALPHA_MODE` | `source`（默认，只对 lock 成立）/ `keep` / `free`。**`COMPOSITION=free` 时 `source` 会把人脸裁掉**，会被自动改成 `keep`，见上节 |
-| `FRAME` | `auto`（默认：free 套红金框、lock 不套）/ `gold` / `none` / `gold-overlay`，见上节 |
+| `FRAME` | `auto`（默认：free 套游戏卡框、lock 不套）/ `card` / `gold`（旧红金，兜底）/ `none`，见上节 |
 | `ALPHA_FROM` / `SOURCE_FROM` | 资源已被换过、工作区里没原版时，用 `git:HEAD:<path>` 取回参照 |
 | `WRITE_BACK` | **替换原图**：验收通过后把 alpha 版写回资源，原图搬出工程。默认关 |
 | `BACKUP_ROOT` | 备份根，留空 = `ResBackpack/备份` |
@@ -125,24 +125,42 @@ $PY scripts/image/restyle_pipeline.py prepare --asset Assets/... --theme christm
 `verify` 也跟着改了口径：`keep/free` 模式不再要求「覆盖率等于源」（必然更高），
 改为两条硬校验 —— 覆盖率**不低于**源 + 生成图里的彩色高光（人物肤色/文案金边）**没有被压成透明**。
 
-### 2）`FRAME=auto|gold|none|gold-overlay`
+### 2）`FRAME=auto|card|gold|none`
 
 `free` 的成品是**整幅矩形**（模型不会给你抠好的透明轮廓），于是四边是硬切、上半截与下半截卡体的
-接缝也像没画完 —— 这种情况要「装裱」：套一圈红金双层画框（暗金剖面 + 红嵌线 + 内侧投影 + 四角徽章）。
+接缝也像没画完 —— 这种情况要「装裱」。
+
+🔴 **框必须说游戏自己的语言，别拿相框套海报。** 2026-10-20 首版做了「红金双层 + 四角八角星徽章」，
+被否了：游戏里**一个鎏金圆徽章都找不到**，贴上去像给海报装了个相框。回头看游戏自己的边框只有三种：
+
+| 出处 | 语言 |
+|---|---|
+| `X1PublicAtlas/cn2-X1_tongyong_daojukuang_01~07`（道具槽） | 深色渐变 + **菱形网格纹** + 细亮描边 |
+| `cn2-X1_tongyong_yingxiongkuang_01~06`（英雄卡） | 实心色块 + **大斜切角** + 六边形 |
+| `StoryDialoguePanelAtlas/cn2-X1_yindao_duihuakuang_02`（对话框） | 紫色色块 + **硬投影** |
+
+`card` 就是照这三条拼的：**墨色细带（菱形纹）+ 四周切角 + 内侧柔影 + 紫色内细线**。
 
 | 值 | 效果 |
 |---|---|
-| `auto`（推荐） | `free` 自动套框，`lock` 不套（lock 本来就有透明轮廓，不需要） |
-| `gold` | 强制套。**画面等比缩进框内**（cover 到内框，最多裁掉 1~2% 边），框压在画布边界上 |
-| `gold-overlay` | 框直接压在画面最外一圈。🔴 会盖掉贴边的字（这张图的 `8-DAY` 左边缘正好在 44px 内） |
+| `auto`（推荐） | `free` 自动套 `card`，`lock` 不套（lock 本来就有透明轮廓，不需要） |
+| `card` | 强制套游戏卡框。**画面等比缩进框内**（cover 到内框，最多裁 1~2% 边），框压在画布边界 |
+| `gold` | 旧红金雕花框，仅兜底（游戏里没有这种语言，别再当默认） |
 | `none` | 不套 |
 
-框宽 = 图宽 × `--frame-ratio`（默认 `0.041`，1080 宽 ≈ 44px）。资源尺寸不变，框只画在画布内侧。
+框宽 = **短边** × `--frame-ratio`（`card` 默认 `0.024`，1080 宽 ≈ 26px；`gold` 默认 `0.041`）。
+🔴 用短边不用宽边：`856×2048` 这种长条按宽算会得到一条比例失衡的粗框。
+资源尺寸不变，框只画在画布内侧。
 
 ```bash
 $PY scripts/image/restyle_pipeline.py postprocess --work "$W" --gen "$W/inbox/gen_web.png" \
-    --alpha-mode keep --frame gold          # free 构图的定稿姿势
+    --alpha-mode keep --frame card          # free 构图的定稿姿势
 ```
+
+🔴 两个做框的坑（都踩过）：
+- **别用「错位硬投影」**：切角处矩形对不齐，会漏出一块黑三角，像磕坏了。改成沿切角多边形的
+  高斯柔影（`GaussianBlur(bw//3)` + `1.6` 次幂），画面才像「沉」进带里。
+- **20px 的带里别塞两条线**：外沿象牙细线 + 内侧紫细线挤在一起会显脏，只留内侧那条紫线。
 
 ---
 
@@ -247,7 +265,7 @@ reuse 用指纹浏览器里的登录态，**换号只需在 AdsPower 里开另�
     把新画的脸/头发/帽子整块切掉（登录底板实测：左脸 + 帽子没了）。用 `ALPHA_MODE=keep`，
     `postprocess` 在 free + source 时会自动降级并打日志。
 21. **`ALPHA_MODE=keep` 之后必须套画框（`FRAME=auto`）。** 透明轮廓一取消，四边就是硬切的矩形，
-    上半截和下半截卡体的接缝看着像没画完；一圈红金框 + 四角徽章把「裁切」变成「装裱」。
+    上半截和下半截卡体的接缝看着像没画完；一圈切角卡框把「裁切」变成「装裱」。
     框走 **inset**（画面等比缩进框内）：overlay 会压掉贴边的字（`8-DAY` 左边缘正好在 44px 内）。
 
 ---

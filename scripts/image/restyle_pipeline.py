@@ -481,6 +481,95 @@ def _medallion(d, cx: float, cy: float, R: int) -> None:
     d.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=(255, 252, 238, 255))
 
 
+# --- 卡片框（game style）---------------------------------------------------
+# 参考的是游戏**自己的**边框语言，不是「相框」：
+#   · cn2-X1_tongyong_daojukuang_01~07：深色渐变 + 菱形网格纹 + 细亮描边（道具槽）
+#   · cn2-X1_tongyong_yingxiongkuang_01~06：白色实心卡 + 大斜切角（英雄卡）
+#   · cn2-X1_yindao_duihuakuang_02：紫色色块 + 硬投影（对话框）
+# 所以新框 = 墨色细带（菱形纹）+ 四周切角 + 硬投影 + 紫色内细线。
+# 🔴 反过来，红金雕花那套（圆徽章、鎏金剖面）在游戏里**一个都找不到**，
+#    贴在动漫 key art 上就像给海报套了个相框，所以不默认了（保留 --frame gold 兜底）。
+CARD_INK = (18, 16, 24)
+CARD_INK_TOP = (34, 30, 50)
+CARD_VIOLET = (146, 78, 232)
+CARD_IVORY = (226, 214, 194)
+
+
+def _chamfer_rect(w: int, h: int, inset: int, c: int) -> list[tuple[int, int]]:
+    """切角矩形（八个顶点）：四角各切掉 c 像素的 45° 三角。"""
+    x0, y0, x1, y1 = inset, inset, w - 1 - inset, h - 1 - inset
+    c = max(0, min(c, min(x1 - x0, y1 - y0) // 2))
+    return [(x0 + c, y0), (x1 - c, y0), (x1, y0 + c), (x1, y1 - c),
+            (x1 - c, y1), (x0 + c, y1), (x0, y1 - c), (x0, y0 + c)]
+
+
+def _lattice_layer(size: tuple[int, int], step: int = 22,
+                   alpha: int = 26, color: tuple[int, int, int] = (200, 200, 220)) -> Image.Image:
+    """菱形网格纹：两组 45° 斜线，引的是游戏道具槽 `diwen` 的纹理。"""
+    w, h = size
+    m = Image.new("L", (w, h), 0)
+    d = ImageDraw.Draw(m)
+    for k in range(-h, w + h, step):
+        d.line([(k, 0), (k + h, h)], fill=alpha, width=1)
+        d.line([(k, h), (k + h, 0)], fill=alpha, width=1)
+    px = np.zeros((h, w, 4), np.uint8)
+    px[..., :3] = color
+    px[..., 3] = np.array(m)
+    return Image.fromarray(px, "RGBA")
+
+
+def frame_card(img: Image.Image, band_ratio: float = 0.024,
+               chamfer_ratio: float = 0.028, shadow: int = 7) -> Image.Image:
+    """给整幅底板套「游戏卡片」外框：墨色细带 + 菱形纹 + 切角 + 硬投影 + 紫内线。
+
+    🔴 画面是**等比缩进框内**（cover 到内框，横竖最多裁 1~2%），不是把框盖在画面上：
+       登录底板的 `8-DAY` 左缘离画布边只有 ~27px，overlay 一格就会咬掉字角。
+    🔴 画布尺寸必须与原资源一致（资源槽位固定），框只在画布内侧做。
+    """
+    w, h = img.size
+    short = min(w, h)
+    bw = max(14, int(round(short * band_ratio)))
+    bw = min(bw, short // 8)
+    c = max(16, int(round(short * chamfer_ratio)))
+
+    # 1) 带底：墨色竖向渐变 + 菱形网纹
+    t = np.linspace(0.0, 1.0, h, dtype=np.float32)[:, None, None]
+    top = np.array(CARD_INK_TOP, np.float32)[None, None, :]
+    bot = np.array(CARD_INK, np.float32)[None, None, :]
+    grad = np.repeat(top * (1 - t) + bot * t, w, axis=1)
+    canvas = Image.fromarray(
+        np.dstack([grad, np.full((h, w, 1), 255, np.float32)]).astype(np.uint8), "RGBA")
+    canvas = Image.alpha_composite(canvas, _lattice_layer((w, h), step=max(14, short // 48)))
+
+    # 2) 画面：cover 进内框，按切角裁
+    iw, ih = w - 2 * bw, h - 2 * bw
+    art = fit_cover(img.convert("RGB"), (iw, ih)).convert("RGBA")
+    mask = Image.new("L", (iw, ih), 0)
+    ImageDraw.Draw(mask).polygon(_chamfer_rect(iw, ih, 0, c), fill=255)
+    canvas.paste(art, (bw, bw), mask)
+
+    # 3) 内侧柔和投影：画面「沉」进带里。
+    #    🔴 不要用「错位硬投影」——切角处对不齐会留下一块黑色三角，像磕坏了。
+    hz = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(hz).polygon(
+        [(x + bw, y + bw) for x, y in _chamfer_rect(iw, ih, 0, c)], fill=255)
+    hz = hz.filter(ImageFilter.GaussianBlur(max(4, bw // 3)))
+    edge = np.clip((255 - np.array(hz, np.int16)).astype(np.float32) / 255.0, 0.0, 1.0) ** 1.6
+    sh = np.zeros((h, w, 4), np.uint8)
+    sh[..., 3] = (edge * 120).astype(np.uint8)
+    canvas = Image.alpha_composite(canvas, Image.fromarray(sh, "RGBA"))
+
+    d = ImageDraw.Draw(canvas)
+    art_pts = [(x + bw, y + bw) for x, y in _chamfer_rect(iw, ih, 0, c)]
+    d.line(art_pts + [art_pts[0]], fill=CARD_INK + (255,), width=4, joint="curve")
+    # 带内侧的紫色细线：内缩 6px 的切角（切角量要跟着收 3px 才是等距平移）
+    pin = _chamfer_rect(w, h, bw - 6, c - 4)
+    d.line(pin + [pin[0]], fill=CARD_VIOLET + (120,), width=1, joint="curve")
+    # 画布外沿一道墨线（不再加象牙细线：两条线挤在 20px 带里会显脏）
+    d.rectangle([0, 0, w - 1, h - 1], outline=CARD_INK + (255,), width=3)
+    return canvas.convert(img.mode if img.mode in ("RGB", "RGBA") else "RGBA")
+
+
 def decorate_frame(img: Image.Image, ratio: float = 0.041, inset: bool = True) -> Image.Image:
     """给整幅底板套一圈「红金双层」画框，压住自由构图后硬切的四边。
 
@@ -614,16 +703,22 @@ def cmd_postprocess(args) -> int:
     # 画框：free 构图的人像是整幅矩形，四边是硬切、上下半截的接缝也像没画完，
     # 不套一圈框就是「贴图没处理干净」。lock 构图既有透明轮廓，框可有可无（默认 none）。
     frame_mode = getattr(args, "frame", "none") or "none"
-    frame_ratio = float(getattr(args, "frame_ratio", 0.041) or 0.041)
+    ratio_arg = float(getattr(args, "frame_ratio", 0) or 0)
+    frame_ratio = ratio_arg if ratio_arg > 0 else (
+        0.024 if frame_mode in ("card", "auto") else 0.041)
     inset = frame_mode != "gold-overlay"
-    if frame_mode in ("gold", "gold-overlay"):
+    if frame_mode == "card":
+        flat = frame_card(flat, band_ratio=frame_ratio)
+        log("postprocess", f"套游戏卡框（墨带+菱纹+切角）：带宽 "
+                           f"{max(14, round(min(flat.size) * frame_ratio))}px，画面缩进框内")
+    elif frame_mode in ("gold", "gold-overlay"):
         flat = decorate_frame(flat, ratio=frame_ratio, inset=inset)
         log("postprocess", f"套红金画框：框宽 {max(20, round(flat.width * frame_ratio))}px"
                            f"（{'画面缩进框内' if inset else '压在画面上'}）")
     elif frame_mode == "auto":
         if state.get("composition") == "free":
-            flat = decorate_frame(flat, ratio=frame_ratio, inset=True)
-            log("postprocess", "套红金画框（auto：free 构图必套，画面缩进框内）")
+            flat = frame_card(flat, band_ratio=frame_ratio)
+            log("postprocess", "套游戏卡框（auto：free 构图必套，画面缩进框内）")
         else:
             log("postprocess", "不套画框（auto：lock 构图保留原透明轮廓）")
     flat.save(opaque_path)
@@ -1094,12 +1189,14 @@ def main(argv: list[str] | None = None) -> int:
                         "keep=整幅不透明（free 构图默认语义）；free=整幅不透明 + 顶边渐隐")
     p.add_argument("--feather-top", type=int, default=0,
                    help="--alpha-mode free 时顶边渐隐像素（默认 0=不渐隐，避免糊掉贴顶的帽子/头发）")
-    p.add_argument("--frame", choices=["none", "auto", "gold", "gold-overlay"], default="none",
-                   help="画框：none=不画（默认）；auto=free 构图自动套红金框、lock 不套；"
-                        "gold=强制套红金框（画面等比缩进框内，不吃画面边缘）；"
-                        "gold-overlay=框直接压在画面最外一圈（会盖掉贴边的文字，慎用）")
-    p.add_argument("--frame-ratio", type=float, default=0.041,
-                   help="框宽 = 图宽 × 该比例（默认 0.041；1080 宽约 44px）")
+    p.add_argument("--frame", choices=["none", "auto", "card", "gold", "gold-overlay"],
+                   default="none",
+                   help="外框：none=不画（默认）；auto=free 构图自动套游戏卡框、lock 不套；"
+                        "card=游戏卡框（墨色细带+菱形纹+切角+硬投影，参考道具槽/英雄卡，画面缩进框内）；"
+                        "gold=红金雕花框（旧版，游戏里没有这种语言，仅兜底）；"
+                        "gold-overlay=框压在画面最外一圈（会盖掉贴边的文字，慎用）")
+    p.add_argument("--frame-ratio", type=float, default=0.0,
+                   help="框宽 = 短边 × 该比例；0=按样式用默认值（card 0.024 / gold 0.041）")
     p.set_defaults(func=cmd_postprocess)
 
     p = sub.add_parser("verify", help="像素级验收")

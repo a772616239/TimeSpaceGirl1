@@ -96,6 +96,9 @@ end
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）
 function ArenaTopMatchPanel:OnShow()
     commonTitle:OnShow()
+    -- 排行榜页签红点：TabAdapter 只在首次 BindEvent 里跑过，OnClose 又清掉了绑定，
+    -- 重开时必须在这里补绑，否则页签红点永远不亮。
+    this:RefreshRankRedPoint()
     if this.TabCtrl then
         if this._CurTabIndex > 5 then
             ArenaTopMatchManager.SetCurTabIndex(2)
@@ -121,7 +124,12 @@ end
 
 --界面关闭时调用（用于子类重写）
 function ArenaTopMatchPanel:OnClose()
-    ClearRedPointObject(RedPointType.Championships_Rank_Link)
+    -- 只解绑自己绑的那个页签节点。原来这里是不传 obj 的 ClearRedPointObject(type)，
+    -- 会把**全局** Championships_Rank_Link 的绑定一起清掉，连带 ArenaTypePanel_TopMatch
+    -- 里 btnRank 的红点一起清死（关掉排行榜面板后，竞技场页的排行榜红点就再也不亮）。
+    if this._rankRpObj and not IsNull(this._rankRpObj) then
+        ClearRedPointObject(RedPointType.Championships_Rank_Link, this._rankRpObj)
+    end
     commonTitle:OnClose()
 
     if this._CurLogicIndex then
@@ -158,8 +166,22 @@ function this.TabAdapter(tab, index, status)
     select:SetActive(status == "select")
 
     if index == 4 then
-        BindRedPointObject(RedPointType.Championships_Rank_Link, Util.GetGameObject(tab, "redpoint"))
+        -- 记下这个节点：TabBox:Init 只在 BindEvent 里跑一次，之后 OnClose 会把绑定清掉，
+        -- 再次打开时只能靠 OnShow 用这个引用重新绑（见 RefreshRankRedPoint）。
+        this._rankRpObj = Util.GetGameObject(tab, "redpoint")
+        this:RefreshRankRedPoint()
     end
+end
+
+-- 重新绑定「排行榜」页签的红点。
+-- 必须先 Clear 再 Bind：BindRedPointObject 底层是 table.insert，不幂等。
+function this:RefreshRankRedPoint()
+    if not this._rankRpObj or IsNull(this._rankRpObj) then
+        return
+    end
+    ClearRedPointObject(RedPointType.Championships_Rank_Link, this._rankRpObj)
+    BindRedPointObject(RedPointType.Championships_Rank_Link, this._rankRpObj)
+    CheckRedPointStatus(RedPointType.Championships_Rank_Link)
 end
 -- tab改变回调事件
 function this.OnTabChange(index, lastIndex)

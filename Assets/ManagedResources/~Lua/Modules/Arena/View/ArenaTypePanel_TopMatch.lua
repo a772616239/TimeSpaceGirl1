@@ -67,8 +67,10 @@ function this:BindEvent()
     Util.AddOnceClick(this.HelpBtn, function()
         UIManager.OpenPanel(UIName.HelpPopup,HELP_TYPE.ArenaTypePanelTopMatch,this.helpPosition.x-30, this.helpPosition.y+1300)
     end)
-
-    BindRedPointObject(RedPointType.Championships_Rank_Link, this.btnRankRedpoint)
+    -- 注意：这里不要绑红点。本文件是 ArenaTypePanel 的子页，宿主只在 InitComponent 里
+    -- 调一次本文件的 InitComponent，而切页/关面板都会调 OnClose 把绑定清掉；
+    -- 绑在这里 ⇒ 切走再切回来 btnRank 的红点就再也不刷新了（BindObjs 是空表）。
+    -- 绑定统一放在 OnShow（见下），与 OnClose 配平。
 end
 
 function this:AddListener()
@@ -87,7 +89,17 @@ end
 
 function this:OnShow(...)
     sortingOrder = 0
-    
+
+    -- 红点绑定放在这里：宿主每次切到本页都会走 OnShow，而 OnClose 会清绑定，
+    -- 两者配平才能保证「切走再切回来」红点还在。
+    -- 必须先 Clear 再 Bind：RedpotManager.BindObject 是 table.insert，重复绑会让
+    -- 同一个物体在 BindObjs 里堆 N 份，每次刷新 SetActive N 遍。
+    if this.btnRankRedpoint then
+        ClearRedPointObject(RedPointType.Championships_Rank_Link, this.btnRankRedpoint)
+        BindRedPointObject(RedPointType.Championships_Rank_Link, this.btnRankRedpoint)
+        CheckRedPointStatus(RedPointType.Championships_Rank_Link)
+    end
+
     if ArenaTopMatchManager.HasReqedTopMatchData then
         this:OnUpdateRankUI()
     else

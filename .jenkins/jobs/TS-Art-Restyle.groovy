@@ -18,6 +18,7 @@
     {"name":"ALPHA_MODE","type":"choice","choices":["source","keep","free"],"default":"source","description":"alpha 版怎么取：source=沿用源掩膜（只对 lock 构图成立，free 会被自动改成 keep）；keep=整幅不透明；free=整幅不透明+顶边渐隐。COMPOSITION=free 时源掩膜按老姿势抠的，会把人脸/头发裁掉"},
     {"name":"FRAME","type":"choice","choices":["auto","card","gold","none"],"default":"auto","description":"外框：auto=free 构图自动套游戏卡框、lock 不套；card=游戏卡框（亮边+墨带+菱形纹+切角，参考道具槽/英雄卡，画面缩进框内）；gold=旧红金雕花框（游戏里没有这种语言，仅兜底）；none=不套"},
     {"name":"FRAME_RIM","type":"choice","choices":["warm","ivory","violet","none"],"default":"warm","description":"卡框最外那道亮边（跟游戏道具槽一致的「暗带+亮边」）。warm=暖金（配圣诞等暖色主题）；ivory=银白；violet=紫白（跟紫色面板同色系）；none=不画亮边——🔴 深色面板(17,17,25)上墨带跟底色同亮度，框会直接看不见"},
+    {"name":"WATERMARK","type":"choice","choices":["auto","off","force"],"default":"auto","description":"去水印。auto=按「亮+灰+排成一行」判据自动修；off=完全不碰像素（生成图本来没水印、或右下角有亮装饰带会被误判成水印时用；掩码为 0 时验收自动跳过这条）；force=已知有水印但判据没认出来"},
     {"name":"WRITE_BACK","type":"boolean","default":false,"description":"替换原图：验收通过后把 alpha 版写回资源，**原图搬出工程**到 BACKUP_ROOT（.meta 不动）。默认关；可用 restore 回滚"},
     {"name":"BACKUP_ROOT","type":"string","default":"","description":"原图备份根目录。留空=ResBackpack/备份（按资源相对路径镜像，_manifest.jsonl 记台账）"}
   ]
@@ -65,7 +66,7 @@ mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
   echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
   echo "资源：$ART_ASSET"
-  echo "主题：$ART_THEME   provider：$PROVIDER   构图：$ART_COMP"
+  echo "主题：$ART_THEME   provider：$PROVIDER   构图：$ART_COMP   去水印：${WATERMARK:-auto}"
   echo "工作目录：$ART_WDIR"
   echo "写回资源：$WRITE_BACK   备份根：${BACKUP_ROOT:-$PROJ/ResBackpack/备份}"
   echo ""
@@ -164,7 +165,7 @@ cd "$PROJ"
 GEN_SRC="$(cat "$TS_RUN_DIR/generated.path")"
 EXTRA=""
 [[ -n "${HERO_BAND:-}" ]] && EXTRA="$EXTRA --hero-band ${HERO_BAND} --body-mode ${BODY_MODE:-auto}"
-EXTRA="$EXTRA --alpha-mode ${ALPHA_MODE:-source} --frame ${FRAME:-auto} --frame-rim ${FRAME_RIM:-warm}"
+EXTRA="$EXTRA --alpha-mode ${ALPHA_MODE:-source} --frame ${FRAME:-auto} --frame-rim ${FRAME_RIM:-warm} --watermark ${WATERMARK:-auto}"
 "$BASH" .jenkins/lib/run_stage.sh --name "去水印与尺寸归位" \
   --group "美术资源链" --slug art-postprocess --timeout 600 \
   -- "$PY" scripts/image/restyle_pipeline.py postprocess \
@@ -188,7 +189,10 @@ cd "$PROJ"
     }
 
     stage('⑥ 替换原图（写回 + 原图搬出工程）') {
-      when { expression { params.WRITE_BACK && fileExists("${env.TS_RUN_DIR}/gen.ready") } }
+      // 🔴 布尔参数经 buildWithParameters 进来可能是字符串 "false"，Groovy 里非空字符串为真
+      //    ⇒ 直接写 params.WRITE_BACK 会把「没勾」当成「勾了」，20:17 那轮就误覆盖了资源。
+      //    统一按字符串比 'true'。
+      when { expression { (params.WRITE_BACK ?: 'false').toString().toLowerCase() == 'true' && fileExists("${env.TS_RUN_DIR}/gen.ready") } }
       steps {
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail

@@ -65,11 +65,17 @@ local openSeq = {}       -- 打开顺序
 local coexist = {}       -- 同屏记录
 local failOpenId = nil
 local lastArgs = nil
+local topPanelName = nil -- 栈顶界面名（nil = 屏幕上什么都没开，老行为）
 
 UIManager = {}
 function UIManager.GetConfig(id) return CONFIG[id] end
 function UIManager.IsOpen(id) return openPanels[id] == true end
 function UIManager.SetPopupQueue(q) UIManager.popupQueue = q end
+-- 栈顶界面：主动弹窗队列靠它判断「现在是不是回到了主界面」
+function UIManager.GetTopStackPanel()
+    if topPanelName == nil then return nil end
+    return { uiConfig = { name = topPanelName } }
+end
 
 local function doOpen(id, ...)
     if failOpenId == id then return nil end
@@ -111,6 +117,7 @@ local function reset()
     logs, errors = {}, {}
     openPanels, openSeq, coexist = {}, {}, {}
     failOpenId, lastArgs = nil, nil
+    topPanelName = nil
     timers = {}
     PopupQueue.Clear()
 end
@@ -197,6 +204,49 @@ do
     pump(0.5)
     check("清空后不再开下一个", #openSeq == 1, table.concat(openSeq, ","))
     check("队列为空", PopupQueue.Count() == 0)
+end
+
+print("\n[7] 底屏闸门：弹窗里点「前往」跳走，下一个不压在功能界面上")
+do
+    reset()
+    topPanelName = "MainPanel"
+    PopupQueue.Push(1)
+    PopupQueue.Push(2)
+    check("主界面上正常弹第一个", #openSeq == 1 and openSeq[1] == "FirstRechargePanel", table.concat(openSeq, ","))
+
+    -- 复现线上：SupremeHeroPopup 里点 Button_Go → 先跳 OperatingPanel，再关掉弹窗
+    topPanelName = "OperatingPanel"
+    UIManager.ClosePanel(1)
+    pump(0.5)
+    check("跳到功能界面后不抢弹", #openSeq == 1, table.concat(openSeq, ","))
+    check("队列压着没丢", PopupQueue.Count() == 1 and PopupQueue.IsHolding() == true)
+    check("没有同屏", #coexist == 0, coexist[1])
+
+    -- 玩家把功能界面关回主界面
+    topPanelName = "MainPanel"
+    PopupQueue.OnPanelClosed(999)
+    pump(0.5)
+    check("回到主界面继续弹下一个", #openSeq == 2 and openSeq[2] == "PatFacePanel", table.concat(openSeq, ","))
+    check("闸门已放开", PopupQueue.IsHolding() == false and PopupQueue.Count() == 0)
+end
+
+print("\n[8] 兜底：弹窗被全屏界面顶掉、没自己 ClosePanel，队列也不会卡死")
+do
+    reset()
+    topPanelName = "MainPanel"
+    PopupQueue.Push(1)
+    PopupQueue.Push(2)
+    -- 只派发 UI.OnClose（BasePanel:CloseUI 那条），不经过 UIManager 收尾通知
+    topPanelName = "OperatingPanel"
+    PopupQueue.OnPanelClosed(1)
+    pump(0.5)
+    check("被顶掉也认了关闭", PopupQueue.IsShowing(1) == false)
+    check("跳到别处仍然不抢弹", #openSeq == 1, table.concat(openSeq, ","))
+
+    topPanelName = nil   -- 回到主城但一时没有界面在屏
+    PopupQueue.OnPanelClosed(112)
+    pump(0.5)
+    check("屏幕空了就放行", #openSeq == 2 and openSeq[2] == "PatFacePanel", table.concat(openSeq, ","))
 end
 
 print(string.format("\n结果：通过 %d，失败 %d", pass, fail))

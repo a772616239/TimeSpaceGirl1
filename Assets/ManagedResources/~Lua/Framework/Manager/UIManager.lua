@@ -40,6 +40,27 @@ local function NotifyPopupQueue(funcName, ...)
     end
 end
 
+--取栈顶「已打开」的栈式面板（全屏/弹窗）；没有界面在屏时返回 nil。
+--主动弹窗队列用它判断「现在是不是回到了主界面」（被别的界面顶掉的旧面板不算）
+function UIManager.GetTopStackPanel()
+    for i = #this.stackList, 1, -1 do
+        local panel = this.stackList[i]
+        if panel ~= nil and panel.isOpened and panel.uiConfig ~= nil then
+            return panel
+        end
+    end
+    return nil
+end
+
+--栈顶栈式面板的 id（没有界面在屏时返回 nil）
+function UIManager.GetTopStackPanelId()
+    local panel = UIManager.GetTopStackPanel()
+    if panel == nil then
+        return nil
+    end
+    return panel.uiConfig.id
+end
+
 UIManager.UIHeight = 1920
 UIManager.UIWidth = 1080 
 

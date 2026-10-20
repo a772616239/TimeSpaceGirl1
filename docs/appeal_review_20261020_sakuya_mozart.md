@@ -153,23 +153,22 @@ friendManager: {
 
 ## 5. 处置建议
 
-### P0（今天，纯运维，无需发版）
+### P0（今天）—— 执行结果
 
-1. **清两处残留好友引用**（Sakuya / RandyFan），恢复登录：
-   ```bash
-   # 备份
-   mongoexport -d m5_x1_game_10001 -c user -q '{"_id":{"$in":[10000001,10000017]}}' \
-     --out /root/friend_ref_fix_20261020.json
-   # 清理（friends 数组 + giveMap 键）
-   db.user.updateOne({_id:10000017},{$pull:{"friendManager.friends":10000013}})
-   db.user.updateOne({_id:10000017},{$unset:{"friendManager.giveMap.10000013":""}})
-   db.user.updateOne({_id:10000001},{$pull:{"friendManager.friends":10000013}})
-   db.user.updateOne({_id:10000001},{$unset:{"friendManager.giveMap.10000013":""}})
-   ```
-   ⚠️ 对象若在线需踢下线或等其下次登录（内存态会回写）。
+| # | 原计划 | 实际执行 |
+|---|---|---|
+| 1 | 清 Sakuya / RandyFan 的 `friends` + `giveMap` 残留 | **取消（会误删真实好友关系）**。10000013 整档恢复后，这两个号的引用指向的是真实存在的账号，不再是脏数据。按原计划 pull 掉，等于把他们和 Mozart 的友情删了，而且删完 `giveMap` 还会让「送体力」历史错位 |
+| 2 | `FriendLogic.getFriendInfos` / `CBean2Proto.getFriendInfo` 判空 | ✅ 已改并编译通过（`25d594d3`）。`getFriendInfo` 查不到账号返回 `null` + warn，5 个调用点逐条判空跳过（含 `getApplyFriends`——申请列表同样可能留着已删号） |
+| 3 | `Purger` 删号前清「玩家间引用」 | ✅ 已加 `clean_player_refs()`（`ebf8bbae1`）。`friends/blackFriends/applyFriends/myApplyFriends` 逐项 pull，`giveMap/haveRewardMap` 逐键 unset；删号顺序改为 `clean_ranks → clean_player_refs → clean_mongo_refs → delete_account` |
 
-2. **代码侧判空**（`FriendLogic.getFriendInfos` / `CBean2Proto.getFriendInfo`）：好友 uid 查不到时跳过并记录，不要整包失败。
-3. **删号流程补一步**：`Purger` 删号前扫全服 `friendManager.friends` / `giveMap` / `blackFriends`，把该 uid 摘掉（与 `clean_ranks` 同级）。
+**顺手补的体检工具**：`python3 scripts/cheatctl.py refs-audit [--repair]`（只读默认）。
+上线即抓到一条我自己手扫漏掉的残留：`10000001 RandyFan -> myApplyFriends=10000240`（10000240 已删号）。
+`myApplyFriends` 只用于「是否已申请」判断、不参与列表渲染，所以它不会引发卡 45%，但留着会让「已申请」状态永久卡住。
+已清理（留档 `/tmp/appeal/before_refs_fix.json`：清理前 `myApplyFriends:[10000240]`、`friends:[10000022,10000013]`）。
+清理后复查：**209 个账号全干净**，`--repair` 幂等。
+
+> 两点注意：① 上面三项里，只有 2、3 是**发版后**才生效的（当前生产 jar 还是旧逻辑），本次事故是靠整档恢复解决的，不依赖发版；
+> ② 清理内存态账号的 `friendManager` 会被下次落盘覆盖，`refs-audit --repair` 只在对方离线时做才可靠。
 
 ### P1（本周）
 

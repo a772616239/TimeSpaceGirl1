@@ -14,7 +14,7 @@
 //   2) 上传的参考图也是 blob，alt 是「用户附件」。只按 blob 过滤会拿到参考图本身。
 //      ⇒ 判别必须靠 alt，不能靠 src。
 //
-// 退出码：0 拿到图 / 3 需要登录或被人机验证挡住 / 4 出图额度用尽 / 1 其他失败
+// 退出码：0 拿到图 / 3 需要登录或被人机验证挡住 / 4 出图额度用尽 / 5 模型安全策略拒绝 / 1 其他失败
 //
 // 🔴 2026-10-21：额度用尽原来是「哑失败」——站点明明在页面上写了
 //    「图像生成额度已用完 / 你目前的图片生成次数已用完…12:06 获得更多次数」，
@@ -88,7 +88,26 @@ const QUOTA_SRC = [
   '이미지 생성 (한도|횟수)', '무료 (이미지 )?(생성 )?한도',
 ];
 
-const snapshot = ({ alts, quota }) => {
+// 安全策略拒绝的原文。🔴 2026-10-21 实测（日文界面）：
+//   「大変申し訳ございません。生成された画像が、詐欺・詐取行為が疑われるコンテンツに関する
+//     安全基準に違反している可能性があります。誤判定と思われる場合は、再度お試しいただくか、
+//     プロンプトを修正してください。」
+//   当时没有这条判据 ⇒ 被当成「环境抖动」重试一次，白等 7 分钟（第二次还撞上 CDP 超时）。
+//   被拒 ≠ 网络问题：同一个提示词再发基本还是拒，要么改 LAYOUT，要么换参考图。
+const REFUSAL_SRC = [
+  // 日文
+  '安全基準に違反', '詐欺・詐取行為', '誤判定と思われる場合は', 'コンテンツポリシー',
+  // 中文
+  '安全(标准|政策|准则)', '内容(政策|准则)', '违反.{0,12}(政策|准则|标准)', '无法(生成|创建)这张',
+  // 英文
+  'content policy', 'violates our (policies|usage policies)',
+  "can'?t (create|generate|help with) (that|this) image", 'not able to (create|generate) that',
+  'may violate', 'safety (standards|guidelines)',
+  // 韩文
+  '정책을 위반', '안전 기준',
+];
+
+const snapshot = ({ alts, quota, refusal }) => {
   const uploads = ['用户附件', 'Attached', 'attachment', '添付', '첨부', 'Adjunto'];
   const isGen = (im) =>
     alts.some((a) => (im.alt || '').includes(a)) ||
@@ -97,6 +116,7 @@ const snapshot = ({ alts, quota }) => {
       !uploads.some((a) => (im.alt || '').includes(a)));
   const body = document.body.innerText || '';
   const QUOTA = quota.map((s) => new RegExp(s, 'i'));
+  const REFUSAL = refusal.map((s) => new RegExp(s, 'i'));
   const lines = body.split('\n').map((s) => s.trim()).filter(Boolean);
   const qi = lines.findIndex((l) => QUOTA.some((re) => re.test(l)));
   let hit = { hit: false };
@@ -114,6 +134,16 @@ const snapshot = ({ alts, quota }) => {
       reset: [resetM && `约 ${resetM[1]}`, hoursM && `${hoursM[1]} 小时后`]
         .filter(Boolean)
         .join(' / '),
+    };
+  }
+  // 安全策略拒绝：模型明确说「这张不画」。与额度/网络是两回事 —— 重试同一句话基本还是拒，
+  // 要么改提示词（去掉可能触发的描述），要么换参考图。
+  const ri = lines.findIndex((l) => REFUSAL.some((re) => re.test(l)));
+  let refused = { hit: false };
+  if (ri >= 0) {
+    refused = {
+      hit: true,
+      message: [lines[ri], lines[ri + 1] || ''].filter(Boolean).join(' / ').slice(0, 300),
     };
   }
   return {
@@ -135,6 +165,7 @@ const snapshot = ({ alts, quota }) => {
         body
       ),
     quota: hit,
+    refusal: refused,
     text: body.slice(-600),
   };
 };
@@ -310,7 +341,7 @@ try {
   while (Date.now() < deadline) {
     let st;
     try {
-      st = await page.evaluate(snapshot, { alts: GEN_ALT, quota: QUOTA_SRC });
+      st = await page.evaluate(snapshot, { alts: GEN_ALT, quota: QUOTA_SRC, refusal: REFUSAL_SRC });
       pollFails = 0;
       lastSt = st;
     } catch (e) {
@@ -347,12 +378,24 @@ try {
       writeFail({ reason: 'quota_exhausted', message: st.quota.message, reset: st.quota.reset });
       process.exit(4);
     }
+    // 安全策略拒绝：模型明确不画。再等也不会变，直接判死（rc=5），别当环境抖动去重试。
+    if (st.refusal && st.refusal.hit) {
+      log('🔴 模型安全策略拒绝生成（不是额度/网络问题）');
+      log(`   站点原文：${st.refusal.message}`);
+      writeFail({ reason: 'policy_refused', message: st.refusal.message });
+      process.exit(5);
+    }
     // 4s → 2.5s：页面被关的窗口越小越好，图一稳定就立刻取
     await sleep(2500);
   }
 
   if (!picked) {
     // 最后一轮 snapshot 里已经有结论就直接用（别再去抓一次 DOM：页面可能已经被关了）
+    if (lastSt?.refusal?.hit) {
+      log(`🔴 超时前已确认模型拒绝生成：${lastSt.refusal.message}`);
+      writeFail({ reason: 'policy_refused', message: lastSt.refusal.message });
+      process.exit(5);
+    }
     if (lastSt?.quota?.hit) {
       log(`🔴 超时前已确认额度用尽：${lastSt.quota.message}`);
       writeFail({ reason: 'quota_exhausted', message: lastSt.quota.message, reset: lastSt.quota.reset });
@@ -366,7 +409,12 @@ try {
       process.exit(1);
     }
     log('超时仍未拿到图。页面尾部：', tail.replace(/\n+/g, ' | '));
-    // 兜底再嗅一次：判据与 snapshot 共用 QUOTA_SRC（同一个 bug 不能修两次）
+    // 兜底再嗅一次：判据与 snapshot 共用同一份（同一个 bug 不能修两次）
+    if (REFUSAL_SRC.some((src) => new RegExp(src, 'i').test(tail))) {
+      log('🔴 页面尾部含「安全策略拒绝」文案，按拒绝处理（重试同一句话没用）');
+      writeFail({ reason: 'policy_refused', message: tail.replace(/\n+/g, ' | ').slice(-300) });
+      process.exit(5);
+    }
     if (QUOTA_SRC.some((src) => new RegExp(src, 'i').test(tail))) {
       log('🔴 页面尾部含「额度用尽」文案，按额度用尽处理');
       writeFail({ reason: 'quota_exhausted', message: tail.replace(/\n+/g, ' | ').slice(-300), reset: '' });

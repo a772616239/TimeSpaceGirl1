@@ -52,8 +52,11 @@ CHROME_DATA = Path.home() / "Library/Application Support/Google/Chrome"
 HERE = Path(__file__).resolve().parent
 DRIVER = HERE / "chatgpt_web_driver.mjs"
 RC_OK, RC_FAIL, RC_USAGE, RC_WARN = 0, 1, 2, 3
-# 内部信号：账号级额度用尽（driver rc=4）。不对外暴露，main 里会转成「自动换号」或 RC_WARN。
+# 内部信号（都不对外暴露，main 里转成 RC_WARN）：
+#   RC_QUOTA   = driver rc=4：账号级额度用尽 → 先尝试自动换号
+#   RC_REFUSED = driver rc=5：模型安全策略拒绝 → 重试/换号都没用，必须改提示词
 RC_QUOTA = 5
+RC_REFUSED = 6
 
 
 def log(msg: str) -> None:
@@ -261,6 +264,14 @@ def main(argv: list[str] | None = None) -> int:
         last = run_once(args, image, prompt_file, out, node, pw)
         if last == RC_OK:
             return RC_OK
+        if last == RC_REFUSED:
+            # 被拒是「这张图/这句话不能画」，不是环境问题：不重试、不换号，改 LAYOUT 再说。
+            detail = read_fail(out)
+            log("🔴 模型安全策略拒绝（重试同一句提示词、换号都不会变）")
+            log(f"   站点原文：{detail.get('message') or '站点未给出原文'}")
+            log("   处理：改 LAYOUT —— 去掉可能触发的描述（衣着/姿势/身体细节），"
+                "强调全年龄向、衣着完整；或换一张参考图")
+            return RC_WARN
         if last == RC_QUOTA:
             # 🔴 额度用尽是账号级限制：重试没用，换号才有用。
             #    「换号」= 接上 AdsPower 里另一个已登录 ChatGPT 的 SunBrowser（只连不断）。
@@ -372,6 +383,12 @@ def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str
             if detail.get("reset"):
                 log(f"   重置提示：{detail['reset']}")
             return RC_QUOTA
+        if drv.returncode == 5:
+            # 🔴 模型安全策略拒绝：同一句提示词再发基本还是拒，换号也没用（同一个模型同一套策略）。
+            detail = read_fail(out)
+            log("🔴 driver 退出码 5：模型判定这张图违反内容/安全策略，拒绝生成")
+            log(f"   站点原文：{detail.get('message') or '(未取到)'}")
+            return RC_REFUSED
         log(f"🔴 driver 退出码 {drv.returncode}，未拿到图片")
         return RC_WARN if drv.returncode == 3 else RC_FAIL
     except subprocess.TimeoutExpired:

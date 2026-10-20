@@ -112,6 +112,25 @@ PlayerPrefs["device_country"]   （CountryRegionUtil 按设备地区写入）
 > 服务端 `RankingInfo` 只有 `uid/name/head/level/rank/headFrame/time`。
 > 补协议后第 1 条自动接管，不需要再动 UI 代码。
 
+### 聊天框是例外：没选国旗就**隐藏**，不画问号（2026-10-20）
+
+`CountryFlagUtil.ApplyToChat` / `ResolveChosenCountry`，三份聊天气泡共用
+（`ChatPanel` / `BattleChatPanel` / `FightPointMapChatPanel`）：
+
+| 情况 | 表现 |
+|---|---|
+| 服务端 `ChatInfo.country` 有值（别人） / 自己本地已选 | 显示对应国旗，名字让开 52px |
+| 没选过（服务端空串 + 本地没选） | **隐藏 `countryFlag` 节点**，名字归位，**不画** `xx` 问号旗 |
+| 选的是「其他地区 `xx`」 | 照常显示那面灰旗（选了 ≠ 没选） |
+| 系统消息 / 广播（`senderId` 为 0） | 隐藏 |
+
+> 为什么和榜单不同：榜单一行只有一个名字，留白比缺一块更难看；聊天是成片的对话，
+> 一排问号旗会让人以为人人都是「其他地区」。所以 `ResolveChosenCountry` 特意**不**兜到
+> `CountryRankManager.GetPlayerCountry()`（它永远返回非空，`xx` 兜底），只认「有真实来源」的值。
+>
+> 改旗后就地重画也做了配套：聊天节点登记的是「整段重排」（`selfFlagRefreshers`），
+> 否则旗子从隐藏变显示时名字不会让位、会压在旗上。
+
 ---
 
 ## 5. 已知边界 / 后续
@@ -121,6 +140,7 @@ PlayerPrefs["device_country"]   （CountryRegionUtil 按设备地区写入）
 | **协议缺国家字段** | 真正的"每个玩家真实国籍"需要 `PlayerInfo`/`RankingInfo` 加 `country` 字段 + 服务端落库。当前第 3 条兜底 |
 | **国家排行数据** | `CountryRankManager.GetRankList` 目前是本地可复现的模拟数据，`TODO(接服务端)` 已标注替换点，返回同结构即可 |
 | **公会榜** | 公会没有国籍概念，这两个榜单（`GUILD_FORCE_RANK` / `CELEBRATION_GUILD`）**隐藏**旗帜 |
+| **聊天框不画问号旗** | 没选国旗的玩家在聊天里**隐藏**旗帜（`ApplyToChat`）；榜单/玩家信息面板仍保留 `xx` 占位 |
 | **AB 需重打** | 新增图集与 prefab 在 `ManagedResources` 下，真机走 AB ⇒ 出包前必须跑 `FrameTool.BuildGameAssetBundles`。Editor 直接用资源无需重打 |
 | **Lua 字节码** | 已 `scripts/lua-bytes-sync.sh` 同步；新增 6 个模块的 `.bytes` 均已在 `LuaBytes/` |
 

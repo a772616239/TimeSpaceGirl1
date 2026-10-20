@@ -290,7 +290,7 @@ PYEOF
     if [[ -n "$bad" ]]; then
       rm -f "$tmp"
       printf '%s\n' "$bad" | head -5 | sed 's/^/    ✗ /'
-      die "$name 有 $(printf '%s\n' "$bad" | wc -l | tr -d ' ') 个条目没注入成功（该 jar 未改动）"
+      die "${name} 有 $(printf '%s\n' "$bad" | wc -l | tr -d ' ') 个条目没注入成功（该 jar 未改动）"
     fi
     ok "${name}：注入 ${n} 条 / ${nbatch} 批，CRC 复核通过"
     pending+=("$tmp|$dst")

@@ -376,14 +376,22 @@ else
     # ----------------------------------------------------------------------- #
     step "Unity batchmode 打包 AAB（约 10-15 分钟）"
     rm -f "${PROJECT_ROOT}/Library/SourceAssetDB-lock" 2>/dev/null || true
-    # 🔴 清理 StreamingAssets + Gradle intermediates 里的 Unity 临时文件（.filename.XXXXXX）：
-    #    macOS 上 Gradle 的 MergeAssets 任务在增量构建时会残留 atomic-write 临时文件，
-    #    它们会被打进 AAB/APK，导致包体积翻倍（实测 2742 个临时文件 = 416MB 冗余）。
+    # 🔴 清理 Unity 在 macOS 上残留的 atomic-write 临时文件（.filename.XXXXXX）：
+    #    这些文件会被打进 AAB/APK，导致包体积翻倍（实测 2742 个 = 416MB，822M 的 AAB 本该 ~440M）。
+    #    三个来源，**必须全部覆盖**（只清 intermediates 是无效的，实测过）：
+    #      ① StreamingAssets/                       ← CopyAssetBundleToStreamingAssets 的残留
+    #      ② Gradle/unityLibrary/src/main/assets/   ← Unity 把 StreamingAssets 拷进 Gradle 工程的那层（真源头）
+    #      ③ Gradle/**/build/intermediates/assets/  ← mergeReleaseAssets 的产物
+    #    它们是**陈旧残留**（mtime 停在出问题那次构建），Gradle 增量构建永不清理 ⇒ 会一直带进包里。
     find "${PROJECT_ROOT}/Assets/StreamingAssets" -name ".*" -type f ! -name ".DS_Store" -delete 2>/dev/null || true
-    GRADLE_MERGE="${PROJECT_ROOT}/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/assets"
-    if [[ -d "$GRADLE_MERGE" ]]; then
-      find "$GRADLE_MERGE" -name ".*" -type f ! -name ".DS_Store" -delete 2>/dev/null || true
-    fi
+    # ⚠️ 只扫这两个 assets 目录，不要扫整个 Gradle 树：Gradle 自己的 .gradle/.transforms 里
+    #    也有 . 前缀的临时文件，删了会迫使它全量重建（甚至踩到内部状态），没必要。
+    GRADLE_UNITY="${PROJECT_ROOT}/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary"
+    for d in "$GRADLE_UNITY/src/main/assets" "$GRADLE_UNITY/build/intermediates/assets"; do
+      if [[ -d "$d" ]]; then
+        find "$d" -name ".*" -type f ! -name ".DS_Store" -delete 2>/dev/null || true
+      fi
+    done
     BUILD_T0=$(date +%s)
     if ! "$UNITY_BIN" \
         -projectpath "$PROJECT_ROOT" \

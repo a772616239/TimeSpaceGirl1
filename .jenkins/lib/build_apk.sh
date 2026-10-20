@@ -88,16 +88,21 @@ else
   echo "→ 未指定 --server-env，沿用工程 Assets/Resources/version.txt 现状"
 fi
 
-# 🔴 清理 StreamingAssets + Gradle intermediates 里的 Unity 临时文件（.filename.XXXXXX）：
-#    macOS 上 Gradle 的 MergeAssets 任务在增量构建时会残留 atomic-write 临时文件，
-#    它们会被打进 APK/AAB，导致包体积翻倍（实测 2742 个临时文件 = 416MB 冗余，包从 439M 变 855M）。
-#    Gradle 增量构建不会自动清理这些文件，必须显式删除。
-#    FileUtils.CopyDir 也已修（跳过 . 前缀），但 Gradle intermediates 是另一条路径。
+# 🔴 清理 Unity 在 macOS 上残留的 atomic-write 临时文件（.filename.XXXXXX）：
+#    它们会被打进 APK/AAB，导致包体积翻倍（实测 2742 个 = 416MB，855M 的 APK 本该 ~440M）。
+#    三个来源必须全部覆盖（只清 intermediates 无效，实测过）：
+#      ① StreamingAssets/
+#      ② Gradle/unityLibrary/src/main/assets/   ← Unity 把 StreamingAssets 拷进 Gradle 工程的那层（真源头）
+#      ③ Gradle/**/build/intermediates/assets/  ← mergeReleaseAssets 产物
+#    它们是陈旧残留（mtime 停在出问题那次构建），Gradle 增量构建永不清理。
 find "$PROJ/Assets/StreamingAssets" -name ".*" -type f ! -name ".DS_Store" -delete 2>/dev/null || true
-GRADLE_MERGE="$PROJ/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/assets"
-if [[ -d "$GRADLE_MERGE" ]]; then
-  find "$GRADLE_MERGE" -name ".*" -type f ! -name ".DS_Store" -delete 2>/dev/null || true
-fi
+# ⚠️ 只扫这两个 assets 目录，别扫整个 Gradle 树（会误删 Gradle 自己的 .gradle/.transforms 临时文件）
+GRADLE_UNITY="$PROJ/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary"
+for d in "$GRADLE_UNITY/src/main/assets" "$GRADLE_UNITY/build/intermediates/assets"; do
+  if [[ -d "$d" ]]; then
+    find "$d" -name ".*" -type f ! -name ".DS_Store" -delete 2>/dev/null || true
+  fi
+done
 
 # 🔴 口径说明：CLIBuilder 里 `kProfile` 硬编码为 MinimalGmOff（只关 GM，其余与线上逐位一致）。
 #    这里不提供口径开关 —— 命令行产物必须与线上口径一致，出别的口径应当是显式改代码的决定，

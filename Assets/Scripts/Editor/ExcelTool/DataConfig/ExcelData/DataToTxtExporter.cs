@@ -41,6 +41,13 @@ namespace GameEditor.Core.DataConfig
             FileStream fs = new FileStream(filePath, FileMode.Create);
             StreamWriter sw = new StreamWriter(fs);
 
+            // 🔴 2026-10-20 修：旧写法是「每个字段后面都跟一个 \t」再 WriteLine，
+            // 于是**每一行都以 TAB 结尾**（等于多挂一个空列）。后果：任何一次导表，
+            // 服务端仓里 288 个 txt 都会变成逐行「有差异」，真改动被整文件 diff 淹掉；
+            // 按列数校验的解析器还会被这个空列多算一列。
+            // 改成「字段之间」插分隔符，首尾不留 TAB。
+            var cells = new System.Collections.Generic.List<string>();
+
             foreach(DataField df in sheet.fields)
             {
                 if (df.exportType == DataFieldExportType.None
@@ -49,10 +56,11 @@ namespace GameEditor.Core.DataConfig
                 {
                     continue;
                 }
-                sw.Write(df.name + "\t");
+                cells.Add(df.name);
             }
-            sw.WriteLine();
+            sw.WriteLine(string.Join("\t", cells));
 
+            cells.Clear();
             foreach (DataField df in sheet.fields)
             {
                 if (df.exportType == DataFieldExportType.None
@@ -61,11 +69,12 @@ namespace GameEditor.Core.DataConfig
                 {
                     continue;
                 }
-                sw.Write(df.FieldTypeStr + "\t");
+                cells.Add(df.FieldTypeStr);
             }
-            sw.WriteLine();
+            sw.WriteLine(string.Join("\t", cells));
             foreach (var line in sheet.lines)
             {
+                cells.Clear();
                 for(int i =0;i<sheet.fields.Count;i++)
                 {
                     DataField field = sheet.fields[i];
@@ -79,10 +88,10 @@ namespace GameEditor.Core.DataConfig
 
                     var cell = line[i];
             
-                    sw.Write(DataHelper.GetValByDefault(cell,field.defaultContent,field.fieldType) + "\t");
+                    cells.Add(DataHelper.GetValByDefault(cell,field.defaultContent,field.fieldType));
                     
                 }
-                sw.WriteLine();
+                sw.WriteLine(string.Join("\t", cells));
             }
             sw.Close();
             fs.Close();

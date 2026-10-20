@@ -68,7 +68,7 @@ function SupremeHeroPopup:InitComponent()
     -- effectAdapte(Util.GetGameObject(this.effectRoot, "normal/kuang03/saoguang03"))
 
     --this.LoadLive2D()
-    this.hero = Util.GetGameObject(self.gameObject, "Panel/heroRoot/hero")
+    this.hero = Util.GetGameObject(self.gameObject, "Panel/Middle/Image/heroRoot/hero")
     this.progress = Util.GetGameObject(self.gameObject, "Panel/Middle/progress"):GetComponent("Text")
     local lang= GetCurLanguage()
     if lang ~= 10001 then

@@ -335,15 +335,25 @@ function FirstRechargePanel:OnTabChanged(index)
     self:ShowContent(index)
     self.selectTabIndex = index
     -- tab 切换会被 OnShow 直接调用，节点可能已随面板销毁 ⇒ 逐个判活，不再裸 :SetActive
+    --
+    -- 两页的立绘是互斥的两套，prefab 里位置完全重合：
+    --   hero/lihui  (静态立绘，oneLihui)      与 hero/lihuis (轮播容器，lihui)
+    --   hero/oneLihuiInfo (静态信息牌)        与 hero/lihuiInfo (轮播信息牌)
+    -- 都是同一个 anchoredPosition/scale。原来 oneLihuiInfo 和 lihuiInfo 都按 index == 1 开，
+    -- 第一页两张信息牌（名字/星级/职业图标）逐像素叠在一起；轮播容器那句 SetActive 又被注释掉，
+    -- 两张立绘也一起显示 ⇒ 就是看到的「重叠」。改成第一页只留静态立绘、第二页只留轮播立绘。
+    local isFirstTab = (index == 1)
     if Alive(this.oneLihui) then
-        this.oneLihui:SetActive(index == 1)
+        this.oneLihui:SetActive(isFirstTab)
     end
-    --this.lihui:SetActive(index == 2)
+    if Alive(this.lihui) then
+        this.lihui:SetActive(not isFirstTab)
+    end
     if Alive(this.oneLihuiInfo) then
-        this.oneLihuiInfo:SetActive(index == 1)
+        this.oneLihuiInfo:SetActive(isFirstTab)
     end
     if Alive(this.lihuiInfo) then
-        this.lihuiInfo:SetActive(index == 1)
+        this.lihuiInfo:SetActive(not isFirstTab)
     end
     Log("OnTabClicked index:"..index)
 end

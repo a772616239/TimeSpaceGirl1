@@ -121,7 +121,10 @@ local function NewNode(name)
                 return t
             end
             if k == "SetActive" then
-                return function() end
+                -- 记录最后一次显隐状态，供「两页立绘互斥」用例断言
+                return function(_, v)
+                    t.__active = v and true or false
+                end
             end
             if k == "GetComponent" then
                 return function(_, comp)
@@ -402,6 +405,25 @@ Check(ok, "InitComponent 不抛异常" .. (ok and "" or ("（" .. tostring(err) 
 Check(Panel.lihui == nil and Panel.oneLihui == nil and Panel.name == nil,
         "hero 相关引用全部为 nil（下游整块走跳过分支）")
 nodeMap["hero"] = nil
+
+print("[10] OnTabChanged：两页立绘/信息牌互斥，不再叠在一起")
+ResetPanel()
+-- prefab 里 hero/lihui(静态) 与 hero/lihuis(轮播)、hero/oneLihuiInfo 与 hero/lihuiInfo
+-- 坐标完全相同；两套同时 SetActive(true) 就是「名字/星级/职业图标 + 两张立绘」重影。
+Panel:OnTabChanged(1)
+Check(Panel.oneLihui.__active == true and Panel.lihui.__active == false,
+        "第一页：静态立绘开、轮播容器关（实际 oneLihui=" .. tostring(Panel.oneLihui.__active)
+        .. ", lihui=" .. tostring(Panel.lihui.__active) .. "）")
+Check(Panel.oneLihuiInfo.__active == true and Panel.lihuiInfo.__active == false,
+        "第一页：静态信息牌开、轮播信息牌关（实际 oneLihuiInfo=" .. tostring(Panel.oneLihuiInfo.__active)
+        .. ", lihuiInfo=" .. tostring(Panel.lihuiInfo.__active) .. "）")
+Panel:OnTabChanged(2)
+Check(Panel.oneLihui.__active == false and Panel.lihui.__active == true,
+        "第二页：轮播容器开、静态立绘关（实际 oneLihui=" .. tostring(Panel.oneLihui.__active)
+        .. ", lihui=" .. tostring(Panel.lihui.__active) .. "）")
+Check(Panel.oneLihuiInfo.__active == false and Panel.lihuiInfo.__active == true,
+        "第二页：轮播信息牌开、静态信息牌关（实际 oneLihuiInfo=" .. tostring(Panel.oneLihuiInfo.__active)
+        .. ", lihuiInfo=" .. tostring(Panel.lihuiInfo.__active) .. "）")
 
 print("")
 if failed > 0 then

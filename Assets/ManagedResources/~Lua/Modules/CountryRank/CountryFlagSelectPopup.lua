@@ -9,6 +9,8 @@
  *
  * 打开方式：UIManager.OpenPanel(UIName.CountryFlagSelectPopup, onConfirm)
  *   onConfirm(code) 在玩家点选后回调；直接关窗不回调。
+ *
+ * 排列顺序：英文名字母序（CountryConfig.SortedList），「其他地区」恒在最后。
 --]]
 require("Modules/CountryRank/CountryConfig")
 require("Modules/CountryRank/CountryRankManager")
@@ -148,7 +150,8 @@ end
 --- 生成旗帜格子
 function CountryFlagSelectPopup:BuildCells()
     this:ClearCells()
-    local list = CountryConfig.List
+    -- 展示顺序：英文名字母序（CountryConfig.SortedList 在配置加载时排好，「其他地区」恒最后）
+    local list = CountryConfig.SortedList or CountryConfig.List
     local total = #list
     local rowCount = math.ceil(total / COLUMN_COUNT)
 

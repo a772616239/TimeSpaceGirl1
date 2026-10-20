@@ -17,7 +17,8 @@
 
 CountryConfig = {}
 
--- 展示顺序即「选择国家」面板的排列顺序（人口/市场量级优先）
+-- 本表顺序只表达「主要国家优先」的录入习惯，**不是**选择面板的展示顺序；
+-- 面板按英文名字母序排列，见文件末尾的 CountryConfig.SortedList。
 --
 -- ⚠️ 名称长度约束：选择面板的格子 nameText 宽 180、字号 22（横向 Overflow 开启）。
 --    中文 ≤8 字、英文 ≤16 字符、日/韩文 ≤8 字，超了会溢到隔壁格子。
@@ -292,6 +293,69 @@ end
 
 -- 兜底国家码（旗帜图与显示名都必有）
 CountryConfig.FALLBACK_CODE = "xx"
+
+----------------------------------------------------------------
+-- 英文名字母序（「选择国家」面板的展示顺序）
+----------------------------------------------------------------
+-- 用户 2026-10-20 要求：国旗面板按英文字母顺序排，而不是按录入时的人口/市场量级。
+-- 排序键取 en 字段（en 缺失才退回 zh/code），因为 en 是四语里唯一必填的拉丁字母名；
+-- 若改用当前语言名排，中日韩玩家看到的顺序会各不相同，跨服交流时对不上号。
+
+--- 变音符号归并表：排序键里 Åland → aland、Côte d'Ivoire → cote d'ivoire，
+--- 否则这些条目会被排到所有 ASCII 字母之后。
+local DIACRITIC = {
+    ["À"] = "A", ["Á"] = "A", ["Â"] = "A", ["Ã"] = "A", ["Ä"] = "A", ["Å"] = "A",
+    ["à"] = "a", ["á"] = "a", ["â"] = "a", ["ã"] = "a", ["ä"] = "a", ["å"] = "a",
+    ["Æ"] = "AE", ["æ"] = "ae",
+    ["Ç"] = "C", ["ç"] = "c",
+    ["È"] = "E", ["É"] = "E", ["Ê"] = "E", ["Ë"] = "E",
+    ["è"] = "e", ["é"] = "e", ["ê"] = "e", ["ë"] = "e",
+    ["Ì"] = "I", ["Í"] = "I", ["Î"] = "I", ["Ï"] = "I",
+    ["ì"] = "i", ["í"] = "i", ["î"] = "i", ["ï"] = "i",
+    ["Ñ"] = "N", ["ñ"] = "n",
+    ["Ò"] = "O", ["Ó"] = "O", ["Ô"] = "O", ["Õ"] = "O", ["Ö"] = "O", ["Ø"] = "O",
+    ["ò"] = "o", ["ó"] = "o", ["ô"] = "o", ["õ"] = "o", ["ö"] = "o", ["ø"] = "o",
+    ["Œ"] = "OE", ["œ"] = "oe",
+    ["Ù"] = "U", ["Ú"] = "U", ["Û"] = "U", ["Ü"] = "U",
+    ["ù"] = "u", ["ú"] = "u", ["û"] = "u", ["ü"] = "u",
+    ["Ý"] = "Y", ["Ÿ"] = "Y", ["ý"] = "y", ["ÿ"] = "y",
+    ["ß"] = "ss",
+}
+
+--- 生成排序键：变音归并 + 转小写
+--- 按 UTF-8「单个字符」切分再查表（逐字节 gsub 会把多字节字符拆坏）
+local function MakeSortKey(name)
+    if name == nil or name == "" then
+        return ""
+    end
+    local s = string.gsub(name, "[%z\1-\127\194-\244][\128-\191]*", function(ch)
+        return DIACRITIC[ch] or ch
+    end)
+    return string.lower(s)
+end
+
+for _, info in ipairs(CountryConfig.List) do
+    info.sortKey = MakeSortKey(info.en or info.zh or info.code)
+end
+
+--- 按英文名字母序排好的列表（CountryConfig.List 本身保持原样，其他模块不受影响）
+--- 「其他地区 xx」恒排最后：它不是国家，混进 O 段（Other）既不好找也不符合习惯
+CountryConfig.SortedList = {}
+for _, info in ipairs(CountryConfig.List) do
+    CountryConfig.SortedList[#CountryConfig.SortedList + 1] = info
+end
+table.sort(CountryConfig.SortedList, function(a, b)
+    local aOther = (a.code == CountryConfig.FALLBACK_CODE)
+    local bOther = (b.code == CountryConfig.FALLBACK_CODE)
+    if aOther ~= bOther then
+        return bOther
+    end
+    if a.sortKey ~= b.sortKey then
+        return a.sortKey < b.sortKey
+    end
+    -- 同名字母序（如两处 "St. ..."）时用国家码兜底，保证每次排序结果一致
+    return a.code < b.code
+end)
 
 -- 别名：设备 RegionInfo 可能返回这些码，归并到我们有的旗帜
 -- ⚠️ mo（中国澳门）已有自己的旗帜，别再并到 hk

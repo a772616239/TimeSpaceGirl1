@@ -14,7 +14,13 @@
 //   2) 上传的参考图也是 blob，alt 是「用户附件」。只按 blob 过滤会拿到参考图本身。
 //      ⇒ 判别必须靠 alt，不能靠 src。
 //
-// 退出码：0 拿到图 / 3 需要登录或被人机验证挡住 / 1 其他失败
+// 退出码：0 拿到图 / 3 需要登录或被人机验证挡住 / 4 出图额度用尽 / 1 其他失败
+//
+// 🔴 2026-10-21：额度用尽原来是「哑失败」——站点明明在页面上写了
+//    「图像生成额度已用完 / 你目前的图片生成次数已用完…12:06 获得更多次数」，
+//    driver 却只在 6 分半超时之后从页面尾部嗅到一句「可能是额度用尽」，还归到 rc=3，
+//    Jenkins 上看起来跟网络抖动一模一样。现在每轮轮询都扫这段文案，命中立刻退出 rc=4，
+//    并把站点原文 + 重置时间落进 <out>.fail.json（证据进 artifacts，不靠人翻控制台）。
 import fs from 'node:fs';
 import process from 'node:process';
 
@@ -61,13 +67,55 @@ const GEN_ALT = [
 // 用户自己传上去的参考图，alt 是「用户附件 / Attached / 添付」—— 必须排除
 const UPLOAD_ALT = ['用户附件', 'Attached', 'attachment', '添付', '첨부', 'Adjunto'];
 
-const snapshot = (alts) => {
+// 站点「额度用尽」的原文。🔴 必须逐条列、且不能只用宽泛的 /limit/（提示词本身也带 "limit"）。
+// 🔴 也不能只写中文：同一个 bug 犯了两次 —— 本机 Chrome 是中文界面（第一次），
+//    SunBrowser 那个号是**日文**界面，原文是「現在、無料の画像生成枠を使い切っています。
+//    …⁨19:12⁩に無料枠が回復するまでお待ちください。」，中文判据一条都不命中 ⇒ 又白等 6 分钟。
+//    这段用字符串存，snapshot（在页面上下文里跑）和超时兜底（在 node 里跑）共用同一份。
+const QUOTA_SRC = [
+  // 中文
+  '图像生成额度已用完', '图片生成次数已用完', '生成次数已用完', '额度已用完',
+  '已达到[^。\\n]{0,24}(Free|免费)[^。\\n]{0,24}(上限|限额)',
+  '上限将在[^。\\n]{0,12}(重置|恢复)', '无法调用图像生成工具',
+  // 英文
+  'image generation (limit|quota)', 'reached your (free )?(plan\'?s )?limit',
+  'limit will reset', 'out of (free )?image generations',
+  'used up your (free )?image', 'upgrade to plus to (continue|keep|create)',
+  // 日文
+  '画像生成(の)?上限', '画像生成枠を使い切', '無料枠が回復するまで',
+  '上限に達しました', 'アップグレードすると',
+  // 韩文
+  '이미지 생성 (한도|횟수)', '무료 (이미지 )?(생성 )?한도',
+];
+
+const snapshot = ({ alts, quota }) => {
   const uploads = ['用户附件', 'Attached', 'attachment', '添付', '첨부', 'Adjunto'];
   const isGen = (im) =>
     alts.some((a) => (im.alt || '').includes(a)) ||
     // 兜底：结构上就在「生成图」容器里（alt 文案没覆盖到的语言走这条）
     (!!im.closest('[data-testid*="generated-image"]') &&
       !uploads.some((a) => (im.alt || '').includes(a)));
+  const body = document.body.innerText || '';
+  const QUOTA = quota.map((s) => new RegExp(s, 'i'));
+  const lines = body.split('\n').map((s) => s.trim()).filter(Boolean);
+  const qi = lines.findIndex((l) => QUOTA.some((re) => re.test(l)));
+  let hit = { hit: false };
+  if (qi >= 0) {
+    // 命中行 + 下一行（站点把「用完了」和「什么时候重置」拆成两段）
+    const msg = [lines[qi], lines[qi + 1] || ''].filter(Boolean).join(' / ');
+    const resetM =
+      msg.match(/(\d{1,2}:\d{2})/) ||
+      body.match(/在\s*(\d{1,2}:\d{2})\s*获得/) ||
+      body.match(/(\d{1,2}:\d{2})\s*に(無料枠|フリー)/);
+    const hoursM = body.match(/(\d+)\s*小时\s*(后)?\s*重置/) || body.match(/(\d+)\s*時間後/);
+    hit = {
+      hit: true,
+      message: msg.slice(0, 300),
+      reset: [resetM && `约 ${resetM[1]}`, hoursM && `${hoursM[1]} 小时后`]
+        .filter(Boolean)
+        .join(' / '),
+    };
+  }
   return {
     // 只认生成图：靠 alt 区分「已生成图像 N」与「用户附件」
     imgs: Array.from(document.querySelectorAll('img'))
@@ -82,17 +130,44 @@ const snapshot = (alts) => {
     // 生成中：停止按钮 / 进度百分比 / 「正在勾勒草图」
     busy:
       !!document.querySelector('[data-testid="stop-button"]') ||
-      /\d{1,3}\s*%/.test(document.body.innerText || '') ||
+      /\d{1,3}\s*%/.test(body) ||
       /正在(勾勒|生成|绘制|创建)|Creating image|Generating image|画像を(生成|作成)|그림을 그리는/i.test(
-        document.body.innerText || ''
+        body
       ),
-    text: (document.body.innerText || '').slice(-600),
+    quota: hit,
+    text: body.slice(-600),
   };
 };
 
 const sig = (imgs) => imgs.map((i) => `${i.w}x${i.h}`).sort().join(',');
 
+// 失败证据：<out>.fail.json。让上层（gen_chatgpt_web.py / Jenkins）不必去解析控制台文本，
+// 也能把「为什么没图」当成结构化数据归档。
+const failPath = `${outPath}.fail.json`;
+const safeUrl = () => {
+  try {
+    return page?.url?.() ?? '';
+  } catch {
+    return '';
+  }
+};
+const writeFail = (obj) => {
+  try {
+    fs.writeFileSync(failPath, JSON.stringify({ ...obj, url: safeUrl(), at: new Date().toISOString() }, null, 2));
+    log('失败证据已落盘', failPath);
+  } catch (e) {
+    log('失败证据落盘失败', e?.message ?? e);
+  }
+};
+// 🔴 上一轮的失败证据必须清掉：否则「这次其实成功了」也会被上层读成额度用尽。
+try {
+  fs.rmSync(failPath, { force: true });
+} catch {
+  /* ignore */
+}
+
 let browser;
+let page = null; // 提到模块作用域：writeFail 要在异常路径上也能取到当前 url
 try {
   browser = await chromium.connectOverCDP(cdp);
   const ctx = browser.contexts()[0];
@@ -100,7 +175,7 @@ try {
   // 直接拿 pages()[0] 会把用户正在看的页面导航走，所以：已登录的 chatgpt 标签优先复用，
   // 没有就新开一个，绝不抢别人的 tab。
   const pages = ctx.pages();
-  let page =
+  page =
     pages.find((p) => /chatgpt\.com/.test(p.url())) ??
     (pages.length && !process.env.PW_KEEP_BROWSER ? pages[0] : null) ??
     (await ctx.newPage());
@@ -211,6 +286,7 @@ try {
   let lastSig = '';
   let stable = 0;
   let pollFails = 0;
+  let lastSt = null;
 
   // 🔴 2026-10-20 实测：等图过程中整页偶发被关（Target page/context/browser has been closed），
   //    那一次图其实已经生成好了，只是再也取不到 ⇒ 白等 + 白烧额度。
@@ -234,8 +310,9 @@ try {
   while (Date.now() < deadline) {
     let st;
     try {
-      st = await page.evaluate(snapshot, GEN_ALT);
+      st = await page.evaluate(snapshot, { alts: GEN_ALT, quota: QUOTA_SRC });
       pollFails = 0;
+      lastSt = st;
     } catch (e) {
       pollFails++;
       log(`取图轮询异常（${pollFails}）：${e?.message ?? e}`);
@@ -261,11 +338,26 @@ try {
         : st.imgs.reduce((a, b) => (a.w * a.h >= b.w * b.h ? a : b));
       break;
     }
+    // 🔴 站点已经明确说「额度用尽」了：这不是慢，是根本不会出图。
+    //    放在「稳定取图」之后判定：万一图真的画完了（额度是这一轮之前用掉的），别把好图扔掉。
+    if (st.quota && st.quota.hit) {
+      log('🔴 站点返回「出图额度已用尽」——不是网络/登录问题，继续等也不会出图');
+      log(`   站点原文：${st.quota.message}`);
+      if (st.quota.reset) log(`   重置提示：${st.quota.reset}`);
+      writeFail({ reason: 'quota_exhausted', message: st.quota.message, reset: st.quota.reset });
+      process.exit(4);
+    }
     // 4s → 2.5s：页面被关的窗口越小越好，图一稳定就立刻取
     await sleep(2500);
   }
 
   if (!picked) {
+    // 最后一轮 snapshot 里已经有结论就直接用（别再去抓一次 DOM：页面可能已经被关了）
+    if (lastSt?.quota?.hit) {
+      log(`🔴 超时前已确认额度用尽：${lastSt.quota.message}`);
+      writeFail({ reason: 'quota_exhausted', message: lastSt.quota.message, reset: lastSt.quota.reset });
+      process.exit(4);
+    }
     let tail = '';
     try {
       tail = await page.evaluate(() => (document.body.innerText || '').slice(-800));
@@ -274,13 +366,20 @@ try {
       process.exit(1);
     }
     log('超时仍未拿到图。页面尾部：', tail.replace(/\n+/g, ' | '));
-    if (/limit|上限|quota|额度/i.test(tail)) {
-      log('⚠ 可能是出图额度用尽');
-      process.exit(3);
+    // 兜底再嗅一次：判据与 snapshot 共用 QUOTA_SRC（同一个 bug 不能修两次）
+    if (QUOTA_SRC.some((src) => new RegExp(src, 'i').test(tail))) {
+      log('🔴 页面尾部含「额度用尽」文案，按额度用尽处理');
+      writeFail({ reason: 'quota_exhausted', message: tail.replace(/\n+/g, ' | ').slice(-300), reset: '' });
+      process.exit(4);
     }
     process.exit(1);
   }
   log('选中', `${picked.w}x${picked.h}`, picked.alt);
+  try {
+    fs.rmSync(failPath, { force: true }); // 成功了就别留失败证据
+  } catch {
+    /* ignore */
+  }
 
   // 4) 同源 fetch 取回二进制（blob: 只能在页面上下文里读；签名 URL 直接 curl 会 403）
   const b64 = await page.evaluate(async (u) => {

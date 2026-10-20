@@ -31,11 +31,12 @@
     gen_chatgpt_web.py --image SRC.png --prompt-file prompt.txt --out gen.png \
         [--proxy http://127.0.0.1:7890] [--profile "Profile 5"] [--timeout 300] [--check-only]
 
-退出码：0 成功 / 1 失败 / 2 用法 / 3 环境不可用（黄，不阻断）
+退出码：0 成功 / 1 失败 / 2 用法 / 3 环境不可用（黄，不阻断；含「出图额度已用尽」）
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import socket
@@ -51,10 +52,51 @@ CHROME_DATA = Path.home() / "Library/Application Support/Google/Chrome"
 HERE = Path(__file__).resolve().parent
 DRIVER = HERE / "chatgpt_web_driver.mjs"
 RC_OK, RC_FAIL, RC_USAGE, RC_WARN = 0, 1, 2, 3
+# 内部信号：账号级额度用尽（driver rc=4）。不对外暴露，main 里会转成「自动换号」或 RC_WARN。
+RC_QUOTA = 5
 
 
 def log(msg: str) -> None:
     print(f"[chatgpt_web] {msg}", flush=True)
+
+
+def find_sunbrowser_ports(exclude: int | None = None) -> list[int]:
+    """反查 AdsPower / SunBrowser 的 CDP 端口（已登录的另一个账号）。
+
+    直接复用 find_browser_cdp.py 的实现（进程 → lsof → 试 /json/version），
+    这里只多做一件事：**排除当前正在用的端口**，否则「换号」会连回同一个额度已空的账号。
+    """
+    try:
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import find_browser_cdp as fb
+    except Exception as e:                                    # noqa: BLE001
+        log(f"⚠ 反查端口失败（{e}）")
+        return []
+    cand: list[tuple[int, int]] = []
+    for pid in fb.candidate_pids():
+        for port in fb.listening_ports(pid):
+            if exclude and port == exclude:
+                continue
+            info = fb.probe(port)
+            if info:
+                cand.append((info.get("chatgpt_tabs", 0), port))
+    # 优先「已经开着 chatgpt 标签」的，其次端口小（稳定）
+    cand.sort(key=lambda t: (-t[0], t[1]))
+    return [p for _, p in cand]
+
+
+def read_fail(out: Path) -> dict:
+    """读 driver 落的结构化失败证据 `<out>.fail.json`（reason / message / reset / url）。
+
+    🔴 2026-10-21：额度用尽以前只体现在「页面尾部文本」里，人要自己去控制台里捞。
+       现在 driver 命中即退出 rc=4 并落这个文件，这里读出来直接进 Jenkins 摘要与 artifacts。
+    """
+    p = Path(str(out) + ".fail.json")
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 
 def find_node() -> str | None:
@@ -175,6 +217,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--grab-existing", action="store_true",
                     help="不发送，直接取当前 chatgpt 对话里已有的生成图。"
                          "图其实已经画好、只是 driver 没认出来时用它，别再烧一次额度")
+    # 🔴 额度用尽默认自动换号：本机 Chrome 那个号出完了，就接 AdsPower 的 SunBrowser。
+    #    关掉它（--no-auto-fallback）只在「明确要验证某个账号的额度」时用。
+    ap.add_argument("--auto-fallback", dest="auto_fallback", action="store_true", default=True,
+                    help="额度用尽时自动改用 AdsPower/SunBrowser 里另一个已登录账号（默认开）")
+    ap.add_argument("--no-auto-fallback", dest="auto_fallback", action="store_false",
+                    help="额度用尽直接失败，不自动换号")
     ap.add_argument("--check-only", action="store_true", help="只做连通性与登录态预检")
     args = ap.parse_args(argv)
 
@@ -211,9 +259,49 @@ def main(argv: list[str] | None = None) -> int:
         if i > 1:
             log(f"↻ 第 {i}/{attempts} 次重试（上一次页面/浏览器被关，判定为环境抖动）")
         last = run_once(args, image, prompt_file, out, node, pw)
-        if last == RC_OK or last in (RC_USAGE, RC_WARN):
+        if last == RC_OK:
+            return RC_OK
+        if last == RC_QUOTA:
+            # 🔴 额度用尽是账号级限制：重试没用，换号才有用。
+            #    「换号」= 接上 AdsPower 里另一个已登录 ChatGPT 的 SunBrowser（只连不断）。
+            if args.auto_fallback and try_sunbrowser(args, image, prompt_file, out, node, pw):
+                return RC_OK
+            detail = read_fail(out)
+            log(f"🔴 出图额度已用尽（账号级，重试无效）：{detail.get('message') or '站点未给出原文'}")
+            log("   处理：在 AdsPower 里换一个已登录 ChatGPT 的 profile 后重跑，或等额度重置")
+            return RC_WARN
+        if last in (RC_USAGE, RC_WARN):
             return last
     return last
+
+
+def try_sunbrowser(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str) -> bool:
+    """额度用尽时的自动换号：接上 AdsPower 的 SunBrowser（另一个已登录账号）。
+
+    🔴 不搬 cookie、不改登录态：只换「连哪个浏览器」。--reuse-cdp 只连不断，
+       不会关掉用户手上的窗口，driver 也优先复用已开的 chatgpt 标签、不抢 tab。
+    🔴 必须排除当前端口：否则「换号」会连回同一个额度已空的账号，白跑一轮。
+    """
+    cur = args.port if args.reuse_cdp else None
+    log("↪ 出图额度已用尽，自动查找 SunBrowser（AdsPower 已登录 profile）…")
+    ports = find_sunbrowser_ports(exclude=cur)
+    if not ports:
+        log("⚠ 没找到可用的 SunBrowser（AdsPower 没开 / 该 profile 未开远程调试）")
+        return False
+    for p in ports[:3]:
+        log(f"↪ 改用 SunBrowser CDP {p} 重出（换号，不搬 cookie）")
+        args.reuse_cdp = True
+        args.port = p
+        rc = run_once(args, image, prompt_file, out, node, pw)
+        if rc == RC_OK:
+            log(f"✅ 换号成功：SunBrowser {p} 已出图")
+            return True
+        if rc == RC_QUOTA:
+            log(f"   SunBrowser {p} 这个号也额度用尽，试下一个")
+            continue
+        log(f"   SunBrowser {p} 失败（rc={rc}），不再试其它端口")
+        return False
+    return False
 
 
 def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str) -> int:
@@ -275,6 +363,15 @@ def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str
         if drv.returncode == 0 and out.is_file():
             log(f"✅ 出图：{out}（{out.stat().st_size // 1024} KB）")
             return RC_OK
+        if drv.returncode == 4:
+            # 🔴 账号级额度用尽：换节点、重试、重开浏览器全都没用 —— 只能换号（或等重置）。
+            #    这里不直接判失败，先把「额度用尽」当信号抛给 main，由它决定是否自动接 SunBrowser。
+            detail = read_fail(out)
+            log("🔴 driver 退出码 4：chatgpt.com 明确返回「出图额度已用尽」")
+            log(f"   站点原文：{detail.get('message') or '(未取到)'}")
+            if detail.get("reset"):
+                log(f"   重置提示：{detail['reset']}")
+            return RC_QUOTA
         log(f"🔴 driver 退出码 {drv.returncode}，未拿到图片")
         return RC_WARN if drv.returncode == 3 else RC_FAIL
     except subprocess.TimeoutExpired:

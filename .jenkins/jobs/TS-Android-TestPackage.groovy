@@ -146,6 +146,20 @@ ENV_ARGS=()
 ''')
           }
         }
+        stage('本机回环地址（这包发出去能不能连）') {
+          steps {
+            sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+APK="$(cat "$TS_RUN_DIR/apk.path")"
+# ⚠️ 警告不是闸门：rc=3（回环地址）标黄不阻断——包能连哪里是口径问题，由人判断；
+#   但 rc=1（包结构坏/读不到 version.txt）没有 --warn-ok 兜着，直接红灯。
+"$BASH" .jenkins/lib/run_stage.sh --name "本机回环地址警告" \
+  --group "包内校验" --slug loopback-warn --timeout 120 --warn-rc 3 \
+  -- "$PY" scripts/verify_apk_loopback.py "$APK"
+''')
+          }
+        }
         stage('出包口径（isOpenGM 等 12 位开关）') {
           steps {
             sh(script: '''#!/usr/local/bin/bash

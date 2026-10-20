@@ -9,6 +9,11 @@
 - 提交前排除产物与临时文件：`apks/`、`build_log_*.txt`、`Assets/_Recovery/`、
   `.workbuddy*/tmp*/`、Unity 自动生成的 `untitledfolder`。
 - 分支：主开发分支是 `release`（不是 main/master）。
+- **总结的 skill 一律放 `docs/`**（用户 2026-10-20 明确要求）：写成扁平的
+  `docs/<topic>_skill.md`（与 `unity_android_build_skill.md`、`cheat_detection_skill.md` 同风格：
+  顶部写适用范围/更新时间/关联文档，正文含配方、判断规则、坑位、案例数据）。
+  `.workbuddy-ai/skills/<name>/` 只留一个十几行的路由 `SKILL.md`（frontmatter + 指向 docs）
+  和可执行脚本，**正文不要再堆在 skills 目录里**。
 
 ## 打包与服务器口径
 

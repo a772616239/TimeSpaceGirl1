@@ -75,9 +75,82 @@ local function FlipAlive(obj)
     return true
 end
 
+--==================== 启动前摇：内容区从上往下落 ====================
+-- 参考 cn2-X1_UI_SevenDayCarnivalPanelV2 那份 clip 里除 7 条 scaleX 之外还有两条
+-- m_FloatCurves（上一轮只读了 m_ScaleCurves，漏了）：
+--   path=bg  m_SizeDelta.y         110 -> 0    0 -> 0.3667s，两端切线都是 0
+--   path=bg  m_AnchoredPosition.y   55 -> 0
+-- 两条同时写 = 底边钉死、顶边从屏幕外上方往下落 110px，挂在 bg 下面的内容跟着落回原位。
+-- 参考里 bg 自己是个全屏纯色遮罩（m_Sprite 为空），它的位移看不见；真正看得见的是 bg
+-- 底下那组内容（finalTarget / curProgress）一起下移 55px。本面板 bg 同样是黑遮罩，
+-- 所以把「落 110px」复刻到承内容的 downLayout：四边拉满、pivot 0.5、baseline (0,0)。
+-- 参考那边 loop=1 常驻循环；本面板页签最多 32 个，常驻抖会吵 ⇒ 只播一次。
+local kDropDuration = 0.3667
+local kDropOffsetY = 110
+local dropTween = nil
+
+-- tolua 的枚举表是运行期注册的，取不到就不设：否则整段被 pcall 吃掉、什么都不动
+local function SetEaseSafe(tween, name)
+    local enum = _G.Ease
+    local value = enum and enum[name]
+    if value ~= nil then
+        tween:SetEase(value)
+    end
+    return tween
+end
+
+-- DOAnchorPos 是 RectTransform 的扩展方法；直接拿 transform 得到的是 Transform 类型，
+-- 那种 userdata 上没有这个方法。
+function this.GetDownLayout()
+    local go = Util.GetGameObject(this.gameObject, "downLayout")
+    if not FlipAlive(go) then
+        return nil
+    end
+    return go:GetComponent("RectTransform")
+end
+
+-- 回收落位 tween 并把位置复位。重播 / 关闭 / 销毁 / 出错都必须走这里：
+-- 中途关掉再打开会从半截位置起，漏复位则永久停在 +110。
+function this.StopDropIn()
+    if FlipAlive(dropTween) then
+        dropTween:Kill(false)
+    end
+    dropTween = nil
+    local layout = this.GetDownLayout()
+    if FlipAlive(layout) then
+        layout.anchoredPosition = Vector2.New(0, 0)
+    end
+end
+
+-- 打开面板：内容区从上方落下 110px 落到原位（一次性，0.367s，两端缓入缓出）。
+function this.PlayDropIn()
+    this.StopDropIn()
+    local layout = this.GetDownLayout()
+    if not FlipAlive(layout) then
+        return
+    end
+    local ok, err = pcall(function()
+        layout.anchoredPosition = Vector2.New(0, kDropOffsetY)
+        local tween = layout:DOAnchorPos(Vector2.New(0, 0), kDropDuration)
+        SetEaseSafe(tween, "InOutQuad")
+        tween:OnComplete(function()
+            if FlipAlive(layout) then
+                layout.anchoredPosition = Vector2.New(0, 0)
+            end
+        end)
+        dropTween = tween
+    end)
+    if not ok then
+        LogError("ExpertPanel: 内容区落位失败 " .. tostring(err))
+        if FlipAlive(layout) then
+            layout.anchoredPosition = Vector2.New(0, 0)
+        end
+    end
+end
+
 -- 回收所有翻入 tween，并把临时关掉的按钮 Animator 恢复。
 -- 🔴 漏恢复 = 那颗页签从此没有按下反馈；重播 / 关闭 / 销毁都必须走这里。
-function this.StopTabAnims()
+function this.StopOpenAnims()
     for i = #tabFlipItems, 1, -1 do
         local item = tabFlipItems[i]
         if FlipAlive(item.tween) then
@@ -95,13 +168,15 @@ function this.StopTabAnims()
         tabSelectTween:Kill(false)
     end
     tabSelectTween = nil
+    -- 落位同属开启动画，一起回收
+    this.StopDropIn()
 end
 
 -- 打开面板：可见页签按「版面上的顺序」逐格 scaleX 0→1 翻入。
 -- 顺序取 tabsContent 的子节点顺序（VerticalLayoutGroup 按 sibling 排），不能用 tab 下标：
 -- TabSort 会按 ActivityGroups.Sort 调 SetSiblingIndex，下标顺序 ≠ 显示顺序。
 function this.PlayTabFlipIn()
-    this.StopTabAnims()
+    this.StopOpenAnims()
     local content = Util.GetGameObject(this.gameObject, "tabs/viewPort/tabsContent")
     if not FlipAlive(content) then
         return
@@ -272,6 +347,8 @@ function ExpertPanel:OnShow()
     this:ActivityRewardShow()
     -- 页签逐格翻入（放在 ActivityRewardShow 之后：先确定哪些页签开着、哪个被选中）
     this.PlayTabFlipIn()
+    -- 内容区从上往下落位（与翻入同时起，和参考一致）
+    this.PlayDropIn()
 end
 
 function ExpertPanel:OnSortingOrderChange()
@@ -284,13 +361,13 @@ end
 --界面关闭时调用（用于子类重写）
 function ExpertPanel:OnClose()
     -- 翻到一半被关掉：必须把临时禁用的按钮 Animator 恢复，否则这颗页签以后没按下反馈
-    this.StopTabAnims()
+    this.StopOpenAnims()
     PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 --界面销毁时调用（用于子类重写）
 function ExpertPanel:OnDestroy()
-    this.StopTabAnims()
+    this.StopOpenAnims()
     SubUIManager.Close(this.HeadFrameView)
     SubUIManager.Close(self.UpView)
     this:ClearRedPoint()

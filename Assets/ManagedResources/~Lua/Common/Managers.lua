@@ -56,6 +56,8 @@ local ManagerNames = {
     "WorkShop/WorkShopManager",
     -- 临时
     "Popup/NameManager",
+    --主动弹窗队列（登录进主城时多个弹窗排队展示，关一个再开下一个）
+    "Popup/PopupQueue",
     -- option行为管理
     "Mission/OptionBehaviourManager",
     -- 邮件数据管理

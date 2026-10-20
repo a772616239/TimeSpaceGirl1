@@ -20,6 +20,26 @@ this.space = 100
 --> 屏蔽界面开关
 this.shieldSwitch = true
 
+--主动弹窗队列（Modules/Popup/PopupQueue.lua 在初始化时注册进来）
+--用途：登录进主城时多个主动弹窗会同时打开并互相重叠，由队列负责「关一个再开下一个」
+this.popupQueue = nil
+
+function UIManager.SetPopupQueue(queue)
+    this.popupQueue = queue
+end
+
+--- 通知弹窗队列「某个界面已关闭」。没有注册队列时静默跳过（老行为不变）。
+local function NotifyPopupQueue(funcName, ...)
+    local queue = this.popupQueue
+    if queue == nil or queue[funcName] == nil then
+        return
+    end
+    local ok, err = pcall(queue[funcName], ...)
+    if not ok then
+        LogError("[UIManager] popup queue " .. funcName .. " error: " .. tostring(err))
+    end
+end
+
 UIManager.UIHeight = 1920
 UIManager.UIWidth = 1080 
 
@@ -711,6 +731,8 @@ function UIManager.CloseFixedPanel(uiConfig,isDestroy)
             this.DelayDestroyPanel(panel)
         end
         this.eventSystem:SetActive(true)
+        --弹窗队列：关掉一个再放行下一个
+        NotifyPopupQueue("OnPanelClosed", uiConfig.id)
     end
     if panel.OnCloseBefore then
         this.eventSystem:SetActive(false)
@@ -790,6 +812,8 @@ function UIManager.CloseStackPanel(uiConfig,isDestroy)
             this.DelayDestroyPanel(panel)
         end
         this.eventSystem:SetActive(true)
+        --弹窗队列：关掉一个再放行下一个
+        NotifyPopupQueue("OnPanelClosed", uiConfig.id)
     end
     if panel.OnCloseBefore then
         this.eventSystem:SetActive(false)
@@ -885,6 +909,8 @@ function UIManager.CloseAll(isDestroy)
 
     this.openedList = {}
     delayDestoryList = {}
+    --整栈关完（切场景 / 退出游戏）后队列再弹就会开在已销毁的 UIRoot 上，直接清空
+    NotifyPopupQueue("Clear")
 end
 
 --延时销毁界面，避免频繁的GC开销

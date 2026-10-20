@@ -80,6 +80,7 @@ local kPageDropDuration = 0.3667
 local kPageDropOffsetY = 110
 local tabFlipItems = {}         -- { tween = , tf = , anim = }
 local tabSelectTween = nil      -- 高亮板翻入
+local tabSelectTf = nil         -- 上面那条 tween 绑的节点（Kill 后要复位）
 local pageDropTween = nil       -- 内容区落位
 
 -- UnityEngine.Object 在 lua 侧是 userdata：Destroy 之后既不是 nil 也不能直接取字段
@@ -321,6 +322,12 @@ function this.StopOpenAnims()
         tabSelectTween:Kill(false)
     end
     tabSelectTween = nil
+    -- 🔴 高亮板是「先置 0 再长回 1」，Kill 时必须自己复位，否则切页途中关面板会把
+    -- 那块板永久留在半截缩放上。
+    if FlipAlive(tabSelectTf) then
+        tabSelectTf.localScale = Vector3.one
+    end
+    tabSelectTf = nil
     -- 落位同属开启动画，一起回收
     this.StopPageDropIn()
 end
@@ -408,6 +415,7 @@ function this:PlayTabSelectFlip(index)
     end
     local tf = go.transform
     tf.localScale = Vector3.New(0, 1, 1)
+    tabSelectTf = tf
     local ok, err = pcall(function()
         tabSelectTween = tf:DOScale(Vector3.one, kTabFlipDuration)
         SetEaseSafe(tabSelectTween, "OutQuad")

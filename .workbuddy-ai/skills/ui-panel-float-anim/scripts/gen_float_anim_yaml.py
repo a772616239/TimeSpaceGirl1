@@ -202,6 +202,15 @@ def build_clip(name, curves, stop, loop):
 META = ('fileFormatVersion: 2\nguid: %s\nNativeFormatImporter:\n  externalObjects: {}\n'
         '  mainObjectFileID: %d\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n')
 
+
+def _read_meta_guid(meta_path):
+    """读已有 .meta 的 guid（没有就返回 None）。"""
+    if not os.path.exists(meta_path):
+        return None
+    with open(meta_path, encoding='utf-8') as f:
+        m = re.search(r'^guid: (\w+)$', f.read(), flags=re.M)
+    return m.group(1) if m else None
+
 ANIMATOR_BLOCK = '''--- !u!95 &%d
 Animator:
   serializedVersion: 5
@@ -378,7 +387,12 @@ def main():
     out_dir = args.out_dir or args.dir
     os.makedirs(out_dir, exist_ok=True)
 
-    guids = {k: uuid.uuid4().hex for k in ('start', 'normal', 'ctrl')}
+    # 已有 .meta 就沿用它的 guid：重跑生成器只该改内容，不该换 guid
+    # （guid 一变，prefab 里那条 m_Controller 就得跟着换，等于把一次配方微调变成一次引用搬家）
+    guids = {}
+    for key, suffix in (('start', '_start.anim'), ('normal', '_normal.anim'), ('ctrl', '.controller')):
+        meta_path = os.path.join(out_dir, args.base + suffix + '.meta')
+        guids[key] = _read_meta_guid(meta_path) or uuid.uuid4().hex
 
     for key in ('start', 'normal'):
         stop, loop = clip_meta[key]

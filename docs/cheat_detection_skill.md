@@ -618,3 +618,32 @@ ssh gs 'grep -a -A6 "protoID=11756" /data/srvlog/gameserver.log | tail -20'
 代码侧已加固（未发版前线上仍是旧逻辑）：
 `getFirst` 取前 5 名逐个校验、失效则顺延到下一个有效成员；`getOptional` 跳过失效行；
 `getMyInfo` 判 `zSetScore` / `getZSetreverseRank` 为 null（两者都是 `Long`/`Double`，直接拆箱会 NPE）。
+
+### 10.5 「谁收过 GM 奖励」——一条命令列全服（**先跑这条再逐个点号**）
+
+`itemLog` 里的 reason=28 会被删号一起清掉，**BI 文件流水不会**。想一次性看清全服有几个人
+吃过 GM 奖励，直接扫 30 天 BI 账本，比逐个 `scan` 快几个数量级：
+
+```bash
+ssh gs 'grep -ahE "reason=28[,}]" \
+  /home/java/gameserver/assets/log/jl_item/*/item*.log 2>/dev/null \
+  | grep -aoE "uid=[0-9]+" | sort | uniq -c | sort -rn'
+```
+
+2026-10-20 实测输出（= 本案全部涉案号）：
+
+```
+ 91 uid=10000240      81 uid=10000153      48 uid=10000224（朗曼梅西）
+ 24 uid=10000194       9 uid=10000198       5 uid=10000209（旅笛格林）
+```
+
+六个号里 **5 个 `user` 文档已不存在**（10000240 / 10000153 / 10000194 / 10000198 / 10000209），
+只有 `10000224` 还在（首批只删了英雄）。判定要点：
+
+- `reason=28` 必须写成 `reason=28[,}]`，否则 `280`/`281` 会被算进来；
+- 行内格式有两版：`uid=10000248,the reason=1063` 与 `reason=1`（有的不带 `the `），
+  `grep -a` 不能省（日志含 GBK 字节）;
+- 条数 ≠ 严重度：`10000240` 91 条 / `10000153` 81 条都比 `10000224` 多，
+  但它们是早期建的号，需要回看 `heroLog` 的 10 秒 13★ 窗口才算实锤；
+- 这批号 `user` 已不在库、`rank-audit` 却报 0 失效 ⇒ 说明它们是**正常删号路径**清掉的，
+  不是本案那种「只删 user 不清榜」的漏网。

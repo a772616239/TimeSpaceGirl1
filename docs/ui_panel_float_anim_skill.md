@@ -242,7 +242,8 @@ prefab 的 diff 只有两处（根节点 `m_Component` 里那条 fileID + 组件
 | 黑底遮罩 | `Panel`（Image 0,0,0,0.706） | — | alpha 0 → 0.706（0→0.27s） | 不动 |
 | 主体（整块） | `Panel/Middle` | 47（只写缩放） | scale 0.92 → 1.04 → 0.99 → 1 | 不动 |
 | 底板 | `Panel/Middle/Image` | 106 | — | scale 1 → 1.02 → 1 |
-| 立绘 | `Panel/hero` | —（**不能写位置**） | scale 1 → 1.25 → 0.97 → 1 | 不动 |
+| 立绘容器 | `Panel/heroRoot`（空节点，位移专用） | 0 | y 由 −46 升到 0（0→0.42s） | y +8（呼吸，与底板同相位） |
+| 立绘本体 | `Panel/heroRoot/hero` | —（位置归 Lua） | scale 1 → 1.25 → 0.97 → 1 | 不动 |
 | 标题 | `Panel/Middle/Text` | −248 | scale 1 → 1.12 → 1（0.30 起） | y +5 |
 | 奖励区 | `Panel/Middle/Reward` | −395 | scale 0.86 → 1.04 → 1 + y 由 −413 落位 | y −10，scale 1.015 |
 | 奖励三格 | `Panel/Middle/Reward/Panel1..3` | 0 | scale 0 → 1.12 → 1，错开 0.08s | 不动 |
@@ -254,7 +255,7 @@ prefab 的 diff 只有两处（根节点 `m_Component` 里那条 fileID + 组件
 
 | 坑 | 证据 | 处理 |
 |---|---|---|
-| `Panel/hero` 的位置归 Lua | `SupremeHeroPopup.lua:73` 非中文语言会把 `hero.transform.localPosition` 改成 `(338,266)` | Animator **只写 hero 的 scale**。写 `anchoredPosition.y` 会把它按回 0，立绘直接掉下去（切到 normal 时 `writeDefaultValues` 也会按回 prefab 的 0） |
+| `hero` 的位置归 Lua | `SupremeHeroPopup.lua:75` 非中文语言会把 `hero.transform.localPosition` 改成 `(338,266)` | **不要直接给 `hero` 写 `anchoredPosition.y`**（会被语言偏移冲突：动画每帧写回就把它按回 0）。在 `Panel` 与 `hero` 之间插一个空节点 `heroRoot`（(0,0)/中心锚点/同尺寸，`sibling index` 仍留最后一位保证渲染顺序），位移写 `heroRoot`、缩放写 `hero`。`heroRoot` 基准是 0 ⇒ 纯偏移，叠加在 Lua 写的位置之上，中文/非中文都对 |
 | `DoneBtn` / `Button_Go` / `Button_Get` 自带 `CommonButton` 控制器 | 三个按钮都是 `Animator(CommonButton.controller)` | 只写位置，不写缩放 |
 | 黑底遮罩就是 `Panel` 自己的 Image（不是独立节点） | `Panel` 的 Image `m_Color = (0,0,0,0.7058824)`，`btnBack` 只是 a=0.004 的点击层 | start 里给 `Panel` 写 `m_Color.a` 0 → 0.7058824（与 prefab 默认同值，切 normal 不跳） |
 
@@ -263,13 +264,25 @@ prefab 的 diff 只有两处（根节点 `m_Component` 里那条 fileID + 组件
 - `--config <json>`：换面板只加一个 JSON 配方（`scripts/configs/supreme_hero_popup.json`），不再改脚本里的 `CURVES`
 - `m_Color.a` 曲线（`attribute: 304273561`、`typeID: 114`、script 取组件自己的 `m_Script`）+ **prefab 已是 Animator 时只换 controller guid**（不再要求 legacy `!u!111`）
 
+### 通用套路：节点位置已经被代码写死时，怎么加位移动画
+
+判据：面板 Lua/C# 里有 `xxx.transform.localPosition = ...` 或 `anchoredPosition = ...`。
+**直接给同一个节点写位置曲线会被覆盖**（哪怕代码只写一次，动画每帧都会盖掉它），所以：
+
+1. 在该节点外插一个空容器（只挂 RectTransform，中心锚点、pivot 0.5、`anchoredPosition (0,0)`、尺寸取同值）；
+2. 位移曲线写给容器（基准恒 0 ⇒ 纯偏移），缩放/透明度仍写原节点；
+3. 原节点的**名字和查找路径**要么保持不动、要么同步改所有引用（本面板因为 `Util.GetGameObject` 是 `Transform.Find` 路径查找，改了 Lua 的 `Panel/hero` → `Panel/heroRoot/hero`，源码与 `LuaBytes` 成对重编）；
+4. 容器插进父节点 `m_Children` 时**替换原节点的位置**（同一个 sibling index），否则会改变渲染顺序（UI 是按 sibling 顺序画的）；
+5. 空容器不需要 `CanvasRenderer`，`m_Layer` 跟同级一致即可。
+
 **为什么这次走路 B**：Unity 停在 Play mode，脚本编译被阻塞 ⇒ 新写的 C# builder 编译不出来、菜单也点不了；
 而手写 clip 不依赖 Unity 编译。产出的 prefab diff 只有 **1 行**（`m_Controller` 的 guid），对象总数 296 → 296。
 
 **验收记录**：
 
-- Unity 回读：`start` 1.000s / 27 条曲线、`normal` 3.000s / 12 条曲线、`loopTime` 分别 False/True、
+- Unity 回读：`start` 1.000s / 28 条曲线、`normal` 3.000s / 13 条曲线、`loopTime` 分别 False/True、
   `missingPaths=0`（⚠️ 这条第一次是**假阳性**，锚点按根节点算的；见下方事故复盘，修复后按 `Animator.transform` 复验仍为 0）
+- 结构：`Panel` 子节点顺序 `btnBack, fanhuiBtn, Middle, heroRoot`（`heroRoot` 占原 `hero` 的位置）、对象数 296 → 298
 - 离线：13/13 与 8/8 条曲线的 `path`/`attribute` 哈希与 `genericBindings` 一一对应；normal 每条曲线首尾同值
 - 旧 `UI_effect_SupremeHeroPopup.controller`（+ `_start.anim` / `_normal.anim`）**原样留在** `Assets/Art/EffectsOld/Animation/`，只是不再被 prefab 引用（`_praticle_controller` 仍在用，别一起删）
 

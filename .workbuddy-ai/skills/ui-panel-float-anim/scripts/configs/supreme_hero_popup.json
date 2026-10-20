@@ -1,0 +1,38 @@
+{
+  "_comment": "SupremeHeroPopup（剑影迷踪）浮动动画配方。层级基准：Panel/Middle/Image y=106、Text y=-248、Reward y=-395、DoneBtn y=-805、progress y=-715、textTime/freshTime y=-907；Panel 的 Image 是黑底遮罩(0,0,0,0.706)。Panel/hero 只做缩放——SupremeHeroPopup.lua 会把它的 localPosition 改成 (338,266)。",
+  "clips": {
+    "start": {
+      "stop": 1.0,
+      "loop": false,
+      "curves": [
+        ["alpha", "Panel", [[0, 0], [0.27, 0.7058824]]],
+        ["scale", "Panel/Middle", [[0, 0.92], [0.14, 1.04], [0.24, 0.99], [0.34, 1]]],
+        ["scale", "Panel/hero", [[0.06, 1], [0.22, 1.25], [0.34, 0.97], [0.42, 1]]],
+        ["scale", "Panel/Middle/Text", [[0.30, 1], [0.42, 1.12], [0.52, 1]]],
+        ["scale", "Panel/Middle/Reward", [[0.40, 0.86], [0.52, 1.04], [0.62, 1]]],
+        ["float", "Panel/Middle/Reward", [[0.40, -413], [0.62, -395]]],
+        ["scale", "Panel/Middle/Reward/Panel1", [[0.50, 0], [0.60, 1.12], [0.70, 1]]],
+        ["scale", "Panel/Middle/Reward/Panel2", [[0.58, 0], [0.68, 1.12], [0.78, 1]]],
+        ["scale", "Panel/Middle/Reward/Panel3", [[0.66, 0], [0.76, 1.12], [0.86, 1]]],
+        ["float", "Panel/Middle/DoneBtn", [[0.72, -823], [0.96, -805]]],
+        ["float", "Panel/Middle/progress", [[0.78, -733], [0.96, -715]]],
+        ["float", "Panel/Middle/textTime", [[0.82, -925], [1, -907]]],
+        ["float", "Panel/Middle/freshTime", [[0.82, -925], [1, -907]]]
+      ]
+    },
+    "normal": {
+      "stop": 3.0,
+      "loop": true,
+      "curves": [
+        ["scale", "Panel/Middle/Image", [[0, 1], [1.5, 1.02], [3, 1]]],
+        ["float", "Panel/Middle/Text", [[0, -248], [1.5, -243], [3, -248]]],
+        ["scale", "Panel/Middle/Reward", [[0, 1], [1.5, 1.015], [3, 1]]],
+        ["float", "Panel/Middle/Reward", [[0, -395], [1.5, -405], [3, -395]]],
+        ["float", "Panel/Middle/DoneBtn", [[0, -805], [0.7333333, -802], [1.5, -805], [2.3333333, -802], [3, -805]]],
+        ["float", "Panel/Middle/progress", [[0, -715], [1.5, -718], [3, -715]]],
+        ["float", "Panel/Middle/textTime", [[0, -907], [1.5, -910], [3, -907]]],
+        ["float", "Panel/Middle/freshTime", [[0, -907], [1.5, -910], [3, -907]]]
+      ]
+    }
+  }
+}

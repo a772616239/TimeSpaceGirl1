@@ -1,23 +1,41 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""不依赖 Unity 直接生成 UI 浮动动画的 .anim / .controller，并把 prefab 的 Animation 换成 Animator。
+"""不依赖 Unity 直接生成 UI 浮动动画的 .anim / .controller，并把动画挂到 prefab 上。
 
 什么时候用这个而不是 C# 生成器：
-  Unity 编辑器正开着工程（Temp/UnityLockfile 被占用）⇒ 不能 batchmode，又不想手点菜单时用这个。
+  Unity 编辑器正开着工程（Temp/UnityLockfile 被占用、甚至停在 Play mode 里编译被阻塞）⇒
+  不能 batchmode、也点不到菜单时用这个。
 
 为什么能这么干：
   AnimationClip 的 m_ClipBindingConstant.genericBindings[].path 是**层级路径的 zlib.crc32**，
-  attribute 是属性名的 crc32（m_AnchoredPosition.y = 538195251，m_LocalScale 走 attribute=3 的枚举）。
+  attribute 是属性名的 crc32（m_AnchoredPosition.y = 538195251，m_Color.a = 304273561，
+  m_LocalScale 走 attribute=3 的枚举）。
   已在本工程用 UI_effect_DailyRechargePanel_normal.anim 的 5 个样本验证 5/5 命中。
   所以只要曲线数据和哈希算对，手写出来的 clip 和 Unity 写出来的完全等价。
 
 用法：
+  # 用脚本内置的首充配方
   python3 gen_float_anim_yaml.py --prefab <prefab> --base <资源名前缀> [--dir Assets/Art/UIAni]
                                  [--out-dir /tmp/x] [--no-prefab]
+  # 用外部 JSON 配方（推荐：换面板时只加一个 json，别改本文件）
+  python3 gen_float_anim_yaml.py --prefab <prefab> --base <名字> --config <cfg.json>
 
-配置：改下面 CURVES 里的两组曲线（(type, path, [(time, value)...])，type 是 scale 或 float）。
+JSON 配方格式（值可写表达式吗？不行——只写数字）：
+  {
+    "clips": {
+      "start":  {"stop": 1.0, "loop": false, "curves": [["scale", "frame/BG", [[0, 1], [0.13, 1.2]]]]},
+      "normal": {"stop": 3.0, "loop": true,  "curves": [["alpha", "Panel", [[0, 0], [0.27, 0.706]]]]}
+    }
+  }
+  curve 类型：scale（缩放，绑 Transform）、float（m_AnchoredPosition.y，绑 RectTransform）、
+             alpha（m_Color.a，绑 UnityEngine.UI.Image）
+
+prefab 补丁的两种情况：
+  * 根节点还是 legacy Animation（!u!111）→ 换成 Animator（新 fileID），并改 m_Component 里那条
+  * 根节点已经是 Animator（!u!95）→ 只换 m_Controller 的 guid，并把 KeepAnimatorStateOnDisable 置 0
 """
 import argparse
+import json
 import os
 import random
 import re
@@ -26,10 +44,15 @@ import zlib
 
 POS_ATTR = 'm_AnchoredPosition.y'
 POS_ATTR_HASH = zlib.crc32(POS_ATTR.encode())          # 538195251
+COLOR_ATTR = 'm_Color.a'
+COLOR_ATTR_HASH = zlib.crc32(COLOR_ATTR.encode())      # 304273561
 
-# ---------------------------------------------------------------- 曲线配置（按面板改）
+# UnityEngine.UI.Image 的 MonoScript 引用（本工程 Panel 上挂的就是它；跟着组件的 m_Script 走）
+UI_IMAGE_SCRIPT = '{fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}'
 
-BASE_TABS_Y = 156.64
+# ---------------------------------------------------------------- 曲线配置（首充配方，按面板改）
+
+BASE_TABS_Y = 153.5
 BASE_REWARD_Y = -226.18
 BASE_BTN_Y = -600.0
 BASE_TIPS_Y = -462.0
@@ -39,8 +62,8 @@ CURVES = {
     'start': [
         ('scale', 'frame', [(0, 1), (0.13333334, 1.2), (0.21666667, 0.95), (0.31666667, 1)]),
         ('scale', 'hero', [(0, 1), (0.06666667, 1.3), (0.26666668, 0.95), (0.36666667, 1)]),
-        ('scale', 'frame/tabsContent', [(0.30, 0.85), (0.42, 1.06), (0.52, 1)]),
-        ('float', 'frame/tabsContent', [(0.30, BASE_TABS_Y + 20), (0.52, BASE_TABS_Y)]),
+        # tabsContent 盖在底图的镂空上，只能"放大"，不能缩小/位移，否则底部会漏出背景（见 docs 坑位 7）
+        ('scale', 'frame/tabsContent', [(0.30, 1.0), (0.42, 1.08), (0.52, 1.0)]),
         ('scale', 'frame/rewardBg', [(0.40, 0.88), (0.52, 1.05), (0.62, 1)]),
         ('float', 'frame/rewardBg', [(0.40, BASE_REWARD_Y - 18), (0.62, BASE_REWARD_Y)]),
         ('scale', 'frame/rewardBg/rewardDay1', [(0.50, 0), (0.60, 1.12), (0.70, 1)]),
@@ -54,7 +77,7 @@ CURVES = {
         ('scale', 'frame/BG', [(0, 1), (1.5, 1.02), (3, 1)]),
         ('scale', 'frame/rewardBg', [(0, 1), (1.5, 1.015), (3, 1)]),
         ('float', 'frame/rewardBg', [(0, BASE_REWARD_Y), (1.5, BASE_REWARD_Y - 10), (3, BASE_REWARD_Y)]),
-        ('float', 'frame/tabsContent', [(0, BASE_TABS_Y), (1.5, BASE_TABS_Y + 5), (3, BASE_TABS_Y)]),
+        # 这里故意不动 tabsContent：它下面是镂空，上移 5 会让底部缝隙翻倍（原实现就是踩这个坑）
         ('float', 'frame/rechargeBtn', [(0, BASE_BTN_Y), (0.7333333, BASE_BTN_Y + 3),
                                         (1.5, BASE_BTN_Y), (2.3333333, BASE_BTN_Y + 3), (3, BASE_BTN_Y)]),
         ('float', 'frame/tips', [(0, BASE_TIPS_Y), (1.5, BASE_TIPS_Y - 3), (3, BASE_TIPS_Y)]),
@@ -93,7 +116,7 @@ def scale_block(path, keys):
                   '    path: %s' % path]
 
 
-def float_block(path, keys, attribute, class_id=224):
+def float_block(path, keys, attribute, class_id=224, script='{fileID: 0}'):
     out = ['  - curve:', '      serializedVersion: 2', '      m_Curve:']
     for t, v in keys:
         out += ['      - serializedVersion: 3', '        time: %s' % num(t),
@@ -102,12 +125,12 @@ def float_block(path, keys, attribute, class_id=224):
                 '        inWeight: 0.33333334', '        outWeight: 0.33333334']
     return out + ['      m_PreInfinity: 2', '      m_PostInfinity: 2', '      m_RotationOrder: 4',
                   '    attribute: %s' % attribute, '    path: %s' % path,
-                  '    classID: %d' % class_id, '    script: {fileID: 0}']
+                  '    classID: %d' % class_id, '    script: %s' % script]
 
 
 def build_clip(name, curves, stop, loop):
     scales = [c for c in curves if c[0] == 'scale']
-    floats = [c for c in curves if c[0] == 'float']
+    others = [c for c in curves if c[0] != 'scale']
 
     out = ['%YAML 1.1', '%TAG !u! tag:unity3d.com,2011:', '--- !u!74 &7400000', 'AnimationClip:',
            '  m_ObjectHideFlags: 0', '  m_CorrespondingSourceObject: {fileID: 0}',
@@ -123,10 +146,13 @@ def build_clip(name, curves, stop, loop):
     else:
         out.append('  m_ScaleCurves: []')
 
-    if floats:
+    if others:
         out.append('  m_FloatCurves:')
-        for _, path, keys in floats:
-            out += float_block(path, keys, POS_ATTR)
+        for kind, path, keys in others:
+            if kind == 'alpha':
+                out += float_block(path, keys, COLOR_ATTR, 114, UI_IMAGE_SCRIPT)
+            else:
+                out += float_block(path, keys, POS_ATTR)
     else:
         out.append('  m_FloatCurves: []')
 
@@ -138,10 +164,15 @@ def build_clip(name, curves, stop, loop):
     for _, path, _k in scales:
         out += ['    - serializedVersion: 2', '      path: %d' % path_hash(path), '      attribute: 3',
                 '      script: {fileID: 0}', '      typeID: 4', '      customType: 0', '      isPPtrCurve: 0']
-    for _, path, _k in floats:
-        out += ['    - serializedVersion: 2', '      path: %d' % path_hash(path),
-                '      attribute: %d' % POS_ATTR_HASH, '      script: {fileID: 0}',
-                '      typeID: 224', '      customType: 28', '      isPPtrCurve: 0']
+    for kind, path, _k in others:
+        if kind == 'alpha':
+            out += ['    - serializedVersion: 2', '      path: %d' % path_hash(path),
+                    '      attribute: %d' % COLOR_ATTR_HASH, '      script: %s' % UI_IMAGE_SCRIPT,
+                    '      typeID: 114', '      customType: 0', '      isPPtrCurve: 0']
+        else:
+            out += ['    - serializedVersion: 2', '      path: %d' % path_hash(path),
+                    '      attribute: %d' % POS_ATTR_HASH, '      script: {fileID: 0}',
+                    '      typeID: 224', '      customType: 28', '      isPPtrCurve: 0']
     out.append('    pptrCurveMapping: []')
 
     out += ['  m_AnimationClipSettings:', '    serializedVersion: 2',
@@ -157,8 +188,11 @@ def build_clip(name, curves, stop, loop):
     for _, path, keys in scales:            # 编辑器曲线：缩放拆 x/y/z
         for axis in ('x', 'y', 'z'):
             out += float_block(path, keys, 'm_LocalScale.%s' % axis)
-    for _, path, keys in floats:
-        out += float_block(path, keys, POS_ATTR)
+    for kind, path, keys in others:
+        if kind == 'alpha':
+            out += float_block(path, keys, COLOR_ATTR, 114, UI_IMAGE_SCRIPT)
+        else:
+            out += float_block(path, keys, POS_ATTR)
 
     out += ['  m_EulerEditorCurves: []', '  m_HasGenericRootTransform: 0',
             '  m_HasMotionFloatCurves: 0', '  m_Events: []', '']
@@ -193,14 +227,67 @@ Animator:
 '''
 
 
+def load_config(path):
+    with open(path, encoding='utf-8') as f:
+        cfg = json.load(f)
+    curves, meta = {}, {}
+    for key in ('start', 'normal'):
+        node = cfg['clips'][key]
+        curves[key] = [(c[0], c[1], [tuple(k) for k in c[2]]) for c in node['curves']]
+        meta[key] = (float(node['stop']), bool(node['loop']))
+    return curves, meta
+
+
+def patch_prefab(prefab_text, ctrl_guid):
+    """把动画挂到 prefab：legacy Animation → 新建 Animator；已有 Animator → 只换 controller。"""
+    anim = re.search(r'^--- !u!111 &(-?\d+)\n(.*?)(?=^--- |\Z)', prefab_text, flags=re.M | re.S)
+    if anim:
+        old_id = anim.group(1)
+        # Animator 必须挂在原来那个 Animation 所在的 GameObject 上（别去猜"根节点"，
+        # prefab 里第一个 GameObject 不一定是根，实测会挂错）
+        owner = re.search(r'm_GameObject: \{fileID: (-?\d+)\}', anim.group(2))
+        if not owner:
+            raise SystemExit('Animation 组件没有 m_GameObject 字段')
+
+        new_id = random.randint(10 ** 18, 9 * 10 ** 18)
+        while str(new_id) in prefab_text:
+            new_id = random.randint(10 ** 18, 9 * 10 ** 18)
+
+        prefab_text = re.sub(r'--- !u!111 &%s\n.*?(?=^--- |\Z)' % old_id,
+                             ANIMATOR_BLOCK % (new_id, owner.group(1), ctrl_guid),
+                             prefab_text, count=1, flags=re.S | re.M)
+        prefab_text = prefab_text.replace('- component: {fileID: %s}' % old_id,
+                                          '- component: {fileID: %d}' % new_id, 1)
+        return prefab_text, 'Animation -> Animator (id=%d)' % new_id
+
+    animator = re.search(r'^--- !u!95 &(-?\d+)\n(.*?)(?=^--- |\Z)', prefab_text, flags=re.M | re.S)
+    if not animator:
+        raise SystemExit('prefab 里既没有 legacy Animation（!u!111）也没有 Animator（!u!95）')
+
+    block = animator.group(2)
+    new_block, n = re.subn(r'm_Controller: \{fileID: 9100000, guid: \w+, type: 2\}',
+                           'm_Controller: {fileID: 9100000, guid: %s, type: 2}' % ctrl_guid,
+                           block, count=1)
+    if n != 1:
+        raise SystemExit('Animator 块里没找到 m_Controller 引用')
+    # 面板是缓存复用的，必须禁用后重置回默认状态，否则第二次打开不再弹入
+    new_block = re.sub(r'm_KeepAnimatorStateOnDisable: \d',
+                       'm_KeepAnimatorStateOnDisable: 0', new_block, count=1)
+    prefab_text = prefab_text[:animator.start(2)] + new_block + prefab_text[animator.end(2):]
+    return prefab_text, 'Animator(现有) 换 controller -> guid=%s' % ctrl_guid
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--prefab', required=True)
     ap.add_argument('--base', required=True, help='资源名前缀，如 cn2-X1_UI_XxxPanel_float')
+    ap.add_argument('--config', default=None, help='JSON 配方（不传则用本文件内置的首充配方）')
     ap.add_argument('--dir', default='Assets/Art/UIAni')
     ap.add_argument('--out-dir', default=None, help='先写到别处（不指定则直接落到 --dir 和 --prefab）')
     ap.add_argument('--no-prefab', action='store_true', help='只生成资源，不动 prefab')
     args = ap.parse_args()
+
+    curves, clip_meta = load_config(args.config) if args.config else (CURVES, CLIP_META)
 
     out_dir = args.out_dir or args.dir
     os.makedirs(out_dir, exist_ok=True)
@@ -208,10 +295,10 @@ def main():
     guids = {k: uuid.uuid4().hex for k in ('start', 'normal', 'ctrl')}
 
     for key in ('start', 'normal'):
-        stop, loop = CLIP_META[key]
+        stop, loop = clip_meta[key]
         name = '%s_%s' % (args.base, key)
         with open(os.path.join(out_dir, name + '.anim'), 'w', encoding='utf-8') as f:
-            f.write(build_clip(name, CURVES[key], stop, loop))
+            f.write(build_clip(name, curves[key], stop, loop))
         with open(os.path.join(out_dir, name + '.anim.meta'), 'w', encoding='utf-8') as f:
             f.write(META % (guids[key], 7400000))
 
@@ -238,30 +325,11 @@ def main():
     with open(args.prefab, encoding='utf-8') as f:
         prefab = f.read()
 
-    anim = re.search(r'^--- !u!111 &(-?\d+)\n(.*?)(?=^--- |\Z)', prefab, flags=re.M | re.S)
-    if not anim:
-        raise SystemExit('prefab 里没找到 legacy Animation 组件（!u!111），可能已经改过了')
-
-    old_id = anim.group(1)
-    # Animator 必须挂在原来那个 Animation 所在的 GameObject 上（别去猜"根节点"，
-    # prefab 里第一个 GameObject 不一定是根，实测会挂错）
-    owner = re.search(r'm_GameObject: \{fileID: (-?\d+)\}', anim.group(2))
-    if not owner:
-        raise SystemExit('Animation 组件没有 m_GameObject 字段')
-    owner_go = owner.group(1)
-
-    new_id = random.randint(10 ** 18, 9 * 10 ** 18)
-    while str(new_id) in prefab:
-        new_id = random.randint(10 ** 18, 9 * 10 ** 18)
-
-    prefab = re.sub(r'--- !u!111 &%s\n.*?(?=^--- |\Z)' % old_id,
-                    ANIMATOR_BLOCK % (new_id, owner_go, guids['ctrl']),
-                    prefab, count=1, flags=re.S | re.M)
-    prefab = prefab.replace('- component: {fileID: %s}' % old_id, '- component: {fileID: %d}' % new_id, 1)
+    prefab, how = patch_prefab(prefab, guids['ctrl'])
 
     with open(args.prefab, 'w', encoding='utf-8') as f:
         f.write(prefab)
-    print('prefab ->', args.prefab, '(Animation -> Animator, id=%d)' % new_id)
+    print('prefab ->', args.prefab, '(%s)' % how)
 
 
 if __name__ == '__main__':

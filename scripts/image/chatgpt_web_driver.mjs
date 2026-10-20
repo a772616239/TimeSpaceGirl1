@@ -243,7 +243,9 @@ try {
       continue;
     }
     const s = sig(st.imgs);
-    if (st.imgs.length && !st.busy && s === lastSig) {
+    // grab 模式不再看 busy：那一轮已经确认出过图（页面都写着「回答が完了しました」），
+    // 只是 busy 判据被页面上某个 "NN%" 文本骗住 ⇒ 再等只会等到超时，等于白丢一张图。
+    if (st.imgs.length && (!st.busy || grabExisting) && s === lastSig) {
       stable++;
     } else {
       stable = 0;

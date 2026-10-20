@@ -546,7 +546,8 @@ def synthetic_body(band: Image.Image, target: tuple[int, int], colors: list[str]
 
 
 def source_body(src_rgb: np.ndarray, hb: int, colors: list[str],
-                src_alpha: np.ndarray | None = None) -> np.ndarray:
+                src_alpha: np.ndarray | None = None,
+                keep_lines: bool = True) -> np.ndarray:
     """用**原资源下半截的大尺度明暗**调制主题渐变，而不是凭空造渐变。
 
     这类长条底板的下半截是「给 UI 用的空卡体」：一张自上而下变暗的渐变 + 暗角 + 噪点，
@@ -563,6 +564,7 @@ def source_body(src_rgb: np.ndarray, hb: int, colors: list[str],
     if hb >= src_rgb.shape[0]:
         return np.zeros((0, src_rgb.shape[1], 3), dtype=np.float32)
     body = src_rgb[hb:].astype(np.float32)
+    raw = body.copy()          # 未做 alpha 合成的原始色：结构亮线要用它（见下）
     n, w = body.shape[:2]
     if src_alpha is not None:
         a = (src_alpha[hb:].astype(np.float32) / 255.0)[..., None]
@@ -586,6 +588,35 @@ def source_body(src_rgb: np.ndarray, hb: int, colors: list[str],
     # 调制幅度压到 ±10%：原卡体底部有一道真实的亮度台阶（发光收边），
     # 调制一强就会在卡体中间留一条横线（2026-10-20 实测 ±20% 时肉眼可见）
     out = grad * (0.90 + 0.20 * t)
+    if keep_lines:
+        # 🔴 2026-10-21：结构亮线（底边金框 / 分割线）在 1/40 降采样里会被抹平，
+        #    但那是面板的**边框**——丢了就是「框没画完」（点金底板实测：底部金边
+        #    从 255,210,45 变成 19,62,47，整条消失）。这里把源里「明显高于纵向邻域」
+        #    的行按原色贴回去：只认**成行**的亮度突起，噪点/点阵不会成行，所以不会回潮。
+        # 🔴 行亮度必须用**未合成**的原始 RGB：点金底板底部的金边是半透明收边
+        #    （alpha 往下渐隐），合成后亮度从 169 掉到 92，跟卡体拉不开 ⇒ 掩码整段漏掉。
+        row = raw.mean(axis=2).mean(axis=1)
+        # 🔴 判据：高于整段中位数 +35 的**连续短带**（≤60px）才算结构亮线。
+        #    不能用「滑动窗口中位数」——金边就在画布最底部，窗口被边缘 padding 撑满金边，
+        #    中位数直接变成 168（实测），永远判不出来。也不能只看亮度：卡体本身可能是
+        #    上暗下亮的渐变，那会把整片下半截都当亮线；限长 ≤60px 才能把「边框」和
+        #    「渐变」分开。
+        base = float(np.median(row))
+        cand = row > base + 35
+        mask = np.zeros(len(row), dtype=bool)
+        i = 0
+        while i < len(cand):
+            if cand[i]:
+                j = i
+                while j < len(cand) and cand[j]:
+                    j += 1
+                if j - i <= 60:
+                    mask[i:j] = True
+                i = j
+            else:
+                i += 1
+        if mask.any():
+            out[mask] = out[mask] * 0.15 + raw[mask] * 0.85
     return np.clip(out, 0, 255)
 
 
@@ -909,7 +940,8 @@ def cmd_postprocess(args) -> int:
             # 源快照按 RGBA 读：body 重上色要看 alpha（见 source_body 的棋盘格说明）
             snap_im = Image.open(snap).convert("RGBA")
             body = source_body(np.array(snap_im.convert("RGB")), hb, colors,
-                               np.array(snap_im.getchannel("A")))
+                               np.array(snap_im.getchannel("A")),
+                               keep_lines=not args.no_body_keep_lines)
             body_mode = "source"
         else:
             body = synthetic_body(band, target, colors)
@@ -1414,6 +1446,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("postprocess", help="去水印 + 尺寸归位 + 出双版本 + 对比图")
     p.add_argument("--work", required=True)
     p.add_argument("--gen", required=True, help="provider 产出的图片")
+    p.add_argument("--no-body-keep-lines", action="store_true",
+                   help="BODY_MODE=source 时不保留源里的结构亮线（底边金框/分割线）。"
+                        "默认保留——1/40 降采样会把 5px 的金边抹掉，等于把面板边框弄丢")
     p.add_argument("--no-clean", action="store_true", help="跳过水印清理（等价 --watermark off）")
     p.add_argument("--watermark", choices=["auto", "off", "force"], default="auto",
                    help="auto=只在右下角认出「一行灰白字」时才修（默认）；"

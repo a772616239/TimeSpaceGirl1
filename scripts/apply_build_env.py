@@ -38,9 +38,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "Assets" / "Resources" / "version.txt"
+# 🔴 真正打进包的是 StreamingAssets 里的 AB 快照：CopyAssetBundleToStreamingAssets 把
+#    Assets/Resources 整目录快照到 Assets/StreamingAssets/Android/Resources，包内读到的是
+#    快照里的 serverUrl/resUrl —— 只注入 Assets/Resources/version.txt 治不了包内值
+#    （2026-10-20 CI 目录实锤：快照停在播种时的环境，核验闸门 rc=1）。
+#    所以 apply 时把快照一起补丁（快照存在才补），restore 一并还原。
+SNAPSHOT_FILE = ROOT / "Assets" / "StreamingAssets" / "Android" / "Resources" / "version.txt"
 ENVS_FILE = ROOT / "scripts" / "build_envs.json"
 BACKUP_DIR = ROOT / ".workbuddy" / "tmp" / "build-env"
 BACKUP_FILE = BACKUP_DIR / "version.txt.orig"
+SNAPSHOT_BACKUP = BACKUP_DIR / "version.snapshot.orig"
 
 # 只有这些字段会被环境表覆盖；其余（serverPathType/subChannel/packageVersion/version）原样保留
 ENV_FIELDS = ["serverUrl", "resUrl", "logUrl", "sdkLodingUrl", "payUrl", "channel"]
@@ -161,6 +168,27 @@ def cmd_apply(args) -> int:
     for k, v in applied.items():
         print(f"     {k} = {v}")
     print(f"   文件：{VERSION_FILE.relative_to(ROOT)}（{len(text)} 字节）")
+
+    # AB 快照同步补丁（包内真正的生效值；快照不存在 = 还没重建过 AB，跳过并提示）
+    if args.dry_run:
+        if SNAPSHOT_FILE.is_file():
+            print(f"  [dry-run] 将同步补丁 AB 快照：{SNAPSHOT_FILE.relative_to(ROOT)}")
+    elif SNAPSHOT_FILE.is_file():
+        if SNAPSHOT_BACKUP.is_file():
+            snap_base = read_version_file(SNAPSHOT_BACKUP)
+        else:
+            snap_base = read_version_file(SNAPSHOT_FILE)
+            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(SNAPSHOT_FILE, SNAPSHOT_BACKUP)
+        for k in ENV_FIELDS:
+            if k in cfg:
+                snap_base[k] = cfg[k]
+        snap_text = dump_version(snap_base)
+        SNAPSHOT_FILE.write_text(snap_text, encoding="utf-8")
+        print(f"   同步补丁 AB 快照：{SNAPSHOT_FILE.relative_to(ROOT)}（包内真正生效的值）")
+    else:
+        print("   ⚠️ 无 AB 快照（Assets/StreamingAssets/Android 尚未生成），跳过快照补丁")
+
     if name == "测试服":
         print("   ⚠️ 真机装这个包要先让手机的 127.0.0.1 指向电脑：")
         print("      adb reverse tcp:8081 tcp:8081   # 登录/列表 8081")
@@ -176,6 +204,11 @@ def cmd_restore(_args) -> int:
     BACKUP_FILE.unlink()
     cur = read_version_file(VERSION_FILE)
     print(f"✅ 已还原 {VERSION_FILE.relative_to(ROOT)}：serverUrl={cur.get('serverUrl')}")
+    if SNAPSHOT_BACKUP.is_file():
+        if SNAPSHOT_FILE.is_file():
+            shutil.copy2(SNAPSHOT_BACKUP, SNAPSHOT_FILE)
+            print(f"✅ 已还原 AB 快照 {SNAPSHOT_FILE.relative_to(ROOT)}")
+        SNAPSHOT_BACKUP.unlink()
     return 0
 
 

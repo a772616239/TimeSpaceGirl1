@@ -190,9 +190,9 @@ def cmd_apply(args) -> int:
         print("   ⚠️ 无 AB 快照（Assets/StreamingAssets/Android 尚未生成），跳过快照补丁")
 
     if name == "测试服":
-        print("   ⚠️ 真机装这个包要先让手机的 127.0.0.1 指向电脑：")
-        print("      adb reverse tcp:8081 tcp:8081   # 登录/列表 8081")
-        print("      adb reverse tcp:16081 tcp:16081 # 游戏服 16081")
+        print("   ℹ️ 测试服 = 局域网 192.168.3.82:8081（登录/列表）+ 游戏服 16081，"
+              "设备与主机同一网段即可直连，无需 adb reverse。")
+        print("      🔴 不要把测试服口径改回 127.0.0.1 —— 回环地址只有本机连得上，包分发即废。")
     return 0
 
 

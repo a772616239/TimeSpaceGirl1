@@ -3,6 +3,24 @@ local EightDayGiftPanel = Inherit(BasePanel)
 local this = EightDayGiftPanel
 
 local EightDayRewardConfig = ConfigManager.GetAllConfigsDataByKey(ConfigName.ActivityRewardConfig, "ActivityId", ActivityTypeDef.EightDayGift)
+
+-- 换皮后的卡片配色（圣诞夜深底主题）：深梅紫卡体 + 暖金高亮 + 米白文字
+-- 旧版亮紫 #A37CE4 在深色新底板上很跳，且已领取态把白字压到 50% 透明（对比度 1.9:1）几乎看不清
+local CardColor = {
+    -- 未达成 / 未来天数
+    body      = Color.New(60/255, 48/255, 96/255, 1),   -- #3C3060
+    band      = Color.New(44/255, 34/255, 73/255, 1),   -- #2C2249 顶部天数带
+    text      = Color.New(255/255, 233/255, 194/255, 1),-- #FFE9C2
+    -- 今日可领
+    bodyReady = Color.New(239/255, 193/255, 78/255, 1), -- #EFC14E
+    bandReady = Color.New(217/255, 162/255, 47/255, 1), -- #D9A22F
+    textReady = Color.New(74/255, 44/255, 6/255, 1),    -- #4A2C06
+    -- 已领取
+    bodyDone  = Color.New(42/255, 35/255, 68/255, 1),   -- #2A2344
+    bandDone  = Color.New(34/255, 28/255, 56/255, 1),   -- #221C38
+    textDone  = Color.New(167/255, 155/255, 200/255, 1),-- #A79BC8
+    scrim     = Color.New(0, 0, 0, 0.18),               -- 已领取的压暗罩，原来 0.39 太黑
+}
 local ItemList = {}--奖励List
 local ItemViewList = {}
 local rewardData--后端数据
@@ -89,6 +107,8 @@ function this:SetAllReward()
 end
 
 function this:SetSingleReward(item, i)
+    local body = item:GetComponent("Image")--卡片底
+    local band = Util.GetGameObject(item,"Image"):GetComponent("Image")--卡片顶部天数带
     local kuang = Util.GetGameObject(item, "kuang"):GetComponent("Image")
     local day = Util.GetGameObject(item, "kuang/reward/days/Text"):GetComponent("Text")
     local dayImg = Util.GetGameObject(item, "kuang/reward/days"):GetComponent("Image")
@@ -97,12 +117,8 @@ function this:SetSingleReward(item, i)
     local redPoint = Util.GetGameObject(item, "redPoint")
     local mask = Util.GetGameObject(item, "kuang/reward/mask")
     local transparency = Util.GetGameObject(item, "kuang/reward/transparency")
+    local transImg = transparency:GetComponent("Image")
     local isCanGet = rewardData.mission[i].state--是否可领取
-
-    if i == curDay then 
-        item:GetComponent("Image").color = Color.New(255/255,238/255,34/255,255/255)
-        Util.GetGameObject(item,"Image"):GetComponent("Image").color = Color.New(233/255,155/255,19/255,255/255)
-    end
 
     day.text = TimeToHMS(CalculateSecondsNowTo_N_OClock(24))
     if i == curDay+1 then
@@ -129,16 +145,29 @@ function this:SetSingleReward(item, i)
     get:SetActive(isCanGet == 0 and curDay >= i)
     mask:SetActive(isCanGet == 1)
 
+    --先铺默认态（未达成 / 未来天数），再按状态覆盖
+    body.color = CardColor.body
+    band.color = CardColor.band
+    dayImg.color = CardColor.text
+    day.color = CardColor.text
+    ItemViewList[i].num.color = CardColor.text
+    transImg.color = CardColor.scrim
+    transparency:SetActive(false)
+
     if i <= curDay then
-        if isCanGet == 1 then
-            dayImg.color = Color.New(255/255,255/255,255/255,127/255)
-            day.color = Color.New(255/255,255/255,255/255,127/255)
-            Util.GetGameObject(item,"Image"):GetComponent("Image").color = Color.New(139/255,91/255,218/255,127/255)
+        if isCanGet == 1 then--已领取：压暗降饱和，但文字仍保持可读（不再用 50% 白）
+            body.color = CardColor.bodyDone
+            band.color = CardColor.bandDone
+            dayImg.color = CardColor.textDone
+            day.color = CardColor.textDone
+            ItemViewList[i].num.color = CardColor.textDone
             transparency:SetActive(true)
-            item:GetComponent("Image").color = Color.New(163/255,124/255,228/255,255/255)
-        else
-            item:GetComponent("Image").color = Color.New(255/255,209/255,43/255,255/255)
-            Util.GetGameObject(item,"Image"):GetComponent("Image").color = Color.New(233/255,155/255,19/255,255/255)
+        else--今日可领：暖金卡 + 深棕字，跟新底板的红金圣诞调子走
+            body.color = CardColor.bodyReady
+            band.color = CardColor.bandReady
+            dayImg.color = CardColor.textReady
+            day.color = CardColor.textReady
+            ItemViewList[i].num.color = CardColor.textReady
         end
     end
 

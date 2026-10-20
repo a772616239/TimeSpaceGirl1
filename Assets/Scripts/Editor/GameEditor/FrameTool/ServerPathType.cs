@@ -15,9 +15,10 @@ namespace GameEditor.FrameTool
     public enum ServerPathType
     {
         /// <summary>
-        /// 本地自测服（原开发服 120.92.119.145 已弃用，2026-10-19 改指本机）
+        /// 本地自测服（原开发服 120.92.119.145 已弃用；2026-10-21 由 127.0.0.1 改为局域网 IP，
+        /// 回环地址只有打包机自己连得上，包/客户端分发即废）
         /// </summary>
-        [ServerPathTypeValue("http://127.0.0.1:8081/", "http://129.226.213.65:81/")]
+        [ServerPathTypeValue("http://192.168.3.82:8081/", "http://129.226.213.65:81/")]
         开发服 = 0,
 
         /// <summary>

@@ -89,6 +89,78 @@ def cmd_rank_audit(a):
     return 0 if not rep['ghosts'] else (2 if not a.repair else 0)
 
 
+def cmd_refs_audit(a):
+    """好友 / 黑名单 / 申请 / 体力互赠表里指向「已不存在账号」的残留 uid。
+
+    这类脏引用不会自己消失，而且报应落在**别人**身上：被引用方下次登录时
+    GET_FRIEND_INFO → CBean2Proto.getFriendInfo → UserManager.getUser 抛
+    「getUser null exception」，整包失败，登录链停在第 26/57 步，
+    客户端表现就是进度条永远卡 45%（2026-10-20 Sakuya 10000017 实测）。
+
+    判据只有一条：引用的 uid 不在 `user` 集合里。公会榜/车队榜那些 guildId
+    不在此列（本命令只看 friendManager）。删号、合服之后都应该跑一次。
+    """
+    r = _remote(a)
+    js = """
+var alive={}, out={owners:0, refs:0, bad:[]};
+db.user.find({},{_id:1}).forEach(function(u){ alive[String(u._id)]=1; });
+db.user.find({},{_id:1,"playerManager.nickName":1,"friendManager":1}).forEach(function(d){
+  var fm=d.friendManager||{}, bad=[];
+  ["friends","blackFriends","applyFriends","myApplyFriends"].forEach(function(f){
+    (fm[f]||[]).forEach(function(x){ if(!alive[String(x)]) bad.push(f+"="+x); });
+  });
+  ["giveMap","haveRewardMap"].forEach(function(m){
+    Object.keys(fm[m]||{}).forEach(function(x){ if(!alive[String(x)]) bad.push(m+"."+x); });
+  });
+  if(bad.length){
+    out.owners++; out.refs+=bad.length;
+    out.bad.push({uid:d._id, nick:(d.playerManager||{}).nickName, refs:bad});
+  }
+});
+out.alive = Object.keys(alive).length;
+return out;
+"""
+    res = r.mongo(js) or {}
+    bad = res.get('bad') or []
+    if a.json:
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+    elif not bad:
+        print('✅ 无失效好友引用（%d 个账号全干净）' % (res.get('alive', 0) or 0))
+    else:
+        for it in bad:
+            print('  %s %s -> %s' % (it['uid'], it.get('nick'), ', '.join(it['refs'])))
+        print('\n共 %d 个账号 / %d 条失效引用' % (res.get('owners', 0), res.get('refs', 0)))
+        if not a.repair:
+            print('加 --repair 清理（数组 pull / map unset），清理后这些号才能正常登录')
+            return 2
+        rep = r.mongo_eval("""
+var alive={}, n=0;
+db.user.find({},{_id:1}).forEach(function(u){ alive[String(u._id)]=1; });
+db.user.find({},{_id:1,"friendManager":1}).forEach(function(d){
+  var fm=d.friendManager||{};
+  ["friends","blackFriends","applyFriends","myApplyFriends"].forEach(function(f){
+    (fm[f]||[]).forEach(function(x){
+      if(!alive[String(x)]){
+        var q={}; q["friendManager."+f]=x;
+        db.user.updateOne({_id:d._id}, {$pull:q}); n++;
+      }
+    });
+  });
+  ["giveMap","haveRewardMap"].forEach(function(m){
+    Object.keys(fm[m]||{}).forEach(function(x){
+      if(!alive[String(x)]){
+        var un={}; un["friendManager."+m+"."+x]="";
+        db.user.updateOne({_id:d._id}, {$unset:un}); n++;
+      }
+    });
+  });
+});
+return {cleaned:n};
+""")
+        print('已清理 %s 条' % (rep or {}).get('cleaned', '?'))
+    return 0
+
+
 def cmd_purge(a):
     if a.account and str(a.confirm) != str(a.uid):
         print('🔴 删号需要 --confirm <uid> 二次确认（当前 --confirm=%s）' % a.confirm)
@@ -172,6 +244,11 @@ def main(argv=None):
     s.add_argument('--repair', action='store_true', help='执行清理（默认只报清单）')
     s.add_argument('--json', action='store_true')
     s.set_defaults(func=cmd_rank_audit)
+
+    s = sub.add_parser('refs-audit', help='好友残留引用体检（会让别人登录卡 45%）')
+    s.add_argument('--repair', action='store_true', help='执行清理（默认只报清单）')
+    s.add_argument('--json', action='store_true')
+    s.set_defaults(func=cmd_refs_audit)
 
     s = sub.add_parser('ban', help='写 FORBID_LOGIN')
     s.add_argument('--uid', type=int, required=True)

@@ -93,6 +93,53 @@ namespace GameLogic
                 Debug.LogError(e);
             }
 
+            // 装新包后持久化的 version.txt 可能还是上一个包写下的服务器地址，
+            // 不纠正就会一直连旧服（表现为换包后仍请求老 IP）。
+            SyncServerConfigFromPackage();
+        }
+
+        /// <summary>
+        /// 用包内的服务器配置纠正持久化 version.txt。
+        /// 只同步服务器相关字段；热更版本号 version 仅在「换服」时跟随包内重置，
+        /// 单纯换包（同服）保留已热更到的版本，避免无谓重下资源。
+        /// </summary>
+        void SyncServerConfigFromPackage()
+        {
+            if (internalVersion == null || externalVersion == null) return;
+
+            string[] serverKeys = { "serverUrl", "resUrl", "logUrl", "sdkLodingUrl", "payUrl", "channel", "serverPathType", "subChannel" };
+            bool serverChanged = false;
+            foreach (string key in serverKeys)
+            {
+                string internalValue = internalVersion.GetInfo(key);
+                if (internalValue == null) continue;
+                if (internalValue != externalVersion.GetInfo(key))
+                {
+                    externalVersion.SetInfo(key, internalValue);
+                    serverChanged = true;
+                }
+            }
+
+            bool packageChanged = internalVersion.GetInfo("packageVersion") != externalVersion.GetInfo("packageVersion");
+            if (packageChanged)
+            {
+                externalVersion.SetInfo("packageVersion", internalVersion.GetInfo("packageVersion"));
+            }
+
+            // 换服等于换了资源站，版本号必须回到包内值，否则会拿旧服的版本号去比对
+            if (serverChanged)
+            {
+                externalVersion.SetInfo("version", internalVersion.GetInfo("version"));
+            }
+
+            if (serverChanged || packageChanged)
+            {
+                SaveToFiles(externalVersion);
+                Debug.Log(string.Format("Version 配置已按包内同步：serverUrl={0} packageVersion={1} version={2}",
+                    externalVersion.GetInfo("serverUrl"),
+                    externalVersion.GetInfo("packageVersion"),
+                    externalVersion.GetInfo("version")));
+            }
         }
 
         /// <summary>

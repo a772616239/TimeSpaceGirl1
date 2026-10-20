@@ -1,6 +1,6 @@
 /**@META
 {
-  "description": "服务端「代码发包正式服」全链路：预检（工作区/工具链/生产状态）→ **切 release 分支**（独立 worktree，主工作区零影响）→ JDK8 编译 → 产物校验 → **与线上 jar 逐条目 CRC 比对**（只注差异类，不整包覆盖）→ 人工审批 → 线上备份 → 注入 + 重启 → 上线自检 → **回写发布记录（提交+tag+push）** → 发布看板。默认 DEPLOY=false：只构建+比对+记录，一个字节都不碰生产。历史上「package.sh 全量包覆盖线上 jar」已被证伪（会回退线上未上线改动、带走 conf/assets），本 job 固定以线上 jar 为基线做类级注入。",
+  "description": "服务端「代码发包正式服」全链路：预检（工作区/工具链/生产状态）→ **切 release 分支**（独立 worktree，主工作区零影响）→ JDK8 编译 → 产物校验 → **与线上 jar 逐条目 CRC 比对**（只注差异类，不整包覆盖）→ 人工审批 → 线上备份 → 注入 + 重启 → 上线自检 → **协议连通自检**（本地直连验证编解码/通道/鉴权/会话，端口在听 ≠ 协议通）→ **回写发布记录（提交+tag+push）** → 发布看板 → **异步触发 TS-Server-Health**。默认 DEPLOY=false：只构建+比对+记录，一个字节都不碰生产。历史上「package.sh 全量包覆盖线上 jar」已被证伪（会回退线上未上线改动、带走 conf/assets），本 job 固定以线上 jar 为基线做类级注入。",
   "concurrent": false,
   "keep": [90, 60],
   "artifactKeep": 12,
@@ -15,6 +15,10 @@
     {"name":"ONLY_CLASSES","type":"string","default":"","description":"只注入匹配这些 glob 的条目（逗号分隔，如 com/ljsd/jieling/handler/*）。留空 = 注入全部差异。热修口径用它收窄"},
     {"name":"EXCLUDE_CLASSES","type":"string","default":"","description":"额外排除的 glob（逗号分隔）。留空使用默认排除：META-INF/*、application*.properties、*.properties、*.xml（这些**永不**自动注入）"},
     {"name":"RESTART","type":"choice","choices":["gameserver","none","all"],"default":"gameserver","description":"注入后重启什么。gameserver=只重启游戏服（会踢线，约 40s）；none=只落地不生效（等下次重启）；all=另外拉起 chatserver（该服默认没跑，谨慎）"},
+    {"name":"PROTO_CHECK","type":"bool","default":true,"description":"发完包是否跑「协议连通自检」（编解码/端口/双向通道/鉴权/会话）：验证 TEA 帧、回包编码、鉴权没被绕过。端口在听 ≠ 协议通，这一步补的就是这个缺口"},
+    {"name":"PROTO_LOGIN","type":"bool","default":false,"description":"🔴 协议自检是否做「真登录 + GM 命令」。默认关：生产上会用真实账号的 token 建会话，该号在线会被顶掉。只在指定了 PROTO_OPERATOR 且确认该号不在线时打开"},
+    {"name":"PROTO_OPERATOR","type":"string","default":"","description":"PROTO_LOGIN=true 时用哪个 uid 发起（留空则该用例跳过）"},
+    {"name":"HEALTH_AFTER","type":"bool","default":true,"description":"跑完是否异步触发 TS-Server-Health（生产服每日巡检同一个 job）。异步、不阻塞本次发布，结果去那个 job 看"},
     {"name":"ALLOW_DIRTY","type":"bool","default":false,"description":"主工作区有未提交改动时是否继续。默认否（发布必须基于一次明确提交）。勾上后脏改动**不参与构建**，只在记录里列出来"},
     {"name":"PUSH_BRANCH","type":"bool","default":true,"description":"打包成功后把 release 分支 + 发布记录 + tag 一次原子推到 origin（演练也推：记录要能追溯）。连跑多次演练嫌远端分支多时关掉"},
     {"name":"ROLLBACK_DIR","type":"string","default":"","description":"ACTION=rollback 时指定备份目录（如 /home/java/gameserver/deploy-staging/20261019-2013/backup）。留空 = 取生产上最新的那个"},
@@ -65,6 +69,11 @@ pipeline {
           env.SR_OPERATOR        = "${env.BUILD_USER_ID ?: 'jenkins'}"
           env.SR_ACTION          = params.ACTION
           env.SR_AUTO_APPROVE    = params.AUTO_APPROVE.toString()
+          // 发包后的两条收尾：协议自检（本地直连验证各协议）+ 异步触发生产巡检
+          env.SR_PROTO_CHECK     = params.PROTO_CHECK.toString()
+          env.SR_PROTO_LOGIN     = params.PROTO_LOGIN.toString()
+          env.SR_PROTO_OPERATOR  = params.PROTO_OPERATOR.trim()
+          env.SR_HEALTH_AFTER    = params.HEALTH_AFTER.toString()
 
           // 🔴 闸门一：动生产必须手打确认词。放在最前面，避免跑完 6 个环节才被拒。
           if (params.ACTION == 'rollback') {
@@ -103,6 +112,8 @@ MODE="演练（只构建+比对+记录）"
   echo "注入口径   ：ONLY='${SR_ONLY:-全部差异}' EXCLUDE='${SR_EXCLUDE:-默认排除}'"
   echo "重启范围   ：$SR_RESTART"
   echo "审批       ：AUTO_APPROVE=$SR_AUTO_APPROVE  DEPLOY=$SR_DEPLOY"
+  echo "协议自检   ：PROTO_CHECK=$SR_PROTO_CHECK  PROTO_LOGIN=$SR_PROTO_LOGIN  OPERATOR=${SR_PROTO_OPERATOR:-（未指定）}"
+  echo "跑完巡检   ：HEALTH_AFTER=$SR_HEALTH_AFTER（异步触发 TS-Server-Health）"
   echo "推送记录   ：$SR_PUSH（打包成功即推分支+tag，不区分演练/上线）"
   echo "说明       ：${SR_NOTES:-（空）}"
   echo "证据目录   ：$SR_RUN_DIR"
@@ -303,6 +314,31 @@ cd "$PROJ"
       }
     }
 
+    stage('⑩-2 协议连通自检（发完包验证各协议）') {
+      when { expression { params.DEPLOY && params.PROTO_CHECK } }
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+mkdir -p "$SR_RUN_DIR/release/proto"
+# 为什么单独一档：⑩ 上线自检只证明「进程在、端口在听」，
+# 证明不了 TEA 密钥/2 字节长度前缀/8 字节对齐/回包编码这几层还是对的。
+# 客户端遇到这几层出错的表现是「连上就断」，而服务端日志只有一行 decode error。
+ARGS=(--host 129.226.213.65 --port 16081 --ssh gs
+      --json-out "$SR_RUN_DIR/release/proto/protocol.json")
+# 真登录用例默认关闭：会拿真实账号的 token 建会话，该号在线就被顶掉。
+if [[ "$SR_PROTO_LOGIN" == "true" && -n "$SR_PROTO_OPERATOR" ]]; then
+  ARGS+=(--operator "$SR_PROTO_OPERATOR" --allow-login)
+  echo "⚠️ 启用真登录用例：operator=$SR_PROTO_OPERATOR（该号若在线会被顶下线）"
+fi
+# --warn-rc 3：只有「关注项」不该把已经注入成功的发布判红（与 ⑩ 同口径）
+"$BASH" "$SHARED/lib/run_stage.sh" --name "协议连通自检（编解码/通道/鉴权/会话）" \
+  --group "发布" --slug proto --timeout 300 --warn-rc 3 \
+  -- "$PY" scripts/verify/protocol_selftest.py "${ARGS[@]}"
+''')
+      }
+    }
+
     stage('⑪ 回写发布记录（提交 + tag + push）') {
       when { expression { params.ACTION == 'release' } }
       steps {
@@ -334,7 +370,33 @@ echo "看板固定地址：http://localhost:8080/userContent/TS-Server-Release-l
       }
     }
 
-    stage('⑬ 完成通知') {
+    stage('⑬ 触发生产巡检（TS-Server-Health）') {
+      when { expression { params.HEALTH_AFTER } }
+      steps {
+        script {
+          // 同机同 Jenkins，直接 build 下游 job：不在这里写死 URL/token，
+          // 权限走 Jenkins 自身的授权模型，也省掉「谁有权限触发」这一层扯皮。
+          // wait:false —— 巡检要 SSH 采集、可能发信，不该把已经发完的包堵在这里。
+          def hb = build job: 'TS-Server-Health',
+            parameters: [booleanParam(name: 'SEND_MAIL', value: false),
+                         string(name: 'TO', value: '')],
+            wait: false, propagate: false
+          def tag = ''
+          try { tag = "#${hb.number}" } catch (ignored) { tag = '' }
+          echo "已异步触发 TS-Server-Health ${tag}（不阻塞本次发布，结果去那个 job 看）"
+          env.HEALTH_TAG = tag
+          sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+"$PY" "$SHARED/lib/stage_report.py" add --run "$SR_RUN_DIR" \
+  --name "触发生产巡检" --group "交付" --status pass \
+  --detail "TS-Server-Health 已异步触发${HEALTH_TAG:-}（结果去该 job 看）"
+''')
+        }
+      }
+    }
+
+    stage('⑭ 完成通知') {
       when { expression { params.SEND_MAIL } }
       steps {
         sh(script: '''#!/usr/local/bin/bash

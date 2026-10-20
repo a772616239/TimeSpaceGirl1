@@ -20,9 +20,28 @@
 - 面板被 `openedList` 缓存复用（`noDestory=false` ⇒ Close 只 SetActive(false)）；OnClose 清 lua 表 ≠ 清克隆节点 ⇒ 动态子节点 Build 前按名清一次；`#map` 对字符串键恒 0。
 - 🔴 tolua fake-null：GameObject Destroy 后 lua userdata 仍非 nil ⇒ `if not obj` 无效，判活只能 `IsNull()`/`tolua.isnull`（已三次崩溃）。销毁判据＝`UIConfig.noDestory==0`；为 0 时 Close 走 `DelayDestroyPanel`（15s×openNum）⇒ 异步回调有「已销毁」窗口。异步写 UI 一律「判活+pcall+OnDestroy 清引用」。
 - `Timer.New` 第 4 参缺省受战斗倍速影响，UI 停留传 `true`；同一元素隐藏定时器先 Stop 再 New。
+- 🔴 红点绑定是**面板级**全局表 `BindObjs[rpType]`：把「先 Clear 再 Bind」当幂等写法用之前，必须确认被调方本身幂等——`RedpotManager.ClearObject` 早期只判 `rpObj`、不判 `BindObjs[rpType]`，首次进页签 / `Initialize` 重置后必 `pairs(nil)` 崩（`c7575f8c3` 收口：Clear 判空 return、Bind 去重 + 跳 tolua fake-null）。
+- 🔴 UI 动画：复刻别人的动画走 `docs/ui_anim_reproduce_skill.md`（S0 反解→S1 定阵营→S2 落地→三层验收）；
+  浮空/呼吸配方与 11 坑在 `ui_panel_float_anim_skill.md`。两条铁律：读参考 clip 要遍历**所有** `m_*Curves`
+  （`sizeDelta`/`anchoredPosition`/`color.a` 都在 `m_FloatCurves`）；DOTween 与节点自带 `CommonButton` Animator
+  抢同一通道时必须临时 `enabled=false`（Animator 在 Update 之后求值）。
+  已落地：`ExpertPanel`、`OperatingPanel`（两者都是纯 Lua 开启动画，prefab 未改）；页签顺序一律取
+  `tabsContent` 的**子节点顺序**（OperatingPanel 的 `tabs_N` 在 prefab 里是乱序 12,5,11,1…）。
 
 ## 挂机气泡 / UI 布局 / IAP / 诱导评分
 - 细节已拆到 `REF-client-misc.md`（气泡 280×78 两行上限、CanvasScaler match=0、IAP 入口收口、AppReview 闸门）。
+
+## 美术资源换节日风格（→ docs/art_restyle_pipeline.md、Jenkins `TS-Art-Restyle`）
+- 🔴 **provider 默认 `chatgpt_web`**（用本机 Chrome 登录态走订阅额度，不读 API key）。坑：cookie 导出再
+  `addCookies` 重建**无效**（Chrome 155 的 `session-token.0/.1` 分片不被认）⇒ 必须整份 profile 交 Chrome 自解密；
+  Chrome 要 `--no-sandbox --disable-gpu`；生成图是 **blob + alt「已生成图像 N」**（上传图 alt「用户附件」），
+  只能靠 alt 认、同源 fetch 取；driver 连 localhost 必须 `NO_PROXY`；`playwright-core` 是 CJS 取 `.default`。
+  出口侧封 OpenAI 时直连 403/超时、`cdn.oaistatic.com` 却通（别被误导），rc=3 标黄不阻断。
+- 🔴 提示词**不许写死文案**（初版写死 8-DAY，换图就串文案）；文案由 `LAYOUT` 构图锁「逐字保持、只改材质」，主题预设只描述风格。
+- 🔴 超长条底板（856×2048）**不能整幅 cover**（横切 37%）：走 `HERO_BAND`（量到点阵带底边，如 930）+ `BODY_MODE=source`（半截卡体按原资源明暗结构重上色，几何逐像素对齐）。带的高度必须量（`row_std` 掉到 25 以下即纯渐变区），猜必废图。
+- 🔴 接缝**绝不能把最后一行往下广播**（那就是角色身体，会变竖光条）；要渐隐就原位逐行混合。
+- 🔴 `WRITE_BACK=true` = 验收闸门 → 原图搬出工程到 `ResBackpack/备份/<资源相对路径>`（gitignore）→ 校验哈希 → 覆盖 → `_manifest.jsonl` 记台账；回滚 `restyle_pipeline.py restore --asset …`。`.meta` 永不改动（曾出现 guid 被换：`3b0b0d5e`→`042a30ad`，Unity 引用全断）。
+- 🔴 写回 ≠ 进包，必须重打该资源所在 AssetBundle。
 
 ## 国家旗帜（→ docs/CountryFlag_FeatureDesign.md）
 - 🔴 250 国（ISO 3166-1）、旗 132×88：新增 png 必须补 `.meta`（textureType 8/spriteMode 1/spritePackingTag）+ `ResourcePathConfig.asset` 登记，否则 `Util.LoadSprite` 空白。

@@ -11,6 +11,7 @@
     {"name":"ALPHA_FROM","type":"string","default":"","description":"alpha 参照图。资源被压成 RGB（丢了透明浮层）时用；支持 git:HEAD:<path> 直接从 git 取原版"},
     {"name":"SOURCE_FROM","type":"string","default":"","description":"改前参照图。默认=资源本身；资源已换过要重跑时填 git:HEAD:<path>，否则对比图会变成「新版 vs 新版」"},
     {"name":"LAYOUT","type":"text","default":"","description":"构图锁（锁文案/角色/空区）。留空=预设里的通用规则：一律保字、只改材质。某张图有特殊要求时填这里，别改 theme_presets.json"},
+    {"name":"COMPOSITION","type":"choice","choices":["lock","free"],"default":"lock","description":"构图自由度：lock=人物姿势/位置/缩放全锁，只换衣服与配色（默认，可预期）；free=允许重设计人物姿势与镜头换吸引力，但文案完整可读、底部 UI 空白区、画布比例与透明边仍锁死（出图需人眼过一遍）"},
     {"name":"HERO_BAND","type":"string","default":"","description":"超长条底板用（如 856x2048）：填英雄带像素高度（如 930）或 auto。生成图只当这条带子贴顶，下方补空卡体；留空=整幅等比 cover（适合比例接近 3:4 的图）"},
     {"name":"BODY_MODE","type":"choice","choices":["auto","source","synthetic"],"default":"auto","description":"HERO_BAND 模式下空卡体怎么来：source=用原资源下半截的明暗结构重上色（几何与原图逐像素对齐，首选）；synthetic=按主题色合成渐变（兜底）；auto=能 source 就 source"},
     {"name":"WRITE_BACK","type":"boolean","default":false,"description":"替换原图：验收通过后把 alpha 版写回资源，**原图搬出工程**到 BACKUP_ROOT（.meta 不动）。默认关；可用 restore 回滚"},
@@ -46,7 +47,10 @@ pipeline {
           env.ART_THEME  = params.THEME
           // 工作目录按「资源名/主题」分桶：同一张图的不同节日版本互不覆盖
           def assetName = params.ASSET.split('/').last().replace('.png', '')
-          env.ART_WDIR   = "${env.ART_WORK}/${assetName}/${params.THEME}"
+          // free 构图单独分桶：同一张图的「锁姿势版」和「重设计版」要能同时留在磁盘上对比
+          def compSuffix = params.COMPOSITION == 'free' ? '_free' : ''
+          env.ART_COMP   = params.COMPOSITION
+          env.ART_WDIR   = "${env.ART_WORK}/${assetName}/${params.THEME}${compSuffix}"
         }
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
@@ -57,7 +61,7 @@ mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
   echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
   echo "资源：$ART_ASSET"
-  echo "主题：$ART_THEME   provider：$PROVIDER"
+  echo "主题：$ART_THEME   provider：$PROVIDER   构图：$ART_COMP"
   echo "工作目录：$ART_WDIR"
   echo "写回资源：$WRITE_BACK   备份根：${BACKUP_ROOT:-$PROJ/ResBackpack/备份}"
   echo ""
@@ -76,11 +80,11 @@ if [[ -n "${PROMPT_OVERRIDE:-}" ]]; then
 else
   if [[ -n "${LAYOUT:-}" ]]; then
     printf '%s\\n' "${LAYOUT}" > "$TS_RUN_DIR/artifacts/layout.txt"
-    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --layout "$TS_RUN_DIR/artifacts/layout.txt" > "$PROMPT_FILE"
-    echo "提示词来源：LAYOUT 参数 + scripts/image/theme_presets.json（$ART_THEME）"
+    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --layout "$TS_RUN_DIR/artifacts/layout.txt" > "$PROMPT_FILE"
+    echo "提示词来源：LAYOUT 参数 + scripts/image/theme_presets.json（$ART_THEME / $ART_COMP）"
   else
-    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" > "$PROMPT_FILE"
-    echo "提示词来源：scripts/image/theme_presets.json（$ART_THEME，通用构图锁）"
+    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" > "$PROMPT_FILE"
+    echo "提示词来源：scripts/image/theme_presets.json（$ART_THEME / $ART_COMP）"
   fi
 fi
 echo "--- 提示词开头 ---"
@@ -102,7 +106,7 @@ EXTRA=""
 "$BASH" .jenkins/lib/run_stage.sh --name "资源体检与基线" \
   --group "美术资源链" --slug art-prepare --timeout 300 \
   -- "$PY" scripts/image/restyle_pipeline.py prepare \
-       --asset "$ART_ASSET" --theme "$ART_THEME" --work "$ART_WDIR" $EXTRA
+       --asset "$ART_ASSET" --theme "$ART_THEME" --work "$ART_WDIR" --composition "$ART_COMP" $EXTRA
 ''')
       }
     }

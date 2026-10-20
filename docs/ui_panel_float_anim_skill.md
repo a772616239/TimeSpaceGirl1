@@ -180,7 +180,7 @@ python3 $S/gen_float_anim_yaml.py --prefab <prefab> --base cn2-X1_UI_<面板>_fl
 
 ---
 
-## 5. 十个坑（前四个是"做完了但白干"类）
+## 5. 十一个坑（前四个是"做完了但白干"类）
 
 | 坑 | 现象 | 原因 / 规避 |
 |---|---|---|
@@ -194,6 +194,7 @@ python3 $S/gen_float_anim_yaml.py --prefab <prefab> --base cn2-X1_UI_<面板>_fl
 | ⑧ 写了 `sizeDelta` | 掉帧 / 被布局组每帧改回去 | 只写 `m_AnchoredPosition.*` / `m_LocalScale.*` / `m_Color.a` |
 | ⑨ 曲线首尾不等 | 循环处"跳一下" | normal 第一个 key 与最后一个 key 必须同值（实拍对 n=0/n=1 取值） |
 | ⑩ 忘了 AB | 编辑器里好看，真机没变化 | 新 clip/controller 是 prefab 的依赖，必须重打 |
+| ⑪ 读参考 clip 时只看 `m_ScaleCurves` | 交付后被指出「还有一条曲线没复刻」 | `m_SizeDelta.*` / `m_AnchoredPosition.*` / `m_Color.a` 都在 **`m_FloatCurves`** 段里，`m_PositionCurves` / `m_EulerCurves` 同理。解析脚本要把所有 `m_*Curves` 段都遍历一遍（`m_EditorCurves` 是它们的镜像，可用来交叉核对条数） |
 
 ---
 
@@ -508,17 +509,23 @@ prefab → controller(`9c44e0eb`) → 两个 clip 闭合；`m_WriteDefaultValues
 
 ---
 
-## 附录 E：经营面板页签逐格翻入（2026-10-20，ExpertPanel，**Lua 驱动**）
+## 附录 F：经营面板开启动画（2026-10-20，ExpertPanel，**Lua 驱动**）
 
 **参考素材**：`Assets/Art/UIAni/cn2-X1_UI_SevenDayCarnivalPanelV2.anim`（挂在 `SevenDayCarnivalPanelV2`
 根节点的 **legacy Animation** 上，prefab 里 `daysTabBg/tabsGroup` 是 `VerticalLayoutGroup`）：
 
 | 项 | 值 |
 |---|---|
-| 曲线 | 7 条，全在 `m_ScaleCurves`，path = `bg/daysTabBg/tabsGroup/day_1..7` |
+| 曲线 | **9 条**：`m_ScaleCurves` 7 条（path = `bg/daysTabBg/tabsGroup/day_1..7`）+ `m_FloatCurves` 2 条（path = `bg`） |
 | 单格 | scaleX `0 → 1`，0.1667s（10 帧 @60fps） |
 | 错开 | 相邻两格 0.0333s，整体 0.3667s |
+| 落位 | `bg` 的 `m_SizeDelta.y` 110→0、`m_AnchoredPosition.y` 55→0，0 → 0.3667s（见下节） |
 | 循环 | `m_LoopTime: 1`（常驻循环） |
+
+> 🔴 **上一轮踩的坑**：只 grep `m_ScaleCurves` 就这么读，结果漏掉了 `m_FloatCurves` 里那两条落位曲线，
+> 交付后被指出「还有一个从上往下的前摇没复刻」。**读参考 clip 必须把所有 `m_*Curves` 段都过一遍**
+> （`m_PositionCurves` / `m_EulerCurves` / `m_ScaleCurves` / `m_FloatCurves`），尤其 `m_FloatCurves`——
+> `m_SizeDelta.y` / `m_AnchoredPosition.*` / `m_Color.a` 这些「不在 Transform 上的通道」全在这个段里。
 
 > 只写 **scaleX**——`tabsGroup` 是 VerticalLayoutGroup，写位置每帧会被重算。这条和 §2 第 5 条一致。
 
@@ -536,7 +543,7 @@ prefab → controller(`9c44e0eb`) → 两个 clip 闭合；`m_WriteDefaultValues
 |---|---|
 | `PlayTabFlipIn()` | 遍历 `tabs/viewPort/tabsContent` 的**子节点**（不是 tab 下标），跳过模板 `btn` 与 `activeSelf == false`，按顺序 `DOScale(one, 0.167):SetDelay(order * step)` |
 | `PlayTabSelectFlip(index)` | 切换页签时只翻 `selected` 高亮板（该节点没有 Animator，不抢通道） |
-| `StopTabAnims()` | Kill 全部 tween + `localScale = one` + **恢复 `Animator.enabled`**；重播 / `OnClose` / `OnDestroy` / 异常回滚都走它 |
+| `StopOpenAnims()` | Kill 全部 tween + `localScale = one` + **恢复 `Animator.enabled`** + 落位复位；重播 / `OnClose` / `OnDestroy` / 异常回滚都走它（原名 `StopTabAnims`，加了落位后语义扩了） |
 
 **🔴 必须先把该格的 `Animator.enabled` 置 false**：Unity 每帧顺序是 `Update → Animator 求值 → LateUpdate`，
 DOTween 默认在 `Update`。Animator 后写 ⇒ tween 被每帧盖回去，现象是「代码跑了、页签没动」。
@@ -556,5 +563,53 @@ DOTween 默认在 `Update`。Animator 后写 ⇒ tween 被每帧盖回去，现�
 | 数量自适应 | 24 格 ⇒ 末格延迟压到 0.5 | ✅ |
 | 高亮板 | 从 0 起、重播前 Kill 上一个 | ✅ |
 
+### 附带的「从上往下落」前摇（同一份参考 clip 的另两条曲线）
+
+参考 clip 里 `bg` 上还有两条 `m_FloatCurves`，两者同时写 = **底边钉死、顶边从屏幕外上方往下落 110px**：
+
+| 通道 | 曲线 | 时间 |
+|---|---|---|
+| `m_SizeDelta.y` | 110 → 0 | 0 → 0.3667s（两端切线都是 0 ⇒ 缓入缓出） |
+| `m_AnchoredPosition.y` | 55 → 0 | 0 → 0.3667s |
+
+四边拉满时 `sizeDelta.y` 就是「比父级高多少」：底边不动、顶边高 110；再配 `anchoredPosition.y +55`
+让中心上移。合起来顶边落 110、中心落 55。
+
+**为什么不能照抄到 `bg`**：参考里 `bg` 自己是个 `m_Sprite: {fileID: 0}` 的**全屏纯色遮罩**（黑色 alpha 0.7059），
+它的矩形变化被屏幕裁掉、肉眼看不见；真正看得见的是**挂在 `bg` 下面的内容**（`finalTarget` 进度条、
+`curProgress`）跟着下移 55px。本面板 `bg` 同样是全屏黑遮罩 ⇒ 所以把「落 110px」落到**承内容的 `downLayout`**：
+它也是四边拉满、pivot 0.5、`anchoredPosition` 基准 `(0,0)`，几何等价、看得见。
+
+| 函数 | 干什么 |
+|---|---|
+| `PlayDropIn()` | `anchoredPosition = (0, 110)` → `DOAnchorPos((0,0), 0.3667)`，`Ease.InOutQuad`，只播一次 |
+| `StopDropIn()` | Kill + 复位 `(0,0)`；由 `StopOpenAnims()` 统一调用 |
+
+`OnShow` 里两个动画**同时起**（和参考一致）：`PlayTabFlipIn()` 再 `PlayDropIn()`。顺序不能反——
+`PlayTabFlipIn` 开头会 `StopOpenAnims()` 把一切复位。
+
+**两个运行期 API 陷阱**（这次新踩）：
+
+| 陷阱 | 说明 |
+|---|---|
+| `DOAnchorPos` 是 `RectTransform` 的扩展 | 直接 `go.transform` 得到的是 `Transform` 类型 userdata，**那种 userdata 上没有这个方法**；必须 `GetComponent("RectTransform")` |
+| `Ease` 枚举是运行期注册的 | 取不到 `Ease.InOutQuad` 时不要硬索引，否则异常被 `pcall` 吃掉 ⇒ 整段动画静默不播。统一走 `SetEaseSafe(tween, "InOutQuad")`（`_G.Ease` 有值才 `SetEase`） |
+
+**离线验证**（`/tmp/test_expert_openanim.lua`，假 `Util/Vector3/Vector2/DOTween` 跑真源码，7 个 case 全过）：
+
+| case | 断言 | 结果 |
+|---|---|---|
+| 顺序与错开 | 6 个子节点（1 模板 + 1 inactive）⇒ 只起 4 条，延迟 0/0.033/0.066/0.099 | ✅ |
+| 完成恢复 | 全部 `Complete()` 后 scale=1、`Animator.enabled=true` | ✅ |
+| 中途 Stop | 全部 Kill，scale / Animator / 落位全部复位 | ✅ |
+| 数量自适应 | 24 格 ⇒ 末格延迟压到 0.5 | ✅ |
+| 高亮板 | 从 0 起、重播前 Kill 上一个 | ✅ |
+| 落位 | 起点 +110、终点 (0,0)、0.3667s、`InOutQuad`、完成后精确落 0 | ✅ |
+| 落位重播 | 上轮停在 +45 也**从 110 重起**，同一时刻只有 1 条存活 | ✅ |
+
 **收尾**：`bash scripts/lua-bytes-sync.sh <lua 路径>` 重编 `LuaBytes/Modules_Expert_ExpertPanel_64.bytes`
-（13403 → 15505 B），`--check` 复验「已同步」。**只改源码不改字节码 = 真机不生效**。
+（13403 → 15505 → 16608 B），`--check` 复验「已同步」。**只改源码不改字节码 = 真机不生效**。
+
+> 同轮把根节点上那份「整面板 start 弹入 + normal 呼吸」的 Animator 撤了（方向搞错的那一版）：
+> prefab 回滚到加 Animator 之前（对象数 3071 → 3070，`m_Component` 少一条 + 文件尾 `!u!95` 整块删除），
+> clip/controller 资源留在库里不引用。现在这个面板的开启动画只有：**内容区落位 + 页签逐格翻入 + 高亮板翻入**。

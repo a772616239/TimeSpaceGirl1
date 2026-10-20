@@ -75,6 +75,29 @@ $PY scripts/image/restyle_pipeline.py publish --work "$W" --variant alpha --yes 
    框的顶边正好落在渐隐段里 ⇒ 又变成「框没画完」。左下还常有一块留给引擎写字的空文案板，
    框的 inset 会啃掉它。`--frame none` 就是这一档的正解，别为了统一硬套。
 
+### 1.3 free 构图的「发挥想象力」：姿势走候选池随机，别再硬编码一句
+
+🔴 **历史 bug（用户 2026-10-20 亲自揪出来的）**：`theme_presets.json` 里原来是单条
+`pose_hint = "... presenting a small gift box toward the viewer ..."`，被 `build_prompt` 原样注入
+free 构图提示词 ⇒ **每张 free 图都是同一个「抱着礼盒递出去」的姿势**。不是模型随机，是配置里就那一句。
+（四个主题全中：圣诞=礼盒、新年=红包、万圣=南瓜灯、情人节=心形气球，全都在手里塞道具。）
+
+现在的口径：
+
+```bash
+--pose            # 留空=每次从主题 pose_hints 里随机抽一条（推荐：连跑同主题也不重样）
+--pose 3          # 指定第 3 条，方便复现/挑喜欢的
+--pose none       # 不注入姿势，完全交给模型
+--pose "…"        # 自定义一句
+```
+
+- 候选句一律**空手/动作向**（撩发、扶帽檐、回身、甩披风、双臂张开），主题道具最多保留 1 条作 opt-in。
+- `COMPOSITIONS["free"]` 里已写死硬约束：`Hands must stay EMPTY: never invent an object and put it in
+  her hands`，所以即使候选句没提道具，模型也不会自己塞一个。
+- 🔴 **不要在 LAYOUT 里再写「拿着 X」**：layout 是这张图专用的一段，写进去就等于把随机池钉死。
+- `state.json` 的 `pose_hint` 记录了本次实际用的那句，出图不理想时按它复现或换一条。
+- `lock` 构图不注入姿势（`{pose_hint}` 只出现在 free 分支），`--pose` 对 lock 无副作用。
+
 ## 2. 边框三定律
 
 ### 2.1 语言必须是游戏自己的，不是相框

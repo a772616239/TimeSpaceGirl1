@@ -63,8 +63,10 @@ end
 
 -- 登录时有接口报错时执行，防止登录报错卡死导致进不去游戏的问题
 function LoadingPanel.ErrorStep(msg)
-    --
-    if curIndex >= maxIndex then return end
+    -- curIndex 只在 Start() 里才初始化：报错若发生在 LoadingPanel 打开之前（典型场景＝登录握手阶段被踢/顶号），
+    -- 这里会拿 nil 去比较，抛 LuaException 打断 ReceiveErrorInfo 后续的踢号处理（Framework.Dispose + 重登），
+    -- 表现就是客户端卡在 Loading 出不去。此处必须先判空。
+    if not curIndex or curIndex >= maxIndex then return end
 
     -- 强制进入下一步
     LoadingPanel.OnStep()

@@ -26,11 +26,15 @@ W=_output/art_restyle/<资源名>/<主题>
 $PY scripts/image/restyle_pipeline.py themes                     # 列内置主题
 $PY scripts/image/restyle_pipeline.py prompt --theme christmas   # 打印完整提示词（含参数）
 $PY scripts/image/restyle_pipeline.py prepare   --asset Assets/.../x.png --theme christmas [--layout F]
-$PY scripts/image/restyle_pipeline.py postprocess --work "$W" --gen "$W/inbox/gen.png" [--hero-band 930]
+$PY scripts/image/restyle_pipeline.py postprocess --work "$W" --gen "$W/inbox/gen.png" [--hero-band 930] [--watermark off]
 $PY scripts/image/restyle_pipeline.py verify    --work "$W"
 $PY scripts/image/restyle_pipeline.py graph     --work "$W" --out "$W/graph.md"
 $PY scripts/image/restyle_pipeline.py publish   --work "$W" --variant alpha --yes [--note "job#n"]
 $PY scripts/image/restyle_pipeline.py restore   --asset Assets/.../x.png [--list] [--version 20261020]
+
+# 不走 job，单跑 ChatGPT 出图通道（用你 Chrome 的登录态）
+$PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "$W/prompt.txt" \
+    --out "$W/inbox/gen_web.png" --crop-height 930 [--check-only]
 ```
 
 退出码：`0` 通过 / `1` 失败 / `2` 用法错误 / `3` 需要人看一眼（Jenkins 里 `--warn-rc 3` → 黄，不阻断）。
@@ -43,7 +47,7 @@ $PY scripts/image/restyle_pipeline.py restore   --asset Assets/.../x.png [--list
 |---|---|
 | `ASSET` | 目标资源（相对工程根）。**目标尺寸取该图自身尺寸**，不填尺寸 |
 | `THEME` | `christmas` / `newyear` / `halloween` / `valentine`。新增主题只改 `scripts/image/theme_presets.json` |
-| `PROVIDER` | `manual`（图由人/Agent 出，放进 inbox 或用 `GEN_IMAGE` 指定）／`chatgpt_web`（本机 Chrome 登录态驱动） |
+| `PROVIDER` | `chatgpt_web`（**默认**，用本机 Chrome 登录态驱动 chatgpt.com）／`manual`（图由人/Agent 出，放进 inbox 或用 `GEN_IMAGE` 指定） |
 | `GEN_IMAGE` | manual 时显式指定生成图；留空取 inbox 里最新的 |
 | `LAYOUT` | 构图锁文本。**每张图的文案不同，所以文案一定写这里，不要写进主题预设** |
 | `PROMPT_OVERRIDE` | 整段覆盖提示词（LAYOUT 不够用时才用） |
@@ -56,6 +60,29 @@ $PY scripts/image/restyle_pipeline.py restore   --asset Assets/.../x.png [--list
 构建页能看到：环节表（JUnit）+ `summary.md` + 构建描述 + `artifacts/`（改前改后对比图、graph.md、
 prompt.txt、state.json、published.json）。节点图由 `graph` 生成，链路
 `prepare → generate → postprocess → verify → publish`，绿/红/灰三色。
+
+---
+
+## provider = `chatgpt_web`：用你自己的 ChatGPT 登录态出图
+
+走的是**包月订阅额度**，不是 API（刻意不读 `OPENAI_API_KEY`）。链路：
+
+```
+gen_chatgpt_web.py
+  ├─ 1. 连通性预检：先直连、再显式代理，都要做完 TLS 握手才算通（HTTP 200 不算）
+  ├─ 2. 复制最小 profile（Cookies / Local State / Preferences）到临时目录
+  ├─ 3. 起 Chrome（--remote-debugging-port，必须 --no-sandbox --disable-gpu）
+  ├─ 4. 交给 chatgpt_web_driver.mjs（playwright-core connectOverCDP）
+  │     上传参考图 → 填提示词 → 等「不在生成中 + 连续两轮尺寸稳定」→ 取 blob
+  └─ 5. 无论成败都杀 Chrome、删临时 profile（🔴 里面是可解密的登录态）
+```
+
+参数：`--image` 参考图 / `--prompt-file` / `--out` / `--crop-height N`（超长条只喂顶部英雄带）/
+`--reuse-cdp`（复用已在跑的调试端口）/ `--check-only`（只验连通性与登录态）。
+
+退出码 `3` = 环境问题（不可达 / 未登录 / 人机验证 / 额度用尽），job 里标黄不阻断。
+
+实测（2026-10-20，free 计划）：856×930 英雄带 → 出图 1203×1308，`50x` / `Rebate` 文字与构图完整保真。
 
 ---
 
@@ -81,6 +108,20 @@ prompt.txt、state.json、published.json）。节点图由 `graph` 生成，链�
 9. **`.meta` 一律不动。** 换图只换 PNG；meta 里的 `guid` / `textureType` / `spriteMode` / `packingTag`
    必须原样。曾出现过写回后被换成新 guid（`3b0b0d5e…` → `042a30ad…`），Unity 侧引用会全断。
 10. **写回 ≠ 进包**：还要重打该资源所在 AssetBundle（`FrameTool.BuildGameAssetBundles`）。
+11. **去水印只认「一行灰白字」，不能只认「亮」。** ChatGPT 出的圣诞图右下角是礼盒/拐杖糖/灯串，
+    亮度 250，被当水印整片抹掉 11763px（ROI 的 78%），画被挖了个洞。现在判据是三条：
+    亮（`lum > bg+10`）+ 灰（`max−min < 60`）+ **排成一行**（亮灰像素包围盒高 ≤ ROI 的 55%）。
+    实测真水印 41%、装饰 100%，分得开。要关闭/强制用 `postprocess --watermark off|force`。
+12. **生成图不是 `<img src="https://...">`，是 `blob:`。** ChatGPT 生成的图挂在
+    `[data-testid="generated-image-gallery"]` 下，`alt` 是「已生成图像 N」；上传的参考图也是 blob，
+    `alt` 是「用户附件」。**只能靠 alt 区分，按 src 域名过滤一张都匹配不到。**
+    blob 只能在同一页面上下文里 `fetch` 后 base64 取出，签名 URL 直接 curl 会 403。
+13. **`playwright-core` 是 CJS**：`await import()` 拿到的是 namespace，`chromium` 在 `.default` 上，
+    直接解构会报 `Cannot read properties of undefined (reading 'connectOverCDP')`。
+    另外 driver 连 `127.0.0.1` 必须设 `NO_PROXY`，否则被 `HTTP_PROXY` 拦成 502。
+14. **不要把 cookie 导出来再 `addCookies` 重建登录态。** Chrome 155 的
+    `__Secure-next-auth.session-token.0/.1` 分片重建后 Chromium 不认，页面照样是未登录营销页。
+    唯一可行的是**整份 profile 交给 Chrome 自己读**（它自己解密）。
 
 ---
 
@@ -141,3 +182,8 @@ _output/art_restyle/<资源名>/<主题>/
 | 生成图有水印残留 | ROI 收紧到 `0.88/0.92`；确认 `DILATE_PX=15` 且硬替换（羽化会让水印渗回来） |
 | 写回后游戏里没变化 | 没重打 AssetBundle |
 | Unity 里引用丢了 | `.meta` 的 `guid` 被换过 → `git checkout HEAD -- <png>.meta` |
+| `chatgpt_web` 报「不可达」 | 出口侧封了 OpenAI（`cdn.oaistatic.com` 可能还通，别被误导）。换节点后重跑；本机下午通、上午不通是常态 |
+| `chatgpt_web` 报「页面是未登录营销页」 | cookie 分片没被认 → 别自己重建 cookie，确认 `--profile` 指的是已登录的那个（本机是 `Profile 5`） |
+| `chatgpt_web` 报「超时仍未拿到图」 | 先看是不是额度用尽（driver 会打印页面尾部文本）；free 计划额度很小 |
+| 右下角装饰被抹掉一块 | 水印判据误判 → 确认用的是新版 `detect_mask`（亮+灰+排成一行三条件），必要时 `--watermark off` |
+| driver 报 `connectOverCDP` 是 undefined | `playwright-core` 的 CJS 默认导出没取：`(await import(x)).default ?? ...` |

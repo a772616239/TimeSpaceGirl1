@@ -36,23 +36,56 @@ from PIL import Image, ImageFilter
 ROI_X0_RATIO = 0.88
 ROI_Y0_RATIO = 0.92
 LUM_DELTA = 10      # 比局部背景中值亮多少算水印
+# 🔴 只按「亮」判会误杀正常美术：ChatGPT 出的圣诞图右下角是礼盒/拐杖糖/灯串，
+#    亮度 250，被当成水印整片抹掉 11763px（占 ROI 78%），画被挖了个洞。
+#    水印是**浅灰白字**（三通道差小），节日装饰是高饱和的红/绿/金 —— 用饱和度分。
+SAT_MAX = 60        # max(R,G,B)-min(R,G,B) 上限
+# 再加一道兜底：一个角落要是大半个 ROI 都"亮且灰"，那不可能是水印，是画
+MAX_COVER = 0.30
+# 🔴 光靠亮度+饱和度还是分不开「白雪/白毛边」和「白色水印字」。真正的判据是**形状**：
+#    水印是**一行字**，包围盒高度只有 ROI 的 4 成左右；装饰是铺满整片角落的团块。
+#    实测：内置模型水印 bbox 高 41% ROI；ChatGPT 圣诞图的礼盒+拐杖糖 100% ROI。
+MAX_BBOX_H = 0.55
 DILATE_PX = 15      # 膨胀核（奇数），吃掉抗锯齿与外发光；别超 21，否则会咬到邻近的字
 DOWNSCALE = 8       # 低频场分辨率
 DIFFUSE_ITERS = 1200
 
 
-def detect_mask(rgb: np.ndarray) -> np.ndarray:
-    """返回 (H,W) bool 掩码：右下角比局部背景明显亮的像素。"""
+def detect_mask(rgb: np.ndarray, verbose: bool = True, force: bool = False) -> np.ndarray:
+    """返回 (H,W) bool 掩码：右下角「又亮、又灰、又排成一行」的像素（水印特征），其余不动。
+
+    force=True 跳过所有形状/占比判断（已知这张图确实带水印、且水印不在右下角常规位置时用）。
+    """
     h, w, _ = rgb.shape
     y0, x0 = int(h * ROI_Y0_RATIO), int(w * ROI_X0_RATIO)
     roi = rgb[y0:, x0:].astype(np.float32)
     lum = roi.mean(axis=2)
+    sat = roi.max(axis=2) - roi.min(axis=2)
     bg = float(np.median(lum))
+    cand = (lum > bg + LUM_DELTA) & (sat < SAT_MAX)
     mask = np.zeros((h, w), bool)
-    mask[y0:, x0:] = lum > bg + LUM_DELTA
+    if not cand.any():
+        return mask
+
+    def reject(why: str) -> np.ndarray:
+        if verbose:
+            print(f"  [watermark] 右下角不像水印（{why}）—— 按美术内容保留，不做修复")
+        return mask
+
+    if not force:
+        if cand.mean() > MAX_COVER:
+            return reject(f"{cand.mean():.0%} 的像素都是亮且灰的，超过 {MAX_COVER:.0%} 上限")
+        ys, _ = np.where(cand)
+        bh_ratio = (ys.max() - ys.min() + 1) / roi.shape[0]
+        if bh_ratio > MAX_BBOX_H:
+            return reject(f"亮灰像素纵向铺满 {bh_ratio:.0%} 的角落，不是一行字")
+
+    mask[y0:, x0:] = cand
     dilated = Image.fromarray((mask * 255).astype(np.uint8)).filter(
         ImageFilter.MaxFilter(DILATE_PX))
     return np.array(dilated) > 127
+
+
 
 
 def _lowfreq_background(rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -73,10 +106,11 @@ def _lowfreq_background(rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return np.array(filled).astype(np.float32)
 
 
-def clean(rgb: np.ndarray, mask: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+def clean(rgb: np.ndarray, mask: np.ndarray | None = None,
+          force: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """返回 (清理后的 RGB, 使用的掩码)。掩码为空（没检测到水印）时原样返回。"""
     if mask is None:
-        mask = detect_mask(rgb)
+        mask = detect_mask(rgb, force=force)
     if not mask.any():
         return rgb.copy(), mask
 

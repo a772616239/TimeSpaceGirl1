@@ -398,11 +398,12 @@ def cmd_postprocess(args) -> int:
     gen = Image.open(gen_path).convert("RGB")
     arr = np.array(gen)
     residue_before = watermark_clean.residue_level(arr)
-    if args.no_clean:
+    wm_mode = "off" if args.no_clean else args.watermark
+    if wm_mode == "off":
         cleaned, mask = arr, np.zeros(arr.shape[:2], bool)
-        log("postprocess", "按 --no-clean 跳过水印清理")
+        log("postprocess", "跳过水印清理（--watermark off / --no-clean）")
     else:
-        cleaned, mask = watermark_clean.clean(arr)
+        cleaned, mask = watermark_clean.clean(arr, force=(wm_mode == "force"))
         log("postprocess", f"水印掩码 {int(mask.sum())} px；"
                           f"清理前右下角最亮 {residue_before['max']:.0f} → "
                           f"清理后 {watermark_clean.residue_level(cleaned)['max']:.0f}")
@@ -556,12 +557,21 @@ def cmd_verify(args) -> int:
         after = state.get("watermark_max_after")
         # 判据用 std 而不是「最亮 - 中位」：水印是细笔画高对比簇，清掉后 std 会从 40+ 掉到 10 以内；
         # 而平滑渐变角落的「最亮 - 中位」天生就有 60+（梯度本身在变亮），拿它当判据必假报警。
-        check("水印无残留", spread < 22,
-              f"生成图角落 std {spread:.1f}（最亮 {mx:.0f} / 中位 {med:.0f}，高亮占比 {area:.1%}）"
-              + (f"；清理记录 {after}" if after is not None else ""),
-              hard=area < 0.25)
-        if spread >= 22:
-            warns.append("生成图角落起伏偏大；若该处本来就有装饰元素可忽略")
+        # 🔴 掩码为 0 时（模型本来就没水印，右下角是礼盒/拐杖糖这类画），这条不能判红：
+        #    那是美术内容，std 天然就高。只记录，不卡。
+        mask_px = int(state.get("watermark_mask_px") or 0)
+        if mask_px == 0:
+            check("水印无残留（未检出，跳过）", True,
+                  f"右下角 std {spread:.1f} —— 无灰白水印特征，按美术内容保留（最亮 {mx:.0f}）",
+                  hard=False)
+        else:
+            check("水印无残留", spread < 22,
+                  f"生成图角落 std {spread:.1f}（最亮 {mx:.0f} / 中位 {med:.0f}，高亮占比 {area:.1%}）"
+                  + (f"；清理记录 {after}" if after is not None else "")
+                  + f"；掩码 {mask_px}px",
+                  hard=area < 0.25)
+            if spread >= 22:
+                warns.append("生成图角落起伏偏大；若该处本来就有装饰元素可忽略")
 
     # 带状模式额外验一条：接缝会不会像「两张图硬拼」。判据不是绝对值，而是
     # 跟**原图同一个位置**的跳变比 —— 这类底板本来就是一条直线切开的（卡体顶边），
@@ -858,7 +868,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("postprocess", help="去水印 + 尺寸归位 + 出双版本 + 对比图")
     p.add_argument("--work", required=True)
     p.add_argument("--gen", required=True, help="provider 产出的图片")
-    p.add_argument("--no-clean", action="store_true", help="跳过水印清理（生成图本身无水印时）")
+    p.add_argument("--no-clean", action="store_true", help="跳过水印清理（等价 --watermark off）")
+    p.add_argument("--watermark", choices=["auto", "off", "force"], default="auto",
+                   help="auto=只在右下角认出「一行灰白字」时才修（默认）；"
+                        "off=完全不碰像素（OpenAI 出的图无可见水印，推荐）；"
+                        "force=强制按水印修（已知带水印但形状判据没认出来时）")
     p.add_argument("--hero-band", default="0",
                    help="超长条底板用：生成图只当「英雄带」贴顶，下方补空卡体。"
                         "auto=生成图整体当带；数字=带高像素（cover 到该尺寸，只横向裁）；0=整幅 cover")

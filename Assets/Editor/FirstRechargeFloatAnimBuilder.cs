@@ -63,6 +63,8 @@ public static class FirstRechargeFloatAnimBuilder
         AssetDatabase.Refresh();
         Debug.Log("[FirstRechargeFloat] 完成：start=" + StartClipPath + " normal=" + NormalClipPath +
                   " controller=" + ControllerPath + "，已挂到 " + PrefabPath);
+        Debug.Log("[FirstRechargeFloat] 状态机 start(" + startClip.length.ToString("0.00") + "s, loop=" + IsLooping(startClip) +
+                  ") → normal(" + normalClip.length.ToString("0.00") + "s, loop=" + IsLooping(normalClip) + ")");
     }
 
     /// <summary>供 -executeMethod 调用（批处理模式下不能靠菜单）。</summary>
@@ -101,6 +103,14 @@ public static class FirstRechargeFloatAnimBuilder
 
         AssetDatabase.SaveAssets();
         Debug.Log("[FirstRechargeFloat] 已还原为旧版 Animation：" + LegacyClipPath);
+    }
+
+    private static bool IsLooping(AnimationClip clip)
+    {
+        SerializedObject so = new SerializedObject(clip);
+        SerializedProperty settings = so.FindProperty("m_AnimationClipSettings");
+        SerializedProperty loopProp = settings != null ? settings.FindPropertyRelative("m_LoopTime") : null;
+        return loopProp != null && loopProp.boolValue;
     }
 
     private static AnimationClip CreateClip(string path, bool loop, float stopTime)
@@ -170,12 +180,14 @@ public static class FirstRechargeFloatAnimBuilder
         float t1 = NormalLoopTime * 0.5f;
         float t2 = NormalLoopTime;
 
-        // 背景极轻微放大（只放大不缩小，避免露边）
-        Scale(clip, "frame/BG", new[] { t0, t1, t2 }, new[] { 1f, 1.006f, 1f });
+        // 面板主体呼吸：对齐每日首充 normal 里 frame/bg 的 1→1.02→1。
+        // BG 是 1080x1253 的整块底板（frame 第一个子节点，压在所有内容下面），
+        // 只放大不缩小，不会露边；觉得过头把 1.02 调小即可。
+        Scale(clip, "frame/BG", new[] { t0, t1, t2 }, new[] { 1f, 1.02f, 1f });
 
-        // 奖励区：呼吸 + 下沉
+        // 奖励区：呼吸 + 下沉（对应每日首充的 rewardContent 缩放 0.99 / y -10）
         Scale(clip, "frame/rewardBg", new[] { t0, t1, t2 }, new[] { 1f, 1.015f, 1f });
-        Float(clip, "frame/rewardBg", "m_AnchoredPosition.y", new[] { t0, t1, t2 }, new[] { BaseRewardBgY, BaseRewardBgY - 8f, BaseRewardBgY });
+        Float(clip, "frame/rewardBg", "m_AnchoredPosition.y", new[] { t0, t1, t2 }, new[] { BaseRewardBgY, BaseRewardBgY - 10f, BaseRewardBgY });
 
         // tab 条反向轻抬，与奖励区错开相位
         Float(clip, "frame/tabsContent", "m_AnchoredPosition.y", new[] { t0, t1, t2 }, new[] { BaseTabsY, BaseTabsY + 5f, BaseTabsY });

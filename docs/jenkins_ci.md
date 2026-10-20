@@ -85,9 +85,9 @@
 
 ---
 
-## 3. 十五个 job
+## 3. 十六个 job
 
-视图：**「时空美少女 · 全流程」**（`ListView`，含全部 15 个 job，带状态球/天气/上次成功/耗时/构建按钮列）。
+视图：**「时空美少女 · 全流程」**（`ListView`，含全部 16 个 job，带状态球/天气/上次成功/耗时/构建按钮列）。
 
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
@@ -134,13 +134,14 @@
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |
 | **TS-Server-Ops** | 服务端/区服运维动作统一入口 | `ACTION=health` `CONFIRM=` `REASON=` | — | 允许 |
-| **TS-Server-Release** | **服务端代码发包正式服**：切 release 分支 → JDK8 编译 → 与线上逐条目 CRC 比对 → 审批 → 备份 → 注入差异类 → 重启 → 自检 → 回写发布记录 | `ACTION=release` `SOURCE_BRANCH=x1-tag-1.2.2` `RELEASE_BRANCH=` `DEPLOY=False` `CONFIRM=` `AUTO_APPROVE=False` `ONLY_CLASSES=` `EXCLUDE_CLASSES=` `RESTART=gameserver` `ALLOW_DIRTY=False` `PUSH_BRANCH=True` `ROLLBACK_DIR=` `NOTES=` `SEND_MAIL=False` | — | **禁止** |
+| **TS-Server-Release** | **服务端代码发包正式服**：切 release 分支 → JDK8 编译 → 与线上逐条目 CRC 比对 → 审批 → 备份 → 注入差异类 → 重启 → 上线自检 → **协议连通自检** → 回写发布记录 → 发布看板 → **异步触发 TS-Server-Health** | `ACTION=release` `SOURCE_BRANCH=x1-tag-1.2.2` `RELEASE_BRANCH=` `DEPLOY=False` `CONFIRM=` `AUTO_APPROVE=False` `ONLY_CLASSES=` `EXCLUDE_CLASSES=` `RESTART=gameserver` `PROTO_CHECK=True` `PROTO_LOGIN=False` `PROTO_OPERATOR=` `HEALTH_AFTER=True` `ALLOW_DIRTY=False` `PUSH_BRANCH=True` `ROLLBACK_DIR=` `NOTES=` `SEND_MAIL=False` | — | **禁止** |
 | **TS-Play-Watch** | Play 轨道 + 16KB 合规巡检 | `DRY_RUN=True` `NO_MAIL=False` `AAB=` `TO=` | `H 9 * * *` | 允许 |
 | **TS-Test-Lua** | **客户端 Lua 逻辑回归**（headless luajit，**不需要设备**）：15 个 `test_*.lua`，429 条断言，约 1 秒 | `ONLY=` `GROUP=全部` | `H 4 * * *` | 允许 |
 | **TS-Test-Login** | 登录链路设备用例（`tests/cases/login/*.json`） | `APK=` `TARGET=auto` `SERIAL=` `CASES=` `CALIBRATE=False` `CASE_SCALE=1` `REVERSE_PORTS=8081:8081,16081:16081` `UNINSTALL_FIRST=False` `KEEP_DEVICE=False` `ALLOW_NO_DEVICE=True` | — | **禁止** |
 | **TS-Test-Battle** | 战斗/关卡设备用例（`battle/*.json`） | 同上 | — | **禁止** |
 | **TS-Test-Func** | 功能点设备用例（`func/*.json`：背包/邮件/商店） | 同上 | — | **禁止** |
 | **TS-Test-Suite** | **全量总入口**：Lua + 三组设备用例，一份报告 | `GROUPS=全部` `SKIP_LUA=False` + 设备类参数 | `H 5 * * *` | **禁止** |
+| **TS-Local-Deploy** | **本地测试服一键部署**（本机 `~/home/java`，游戏服 `127.0.0.1:16081`）：体检 → JDK8 编译 → 逐条目比 CRC → 备份 → **副本注入** → CRC 复核 → **原子替换** → 重启 → 自检 | `SOURCE=本地工作区` `FETCH=True` `SKIP_BUILD=False` `GRADLE_ARGS=--offline` `SKIP_VERIFY=False` `DRY_RUN=False` `NOTES=` | — | **禁止** |
 
 ### 3.1 送审红线（三层闸门 + 一层代码级自检）
 
@@ -244,7 +245,7 @@ scripts/build_envs.json ──┴─→ scripts/apply_build_env.py apply <env>  
 
 ⇒ 正确姿势：**以线上 jar 为基线，只 `zip -u` 差异条目**（类级注入）。本 job 固定走这条。
 
-#### 12 个环节
+#### 14 个环节
 
 | # | 环节 | 分组 | 干什么 | 失败会怎样 |
 |---|---|---|---|---|
@@ -259,8 +260,45 @@ scripts/build_envs.json ──┴─→ scripts/apply_build_env.py apply <env>  
 | ⑨ | 注入差异条目 + 重启 | 发布 | 抽差异条目 → 传 → 服务器 `zip -u` 分批 → `unzip -t` → `RESTART-GAMESERVER.sh` | 红 |
 | ⑨-2 | 回滚（恢复备份 + 重启） | 发布 | `ACTION=rollback` 时走这条：恢复 jar + config → 重启 | 红 |
 | ⑩ | 上线自检 | 发布 | **把线上 jar 再拉回来逐条目比 CRC** + 实例数/16081/认证失败/端口冲突/OOM/ERROR 行数 | 红 |
+| **⑩-2** | **协议连通自检** | 发布 | 本地直连 16081 跑协议矩阵：TEA 编解码往返 / TCP / 双向通道 / 未登录 GM 鉴权 / 会话存储（`PROTO_CHECK`；真登录默认关） | 红（关注项黄） |
 | ⑪ | 回写发布记录 | 发布记录 | 写 `server_game/deploy/releases/<stamp>.{md,json}` + 重建 `INDEX.md` → 提交 release 分支 → 打 tag `rel-<stamp>` → （真上线时）push | 黄（`--warn-ok`） |
 | ⑫ | 发布看板 | 交付 | 生成自包含 HTML，归档 + 拷到 `userContent` 固定地址 | 红 |
+| **⑬** | **触发生产巡检** | 交付 | `build job: TS-Server-Health`（`wait:false`，异步，`SEND_MAIL=false`）——巡检另开一个 job，不阻塞发布 | 不阻塞（`HEALTH_AFTER`） |
+
+> ⑭「完成通知」只在 `SEND_MAIL=true` 时出现，默认不发信，所以不计入上表。
+
+#### ⑩-2 协议连通自检：为什么上线自检之后还要再连一次
+
+「端口在听」和「协议通」是两件事。⑩ 那一步是 `ss -ltn | grep :16081` ——
+它能证明 netty 起来了，证明不了下面这几层还是对的：
+
+| 层 | 出错时的客户端表现 | 服务端能看到的 |
+|---|---|---|
+| TEA 密钥 / 32 轮 | 连上就断、进不去登录 | 只有一行 `decode->emsg=...` |
+| 2 字节长度前缀 + 8 字节对齐 | 收包错位，越往后越乱 | 无日志或乱码日志 |
+| 回包编码（`TeaEncoder`） | 客户端解析失败卡 Loading | 无日志 |
+| 鉴权（未登录能否调 GM） | 正常客户端看不出来 | 无日志（提权缺口） |
+
+实现：`scripts/verify/protocol_selftest.py`，**复用** `scripts/verify/gm_uid_login_probe.py`
+里的 TEA/帧/Redis 原语（改密钥只改一处），按矩阵逐项出结论并顺带写
+`CHECK|name|status|detail` 行给 `checks_to_junit.py`。
+
+| 检查 | 口径 | 生产实测（2026-10-20） |
+|---|---|---|
+| `codec` | 纯本地：随机 20 帧（16B~4KB）加密→拆帧→解密必须回原文 | ✅ 20 帧一致 |
+| `tcp` | 16081 可连 | ✅ 4ms |
+| `duplex` | 发心跳帧后服务端**是否真的往回写字节**（零字节返回 ⇒ 解码/回包线程卡死） | ✅ 有回写 |
+| `auth-guard` | 未登录直接发 `GM_REQUEST`，**不得**拿到 `GM_RESPONSE` | ✅ 无回包 |
+| `session` | SSH 只读数 `JL_TOKEN:*` 条数（登录态写入链路） | ✅ 242 条 |
+| `login-e2e` | 真登录 + GM（`40#uid#0`）。**默认跳过** | ⏭️ 默认关 |
+
+🔴 `PROTO_LOGIN` 默认 `false`：真登录要拿某个真实账号的 token 建会话，
+该号在线就会被顶掉。只有明确指定 `PROTO_OPERATOR` 且确认它不在线时才打开。
+`login-e2e` 的判定里 **`In a formal setting`（生产 `debug=false`）算 pass** ——
+它证明的是「登录通 + GM 协议通」，GM 业务关闭是配置不是故障。
+
+退出码：`0` 全通或含跳过 / `3` 只有关注项（黄球）/ `1` 硬失败。
+
 
 #### release 分支与「做好记录」
 
@@ -429,7 +467,99 @@ Lua 段的判定要认四种断言标记（`✅/❌`、`[PASS]/[FAIL]`、`N pass
 
 ---
 
+### 3.7 本地测试服一键部署（`TS-Local-Deploy`，2026-10-20 新增）
+
+**要解决的问题**：手上改完服务端代码，想在本机测试服（`~/home/java`，游戏服 16081 + 登录服 Tomcat 8081）
+上跑起来看看。以前这条链路全靠手打：编译 → 找出该替换哪些类 → 备份 → 停服 → `zip -u` → 起服 → 看日志。
+每一步都有坑，而且**顺序错了的后果比失败更糟**（半新半旧的类在跑）。
+
+现在点一次构建（默认参数即可）就完成全部动作，46 秒：
+
+| # | 环节 | 干什么 | 判红 / 判黄 |
+|---|---|---|---|
+| ① | 参数与影响说明 | 打印这次会动什么、影响面（本机测试号掉线一次） | — |
+| ② | 源码就绪与部署前体检 | JDK8 / 源码状态 / jar 与 lib 一致性；`SOURCE=origin 干净副本` 时用 worktree 拉远端 | 依赖集合变了 ⇒ **红**（注入带不上新依赖） |
+| ③ | 编译 | JDK8 + `:serverlogic:jar :serverlogic:copyJars`，默认 `--offline` | 编译失败 ⇒ 红 |
+| ④ | 差异分析 | 编译产物 vs 本地 jar 逐条目 CRC：变更 / 新增 / 排除 / 仅本地保留 | 无差异 ⇒ **黄**（`rc=3`，跳过部署、不重启） |
+| ⑤ | 部署 | 备份 → **在副本上 `zip -u`** → 逐条目 CRC 复核 → `mv` 原子替换 → 重启 | 复核不符 ⇒ 红（正式 jar 未动） |
+| ⑥ | 自检 | 端口 / `Started GameApplication` / 表数量（基线 280）/ 致命关键字 / ERROR 行数 / 协议探测 | 有 ERROR 或协议告警 ⇒ 黄 |
+| ⑦ | 部署报告 | `artifacts/local-deploy.md` + `userContent/TS-Local-Deploy-latest.md` | — |
+
+#### 为什么是「注入差异」而不是「整包覆盖」
+
+`package.sh` 打的是**给线上用**的包，本地服不能这么做：
+
+- 编译产物里的 `application.properties` 是 `src/main/resources` 的**开发配置**（`server.id=70001`、远程 Mongo），
+  本地服那份是对着 `127.0.0.1` 改过的；`logback-boot.xml` 同理。
+- `META-INF/MANIFEST.MF` 的 `Class-Path` 是本地 82 个 lib 的引用表，覆盖它等于换掉整条依赖链。
+- 本地 jar 里可能有源码中已不存在的**补丁类**（历史事故：重建丢过 `SysUtil.class`）。
+
+⇒ 只注入 CRC 真变了的条目，其余一律不碰。实测第一次跑：`变更 53 / 新增 3 / 排除 4 / 仅本地保留 1`
+（那 1 条就是 `logback-boot.xml`，正好证明排除规则在起作用）。
+
+#### 为什么是「副本注入 + 原子 mv」而不是「停服再改正式 jar」
+
+1. `zip -u` 是**就地写**。运行中的 JVM 后续懒加载到被改过的条目 ⇒ 一半旧类一半新类 ⇒ `LinkageError`。
+2. 先停服再改，改到一半失败 = **服务已停 + jar 半新**，恢复要人肉拼。
+
+副本注入 + `mv`（同一文件系统，原子 rename）：运行中的进程始终读旧 inode，替换是瞬时的；
+**失败时正式 jar 一个字节都没动**，服务照旧。三道闸门保证不会带着半成品替换：`zip` 失败 / CRC 复核不符都会
+直接 `rm` 副本并退出。
+
+#### 🔴 三个只有真跑才会发现的坑（都已修）
+
+| 现象 | 真因 | 修法 |
+|---|---|---|
+| 自检全绿，**构建一结束进程就没了** | Jenkins `ProcessTreeKiller` 按 `HUDSON_COOKIE` / `JENKINS_SERVER_COOKIE` 环境变量杀光属于本次构建的进程 —— 它是按**环境变量**找进程的，`nohup`/`setsid` 都拦不住 | 拉起子进程时把 `HUDSON_COOKIE`/`JENKINS_SERVER_COOKIE`/`BUILD_*`/`WORKSPACE` 从环境里摘掉，再 `start_new_session=True` |
+| `launchctl bootstrap` **恒 rc=5**（`Input/output error`），`install gs` 必失败 | Jenkins / agent shell 不在 Aqua 登录会话，无 launchd 写权限 | **全程不碰托管状态**：托管中就用 `launchctl kickstart -k` 原地重启；未托管就用独立会话拉起。plist 仍在 `~/Library/LaunchAgents`，下次登录自动恢复托管 |
+| `[[ 0\n0 -ge 0 ]]` 语法错、`ERROR 行统计` 崩 | `grep -c` 无匹配时**输出 0 且退出码 1** ⇒ `|| echo 0` 又追加一行 0 | 只兜空不兜零：`x="$(grep -c ... \|\| true)"; x="${x:-0}"` |
+
+还有一个：备份用 `cp -p` 会保留**被备份 jar 的 mtime**，所以 `ls -t` 排不出「最近一份」，回滚会挑错备份
+（实测挑成了第一次那份）。备份文件名本身带 `gameSrv-YYYYMMDD-HHMMSS` ⇒ 改成按文件名降序。
+
+#### 参数
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `SOURCE` | `本地工作区` | `本地工作区` = 含未提交改动（最贴近手上这版）；`origin 干净副本` = `git worktree` 拉 `origin` 分支，不受并行会话 WIP 影响（代价是全量编译） |
+| `FETCH` | `True` | 只在 `origin 干净副本` 模式下 `git fetch`；本地工作区模式只做只读提示，**绝不 merge/pull**（这个仓常年有并行会话在改） |
+| `SKIP_BUILD` | `False` | 复用上一次编译产物，只想重跑部署时用 |
+| `GRADLE_ARGS` | `--offline` | 新增依赖时清空（离线会失败） |
+| `SKIP_VERIFY` / `DRY_RUN` | `False` | 跳过自检 / 只演练不动本地服 |
+| `NOTES` | 空 | 写进构建描述与报告，说明本次测什么 |
+
+#### 手工等价命令（排障用）
+
+```bash
+B=/usr/local/bin/bash
+$B .jenkins/lib/local_deploy.sh info        # 现状（端口/launchd/jar/git）
+$B .jenkins/lib/local_deploy.sh precheck    # 部署前体检
+$B .jenkins/lib/local_deploy.sh build       # 只编译
+$B .jenkins/lib/local_deploy.sh diff        # 只看差异（不部署）
+$B .jenkins/lib/local_deploy.sh deploy      # 注入 + 重启
+$B .jenkins/lib/local_deploy.sh health      # 只跑自检
+$B .jenkins/lib/local_deploy.sh rollback    # 回到最近一份备份（自动重启）
+$B .jenkins/lib/local_deploy.sh rollback ~/home/java/gameserver/backup/gameSrv-20261020-202429.jar
+```
+
+备份保留最近 15 份（`~/home/java/gameserver/backup/`，每份带 `.sha256`，回滚前会校验）。
+
+#### 实测（2026-10-20）
+
+| 构建 | 结果 | 说明 |
+|---|---|---|
+| #1 | UNSTABLE | 注入 58 条 + CRC 全过；但 `bootstrap rc=5` 退回 nohup，且进程被 ProcessTreeKiller 收走 |
+| #3 | UNSTABLE | 副本注入 65 条 + 原子替换跑通；`ERROR 统计` 的 `grep -c` 双零 bug 暴露 |
+| #6 | SUCCESS | 6/6 环节 · 46s · 启动 6.0s · 280 表 · 0 ERROR · 协议 4 通过 2 跳过 |
+| #7 | SUCCESS | 同上，且**构建结束后进程存活**（pid 常驻，16081 可连）—— ProcessTreeKiller 修复的验收 |
+
+> 红线不变：这个 job **只动本机**，与生产服 `129.226.213.65` 毫无关系。
+> 要发正式服请走 `TS-Server-Release`（默认 `DEPLOY=False` 演练）。
+
+---
+
 ## 4. 「各环节可视化」到底指什么（四件产物）
+
 
 用户原话是「**要求各环节可视化**」。落地成四件东西，每件都验证过：
 

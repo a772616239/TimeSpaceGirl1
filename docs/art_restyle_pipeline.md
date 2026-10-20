@@ -4,7 +4,7 @@
 > 入口：Jenkins job **`TS-Art-Restyle`** ／ 命令行 `scripts/image/restyle_pipeline.py`  
 > 🎯 一线操作手册（什么时候用哪条命令、边框三定律、验收清单、7 条红线）：  
 > **`.workbuddy/skills/art-restyle/SKILL.md`** —— 先读它，本文只留原理与复盘。  
-> 🎨 主题生产卡（8 个主题的设计意图/禁忌、四类图的参数配方、新主题接入 7 步、批量管线与额度纪律）：  
+> 🎨 主题生产卡（9 个主题的设计意图/禁忌、四类图的参数配方、新主题接入 7 步、批量管线与额度纪律）：  
 > **`docs/art_restyle_themes.md`**  
 > 真机观感预览：`scripts/image/preview_ingame.py`（按 567px 显示宽贴回面板底 + 叠占位卡 + 边角特写）  
 > 已实战：`EightDayGiftPanelAtlas/cn2-X1_baridenglu_diban_en.png`（1080×1644 登录底板 → 圣诞版）  
@@ -58,7 +58,7 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
 | 参数                           | 作用                                                                                                  |
 | ---------------------------- | --------------------------------------------------------------------------------------------------- |
 | `ASSET`                      | 目标资源（相对工程根）。**目标尺寸取该图自身尺寸**，不填尺寸                                                                    |
-| `THEME`                      | `christmas` / `newyear` / `halloween` / `valentine`。新增主题只改 `scripts/image/theme_presets.json`       |
+| `THEME`                      | 见 `restyle_pipeline.py themes`（现有 9 个：圣诞/新年/万圣/情人/夏日冲浪/普罗旺斯/感恩/赛博/探索）。风格全在 `scripts/image/theme_presets.json`；**新增主题要把 key 同步进 job 的 choices 再 `apply-jobs.sh`**，否则下拉选不到 |
 | `PROVIDER`                   | `chatgpt_web`（**默认**，用本机 Chrome 登录态驱动 chatgpt.com）／`manual`（图由人/Agent 出，放进 inbox 或用 `GEN_IMAGE` 指定） |
 | `GEN_IMAGE`                  | manual 时显式指定生成图；留空取 inbox 里最新的                                                                      |
 | `CDP_PORT`                   | 复用外部已登录浏览器（AdsPower/SunBrowser）的调试端口，`find_browser_cdp.py` 反查。留空=用本机 Chrome                         |

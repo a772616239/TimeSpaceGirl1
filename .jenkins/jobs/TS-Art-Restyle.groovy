@@ -4,7 +4,7 @@
   "concurrent": false,
   "params": [
     {"name":"ASSET","type":"string","default":"Assets/ManagedResources/ArtFont_en/EightDayGiftPanelAtlas/cn2-X1_baridenglu_diban_en.png","description":"要换风格的资源（相对工程根）。目标尺寸取该图自身尺寸"},
-    {"name":"THEME","type":"choice","choices":["christmas","newyear","halloween","valentine"],"default":"christmas","description":"节日主题。新增主题改 scripts/image/theme_presets.json 即可，不用改本 job"},
+    {"name":"THEME","type":"choice","choices":["christmas","newyear","halloween","valentine","summer_surf","provence","thanksgiving","cyber","explore"],"default":"christmas","description":"题材/风格主题（含节日与场景题材：explore=探索寻宝）。风格内容全在 scripts/image/theme_presets.json；新增主题时改完预设要把 key 补进本 job 的 choices 再跑 apply-jobs.sh，否则下拉里选不到"},
     {"name":"PROVIDER","type":"choice","choices":["chatgpt_web","manual"],"default":"chatgpt_web","description":"manual=把出好的图给本 job（GEN_IMAGE 或 inbox）；chatgpt_web=用本机 Chrome 登录态驱动 chatgpt.com 出图"},
     {"name":"CDP_PORT","type":"string","default":"","description":"复用已登录的外部浏览器（AdsPower 的 SunBrowser 等）的调试端口：填了就 --reuse-cdp，不复制本机 Chrome profile（免费额度按账号算，换号就换这里）。端口用 scripts/image/find_browser_cdp.py 反查；留空=用本机 Chrome"},
     {"name":"GEN_IMAGE","type":"string","default":"","description":"provider=manual 时显式指定生成图绝对路径。留空 = 取 _output/art_restyle/<资源>/<主题>/inbox 下最新的图"},

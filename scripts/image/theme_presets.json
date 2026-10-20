@@ -332,6 +332,43 @@
         "forward step with one hand extended flat toward the viewer in a stop gesture, the other loose behind her, intense stare"
       ],
       "notes": "霓虹描边是双刃剑：带中文文案的图描边会跟字抢注意力，字要单独锁材质（LAYOUT 里写死）；深蓝底 + 紫框容易糊成一片，需要时 rim 改 ivory"
+    },
+    "explore": {
+      "zh": "探索",
+      "en": "adventurous treasure-hunting exploration",
+      "suffix": "explore",
+      "palette": [
+        "#16281c",
+        "#2b3b32",
+        "#c98a3c",
+        "#f0b64b",
+        "#f6ecd6"
+      ],
+      "decoration": [
+        "垂落藤蔓",
+        "火把暖光",
+        "黄铜罗盘",
+        "古金币",
+        "石雕浮雕",
+        "浮尘光斑",
+        "藏宝图卷角"
+      ],
+      "text_style": "carved hardwood and aged-brass faces with a warm amber rim light and a chiselled bevel, keeping a dark backing so every glyph stays crisp",
+      "outfit": "a rugged treasure-hunter explorer version: weathered brown leather vest over a cream linen shirt with rolled-up sleeves, a wide leather belt with brass buckles, a satchel strap across the chest, fingerless leather gloves, a small brass compass on a cord and a short travel cape",
+      "body": "a sunlit weathered-stone and moss ground that stays fully painted as scenery (never blanked out), darkening slightly toward the very bottom edge so UI overlays stay legible",
+      "banner": "a golden-hour sky over a distant jungle canopy with ruined temple spires",
+      "decor_sentence": "replace the neon sci-fi structures and the pink-violet sunset with ancient overgrown ruins - weathered carved pillars, relief friezes, hanging vines and moss, flaming torches, drifting dust motes and shafts of warm golden light breaking through the canopy",
+      "body_colors": [
+        "#16281c",
+        "#2b3b32"
+      ],
+      "pose_hints": [
+        "crouched explorer stance with one knee up and one hand shading her eyes as she scans the horizon, the other hand resting on her belt, chin lifted, hands otherwise EMPTY",
+        "half-kneeling as she pushes a curtain of hanging vines aside with one hand, leaning forward with an eager grin, no held object",
+        "dynamic forward stride through tall grass with one arm swept back and her cape flaring, head turned toward the viewer, confident smile",
+        "perched on a broken stone pillar with both hands braced on the edge, legs dangling, looking down at the viewer with a teasing smirk"
+      ],
+      "notes": "「探索/寻宝」不是节日，是场景题材，靠 decor_sentence 换世界（霓虹基地→古遗迹），不靠换节日装饰。石绿+黄铜是主色，角色容易跟背景糊在一起，需要时 FRAME_RIM 用 warm 拉开明度。图里有透明上沿时，alpha 走 source 掩膜，别让模型自己画边。"
     }
   }
 }

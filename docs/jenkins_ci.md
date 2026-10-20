@@ -52,10 +52,20 @@
 │   ├── TS-Android-Release.groovy       AAB + APK 全链路
 │   ├── TS-Android-TestPackage.groovy   测试 APK
 │   ├── TS-Android-SmokeTest.groovy     已打包 APK 的装机冒烟（模拟器 / 真机 / 远程）
+│   ├── TS-Resource-Build.groovy        导表 + 同步字节码 + 重建 AB（可被别的 job 调用）
 │   ├── TS-Client-Resources.groovy      Lua 源码 ↔ 字节码
+│   ├── TS-Art-Restyle.groovy           美术资源换节日风格（生图 + 归位 + 验收）
+│   ├── TS-Art-Translate.groovy         战令横幅中文美术字 → 英文版（擦字 + 补底板 + 排字）
 │   ├── TS-Server-Health.groovy         生产服巡检（定时）
 │   ├── TS-Server-Ops.groovy            服务端/区服运维动作
-│   └── TS-Play-Watch.groovy            Play 轨道与 16KB（定时）
+│   ├── TS-Server-Release.groovy        服务端代码发包正式服
+│   ├── TS-Play-Watch.groovy            Play 轨道与 16KB（定时）
+│   ├── TS-Test-Lua.groovy              Lua 逻辑回归（headless luajit）
+│   ├── TS-Test-Login.groovy            登录链路设备用例
+│   ├── TS-Test-Battle.groovy           战斗/关卡设备用例
+│   ├── TS-Test-Func.groovy             功能点设备用例
+│   ├── TS-Test-Suite.groovy            全量总入口（Lua + 三组设备用例）
+│   └── TS-Local-Deploy.groovy          本地测试服一键部署
 ├── lib/
 │   ├── render_job.py          groovy + META → config.xml
 │   ├── run_stage.sh           跑一个环节并把结论登记进报告（一个环节一行）
@@ -85,9 +95,9 @@
 
 ---
 
-## 3. 十六个 job
+## 3. 十八个 job
 
-视图：**「时空美少女 · 全流程」**（`ListView`，含全部 16 个 job，带状态球/天气/上次成功/耗时/构建按钮列）。
+视图：**「时空美少女 · 全流程」**（`ListView`，含全部 18 个 job，带状态球/天气/上次成功/耗时/构建按钮列）。
 
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
@@ -131,7 +141,10 @@
 > - 实现与换平台（Linux KVM / Apple Silicon / Windows / 云真机 / GitHub Actions）：
 >   见 **`docs/android_emulator_smoke.md`**；无设备时可跑 `jenkins-shared/lib/android/selftest.sh` 自测。
 
+| **TS-Resource-Build** | **包内资源构建**：导表（xlsx→客户端 Lua + 服务端 txt）→ 同步 Lua 字节码 → 重建 AB 并复制到 StreamingAssets → 新鲜度硬闸门 + 就绪体检 | `EXPORT_TABLES=True` `SYNC_BYTES=True` `REBUILD_AB=True` `SERVER_ENV=正式服` `LUA_FILES=` | — | **禁止** |
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
+| **TS-Art-Restyle** | **美术资源换节日风格**（登录底板 → 圣诞版等）：生图交给 provider → 去水印 → 等比归位（绝不拉伸）→ 出不透明版 + 沿用原 alpha 的浮层版 → 像素级验收 → 可选写回 | `ASSET=` `THEME=christmas` `PROVIDER=chatgpt_web` `CDP_PORT=` `GEN_IMAGE=` `COMPOSITION=lock` `POSE=` `FRAME=auto` `WATERMARK=auto` `WRITE_BACK=True` `BACKUP_ROOT=` | — | **禁止** |
+| **TS-Art-Translate** | **战令横幅中文美术字 → 英文版**：圈污染区擦字 → 逐行中位色 + 六边形纹理补底板 → 按已上线英文图层级排白字 → 六项像素验收 → 写回 `ArtFont_en` 并补 `.meta`。缺哪张补哪张 | `MODE=batch` `ASSET=` `FORCE=False` `WRITE=True` | — | **禁止** |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |
 | **TS-Server-Ops** | 服务端/区服运维动作统一入口 | `ACTION=health` `CONFIRM=` `REASON=` | — | 允许 |
 | **TS-Server-Release** | **服务端代码发包正式服**：切 release 分支 → JDK8 编译 → 与线上逐条目 CRC 比对 → 审批 → 备份 → 注入差异类 → 重启 → 上线自检 → **协议连通自检** → 回写发布记录 → 发布看板 → **异步触发 TS-Server-Health** | `ACTION=release` `SOURCE_BRANCH=x1-tag-1.2.2` `RELEASE_BRANCH=` `DEPLOY=False` `CONFIRM=` `AUTO_APPROVE=False` `ONLY_CLASSES=` `EXCLUDE_CLASSES=` `RESTART=gameserver` `PROTO_CHECK=True` `PROTO_LOGIN=False` `PROTO_OPERATOR=` `HEALTH_AFTER=True` `ALLOW_DIRTY=False` `PUSH_BRANCH=True` `ROLLBACK_DIR=` `NOTES=` `SEND_MAIL=False` | — | **禁止** |
@@ -589,6 +602,72 @@ $B .jenkins/lib/local_deploy.sh rollback ~/home/java/gameserver/backup/gameSrv-2
 
 > 红线不变：这个 job **只动本机**，与生产服 `129.226.213.65` 毫无关系。
 > 要发正式服请走 `TS-Server-Release`（默认 `DEPLOY=False` 演练）。
+
+---
+
+### 3.8 横幅美术字翻译（`TS-Art-Translate`，2026-10-21 新增）
+
+**要解决的问题**：`ArtFont_zh/OperatingPanelAtlas/` 下这批战令横幅（`cn2-X1_zhanling_*_bg_zh.png`）
+的标题和两行文案是**烘进图里的中文艺术字**（外发光 + 渐变 + 立体投影），TMP 文本做不出来，
+英文版只能**重出一张图**。手工做法是在 PS 里一块块擦、再仿一块底板出来——擦不干净会留粉色鬼影，
+底板接缝会出横条带。现在点一次构建就完成，**缺哪张补哪张，已存在的不动**。
+
+| # | 环节 | 干什么 | 判红 / 判黄 |
+|---|---|---|---|
+| ① | 环境与清单体检 | 打印口径与影响面（`evidence/context.txt`）+ `scan` 盘点全目录（「开工盘点」） | 永远不判红（`--strict-ok`） |
+| ② | 生成英文图 | 擦字 → 补底板 → 排白字，逐张出 `out.png` + `compare.png` | 尺寸不达标（占位图）⇒ **黄**（`rc=3`，跳过该张） |
+| ③ | 像素级验收 | 六条断言逐张跑 | 任一断言不符 ⇒ **红** |
+| ④ | 写回资源 | 覆盖 `ArtFont_en/...` 并补 `.meta`，原图先备份到 `ResBackpack/备份` | 已有英文版且未 `FORCE` ⇒ 跳过（黄） |
+| ⑤ | 收尾复核与证据归档 | 再扫一次（「收尾清单」）+ 把 `compare.png` / `out.png` / `state.json` 按 `名字__文件` 收进 `evidence/artifacts/` + 写 `manifest.txt` | 仍有待生成的图 ⇒ **黄**（`rc=3`） |
+
+六条断言（`verify`，全过才算通过）：
+
+| # | 断言 | 阈值 |
+|---|---|---|
+| 1 | 与中文源图**尺寸一致** | 完全相等 |
+| 2 | **alpha 通道逐字节一致** | 0 字节差异 |
+| 3 | **重建区外零改动** | 0 px |
+| 4 | 中文残留·粉色（`R-max(G,B) > 40`） | < 200 px |
+| 5 | 中文残留·黄色（`R,G > 150 且 B < 110`） | < 200 px |
+| 6 | 白字已排上（`min(R,G,B) > 200`） | > 2000 px |
+
+#### 参数
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `MODE` | `batch` | `batch` = 扫全目录，只补「缺英文版 **且** 译名表里有条目」的；`one` = 只做 `ASSET` 那一张 |
+| `ASSET` | 空 | `MODE=one` 时必填，中文源图相对工程根的路径 |
+| `FORCE` | `False` | 已有英文版的也重做（旧图先备份）。改了口径/译名时才勾 |
+| `WRITE` | `True` | 传 `False` 则只出图、不动工程里的资源（构建页 `compare.png` 照样能看） |
+
+译名**只认** `scripts/image/banner_translate_map.json`（单一真源，`_readme` 里写了口径）：
+译名优先取游戏自己的语言表（`迷雾计划 → The Mist Plan`、`累计返利 → Total Rebate`），
+并对齐**已上线的英文兄弟图**——它们去掉了第三行「累计返利」⇒ 新图也只排两行。
+
+#### 🔴 四个只有真跑才会发现的坑（都已修）
+
+| 现象 | 真因 | 修法 |
+|---|---|---|
+| 验收报「重建区外像素未被改动 — 越界改动 1832 px」 | 9px 的外发光**溢出**到 `ZONE_RIGHT=342` 之外 | 排字时用 `ImageChops.multiply(..., keep_mask)` 把光晕与字芯都裁在重建区内；`MAX_WIDTH` 330 → 306 |
+| `operands could not be broadcast (100,342,3) (100,100,1)` | `cn2-X1_zhanling_yiduan_bg2_zh.png` 是 **100×100 占位图** | `run` 加尺寸闸门（`w<600 or h<400` ⇒ `rc=3` 判黄跳过）；`zone_for()` 里 `min(ZONE_RIGHT, w)` |
+| 新生成的 `.meta` 让横幅**发虚** | 模板挑错了：`filterMode` 2 vs 1、`spriteMeshType` 1 vs 0、`applyGammaDecoding` 1 vs 0、`buildTarget` Android vs Default | `.meta` 按 **family** 选模板（先找同族 `*bg_en.png.meta`，再退到 `*_en.png.meta` / 中文同族），现在与 `pata_bg_en.png.meta` diff 只差 `guid` |
+| 报告里「英文版清单」**出现两行** | `run_stage.sh` 与 python 的 `register()` 各写了一次 | 只保留收尾那次登记；`scan` 加 `--quiet` 不写行 |
+
+> 还有一条语义坑：①「开工盘点」如果按「还有待生成的图」判黄，**每次构建都是黄球**（正常状态）。
+> ⇒ 盘点用 `--strict-ok` 永远通过，「没做完」的结论挪到 ⑤「收尾清单」用 `--warn-rc 3`。
+
+#### 实测（2026-10-21）
+
+| 构建 | 结果 | 说明 |
+|---|---|---|
+| #1 | UNSTABLE | `WRITE=False` 演练，出图 + 验收全过，黄是「本次不写回」 |
+| #2 | UNSTABLE | 环节本身全过，但 ①/② 都判黄 ⇒ 球色语义错（上一条坑） |
+| #4 | SUCCESS | **6 个环节全部通过**，补出 `mota` / `yiduan` 两张并写回 |
+
+> ⚠️ **范围限定**：只扫 `*_bg_zh.png`。`*_peitu_zh.png` 那批是纯配图、没有字，扫进来会误判。
+> ⚠️ **已知缺陷**：`x≈340..375` 那道**蓝色光带**压在蓝底上，用板块色或背景色都盖不干净，
+> 现在留成一块蓝色装饰块。要真正还原需要分层 PSD（手上的 `cn2-X1_zhanling_yiduan_bg_en.psd`
+> 只有 2 个合并层，用不上）。配方细节见 **`docs/art_banner_translate_skill.md`**。
 
 ---
 

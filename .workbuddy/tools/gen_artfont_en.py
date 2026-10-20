@@ -106,10 +106,11 @@ def solid(color, mask, a=255):
 
 def styled(text, box, fill, stroke=None, stroke_r=0, glow=None, glow_r=0,
            shadow=None, shadow_off=(0, 0), weight=W_BOLD, squeeze=1.0,
-           align='center', alpha=255):
+           align='center', alpha=255, rot=0.0):
     """
     生成带描边/发光/投影的文字图层。
     fill: (r,g,b) 或 [(pos,(r,g,b)),...] 渐变
+    rot: 整层绕 box 中心旋转的角度（正值逆时针），用于贴合倾斜的缎带
     """
     m, (x, y) = fit_mask(text, box, weight=weight, squeeze=squeeze, align=align)
     h = m.height
@@ -151,6 +152,11 @@ def styled(text, box, fill, stroke=None, stroke_r=0, glow=None, glow_r=0,
 
     if alpha < 255:
         layer.putalpha(layer.getchannel('A').point(lambda v: int(v * alpha / 255)))
+    if abs(rot) > 1e-3:
+        cx = box[0] + (box[2] - box[0]) / 2.0
+        cy = box[1] + (box[3] - box[1]) / 2.0
+        layer = layer.rotate(rot, resample=Image.BICUBIC, expand=True)
+        return layer, (cx - layer.width / 2.0, cy - layer.height / 2.0)
     return layer, (x - pad, y - pad)
 
 
@@ -214,83 +220,180 @@ def erase_glyphs(img, boxes, bright=150, blur_rows=0):
 
 
 
-def ribbon_polygon(img, x0=240, x1=662, pad=6):
-    """用“亮->暗 / 暗->亮”过渡拟合缎带上下边线，返回覆盖多边形的四个角点"""
-    lum = np.array(img.convert('RGB')).max(2).astype(int)
-    H = lum.shape[0]
-    tops, bots = [], []
-    for x in range(x0, x1):
-        col = lum[:, x]
-        t = b = None
-        for y in range(3, H - 3):
-            if col[y] < 80 and col[y - 3] > 130:
-                t = y
-                break
-        for y in range(H - 4, 2, -1):
-            if col[y] < 80 and col[y + 3] > 130:
-                b = y
-                break
-        if t is not None and b is not None and b - t > 40:
-            tops.append((x, t))
-            bots.append((x, b))
-
-    def robust(pts):
-        xs = np.array([p[0] for p in pts], float)
-        ys = np.array([p[1] for p in pts], float)
-        for _ in range(8):
-            k, c = np.polyfit(xs, ys, 1)
-            res = np.abs(ys - (k * xs + c))
-            keep = res <= np.percentile(res, 80)
-            if keep.sum() < 10:
-                break
-            xs, ys = xs[keep], ys[keep]
-        return k, c
-
-    kt, bt = robust(tops)
-    kb, bb = robust(bots)
-    return [(x0, kt * x0 + bt - pad), (x1, kt * x1 + bt - pad),
-            (x1, kb * x1 + bb + pad), (x0, kb * x0 + bb + pad)]
-
-
-def erase_to_black(img, boxes, cover=None, feather=9):
+def banner_ribbon(img):
     """
-    横幅场景：
-      1) 直接用一条黑色缎带多边形把原中文字形整体盖掉（缎带本身是纯黑，加厚不可见）
-      2) 漏在缎带外、压到黄色底上的字形残片（含黑色描边）用 inpaint 抹掉
-    cover = (center, (w, h), angle) 旋转矩形
+    求横幅里那条黑色缎带的精确掩膜。
+    缎带是纯黑的大连通块，中文字形压在它上面（白/橙填充 + 黑描边），
+    所以对黑色连通块做“填洞”就能把字形区域也算进缎带内部。
+    返回 (filled, comp, rect) —— filled 含洞，comp 只有原始黑像素，rect 是 minAreaRect
+    """
+    arr = np.array(img.convert('RGBA')).astype(np.uint8)
+    rgb = arr[:, :, :3].astype(int)
+    al = arr[:, :, 3]
+    lum = rgb.max(2)
+
+    dark = ((lum < 80) & (al > 200)).astype(np.uint8)
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(dark, 8)
+    idx = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    comp = (lab == idx).astype(np.uint8)
+
+    ff = comp.copy()
+    m2 = np.zeros((ff.shape[0] + 2, ff.shape[1] + 2), np.uint8)
+    cv2.floodFill(ff, m2, (0, 0), 1)
+    holes = (ff == 0).astype(np.uint8)
+    filled = comp | holes
+
+    cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    rect = cv2.minAreaRect(max(cnts, key=cv2.contourArea))
+
+    # 用 PCA 求缎带长轴方向（文字要沿这个方向排）
+    ys, xs = np.nonzero(filled)
+    pts = np.stack([xs - xs.mean(), ys - ys.mean()], 1).astype(np.float32)
+    cov = pts.T @ pts / len(pts)
+    evals, evecs = np.linalg.eigh(cov)
+    v = evecs[:, int(np.argmax(evals))]
+    if v[0] < 0:
+        v = -v
+    ang = float(np.degrees(np.arctan2(v[1], v[0])))
+    # 沿轴 / 垂直轴的尺度
+    proj = pts @ v
+    perp = pts @ np.array([-v[1], v[0]])
+    length = float(np.percentile(proj, 99.5) - np.percentile(proj, 0.5))
+    thick = float(np.percentile(perp, 99.5) - np.percentile(perp, 0.5))
+    center = (float(xs.mean()), float(ys.mean()))
+    return filled.astype(bool), comp.astype(bool), dict(angle=ang, length=length,
+                                                        thick=thick, center=center,
+                                                        rect=rect)
+
+
+def _roll_median(v, win):
+    n = len(v)
+    half = win // 2
+    out = np.empty(n)
+    for i in range(n):
+        out[i] = np.median(v[max(0, i - half):min(n, i + half + 1)])
+    return out
+
+
+def ribbon_band(comp, pad=3, win=41):
+    """
+    去掉“中文字形笔画冒出缎带”造成的锯齿边：对每一列的上下边界做滑动中值，
+    短促的尖刺（笔画）会被抹平，缎带本身的斜边与尖角保留。
+    """
+    H, W = comp.shape
+    top = np.full(W, np.nan)
+    bot = np.full(W, np.nan)
+    for x in range(W):
+        ys = np.nonzero(comp[:, x])[0]
+        if len(ys) >= 8:
+            top[x], bot[x] = ys.min(), ys.max()
+    ok = ~np.isnan(top)
+    if ok.sum() < 20:
+        return comp | cv2.dilate(comp.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+    X = np.arange(W)
+    top = np.interp(X, X[ok], top[ok])
+    bot = np.interp(X, X[ok], bot[ok])
+    top = _roll_median(top, win) - pad
+    bot = _roll_median(bot, win) + pad
+    yy = np.arange(H)[:, None]
+    band = (yy >= top[None, :]) & (yy <= bot[None, :])
+    # 只保留与缎带相交的区域，避免把尖端外的空白也算进来
+    near = cv2.dilate(comp.astype(np.uint8), np.ones((7, 7), np.uint8)).astype(bool)
+    return band & near
+
+
+def erase_to_black(img, boxes, feather=6, ribbon=None):
+    """
+    横幅场景：缎带本身是纯黑，且中文字形基本落在缎带内部，
+    所以只要把“字形像素 + 其黑描边”涂黑，缎带就恢复成一块干净的黑色。
+    字形冒出缎带边线的那点笔画，用周围黄色底板回填。
     """
     arr = np.array(img).astype(np.uint8)
     rgb = arr[:, :, :3].astype(int)
     al = arr[:, :, 3]
     lum = rgb.max(2)
     mn = rgb.min(2)
+    mx = lum
 
-    white = (mn > 150) & (al > 200)
-    orange = (rgb[:, :, 0] > 190) & (rgb[:, :, 1] > 60) & (rgb[:, :, 1] < 175) & \
-             (rgb[:, :, 2] < 100) & (al > 200)
+    filled, comp, info = banner_ribbon(img) if ribbon is None else ribbon
+
+    # 白色字：接近中性色（避免把亮黄高光当白字）
+    white = (mn > 145) & ((mx - mn) < 45) & (al > 200)
+    # 橙色字
+    orange = (rgb[:, :, 0] > 185) & (rgb[:, :, 1] > 60) & (rgb[:, :, 1] < 180) & \
+             (rgb[:, :, 2] < 110) & (al > 200)
     glyph = white | orange
 
-    bm = np.zeros(lum.shape, bool)
-    for (x0, y0, x1, y1) in boxes:
-        bm[y0:y1, x0:x1] = True
-    glyph &= bm
+    inner = cv2.erode(filled.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+    glyph &= inner
+
     glyph_big = cv2.dilate(glyph.astype(np.uint8),
                            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (feather * 2 + 1,) * 2)).astype(bool)
 
+    band = ribbon_band(comp)
     out = arr.copy()
-    rmask = np.zeros(lum.shape, np.uint8)
-    if cover:
-        poly = np.array(cover, np.int32) if isinstance(cover[0], (list, tuple)) \
-            else cv2.boxPoints(cover).astype(np.int32)
-        cv2.fillPoly(rmask, [poly], 1)
-        out[rmask.astype(bool), :3] = (0, 0, 0)
+    out[glyph_big & inner & band, :3] = (0, 0, 0)
 
-    rest = glyph_big & (rmask == 0)
-    if rest.any():
+    # 冒出边线之外的笔画（含其白填充与黑描边）：从周围底板 inpaint 回来
+    spill_src = cv2.dilate(glyph.astype(np.uint8),
+                           cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))).astype(bool)
+    spill = spill_src & ~band
+    spill = cv2.dilate(spill.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool) & ~band
+    if spill.any():
         bgr = cv2.cvtColor(out[:, :, :3], cv2.COLOR_RGB2BGR)
-        bgr = cv2.inpaint(bgr, (rest.astype(np.uint8) * 255), 7, cv2.INPAINT_TELEA)
+        bgr = cv2.inpaint(bgr, (spill.astype(np.uint8) * 255), 6, cv2.INPAINT_TELEA)
         out[:, :, :3] = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     return Image.fromarray(out, 'RGBA')
+
+
+def text_line_layer(segs, cap_h, gap, stroke=None, stroke_r=0,
+                    shadow=None, shadow_off=(0, 0), squeeze=1.0):
+    """
+    把若干段（不同颜色）文字排成一行，返回一张未旋转的 RGBA 图层。
+    segs: [dict(text=..., fill=(r,g,b), weight=W_BLACK), ...]
+    垂直方向以文字墨迹中心对齐。
+    """
+    # 先按自然比例算出每段宽度（保证高度一致 = cap_h）
+    widths = []
+    for s in segs:
+        m = text_mask(s['text'], weight=s.get('weight', W_BLACK))
+        widths.append(max(1, int(round(m.width * cap_h / m.height))))
+
+    pad = int(max(stroke_r, 12) * 3 + 16)
+    W = sum(widths) + gap * (len(segs) - 1) + pad * 2
+    H = cap_h + pad * 2
+    layer = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+
+    cursor = pad
+    for s, w in zip(segs, widths):
+        lay, pos = styled(s['text'], (cursor, pad, cursor + w, pad + cap_h),
+                          s['fill'], stroke=stroke, stroke_r=stroke_r,
+                          shadow=shadow, shadow_off=shadow_off,
+                          weight=s.get('weight', W_BLACK), squeeze=1.0)
+        stamp(layer, lay, pos)
+        cursor += w + gap
+    return layer
+
+
+def draw_banner_text(img, info, segs, cap_ratio=0.52, width_ratio=0.88,
+                     stroke=None, stroke_r=8, shadow=None, shadow_off=(8, 8),
+                     squeeze=1.0, dy=0.0):
+    """在已擦干净的缎带上，沿缎带方向排一行英文"""
+    cap_h = max(8, int(round(info['thick'] * cap_ratio)))
+    layer = text_line_layer(segs, cap_h, int(cap_h * 0.30), stroke=stroke,
+                            stroke_r=stroke_r, shadow=shadow, shadow_off=shadow_off,
+                            squeeze=squeeze)
+    max_w = info['length'] * width_ratio
+    ink_w = layer.width
+    if ink_w > max_w:
+        k = max_w / ink_w
+        layer = layer.resize((max(1, int(layer.width * k)), max(1, int(layer.height * k))),
+                             Image.LANCZOS)
+    if abs(info['angle']) > 0.4:
+        layer = layer.rotate(info['angle'], resample=Image.BICUBIC, expand=True)
+    cx, cy = info['center']
+    stamp(img, layer, (cx - layer.width / 2.0, cy - layer.height / 2.0 + dy))
+    return img
 
 
 # ---------------------------------------------------------------- 通用绘制件
@@ -339,19 +442,22 @@ def do_tab_selected(entry):
 
 def do_banner(entry):
     img = Image.open(os.path.join(SRC, entry['file'])).convert('RGBA')
-    cover = entry.get('cover') or ribbon_polygon(img, *entry.get('cover_x', (240, 662)))
-    img = erase_to_black(img, entry['erase'], cover=cover)
-    for t in entry['texts']:
-        lay, pos = styled(t['text'], t['box'], t['fill'],
-                          stroke=t.get('stroke', (0, 0, 0)),
-                          stroke_r=t.get('stroke_r', 0),
-                          shadow=t.get('shadow'),
-                          shadow_off=t.get('shadow_off', (0, 0)),
-                          weight=t.get('weight', W_BLACK),
-                          squeeze=t.get('squeeze', 1.0),
-                          glow=t.get('glow'), glow_r=t.get('glow_r', 0))
-        stamp(img, lay, pos)
-    return img
+    filled, comp, info = banner_ribbon(img)
+    H, W = filled.shape
+    base = erase_to_black(img, [B(0, 0, W, H)], ribbon=(filled, comp, info))
+    out = draw_banner_text(base.copy(), info, entry['segs'],
+                           cap_ratio=entry.get('cap_ratio', 0.52),
+                           width_ratio=entry.get('width_ratio', 0.88),
+                           stroke=entry.get('stroke', (0, 0, 0)),
+                           stroke_r=entry.get('stroke_r', 8),
+                           shadow=entry.get('shadow'),
+                           shadow_off=entry.get('shadow_off', (8, 8)),
+                           dy=entry.get('dy', 0.0))
+    # 文字/投影一旦跑出缎带就会糊到黄色底板上，这里把缎带以外的像素还原
+    a_out = np.array(out)
+    a_base = np.array(base)
+    a_out[~filled] = a_base[~filled]
+    return Image.fromarray(a_out, 'RGBA')
 
 
 def do_glow_title(entry):
@@ -399,29 +505,17 @@ TABS = [
 
 BANNERS = [
     dict(file='cn2-X1_xianquhuodong_duihuanxianqu_zh.png', kind='banner',
-         erase=[B(225, 15, 675, 152)],
-         cover=((445, 80), (432, 126), -16),
-         texts=[dict(text='Redeem', box=B(258, 42, 452, 138),
-                     fill=(246, 108, 18), stroke=(0, 0, 0), stroke_r=7,
-                     shadow=(110, 40, 0, 110), shadow_off=(7, 7), squeeze=0.95),
-                dict(text='Pioneer!', box=B(452, 42, 655, 138),
-                     fill=WHITE, stroke=(0, 0, 0), stroke_r=7,
-                     shadow=(70, 70, 70, 110), shadow_off=(7, 7), squeeze=0.95)]),
+         segs=[dict(text='Redeem', fill=(246, 108, 18)),
+               dict(text='Pioneer!', fill=WHITE)],
+         stroke=(0, 0, 0), stroke_r=8, shadow=(0, 0, 0, 120), shadow_off=(8, 8)),
     dict(file='cn2-X1_xianquhuodong_huoqudaoju_zh.png', kind='banner',
-         erase=[B(225, 15, 675, 152)],
-         cover=((445, 80), (432, 126), -16),
-         texts=[dict(text='Get', box=B(258, 42, 420, 138),
-                     fill=(246, 108, 18), stroke=(0, 0, 0), stroke_r=7,
-                     shadow=(110, 40, 0, 110), shadow_off=(7, 7), squeeze=0.95),
-                dict(text='Items!', box=B(420, 42, 655, 138),
-                     fill=WHITE, stroke=(0, 0, 0), stroke_r=7,
-                     shadow=(70, 70, 70, 110), shadow_off=(7, 7), squeeze=0.95)]),
+         segs=[dict(text='Get', fill=(246, 108, 18)),
+               dict(text='Items!', fill=WHITE)],
+         stroke=(0, 0, 0), stroke_r=8, shadow=(0, 0, 0, 120), shadow_off=(8, 8)),
     dict(file='cn2-X1_xianquhuodong_yiduihuan_zh.png', kind='banner',
-         erase=[B(300, 20, 600, 150)],
-         cover=((445, 80), (430, 122), -15),
-         texts=[dict(text='Redeemed', box=B(320, 45, 580, 132),
-                     fill=(236, 236, 238), stroke=(0, 0, 0), stroke_r=7,
-                     shadow=(50, 50, 50, 110), shadow_off=(7, 7), squeeze=0.92)]),
+         segs=[dict(text='Redeemed', fill=WHITE)],
+         stroke=(0, 0, 0), stroke_r=8, shadow=(0, 0, 0, 120), shadow_off=(8, 8),
+         cap_ratio=0.5),
 ]
 
 GLOW = [

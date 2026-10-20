@@ -153,3 +153,9 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode 'json={"parameter":[]}' \
   （本机全局 git 身份就是 `AI Assistant <992694856@qq.com>`）。动手前先看 `git status` + `git reflog`。
 
 
+
+## 打包目录（2026-10-20 起，详见 docs/jenkins_ci.md §11）
+- 打包类 job（Android-Release / Android-TestPackage / Resource-Build）PROJ = `/Users/wangxufeng/Documents/TimeSpaceGirl1-build`（独立 clone，origin=GitHub）。开发目录开 Unity 不再阻塞打包（占用检查按 -projectpath 精确匹配）。
+- ①-1 阶段跑 `.jenkins/ci_sync.sh`：fetch → stash 快照 → reset --hard origin/release → 镜像 .secrets/keystore/TimeSpaceServer。防呆标记 `.jenkins/run/.CI_BUILD_DIR`。**开发目录未 push 的改动打不进包**。
+- 🔴 rsync 播种/镜像必须 `--inplace`（沙箱拦 rename）；Library/AB 一次性播种后由打包目录自维护。
+- 其余 job 仍在开发目录，未切。

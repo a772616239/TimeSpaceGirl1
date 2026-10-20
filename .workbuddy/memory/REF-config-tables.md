@@ -21,3 +21,17 @@
 ## 客户端压缩表解码
 - 解码器 `~Lua/Framework/GameDataBase.lua decodeList`：`__indexs/__values/__refs/__refPoss` + LZ 式十进制重复 + 末位累计和。
 - 🔴 比对前**必须归一化行尾 TAB / CR**，否则全表逐行 diff 全是假差异。
+
+## 🔴 导表三个已知坑（2026-10-20 实测）
+1. **服务端 txt 输出目录是错的**：`DataConfigSetting.serverOutputDir` 硬编码
+   `TimeSpaceServer/skzc/home/java/gameserver/conf/server`（2026-09-20 的老结构影子目录），
+   真实服务端仓在 `TimeSpaceServer/Server_x1tag1.2.2/server_game/conf/server/`（独立 git 仓，分支 `x1-tag-1.2.2`）。
+   ⇒ 导表产出的服务端配置**不会进真实仓**，必须另行同步。
+2. **`DataToTxtExporter` 曾在每行末尾多写一个 TAB**（`sw.Write(val+"\t")` 后才 WriteLine）⇒ 288 个 txt 全部
+   `1,Nc1,N` 整文件差异。2026-10-20 已改为 `string.Join("\t", cells)`（首尾不留 TAB）。
+3. **列漂移是真的会发生的**：`RechargeCommodityConfig` xlsx 43 列 → 33 个服务端字段，但服务端仓 txt 只有 32 列，
+   缺 `SystemMessageShow`（Java `SRechargeCommodityConfig`/`BuyGoodsLogic` 已引用）⇒ 判断「多一列」前先看是不是
+   仓里的 txt 落后于代码。
+- 导表是**确定性**的：全量重导后若只有你改过的表变化，说明其余 283 张与已提交 lua 逐字节一致（可当回归判据）。
+- 导表只写 `~Lua` + 服务端 txt，**不写 LuaBytes**；字节码必须另跑 `scripts/lua-bytes-sync.sh`（自动取 git 改动集）。
+- 导表会被 Unity GUI 占用挡住：`scripts/resource_build.sh` 的占用检查 2026-10-20 已修（旧版大小写不匹配 + 条件写反，从来没拦过）。

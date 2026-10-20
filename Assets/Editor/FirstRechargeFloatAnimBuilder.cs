@@ -30,7 +30,8 @@ public static class FirstRechargeFloatAnimBuilder
     private const string LegacyClipPath = AnimDir + "/cn2-X1_UI_FirstRechargePanel.anim";
 
     // 基准值 = prefab 里对应 RectTransform 的 anchoredPosition.y，曲线写的是绝对值，必须对齐
-    private const float BaseTabsY = 156.64f;
+    // BaseTabsY 只用于注释对照：tabsContent 现在不允许做位置动画（它压在底图镂空上，见 BuildNormalClip 注释）
+    private const float BaseTabsY = 153.5f;
     private const float BaseRewardBgY = -226.18f;
     private const float BaseRechargeBtnY = -600f;
     private const float BaseTipsY = -462f;
@@ -151,9 +152,10 @@ public static class FirstRechargeFloatAnimBuilder
         Scale(clip, "frame", new[] { 0f, 0.1333f, 0.2167f, 0.3167f }, new[] { 1f, 1.2f, 0.95f, 1f });
         Scale(clip, "hero", new[] { 0f, 0.0667f, 0.2667f, 0.3667f }, new[] { 1f, 1.3f, 0.95f, 1f });
 
-        // tab 条
-        Scale(clip, "frame/tabsContent", new[] { 0.30f, 0.42f, 0.52f }, new[] { 0.85f, 1.06f, 1f });
-        Float(clip, "frame/tabsContent", "m_AnchoredPosition.y", new[] { 0.30f, 0.52f }, new[] { BaseTabsY + 20f, BaseTabsY });
+        // tab 条：底图 BG 在 y 101.5~156.5 是一整条全透明镂空，tab 条就贴在这个洞上。
+        // 所以它只能"放大"（永远盖住洞），绝不能缩小或上移，否则洞的底边会漏出背景，
+        // 看起来就是一条 1~2px 的杂色缝（踩过一次，别再加 Float）。
+        Scale(clip, "frame/tabsContent", new[] { 0.30f, 0.42f, 0.52f }, new[] { 1f, 1.08f, 1f });
 
         // 奖励区
         Scale(clip, "frame/rewardBg", new[] { 0.40f, 0.52f, 0.62f }, new[] { 0.88f, 1.05f, 1f });

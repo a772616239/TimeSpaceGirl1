@@ -79,3 +79,10 @@ Assets/_Recovery.meta
 #   scripts/image/restyle_pipeline.py restore --asset <资源路径>
 ResBackpack/
 _output
+
+# 配置表改版备份：base_data 是导表工具的输入目录，备份放这里会被当成表扫到，
+# 也会被打包进工程。统一放工程外：~/Documents/TimeSpaceGirl1-config-bak/
+# （脚本走 scripts/backup_paths.py，可用 TSG_CONFIG_BACKUP_ROOT 覆盖）
+data_execl/base_data/_backup_*/
+data_execl/base_data/_backup_*/*.xlsx
+!data_execl/base_data/*.xlsx

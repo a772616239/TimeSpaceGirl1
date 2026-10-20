@@ -12,3 +12,22 @@
 - 🔴 卡框最外圈必须有亮边（`--frame-rim`，默认暖金）：判据＝亮边与底亮度差 ≥100；框线用多边形掩膜 `_ring_paste`，**不用** `ImageDraw.line(width=…)`（磨圆切角、互相盖住）。
 - 🔴 **统一用紫框**：`FRAME=card` + `FRAME_RIM=violet`（登录底板定稿那档紫白），不要再回 warm/gold；`FRAME=card` 走 inset（画面缩进框内）。
 - 🔴 **默认直接替换源图 + 原图搬备份**（用户明确要求，不必再问）：`publish --variant alpha --yes`（或 Jenkins `WRITE_BACK=true`）→ 原图进 `ResBackpack/备份/<资源相对路径>`、`_manifest.jsonl` 记台账、`.meta` 不动；回滚 `restyle_pipeline.py restore --asset <资源>`。浮层类资源要用 `ALPHA_MODE=keep` 才能得到完整框（source 掩膜会把顶/底边的框切掉）。
+- 🔴 **free 构图的「姿势」是主题候选池随机抽，不是模型随机**：曾经 `theme_presets.json` 里写死单条
+  `pose_hint="… presenting a small gift box …"`，被 `build_prompt` 原样注入 ⇒ 每张 free 图都是同一个抱礼盒姿势
+  （四主题全中：圣诞礼盒 / 新年红包 / 万圣南瓜灯 / 情人节心形气球）。现为 `pose_hints` 数组 + 每次 `random.choice`，
+  `--pose N` 指定 / `--pose none` 关闭 / 其它文字自定义；`COMPOSITIONS["free"]` 加硬约束 *Hands must stay EMPTY:
+  never invent an object and put it in her hands*。**LAYOUT 里绝不再写「拿着 X」**（等于把随机池钉死）；
+  实选的那句记在 `state.json.pose_hint`，Jenkins 侧同名参数 `POSE`。`lock` 构图不注入姿势。
+- **8 个主题在册**（`scripts/image/theme_presets.json`）：christmas / newyear / halloween / valentine /
+  summer_surf(夏日冲浪) / provence(普罗旺斯) / thanksgiving(感恩节) / cyber(赛博朋克)。**加主题只改预设，不改代码**；
+  必填字段见 `docs/art_restyle_themes.md` §4，出图前必须 `restyle_pipeline.py themes --check` 绿。
+- 🔴 `themes --check` 的判据（都是踩过的）：必填字段 / 拼错的未知字段 / suffix 小写且唯一 /
+  palette≥3、body_colors 正好 2 且 #RRGGBB / **英文字段混中文会让模型画汉字** /
+  pose_hints 出现手持动词但没标 `(opt-in prop)` / decor_sentence 需 replace 开头。
+- 批量：`scripts/image/batch_restyle.py` + 清单 `batch_example.json`（`--dry-run`/`--only`/`--no-gen`/`--publish`）。
+  `assets` 支持 glob ⇒ **同套 UI 的 zh/en/jp 必须一起换**（只换一份＝花脸）。出图单浏览器串行，别抢同一 CDP 端口；
+  N 资产 × M 主题 = N×M 份额度；gen rc=3（额度/登录）停整批，去 AdsPower 换 profile + `find_browser_cdp.py` 反查端口。
+  `variant=auto`：源 RGB→opaque、RGBA→alpha。汇总 `_output/art_restyle/_batch/<戳>/summary.md`。
+- 主题参数配方（按图的形态，不按主题选）：整幅不透明底板＝keep+violet 框；浮层＝keep（**不能 source**，否则框上下边被切）；
+  超长条＝`--hero-band 930 --body-mode source`；自带亮带/渐隐/空文案板＝`--frame none --watermark off` + `refit_band.py`。
+  深底主题（cyber）与低饱和主题（provence）紫框会糊 ⇒ `FRAME_RIM=ivory`。

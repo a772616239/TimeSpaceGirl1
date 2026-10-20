@@ -76,17 +76,16 @@ IP 库：`GeoLite2-Country.mmdb` + `GeoLite2-ASN.mmdb`（P3TERX 免 key 镜像�
 |---|---|
 | 缺国籍 | 205 |
 | 有 IP 证据 | 41 |
-| **已写入** | **36** |
-| 跳过：纯机房/机场 IP | 5 |
+| **已写入** | **41**（36 个真实 ISP + 5 个机场 IP，后者经用户确认一并写入） |
 | 跳过：无任何 IP 证据 | 164 |
 
-写后校验：`有国籍 39 / 总 208`（3 个原有 + 36 个新写）。
+写后校验：`有国籍 44 / 总 208`（3 个原有 + 41 个新写）。
 
-国家分布（36 个）：`jp:5, br:5, tw:4, us:4, vn:3`，其余 `ua/sa/kr/iq/fr/la/bg/ca/de/dk/id/ch/lk/cn/sg` 各 1。
+国家分布（44 个）：`jp:6, us:5, br:5, tw:4, vn:3, hk:3`，其余 `ua/sa/kr/iq/fr/la/bg/ca/de/dk/id/ch/lk/cn/sg/ph/ad/bd` 各 1。
 
-### 待人工确认（VPN 落地国）
+### 机场 / VPN 号（已按用户要求写入）
 
-| uid | 昵称 | lv | IP 判定 | ASN |
+| uid | 昵称 | lv | 写入 | ASN |
 |---|---|---|---|---|
 | 10000001 | RandyFan | 24 | jp | IKUUU NETWORK LTD |
 | 10000049 | 罗伊安德烈 | 2 | hk | IKUUU NETWORK LTD |
@@ -94,7 +93,8 @@ IP 库：`GeoLite2-Country.mmdb` + `GeoLite2-ASN.mmdb`（P3TERX 免 key 镜像�
 | 10000232 | 所罗门莱恩 | 10 | hk | IKUUU NETWORK LTD |
 | 10000234 | FinnBowen | 1 | ph | Google LLC（云主机） |
 
-要一并写入：`python3 scripts/backfill_player_country.py --apply --include-vpn`。
+⚠️ 这 5 个的国籍是**节点落地国**，不是玩家真实所在地；玩家在面板里改一次就会覆盖。
+审计集合里 `vpn:true` 可单独筛出来。
 
 ### 164 个无证据的为什么补不了
 
@@ -138,15 +138,53 @@ mongorestore --uri "$URI" --drop --collection user \
 db.user.updateMany({_id:{$in:[...]}},{$unset:{"playerManager.country":""}})
 ```
 
-本次备份：`/root/ts-country-backup-20261020-131519`（111M）。
+本次备份：`/root/ts-country-backup-20261020-131519`（写 36 个前）、
+`/root/ts-country-backup-20261020-132809`（补写 5 个机场号前）。
 
 ---
 
-## 6. 注意 / 后续
+## 6. 🔴 改完库看不到旗？因为服务端内存是常驻的
+
+第一次写完库，排行榜和聊天框**依然是空旗**。原因不在数据，在缓存：
+
+```
+GsCommonDataLoader.loadUserData()
+    → mongoTemplate.findAll(User.class)   // 启动时把全部玩家读进 static ConcurrentHashMap
+    → UserManager.addUser(user)
+```
+
+榜单和聊天取国旗的两条路径都读这份内存：
+
+| 场景 | 代码 | 数据源 |
+|---|---|---|
+| 排行榜每行 | `AbstractRank.getAllUserResponse` → `UserManager.getUser(uid)` | 内存 |
+| 聊天气泡 | `ChatLogic.fillSenderCountry` → `getUserInMem(senderId)` | 内存 |
+
+本来有 `UserManager.checkOffline()`（离线 10h 踢出内存，下次 `getUser()` 重新读库），
+但它在 `OnlineUserManager:23` **被注释掉了**：
+
+```java
+//        UserManager.checkOffline();
+```
+
+⇒ 内存里的旧值会一直用到进程重启。**改玩家文档（任何字段）都必须重启才生效**，
+除非走 `reload_role_gm <uid>` 单角色重载（`Cmd_reload_role_gm`：findById 后 `addUser` 覆盖内存）。
+
+本次处理：`RESTART-GAMESERVER.sh`（13:28，实例数 1 / 认证失败 0 / 端口正常），
+重启后 `findAll` 带着 `country` 重新载入，旗帜即时可见。
+
+> 附带发现：重启后 uid 10000248 的 `country` 从 `cn` 变成 `bd` —— 是玩家自己在面板改的，
+> 说明 `SetPlayerCountryRequest` 写入链路正常，不是客户端问题。
+
+---
+
+## 7. 注意 / 后续
 
 | 项 | 说明 |
 |---|---|
-| **在线玩家看不到旗** | 写的是库，服务端内存里的 `PlayerManager.country` 还是空 ⇒ 该玩家**重登后**才生效（其他人看到的是排行榜下发的实时值，重登后也正常） |
+| **改玩家文档必须重启** | 玩家对象启动时全量进内存，`checkOffline()` 被注释 ⇒ 不重启不生效。单角色应急用 `reload_role_gm <uid>` |
 | **IP 口径 ≠ 真实国籍** | 跨境、出差、VPN 都会偏；这是 IP 归属地的固有误差，报告里保留了每个 IP 供复核 |
-| **建议补登录 IP 落库** | 在 `LoginRequestHandler` 里加一行 `playerManager.setIp(session远端地址)`，以后就不用靠访问日志考古了；**要重启游戏服（会踢线），需单独确认** |
+| **164 个仍然没旗** | 无 IP 证据，只能等他们登录后重跑脚本；或让客户端首次登录自动上报设备地区（见下） |
+| **建议客户端自动上报** | `CountryRankManager` 在服务端 `country` 为空时，用 `device_country` 自动发一次 `SetPlayerCountryRequest`。一次改动永久解决"人人没国籍"，但要重新出包 |
+| **建议补登录 IP 落库** | 在 `LoginRequestHandler` 里加一行 `playerManager.setIp(远端地址)`，以后不用靠访问日志考古；**要重启，需单独确认** |
 | **可做成每日任务** | 脚本幂等，挂 cron 每天跑一次即可自动补新玩家；属于系统变更，未擅自安装 |

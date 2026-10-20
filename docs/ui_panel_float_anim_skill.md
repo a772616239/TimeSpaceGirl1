@@ -3,7 +3,8 @@
 > 适用范围：TimeSpaceGirl1 项目（Unity 6000.6.5f1）
 > 更新时间：2026-10-20（第 4/5 次落地后重整：体检脚本 + 十坑 + 三层验收 + 附录 E 页签翻入）
 > 工具：`.workbuddy-ai/skills/ui-panel-float-anim/scripts/`
-> （`audit_panel.py` 体检 / `gen_float_anim_yaml.py` 生成 / `dump_prefab_tree.py` 看层级 / `UIPanelFloatAnimBuilder.template.cs` Unity 版）
+> （`audit_panel.py` 体检 / `dump_clip.py` 把 .anim 读成分镜表 / `gen_float_anim_yaml.py` 生成 /
+> `dump_prefab_tree.py` 看层级（`--rect` 看锚点 pivot）/ `UIPanelFloatAnimBuilder.template.cs` Unity 版）
 > 现成实现：`FirstRechargePanel`、`SupremeHeroPopup`、`ExpertPanel`、`DailyRechargePanel(原版)`
 >
 > 📎 本篇是**配方 + 逐面板落地记录**。要"拿别人的动画来复刻"，先看流程篇 **`ui_anim_reproduce_skill.md`**
@@ -616,3 +617,65 @@ DOTween 默认在 `Update`。Animator 后写 ⇒ tween 被每帧盖回去，现�
 > 同轮把根节点上那份「整面板 start 弹入 + normal 呼吸」的 Animator 撤了（方向搞错的那一版）：
 > prefab 回滚到加 Animator 之前（对象数 3071 → 3070，`m_Component` 少一条 + 文件尾 `!u!95` 整块删除），
 > clip/controller 资源留在库里不引用。现在这个面板的开启动画只有：**内容区落位 + 页签逐格翻入 + 高亮板翻入**。
+
+---
+
+## 附录 G：经营面板 OperatingPanel（2026-10-20，**Lua 驱动**，复用附录 F 的流程）
+
+按 `ui_anim_reproduce_skill.md` 的流程走第二遍，参考仍是 `cn2-X1_UI_SevenDayCarnivalPanelV2.anim`
+（9 条曲线：7 条 `m_LocalScale.x` + 2 条 `bg` 的 `m_FloatCurves`）。
+
+**S0 体检（`audit_panel.py` + `dump_prefab_tree.py --rect` + `dump_clip.py`）**
+
+| 节点 | 实况 | 处理 |
+|---|---|---|
+| `bg/Image` | 四边拉满、**有 sprite**、黑 alpha 0.502 | **不动**（不是纯色遮罩，参考那套"遮罩淡入"在本面板没有对应物） |
+| `bg/pageContent` | 透明容器，四边拉满 / pivot 0.5 / 基准 `(0,0)`，挂 14 个子页 | 落位写它（几何与参考的 `bg` 等价，且看得见） |
+| `bg/tabList` | ScrollRect，`viewPort` 有 RectMask2D，`tabsContent` 挂 VerticalLayoutGroup + ContentSizeFitter | 不写位置 |
+| `tabsContent/tabs_1..19` | **静态节点**（不是运行时克隆），每个挂 `CommonButton` 的 Animator | 只写 scaleX，翻入期间临时 `enabled=false` |
+| `bg/btnBack` | 自带 `CommonButton` 控制器 | 本次不写 |
+
+**面板已自带的动画（必须通道互斥，一律不碰）**：
+
+| clip | 挂了谁 | 写了什么 |
+|---|---|---|
+| `cn2-X1_UI_OperatingPanel_page_2` / `_page_8` | `page_2` / `page_8` 上的 legacy `Animation` | `smallImg/Image` 旋转（0→0.1667s）+ `m_Color.a` 0.56→1，loop=1（装饰循环） |
+| `cn2-X1_UI_OperatingPanel_Page_7` | `page_7` | 页面内入场：`Panel/buyPart` scale 0→1、`Panel/reward`/`Panel/Bg` 的 y、`Panel/Bg` alpha |
+| `cn2-X1_UI_Operatingpanel_pageContent_page_12` | `page_12` | 页面内入场：`btnBuy` scale、`title`/`itemGrid`/`Image1` 的 y |
+| `cn2-X1_UI_Operatingpanel_pageContent_page_10` | `page_10` | **空 clip**（0 条曲线，死组件） |
+| `UI_effect_OperatingPanel_normal` | 未被引用 | `fire01..05` 的 `material._MainTex_ST` UV 滚动（火光） |
+
+**为什么仍走 Lua 而不是静态 clip**（页签明明是静态节点）：
+
+| 判据 | 本面板 |
+|---|---|
+| 激活态由代码切换 | `RefreshTabStatus` 按活动开放状态 `SetActive`（福利 9 个 / 激励计划 5 个，且随活动开关变化）⇒ 未激活节点不参与求值 |
+| 面板缓存复用 | 第二次打开不重播 ⇒ 静态 clip 还得 `Animator.Play`，那不如直接 Lua |
+| 事件驱动 | 切页签要单独翻 `selected` 高亮板 |
+| 数量自适应 | 可见页签 5~9 个，错开间隔要压缩 |
+
+**实现**（`OperatingPanel.lua`，prefab 一行没动）：
+
+| 函数 | 干什么 |
+|---|---|
+| `PlayTabFlipIn()` | 遍历 `tabsContent` 的**子节点顺序**（VerticalLayoutGroup 按 sibling 排版，prefab 里就是 12,5,11,1,9,4,13,10,2,3,…，**不是** 1..19），跳过 `activeSelf == false`，逐格 `scaleX 0→1` |
+| `PlayTabSelectFlip(index)` | 切页签时只翻 `selected`（该节点没有 Animator，不抢通道） |
+| `PlayPageDropIn()` | `bg/pageContent` 的 `anchoredPosition (0,110) → (0,0)`，0.3667s，`InOutQuad` |
+| `StopOpenAnims()` | Kill 全部 tween + `scale=one` + 恢复 `Animator.enabled` + 落位复位（`OnShow` 首行 / `OnClose` / `OnDestroy`） |
+
+参数沿用参考：`0.167s/格`、`0.033s` 错开、可见数多时压缩到 ≤ `0.5s` 跨度；落位 `110px / 0.3667s`。
+`OnShow` 顺序：`OnTabChanged()`（确定可见页签与选中页）→ `PlayTabFlipIn()` → `PlayPageDropIn()`。
+**顺序不能反**：`PlayTabFlipIn` 第一行 `StopOpenAnims()` 会把先起的落位杀掉（harness case8 已钉成断言）。
+
+**离线验收**：`scripts/lua-tests/test_operating_openanim.lua`，8 个 case 全过
+（顺序与跳过 / 完成恢复 / 中途 Stop / 压缩错开 / 高亮板重播 / 落位 / 重播不叠加 / 顺序约束）。
+`bash scripts/lua-bytes-sync.sh` 重编 `LuaBytes/Modules_Operating_OperatingPanel_64.bytes`（9850 → 13329 B），`--check` 已同步。
+
+**偏离参考之处**（显式记录，避免被当成漏做）：
+
+- 参考 `day_2..7` 的关键帧是 `[1 @0, 0 @delay, 1 @delay+0.1667]`——**先保持原样、到延迟点才归零再长出来**（前 2 帧还看得见）。
+  这里统一改成"从 t=0 就全隐藏，按顺序长出来"，与附录 F 的 ExpertPanel 一致，观感更干净。
+- 参考 `m_LoopTime: 1` 常驻循环；这里只播一次（20 个页签一直翻太吵）。
+- 参考的"落 110px"作用在不可见的全屏遮罩上；这里作用在承内容的 `pageContent`，位移量仍取 110（与 ExpertPanel 一致）。
+
+**待做**：AB 重打；真机/实拍未做（需要登录态，纯 Lua 改动只能跑起来看）。

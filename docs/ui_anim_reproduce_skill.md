@@ -59,17 +59,28 @@ S0 反解 ──→ S1 定阵营 ──→ S2 落地 ──→ S3 离线自证 �
 | `m_EulerCurves` | 旋转 | 0 |
 | `m_ScaleCurves` | `m_LocalScale.x/y/z` | **7**（`day_1..7`） |
 | `m_FloatCurves` | **`m_SizeDelta.*` / `m_AnchoredPosition.*` / `m_Color.a` / 任何非 Transform 浮点** | **2**（`bg`） |
-| `m_EditorCurves` | 上面各段的**镜像**（Unity 序列化时两处都写） | 9 |
+| `m_EditorCurves` | 上面各段的**镜像**（Unity 序列化时两处都写） | **23**（按轴展开：7×3 + 2×1） |
+
+```bash
+S=.workbuddy-ai/skills/ui-panel-float-anim/scripts
+python3 $S/dump_clip.py <clip.anim> [<clip2.anim> ...] [--keys]
+# 每行一条曲线：段 / path / 通道 / 首末值 / 时长 / 关键帧数；末尾打各段条数 + 镜像条数
+python3 $S/dump_clip.py <controller.controller>     # state 列表与各自绑的 clip
+```
 
 两条硬规则：
 
 1. **`m_FloatCurves` 是主力段，不是边角料。** 所有"UI 上看得见的位移"（`anchoredPosition`）、
    "展开/收起"（`sizeDelta`）、"淡入淡出"（`m_Color.a`）都住在这里。只读 scale 等于只读了三分之一。
-2. **用 `m_EditorCurves` 的条数当校验。** 镜像条数 ≠ 各段之和 ⇒ 还有段没读到，别往下走。
-   （`m_EditorCurves` 里的缩放属性名是 `m_LocalScale.x`，`m_FloatCurves` 里对应 `attribute` 是 crc32 数字，
-   一一映射见配方文档 §4。）
+2. **用 `m_EditorCurves` 的条数当校验，但要按轴折算。** 向量曲线在镜像里按轴展开
+   （`scale` 3 条、`rotation` 4 条、`float` 1 条），所以期望镜像数 = `Σ(轴数)`；
+   对不上 ⇒ 还有段没读到，别往下走。（`m_EditorCurves` 里的属性名是 `m_LocalScale.x`，
+   `m_FloatCurves` 里对应 `attribute` 是 crc32 数字，映射见配方文档 §4。）
 
 ### 2.2 三条几何推理（从数字到"哪条边在动"）
+
+先取基准：`python3 $S/dump_prefab_tree.py <prefab> --depth 3 --rect`
+（`--rect` 会打 `a(0,0)-(1,1) p(0.5,0.5)`，用来判定"四边拉满"和 pivot —— §2.3 全靠这两个值）。
 
 | 通道 | 含义 | 判读 |
 |---|---|---|
@@ -427,6 +438,21 @@ foreach (var b in AnimationUtility.GetCurveBindings(clip))
 产物：`Assets/ManagedResources/LuaBytes/Modules_Expert_ExpertPanel_64.bytes`（13403 → 15505 → 16608 B）。
 
 Commits：`b1b4580ed`（撤销错方向）、`2198f87da`（补落位曲线）、`277036180`（文档）。
+
+### 第二次复用：`OperatingPanel`（同一份参考，一轮做完）
+
+按本流程走第二遍，没有返工。值得记的只有"判据变化"和"读参考时的新发现"：
+
+| 环节 | 这次的判断 |
+|---|---|
+| S0 | `dump_clip.py` 一次性读出参考 9 条曲线 + 本面板已有的 5 个 legacy clip（`page_2/8` 是 `smallImg/Image` 旋转+alpha 装饰循环、`page_7/12` 是页面内入场、`page_10` 是**空 clip 死组件**、`UI_effect_OperatingPanel_normal` 是火光 UV 滚动）⇒ 通道互斥清单直接有了 |
+| S0 | 参考 `day_2..7` 的关键帧是 `[1 @0, 0 @delay, 1 @delay+0.1667]`：**先保持原样、到延迟点才归零再长出来**（前 2 帧还看得见）。这与"从 t=0 全隐藏"不是一回事，要显式记成偏离 |
+| S1 | 页签**是静态节点**（`tabs_1..19`，不像 ExpertPanel 是克隆），但 `RefreshTabStatus` 用 `SetActive` 按活动开关切换、面板又被缓存复用 ⇒ 仍走 Lua（静态 clip 第二次打开不重播） |
+| S2 | 页签顺序取 `tabsContent` 的 sibling 顺序——prefab 里是 `12,5,11,1,9,4,13,10,2,3,…`，**不是** `1..19`。按子节点顺序遍历，天然等于眼睛看到的顺序 |
+| S2 | 落位落到 `bg/pageContent`（四边拉满 / pivot 0.5 / 基准 `(0,0)`，几何与参考的 `bg` 等价）。`bg/Image` 虽有全屏黑底但是**带 sprite** 的图，不是纯色遮罩 ⇒ 不做遮罩淡入 |
+| S3 | 新增 `scripts/lua-tests/test_operating_openanim.lua`，比 ExpertPanel 那份多一个 **case8 顺序约束**：把"先 drop 再 flip 会被 Stop 杀掉"钉成断言 |
+
+记录见配方文档附录 G。产物：`LuaBytes/Modules_Operating_OperatingPanel_64.bytes`（9850 → 13329 B）。
 
 ---
 

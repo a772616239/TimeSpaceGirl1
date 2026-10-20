@@ -1,5 +1,5 @@
 {
-  "_comment": "SupremeHeroPopup（剑影迷踪）浮动动画配方。层级基准：Panel/Middle/Image y=106、Text y=-248、Reward y=-395、DoneBtn y=-805、progress y=-715、textTime/freshTime y=-907；Panel 的 Image 是黑底遮罩(0,0,0,0.706)。Panel/hero 只做缩放——SupremeHeroPopup.lua 会把它的 localPosition 改成 (338,266)。",
+  "_comment": "SupremeHeroPopup（剑影迷踪）浮动动画配方。层级基准：Panel/Middle/Image y=106、Text y=-248、Reward y=-395、DoneBtn y=-805、progress y=-715、textTime/freshTime y=-907；Panel 的 Image 是黑底遮罩(0,0,0,0.706)。hero 外套了 heroRoot：位移只写 heroRoot（基准 0 = 纯偏移），缩放写 hero。原因：SupremeHeroPopup.lua 会把 hero 的 localPosition 改成 (338,266)，位移若写 hero 自己，非中文语言的位置会被动画覆盖。",
   "clips": {
     "start": {
       "stop": 1.0,
@@ -7,7 +7,8 @@
       "curves": [
         ["alpha", "Panel", [[0, 0], [0.27, 0.7058824]]],
         ["scale", "Panel/Middle", [[0, 0.92], [0.14, 1.04], [0.24, 0.99], [0.34, 1]]],
-        ["scale", "Panel/hero", [[0.06, 1], [0.22, 1.25], [0.34, 0.97], [0.42, 1]]],
+        ["float", "Panel/heroRoot", [[0, -46], [0.22, 8], [0.42, 0]]],
+        ["scale", "Panel/heroRoot/hero", [[0.06, 1], [0.22, 1.25], [0.34, 0.97], [0.42, 1]]],
         ["scale", "Panel/Middle/Text", [[0.30, 1], [0.42, 1.12], [0.52, 1]]],
         ["scale", "Panel/Middle/Reward", [[0.40, 0.86], [0.52, 1.04], [0.62, 1]]],
         ["float", "Panel/Middle/Reward", [[0.40, -413], [0.62, -395]]],
@@ -25,6 +26,7 @@
       "loop": true,
       "curves": [
         ["scale", "Panel/Middle/Image", [[0, 1], [1.5, 1.02], [3, 1]]],
+        ["float", "Panel/heroRoot", [[0, 0], [1.5, 8], [3, 0]]],
         ["float", "Panel/Middle/Text", [[0, -248], [1.5, -243], [3, -248]]],
         ["scale", "Panel/Middle/Reward", [[0, 1], [1.5, 1.015], [3, 1]]],
         ["float", "Panel/Middle/Reward", [[0, -395], [1.5, -405], [3, -395]]],

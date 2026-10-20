@@ -12,6 +12,7 @@
     {"name":"ALPHA_FROM","type":"string","default":"","description":"alpha 参照图。资源被压成 RGB（丢了透明浮层）时用；支持 git:HEAD:<path> 直接从 git 取原版"},
     {"name":"SOURCE_FROM","type":"string","default":"","description":"改前参照图。默认=资源本身；资源已换过要重跑时填 git:HEAD:<path>，否则对比图会变成「新版 vs 新版」"},
     {"name":"LAYOUT","type":"text","default":"","description":"构图锁（锁文案/角色/空区）。留空=预设里的通用规则：一律保字、只改材质。某张图有特殊要求时填这里，别改 theme_presets.json"},
+    {"name":"OUTFIT","type":"text","default":"","description":"覆盖主题预设里的服装句（只改「穿什么」，配色/装饰仍走主题）。留空=用主题默认。角色剪裁/露肤度是设计的一部分时填这里——主题的默认大衣会把舞娘/泳装这类角色裹住，等于改构图"},
     {"name":"COMPOSITION","type":"choice","choices":["lock","free"],"default":"lock","description":"构图自由度：lock=人物姿势/位置/缩放全锁，只换衣服与配色（默认，可预期）；free=允许重设计人物姿势与镜头换吸引力，但文案完整可读、底部 UI 空白区、画布比例与透明边仍锁死（出图需人眼过一遍）"},
     {"name":"POSE","type":"string","default":"","description":"free 模式的姿势。留空=每次从主题候选里随机抽一条（推荐：同一主题连跑也不会每张都是同一个姿势）；数字=指定第 N 条；none=不注入姿势；其它文字=自定义姿势句。🔴 曾经这段是硬编码单条「递礼盒」，导致每张 free 图都抱着礼物"},
     {"name":"HERO_BAND","type":"string","default":"","description":"超长条底板用（如 856x2048）：填英雄带像素高度（如 930）或 auto。生成图只当这条带子贴顶，下方补空卡体；留空=整幅等比 cover（适合比例接近 3:4 的图）"},
@@ -86,11 +87,11 @@ if [[ -n "${PROMPT_OVERRIDE:-}" ]]; then
 else
   if [[ -n "${LAYOUT:-}" ]]; then
     printf '%s\\n' "${LAYOUT}" > "$TS_RUN_DIR/artifacts/layout.txt"
-    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --pose "${POSE:-}" --layout "$TS_RUN_DIR/artifacts/layout.txt" > "$PROMPT_FILE"
-    echo "提示词来源：LAYOUT 参数 + scripts/image/theme_presets.json（$ART_THEME / $ART_COMP / pose=${POSE:-随机}）"
+    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --pose "${POSE:-}" --layout "$TS_RUN_DIR/artifacts/layout.txt" --outfit "${OUTFIT:-}" > "$PROMPT_FILE"
+    echo "提示词来源：LAYOUT 参数 + scripts/image/theme_presets.json（$ART_THEME / $ART_COMP / pose=${POSE:-随机}${OUTFIT:+ / outfit 已覆盖}）"
   else
-    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --pose "${POSE:-}" > "$PROMPT_FILE"
-    echo "提示词来源：scripts/image/theme_presets.json（$ART_THEME / $ART_COMP / pose=${POSE:-随机}）"
+    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --pose "${POSE:-}" --outfit "${OUTFIT:-}" > "$PROMPT_FILE"
+    echo "提示词来源：scripts/image/theme_presets.json（$ART_THEME / $ART_COMP / pose=${POSE:-随机}${OUTFIT:+ / outfit 已覆盖}）"
   fi
 fi
 echo "--- 提示词开头 ---"
@@ -108,11 +109,13 @@ EXTRA=""
 [[ -n "${ALPHA_FROM:-}"  ]] && EXTRA="$EXTRA --alpha-from \"${ALPHA_FROM}\" "
 [[ -n "${SOURCE_FROM:-}" ]] && EXTRA="$EXTRA --source-from \"${SOURCE_FROM}\" "
 [[ -n "${LAYOUT:-}"      ]] && EXTRA="$EXTRA --layout \"$TS_RUN_DIR/artifacts/layout.txt\" "
+# OUTFIT 是一整句英文，不能塞进 EXTRA（EXTRA 是不加引号展开的，会被按空格拆散）⇒ 直接写在命令行上
 # shellcheck disable=SC2086
 "$BASH" .jenkins/lib/run_stage.sh --name "资源体检与基线" \
   --group "美术资源链" --slug art-prepare --timeout 300 \
   -- "$PY" scripts/image/restyle_pipeline.py prepare \
-       --asset "$ART_ASSET" --theme "$ART_THEME" --work "$ART_WDIR" --composition "$ART_COMP" --pose "${POSE:-}" $EXTRA
+       --asset "$ART_ASSET" --theme "$ART_THEME" --work "$ART_WDIR" --composition "$ART_COMP" --pose "${POSE:-}" \
+       --outfit "${OUTFIT:-}" $EXTRA
 ''')
       }
     }

@@ -83,7 +83,7 @@ def slug_of(path: Path) -> str:
 #    写死一次就会在下一张图上画出上一张的字 —— 这是本管线最贵的错误（废一张图 = 一次额度 + 30 分钟）。
 PROMPT_TEMPLATE = """Restyle this mobile-game UI panel asset into {theme_en} style, {frame}.
 
-{heading}
+{style_lock}{heading}
 {layout}
 
 TEXT: keep every glyph complete, sharp and readable; restyle the material only - {text_style}.
@@ -93,6 +93,21 @@ CHARACTER: {character}
 EMPTY BODY: {body}.
 
 MOOD: {decor_sentence}; the upper banner background becomes {banner}. Rich glossy high-contrast mobile-game key art, crisp 2D anime illustration, sharp edges, cinematic lighting, no watermark, no extra text, no logos."""
+
+
+# 🔴 画风漂移是本管线最贵的隐性失败：模型会把「换风格」理解成「重新渲染一遍」——
+#    平涂赛璐璐进去、厚涂/3D 渲染出来，单看每张都不丑，但放进游戏里就跟别的 UI 不是一套。
+#    这一段排在构图锁之前，用最高优先级把「画法」钉死：主题只改配色/材质/服装/布景，不改画法。
+#    预设里写 `"style_lock": ""` 可以整段关掉（某些资源本来就要换渲染方式时用）。
+DEFAULT_STYLE_LOCK = (
+    "STYLE LOCK (highest priority - it overrides every lighting, gloss and material hint below): "
+    "reproduce the input image's DRAWING TECHNIQUE exactly. If the input is flat cel-shaded 2D anime, "
+    "keep flat cel shading: crisp dark lineart of consistent weight, flat colour fills, hard-edged "
+    "two-tone cel shadows (one shadow tone plus one highlight), clean unblended colour blocks and the "
+    "same line weight as the source. Do NOT switch to painterly brushwork, soft airbrushed gradients, "
+    "3D/CGI or photoreal rendering, subsurface scattering, bloom, rim-light glow or textured skin "
+    "painting. Only the palette, materials, outfit and set dressing change - the rendering style does not."
+)
 
 
 # 构图自由度。lock = 老行为（姿势/位置/缩放全锁死），free = 允许重设计人物姿势换吸引力。
@@ -152,7 +167,7 @@ def resolve_pose_hint(theme: dict, pose: str | int | None = None) -> str:
 
 
 def build_prompt(name: str, layout: list[str] | None = None, composition: str | None = None,
-                 pose_hint: str = "") -> str:
+                 pose_hint: str = "", outfit_override: str = "") -> str:
     """把「主题字段 + 构图规则」拼成完整 prompt。
 
     主题只描述风格（配色 / 服装 / 空区 / 装饰），文案一律由 layout 锁死，
@@ -172,15 +187,21 @@ def build_prompt(name: str, layout: list[str] | None = None, composition: str | 
     else:
         # 老数据只有 layout_default(=lock)，free 缺失时回落到它，但打印警告
         lines = presets.get(f"layout_{key}") or presets.get("layout_default", [])
+    # 预设里显式写 "" 表示这张管线不锁画风（资源本来就要换渲染方式时用）
+    style_lock = str(presets.get("style_lock", DEFAULT_STYLE_LOCK) or "").strip()
     return PROMPT_TEMPLATE.format(
         theme_en=theme.get("en", theme["zh"]),
         frame=comp["frame"],
+        style_lock=(style_lock + "\n\n") if style_lock else "",
         heading=comp["heading"],
         layout="\n".join(f"{i}) {ln}" if not ln[:2].strip().rstrip(")").isdigit() else ln
                        for i, ln in enumerate(lines, 1)),
         text_style=theme["text_style"],
         character=comp["character"].format(
-            outfit=theme["outfit"],
+            # 🔴 服装按图覆盖：主题里的 outfit 是「这个题材通常穿什么」，
+            #    但同一张图里角色的剪裁/露肤度是设计的一部分（舞娘、泳装、战甲…），
+            #    主题的默认大衣套上去会把人裹住、把构图改掉。--outfit 只覆盖服装这一句。
+            outfit=(outfit_override.strip() or theme["outfit"]),
             pose_hint=pose_hint),
         body=theme["body"],
         banner=theme["banner"],
@@ -293,7 +314,7 @@ def cmd_prepare(args) -> int:
     layout = read_layout(args.layout, work)
     composition = getattr(args, "composition", None) or load_presets().get("composition_default", "lock")
     pose_hint = resolve_pose_hint(theme, getattr(args, "pose", None)) if composition == "free" else ""
-    prompt = build_prompt(args.theme, layout, composition, pose_hint)
+    prompt = build_prompt(args.theme, layout, composition, pose_hint, getattr(args, "outfit", "") or "")
     (work / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
 
     state = {
@@ -362,7 +383,7 @@ def cmd_prompt(args) -> int:
           f"input_fidelity={theme.get('input_fidelity')} composition={composition}")
     if composition == "free":
         print(f"# pose={'随机候选' if getattr(args, 'pose', None) is None else args.pose}")
-    print(build_prompt(args.theme, layout, composition, pose_hint))
+    print(build_prompt(args.theme, layout, composition, pose_hint, getattr(args, "outfit", "") or ""))
     return RC_OK
 
 
@@ -414,6 +435,15 @@ def lint_presets(presets: dict | None = None) -> int:
     for key in ("layout_default", "layout_free"):
         if not presets.get(key):
             err("presets", f"{key} 缺失或为空（free/lock 会退化成无构图锁）")
+
+    # 画风锁：整段进 prompt，同样不能混中文；写了但太短等于没写
+    sl = presets.get("style_lock", DEFAULT_STYLE_LOCK)
+    if sl is not None and str(sl).strip():
+        sl = str(sl)
+        if CJK_RE.search(sl):
+            err("presets", f"style_lock 里混了中文（进 prompt 会让模型画汉字）：{CJK_RE.search(sl).group()}")
+        if len(sl) < 80:
+            warn("presets", f"style_lock 只有 {len(sl)} 字符，太短的画风锁基本不生效")
 
     seen_suffix: dict[str, str] = {}
     themes = presets.get("themes") or {}
@@ -1426,6 +1456,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pose", default=None,
                    help="free 模式的姿势：留空=每次从主题候选里随机抽一条（推荐，避免每张图一个模子）；"
                         "数字=指定第 N 条；none=不注入姿势；其它文字=当作自定义姿势句")
+    p.add_argument("--outfit", default=None,
+                   help="覆盖主题预设里的服装句（只改「穿什么」，不动主题的配色/装饰）。"
+                        "角色剪裁/露肤度是设计的一部分时用，别让主题的默认大衣把构图改掉")
     p.set_defaults(func=cmd_prompt, key=None)
 
     p = sub.add_parser("prepare", help="校验源资源并建立工作目录")
@@ -1441,6 +1474,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="lock=姿势/版式全锁（默认）；free=允许重设计人物姿势与镜头，只锁文案/空白区/画布")
     p.add_argument("--pose", default=None,
                    help="free 模式的姿势：留空=随机抽主题候选；数字=第 N 条；none=不注入；其它文字=自定义")
+    p.add_argument("--outfit", default=None,
+                   help="覆盖主题预设里的服装句（只改「穿什么」，配色/装饰仍走主题）。"
+                        "角色剪裁/露肤度属于设计的一部分时用，避免主题默认大衣把人裹住")
     p.set_defaults(func=cmd_prepare)
 
     p = sub.add_parser("postprocess", help="去水印 + 尺寸归位 + 出双版本 + 对比图")

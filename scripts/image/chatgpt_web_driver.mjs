@@ -315,6 +315,34 @@ try {
     process.exit(3);
   }
 
+  // 🔴 强制空对话：标签页常停在上一次跑完的 /c/<id> 上，ChatGPT 会把上一张参考图一起带进上下文，
+  //    表现是「新图里凭空出现上一张的角色/道具」（2026-10-21 商店配图里多出一只球鞋 + 蹲姿）。
+  //    宁可多花 5 秒确认，也不要烧一次额度画错一张图。
+  if (!grabExisting) {
+    const hasMsgs = async () => {
+      try {
+        return await page.evaluate(() => document.querySelectorAll('[data-message-author-role]').length > 0);
+      } catch { return false; }
+    };
+    if (page.url().includes('/c/') || await hasMsgs()) {
+      log(`⚠ 不是空对话（${page.url()}）—— 先切新对话，避免串上一张图`);
+      await page.goto('https://chatgpt.com/?new=1', { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await sleep(4000);
+      if (page.url().includes('/c/') || await hasMsgs()) {
+        const btn = page.locator('[data-testid="create-new-chat-button"], a[href="/"], ' +
+          'button[aria-label*="New chat"], button[aria-label*="新しいチャット"], button[aria-label*="新規チャット"]').first();
+        try {
+          if (await btn.count()) { await btn.click(); await sleep(3000); }
+        } catch { /* 点不到就落到下面的硬失败 */ }
+      }
+      if (page.url().includes('/c/') || await hasMsgs()) {
+        log('🔴 仍然不是空对话，拒绝发送（会串上一张图，等于白烧一次额度）');
+        process.exit(3);
+      }
+      log('✅ 已切到空对话');
+    }
+  }
+
   // 1) 上传参考图
   if (!grabExisting) {
     await clearOverlays();

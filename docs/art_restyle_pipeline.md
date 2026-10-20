@@ -63,6 +63,7 @@ $PY scripts/image/gen_chatgpt_web.py --image "$W/src/source.png" --prompt-file "
 | `GEN_IMAGE`                  | manual 时显式指定生成图；留空取 inbox 里最新的                                                                      |
 | `CDP_PORT`                   | 复用外部已登录浏览器（AdsPower/SunBrowser）的调试端口，`find_browser_cdp.py` 反查。留空=用本机 Chrome                         |
 | `LAYOUT`                     | 构图锁文本。**每张图的文案不同，所以文案一定写这里，不要写进主题预设**                                                               |
+| `OUTFIT`                     | 按图覆盖主题的服装句（只改「穿什么」，配色/装饰仍走主题）。**角色的剪裁/露肤度属于设计的一部分时必填**——主题默认大衣会把舞娘/泳装/战甲角色裹住，等于偷偷改了构图 |
 | `COMPOSITION`                | `lock`（默认，人物姿势/位置/缩放全锁，只换衣服与配色）／`free`（允许重设计人物姿势与镜头换吸引力）。见下节                                        |
 | `PROMPT_OVERRIDE`            | 整段覆盖提示词（LAYOUT 不够用时才用）                                                                              |
 | `HERO_BAND`                  | 超长条底板专用：英雄带像素高度（如 `930`）或 `auto`。留空=整幅等比 cover                                                      |
@@ -409,3 +410,4 @@ _output/art_restyle/<资源名>/<主题>/
 | `chatgpt_web` 报「超时仍未拿到图」 | 先看是不是额度用尽（driver 会打印页面尾部文本）；free 计划额度很小 |
 | 右下角装饰被抹掉一块 | 水印判据误判 → 确认用的是新版 `detect_mask`（亮+灰+排成一行三条件），必要时 `--watermark off` |
 | driver 报 `connectOverCDP` 是 undefined | `playwright-core` 的 CJS 默认导出没取：`(await import(x)).default ?? ...` |
+| **新图里出现上一张图的角色/道具**（如商店配图凭空多出巡逻图的球鞋） | 浏览器标签停在上一个对话，ChatGPT 把上一张参考图一起带进上下文。driver 现在出图前强制确认空对话（`/c/` 或已有消息就切新对话，切不动直接 rc=3 拒发）；**别用 `--grab-existing` 绕过**。防御性写法：`LAYOUT` 里明写「图里没有 X，不许画 X」 |

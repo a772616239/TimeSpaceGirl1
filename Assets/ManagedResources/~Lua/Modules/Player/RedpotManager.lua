@@ -672,33 +672,55 @@ function this.BindObject(rpType, rpObj)
         LogError("rpType == nil!!!")
         return
     end
+    if not rpObj then
+        return
+    end
+    -- tolua 的 fake-null：GameObject 已销毁但 lua 侧仍非 nil，绑进来以后每次刷新都会炸
+    if type(rpObj) == "userdata" and tolua and tolua.isnull(rpObj) then
+        return
+    end
 
-    BindObjs[rpType] = BindObjs[rpType] or {}
-    table.insert(BindObjs[rpType], rpObj)
+    local list = BindObjs[rpType]
+    if not list then
+        list = {}
+        BindObjs[rpType] = list
+    end
+    -- 幂等：同一个物体重复绑定只保留一份（原来是 table.insert，会堆 N 份、SetActive N 遍）
+    local exist = false
+    for index = 1, #list do
+        if list[index] == rpObj then
+            exist = true
+            break
+        end
+    end
+    if not exist then
+        table.insert(list, rpObj)
+    end
     -- 根据状态设置红点现隐
 
-    if rpObj ~= nil then
-        rpObj:SetActive(this.GetRedPointStatus(rpType) == RedPointStatus.Show)
-    end
+    rpObj:SetActive(this.GetRedPointStatus(rpType) == RedPointStatus.Show)
 end
 
 -- 解绑物体
+-- rpObj 为 nil：清空该红点的全部绑定；否则只解绑这一个（幂等，没绑定过也不算错）
 function this.ClearObject(rpType, rpObj)
-    if rpObj then
-        local indexToKill = nil
-        for index, obj in pairs(BindObjs[rpType]) do
-            if rpObj == obj then
-                indexToKill = index
-                break
-            end
-        end
-        if indexToKill then
-            table.remove(BindObjs[rpType], indexToKill)
-        else
-        end
-    else
-        if BindObjs then
-            BindObjs[rpType] = {}
+    if rpObj == nil then
+        BindObjs[rpType] = {}
+        return
+    end
+
+    -- 这里必须先判空：从没绑过（首次进面板就「先 Clear 再 Bind」）、或登录重连时
+    -- Initialize 把 BindObjs 重置过，都会让 BindObjs[rpType] 是 nil，
+    -- 直接 pairs(nil) 会抛 LuaException，把调用方整个 OnShow/OnClose 打断。
+    local list = BindObjs[rpType]
+    if not list then
+        return
+    end
+
+    -- 倒序删除，顺便把历史遗留的重复项一起清掉
+    for index = #list, 1, -1 do
+        if list[index] == rpObj then
+            table.remove(list, index)
         end
     end
 end

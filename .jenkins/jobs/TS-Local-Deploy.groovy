@@ -54,8 +54,9 @@ echo
 echo "这个 job 会做的事："
 echo "  1) 编译 serverlogic（JDK8 + gradle，产物 serverlogic-1.0.0.jar）"
 echo "  2) 与本地服 gameSrv-1.0.0.jar 逐条目比 CRC，只取变化的类"
-echo "  3) 备份当前 jar 到 ~/home/java/gameserver/backup/"
-echo "  4) 停服 → zip -u 注入 → 逐条目 CRC 复核 → launchd 重新拉起"
+echo "     lib 下 common/netty/gamecommon/hotfix/fightmanager/tablemanager 同样逐条目比，一起注入"
+echo "  3) 备份当前 jar 到 ~/home/java/gameserver/backup/（lib module 备份在 backup/lib-<时间戳>/）"
+echo "  4) 停服 → zip -u 注入（先 lib 后主 jar）→ 逐条目 CRC 复核 → 原子 mv → launchd 重新拉起"
 echo "  5) 自检端口/启动行/表加载/致命异常/协议连通"
 echo
 echo "影响面：本机测试号会掉线一次（重启游戏服）；生产服 129.226.213.65 完全不涉及。"

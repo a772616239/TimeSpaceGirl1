@@ -10,17 +10,20 @@
   # 2) 全服找可疑号（英雄维度）
   python3 scripts/cheatctl.py hunt
 
-  # 3) 一键处置（默认 dry-run；确认无误再加 --apply）
+  # 3) 先归档再动手（user + itemLog/heroLog/fightLog/storeLog + 榜单 + 货币快照）
+  python3 scripts/cheatctl.py archive --uid 10000224
+
+  # 4) 一键处置（默认 dry-run；确认无误再加 --apply）
   python3 scripts/cheatctl.py purge --uid 10000224
   python3 scripts/cheatctl.py purge --uid 10000224 --apply
   python3 scripts/cheatctl.py purge --uid 10000224 --apply --ban
   python3 scripts/cheatctl.py purge --uid 10000224 --account --confirm 10000224 --apply
 
-  # 4) 全榜完整性体检（删号 / 删英雄之后必跑；GHOST 成员会让排行榜打不开）
+  # 5) 全榜完整性体检（删号 / 删英雄之后必跑；GHOST 成员会让排行榜打不开）
   python3 scripts/cheatctl.py rank-audit
   python3 scripts/cheatctl.py rank-audit --repair
 
-  # 5) 封禁名单
+  # 6) 封禁名单
   python3 scripts/cheatctl.py ban --uid 10000248 --reason "GM 探测"
   python3 scripts/cheatctl.py unban --uid 10000248
   python3 scripts/cheatctl.py banlist
@@ -183,6 +186,15 @@ def cmd_purge(a):
     return 0
 
 
+def cmd_archive(a):
+    """只归档不删：删号/批量处置前先留档（user + 4 个日志集合 + 榜单 + 货币快照）。"""
+    r = _remote(a)
+    p = Purger(r, a.uid, apply=False)
+    print('=%s ARCHIVE uid=%d  %s' % ('=' * 60, a.uid, now_tag()))
+    p.archive(with_logs=not a.no_logs)
+    return 0
+
+
 def cmd_ban(a):
     r = _remote(a)
     key = '"%sFORBID_LOGIN:"' % r.key_prefix
@@ -245,10 +257,15 @@ def main(argv=None):
     s.add_argument('--json', action='store_true')
     s.set_defaults(func=cmd_rank_audit)
 
-    s = sub.add_parser('refs-audit', help='好友残留引用体检（会让别人登录卡 45%）')
+    s = sub.add_parser('refs-audit', help='好友残留引用体检（会让别人登录卡 45%%）')
     s.add_argument('--repair', action='store_true', help='执行清理（默认只报清单）')
     s.add_argument('--json', action='store_true')
     s.set_defaults(func=cmd_refs_audit)
+
+    s = sub.add_parser('archive', help='只归档不删（user+日志4集合+榜单+货币快照）')
+    s.add_argument('--uid', type=int, required=True)
+    s.add_argument('--no-logs', action='store_true', help='不导出日志集合（不推荐，删号前必须导）')
+    s.set_defaults(func=cmd_archive)
 
     s = sub.add_parser('ban', help='写 FORBID_LOGIN')
     s.add_argument('--uid', type=int, required=True)

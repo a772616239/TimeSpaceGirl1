@@ -5,9 +5,13 @@
 一键做四件事，顺序不可换：
     备份 → 删作弊产物（英雄/物品）→ 清排行榜引用 → 封号（可选）→ 校验
 
-🔴 三条硬规则：
-  1. **先备份**：user 文档 + 榜单快照落到 `/root/incident_<tag>_<uid>/`，同时在本地
-     `scripts/cheat/reports/` 写 manifest.json（含回滚命令）。
+🔴 四条硬规则：
+  1. **先归档，且必须归档「会被删的一切」**：user 文档 + `itemLog/heroLog/fightLog/storeLog`
+     四个日志集合 + 榜单快照，落到 `/root/incident_<tag>_<uid>/`，同时在本地
+     `scripts/cheat/reports/` 写 manifest.json（含每份文件的文档条数与回滚命令）。
+     ⚠️ 2026-10-18 那批号就是只导了 user、没导日志 ⇒ 事后想核对「当时的真实钻石」
+     只剩 BI 的 30 天窗口，超出窗口的号（10000016/10000015）直接无法判定。
+     所以任一集合归档失败 = **立刻中止**，不允许继续删。
   2. **排行榜必须在删数据「之前或同时」清**：只删 Redis 成员，别整榜清空
      （db0 约 6750 个 key、近 5000 个是排行，清空不可恢复）。
   3. **删号 ≠ 封号**：本服「查不到 user 就自动建档」，删号只是重置。要真正拦住必须写
@@ -20,12 +24,20 @@ from .remote import Remote, RemoteError, js_int
 
 HERO_LEVEL_FLOOR = 100      # 「异常英雄」默认下界（正常 6 级号最高 30 级）
 
+# 删号会物理删除的日志集合：**删之前必须逐份 mongoexport**，否则事后无法复核。
+# itemLog 尤其关键——它是唯一能回答「这些钻石是从哪来的」的账本。
+ARCHIVE_COLLECTIONS = ('itemLog', 'heroLog', 'fightLog', 'storeLog')
+
+# 快照里要记录的货币口径（16=钻石 3=英雄经验 17=经验 14=金钱，见 currency.py）
+CURRENCY_ITEMS = (3, 4, 7, 8, 14, 16, 17, 19, 20, 79)
+
 
 class Purger(object):
     def __init__(self, remote, uid, apply=False, report_dir=None):
         self.r = remote
         self.uid = int(uid)
         self.apply = bool(apply)
+        self.mode = None          # None→APPLY/dry-run；archive→archive（只读留档）
         self.tag = None
         self.bdir = None
         self.manifest = {'uid': self.uid, 'apply': self.apply, 'actions': [], 'backup': {}}
@@ -34,14 +46,48 @@ class Purger(object):
 
     # -------------------------------------------------------------- 工具
     def _log(self, msg):
-        print(('  [APPLY] ' if self.apply else '  [dry-run] ') + msg)
+        print('  [%s] ' % (self.mode or ('APPLY' if self.apply else 'dry-run')) + msg)
 
     def _record(self, kind, detail):
         self.manifest['actions'].append({'kind': kind, 'detail': detail,
                                          'applied': self.apply})
 
-    # -------------------------------------------------------------- 备份
-    def backup(self):
+    # -------------------------------------------------------------- 备份 / 归档
+    def snapshot_currency(self):
+        """把「归档那一刻的货币余额」单独记一份。
+
+        为什么单列：删号之后 user 文档只剩这份 JSON，而之后每次复盘的第一句话
+        都是「他当时到底有多少钻石」。2026-10-20 那批号因为没记，只能从快照里
+        反推 item16，来回折腾了好几轮。
+        """
+        ids = ','.join('%d:%d' % (i, i) for i in CURRENCY_ITEMS)
+        js = """
+var u=db.user.findOne({_id:%d},{itemManager:1,"playerManager.nickName":1,
+  "playerManager.level":1,"playerManager.vipLevel":1,"playerManager.maxForce":1,
+  "playerManager.createTime":1,"playerManager.loginTime":1});
+if(!u) return {exists:false};
+var im=(u.itemManager&&u.itemManager.itemMap)||{}, pm=u.playerManager||{};
+var items={}, ids=[%s];
+for(var i=0;i<ids.length;i++){var k=String(ids[i]);
+  items[k]=Number(((im[k]||{}).itemNum)||0);}
+return {exists:true, nick:pm.nickName||"", level:Number(pm.level||0),
+        vip:Number(pm.vipLevel||0), maxForce:Number(pm.maxForce||0),
+        createTime:Number(pm.createTime||0), loginTime:Number(pm.loginTime||0),
+        items:items, diamond:items["16"], heroExp:items["3"],
+        exp:items["17"], gold:items["14"]};
+""" % (self.uid, ','.join(str(i) for i in CURRENCY_ITEMS))
+        snap = self.r.mongo(js) or {'exists': False}
+        self.manifest['backup']['currency'] = snap
+        if snap.get('exists'):
+            self._log('货币快照：钻石(item16)=%s  英雄经验(item3)=%s  经验(item17)=%s  金钱(item14)=%s  '
+                      '[lv%s %s]' % (snap.get('diamond'), snap.get('heroExp'),
+                                     snap.get('exp'), snap.get('gold'),
+                                     snap.get('level'), snap.get('nick')))
+        else:
+            self._log('货币快照：user 文档不存在（可能已删过号）——只能靠日志集合复核')
+        return snap
+
+    def backup(self, with_logs=True):
         self.tag = self.r.out('date +%Y%m%d-%H%M%S') or 'now'
         self.bdir = '/root/incident_%s_%d' % (self.tag.replace('-', ''), self.uid)
         self.r.mkdir(self.bdir)
@@ -50,6 +96,22 @@ class Purger(object):
         self.manifest['backup']['user'] = {'path': user_json, 'ok': ok}
         if not ok:
             raise RemoteError('备份失败，已中止：%s' % err)
+        self.manifest['backup']['user']['docs'] = self._count_docs(user_json)
+
+        # 🔴 日志集合：删号会 deleteMany 掉，不先导出就永远查不到流水
+        logs = {}
+        if with_logs:
+            for coll in ARCHIVE_COLLECTIONS:
+                path = '%s/%s_%d_%s.json' % (self.bdir, coll, self.uid, self.tag)
+                ok, err = self.r.export(coll, {'uid': self.uid}, path)
+                n = self._count_docs(path) if ok else None
+                logs[coll] = {'path': path, 'ok': ok, 'docs': n}
+                if not ok:
+                    # fail-closed：宁可停下让人看，也不能带着「日志没备」去删号
+                    raise RemoteError('日志归档失败（%s），已中止删号：%s' % (coll, err))
+                if not n:
+                    logs[coll]['note'] = '该集合本无记录（删前就没有，不是没导出）'
+        self.manifest['backup']['logs'] = logs
 
         # 榜单快照（只快照命中的 key）
         snaps = []
@@ -60,9 +122,21 @@ class Purger(object):
                       % (self.r.redis_db, hit['key'], path))
             snaps.append(path)
         self.manifest['backup']['ranks'] = snaps
-        self._log('备份目录 %s（user 文档 %s，榜单快照 %d 份）'
-                  % (self.bdir, 'ok' if ok else 'FAIL', len(snaps)))
+
+        self.snapshot_currency()
+        self._log('归档目录 %s（user %s 条，日志 %d 个集合，榜单快照 %d 份）'
+                  % (self.bdir, self.manifest['backup']['user'].get('docs', '-'),
+                     len(logs), len(snaps)))
         return self.bdir
+
+    def _count_docs(self, path):
+        """数导出的 JSON 行数（mongoexport 默认一行一条文档）。"""
+        out = self.r.out('wc -l < "%s" 2>/dev/null' % path)
+        try:
+            return int(out.strip() or 0)
+        except ValueError:
+            return None
+
 
     def write_manifest(self):
         os.makedirs(self.report_dir, exist_ok=True)
@@ -78,14 +152,33 @@ class Purger(object):
         if m.get('user', {}).get('path'):
             cmds.append('mongoimport -d %s -c user --file %s --mode=upsert'
                         % (self.r.game_db, m['user']['path']))
+        for coll, info in (m.get('logs') or {}).items():
+            if info.get('ok') and info.get('path'):
+                cmds.append('mongoimport -d %s -c %s --file %s --mode=upsert  '
+                            '# %s 条' % (self.r.game_db, coll, info['path'],
+                                         info.get('docs')))
         if self.manifest.get('removed_heroes'):
             cmds.append('# 英雄回滚：从上面的 user 文档快照恢复，或按 manifest.removed_heroes 的 id 重建')
         if self.manifest.get('banned'):
             cmds.append('redis-cli -n %s HDEL "%sFORBID_LOGIN:" %d'
                         % (self.r.redis_db, self.r.key_prefix, self.uid))
         if self.manifest.get('deleted_account'):
-            cmds.append('# 账号已删除：mongoimport --mode=upsert 上面那份 user 文档即可复活（数据回到删前）')
+            cmds.append('# 账号已删除：按上面顺序先回灌 user、再回灌 4 个日志集合即可复活（数据回到删前）')
         return cmds
+
+    # -------------------------------------------------------------- 只归档
+    def archive(self, with_logs=True):
+        """只归档、不做任何写操作。发版前/批量删号前先跑一遍，留档再动手。"""
+        self.mode = 'ARCHIVE'
+        self.backup(with_logs=with_logs)
+        path = self.write_manifest()
+        print('  ✅ 归档完成（未做任何改动）')
+        for c in self.manifest['rollback']:
+            if c.startswith('mongoimport'):
+                print('     %s' % c)
+        print('  manifest: %s' % path)
+        return self.manifest
+
 
     # -------------------------------------------------------------- 选英雄
     def select_heroes(self, min_level=HERO_LEVEL_FLOOR, min_star=None):
@@ -306,6 +399,11 @@ return bad;
 
     def delete_account(self):
         """⚠️ 只重置，不拦人；必须配合 ban()。"""
+        logs = self.manifest['backup'].get('logs') or {}
+        missing = [c for c in ARCHIVE_COLLECTIONS if not (logs.get(c) or {}).get('ok')]
+        if missing:
+            # 硬闸门：没有归档就物理删除 = 永久失去流水，事后无法复核、无法复号
+            raise RemoteError('拒绝删号：日志集合未归档 %s（先跑 archive）' % missing)
         self._log('删除 user 文档 + 各日志集合 + 会话 key')
         if not self.apply:
             self.manifest['deleted_account'] = True

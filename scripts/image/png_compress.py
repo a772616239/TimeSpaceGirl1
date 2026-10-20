@@ -79,7 +79,14 @@ def compress_file(src: str | Path, dst: str | Path | None = None,
         report.update(bytes_out=size0, level="off", saved_pct=0.0, max_diff=0)
         return report
 
-    im = Image.open(io.BytesIO(raw)).convert("RGBA")
+    # 🔴 保住源模式：RGB 图被无条件转成 RGBA 再存回去，等于给资源凭空加一个 alpha 通道，
+    #    Unity 的纹理导入/压缩口径跟着变（体积也会变大），而且肉眼完全看不出来。
+    #    只有调色板/带透明表的图才需要展开成真彩。
+    im = Image.open(io.BytesIO(raw))
+    if im.mode not in ("RGB", "RGBA", "L", "LA"):
+        keep_alpha = "A" in im.getbands() or "transparency" in im.info
+        im = im.convert("RGBA" if keep_alpha else "RGB")
+    im.load()
 
     # 0) 无损
     best_bytes = _encode(im)

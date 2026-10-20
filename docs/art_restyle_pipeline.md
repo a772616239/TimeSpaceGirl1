@@ -361,7 +361,7 @@ $PY scripts/image/gen_chatgpt_web.py --image ... --prompt-file ... --out ... \
 ## 体积压缩（阶段 ⑤b，写回之前）
 
 ```text
-$PY scripts/image/restyle_pipeline.py compress --work <工作目录> --variant auto   # 目标=资源当前体积
+$PY scripts/image/restyle_pipeline.py compress --work <工作目录> --variant auto   # 目标=原图体积
 $PY scripts/image/restyle_pipeline.py compress --file <某个.png> --target-kb 700 --max-diff 8
 ```
 
@@ -384,6 +384,11 @@ $PY scripts/image/restyle_pipeline.py compress --file <某个.png> --target-kb 7
 - 误差只在**不透明区**算——透明区的 RGB 是垃圾值，拿它算误差没有意义。
 - 每档超过 `COMPRESS_MAX_DIFF` 立刻停，停在上一档；压完反而更大就原样保留（不为了「压过」而变大）。
 - 报告写 `<工作目录>/compress.json`，控制台打印「多少 KB → 多少 KB（-x%，档位，最大通道差）」。
+- 🔴 **目标体积取「原图」体积（`prepare` 时记的 `source_bytes`），不取「资源当前体积」**。
+  取当前体积会**棘轮**：第一次压到 4bit 写完，重跑一次就拿 4bit 的体积当目标，只能继续往更低位深压，越跑越糊。
+  实测日常横幅：按当前体积只能到 4bit（266.9KB，误差 8）；按原图 389.6KB 就够 5bit（368.6KB，误差 4）。
+- 🔴 **压缩必须保住源模式**：`compress_file` 曾经无条件 `.convert("RGBA")`，把 RGB 资源写成 RGBA，
+  于是「压完 300KB 却比原图还多一个 alpha 通道」——Unity 的纹理导入/压缩口径跟着变，肉眼看不出来。
 
 ---
 
@@ -442,3 +447,5 @@ _output/art_restyle/<资源名>/<主题>/
 | 右下角装饰被抹掉一块 | 水印判据误判 → 确认用的是新版 `detect_mask`（亮+灰+排成一行三条件），必要时 `--watermark off` |
 | driver 报 `connectOverCDP` 是 undefined | `playwright-core` 的 CJS 默认导出没取：`(await import(x)).default ?? ...` |
 | **新图里出现上一张图的角色/道具**（如商店配图凭空多出巡逻图的球鞋） | 浏览器标签停在上一个对话，ChatGPT 把上一张参考图一起带进上下文。driver 现在出图前强制确认空对话（`/c/` 或已有消息就切新对话，切不动直接 rc=3 拒发）；**别用 `--grab-existing` 绕过**。防御性写法：`LAYOUT` 里明写「图里没有 X，不许画 X」 |
+| **写回的 PNG 模式变了**（RGB 资源变成 RGBA） | `opaque` 变体内部一直是 RGBA，`postprocess` 和 `compress` 都曾直接存出去。现在两处都按 `state.source_mode` 还原：源 RGB 就存 RGB。查 `published.json` 的 `mode` 字段，RGB 资源出现 `RGBA` 就是踩了这个 |
+| **重跑一次压缩后图更糊了** | 压缩目标取了「资源当前体积」（已经是压过的），形成棘轮。现在取 `source_bytes`（原图体积）；老 work 目录手动补这个字段 |

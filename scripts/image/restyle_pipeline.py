@@ -321,6 +321,10 @@ def cmd_prepare(args) -> int:
         "asset": str(asset),
         "asset_rel": str(asset.relative_to(ROOT)) if str(asset).startswith(str(ROOT)) else str(asset),
         "asset_sha256": sha256(asset),
+        # 原图体积：压缩目标以它为基准，别以「资源当前体积」为基准。
+        # 🔴 用当前体积会**棘轮效应**：第一次压到 4bit 写完，重跑一次就拿 4bit 的
+        #    体积当目标，只能继续往更低位深压，越跑越糊。
+        "source_bytes": asset.stat().st_size,
         "asset_meta": str(asset.with_suffix(asset.suffix + ".meta")),
         "theme": args.theme,
         "theme_zh": theme["zh"],
@@ -1011,6 +1015,11 @@ def cmd_postprocess(args) -> int:
             log("postprocess", "套游戏卡框（auto：free 构图必套，画面缩进框内）")
         else:
             log("postprocess", "不套画框（auto：lock 构图保留原透明轮廓）")
+    # 🔴 源是 RGB 就必须还回 RGB：opaque 变体内部一直是 RGBA，直接存会把 RGB 资源写成 RGBA，
+    #    Unity 的纹理导入/压缩口径随之变化（799KB→1.6MB 那次就是这么来的），肉眼看不出来但确实变了。
+    if str(state.get("source_mode", "")).upper() == "RGB" and flat.mode != "RGB":
+        flat = flat.convert("RGB")
+        log("postprocess", "源是 RGB → 不透明版存回 RGB（不引入 alpha 通道）")
     flat.save(opaque_path)
 
     # alpha 三种取法，选错就是「人物被裁」这种硬伤：
@@ -1316,10 +1325,15 @@ def cmd_compress(args) -> int:
             return RC_FAIL
         asset = Path(state["asset"]) if state.get("asset") else None
 
-    # 目标默认 = 资源当前体积（此时还没写回，拿到的就是「之前那张」的体积）
-    if target_kb is None and asset is not None and asset.is_file():
-        target_kb = asset.stat().st_size / 1024
-        log("compress", f"目标体积默认取原资源：{target_kb:.1f} KB")
+    # 目标默认 = **原图**体积（prepare 时记下的 source_bytes）：「别比之前那张大」里的
+    # 「之前那张」指的是换风格之前的原资源，不是上一次已经压过的产物。
+    # 老 work 目录没有这个字段，退回资源当前体积（此时通常还没写回，等价）。
+    if target_kb is None and asset is not None:
+        base = (read_state(work).get("source_bytes") if work is not None else None) \
+            or (asset.stat().st_size if asset.is_file() else None)
+        if base:
+            target_kb = base / 1024
+            log("compress", f"目标体积默认取原资源：{target_kb:.1f} KB")
 
     rep = compress_file(src, target_kb=target_kb, max_diff=max_diff, mode=mode, log=lambda s: log("compress", s))
     print("  " + describe(rep))

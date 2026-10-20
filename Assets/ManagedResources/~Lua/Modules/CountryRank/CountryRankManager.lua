@@ -38,6 +38,9 @@ function CountryRankManager.Initialize()
     this._allRank = nil
     this._localRank = nil
     this._myRankInfo = nil
+    -- 首次进主界面的国家选择面板是否正在占屏（GuideManager 据此把新手引导排队）
+    this._firstEnterPopupShowing = false
+    this._firstEnterPopupDeadline = 0
 end
 
 ---------------------------------------------------------------- 玩家国家
@@ -173,7 +176,14 @@ end
 --[[
  * 进主界面后调用：第一次弹出国家旗帜选择，之后永不再弹。
  *
- * 用 Timer 延后一小段再弹，避免和主界面开场动画/其他弹窗抢焦点。
+ * 与新手引导的先后顺序（两者绝不能同屏）：
+ *   主界面 OnShow 末尾（本函数）先置「占屏」标记，再延时弹窗；
+ *   MainPanel 的 UI.OnOpen 是 OnShow **之后**才派发的，强制引导的 openType==4
+ *   正是监听这个事件 —— 那一刻 GuideManager.ShowGuide 会看到占屏标记，
+ *   把引导排进队列，等本面板关闭后再放行（见 GuideManager.FlushPendingGuides）。
+ *   反过来，如果此刻 GuidePanel 已经开着，本面板就等它关掉再弹。
+ *
+ * 用 Timer 延后一小段再弹，避免和主界面开场动画抢焦点（延时期间引导会被排队，不会插队）。
  *]]
 function CountryRankManager.TryShowFirstEnterGuide()
     -- 整段用 pcall 包住：这是挂在主界面 OnShow 上的附带功能，
@@ -182,21 +192,112 @@ function CountryRankManager.TryShowFirstEnterGuide()
         if CountryRankManager.HasShownGuide() then
             return
         end
+        if UIManager.IsOpen(UIName.CountryFlagSelectPopup) then
+            return
+        end
         -- 先落标记再弹窗：即使弹窗过程中玩家强退，也不会下次重复弹
         CountryRankManager.MarkGuideShown()
+        -- 占屏标记必须**同步**置上：引导在本函数返回后的同一帧就会尝试弹出
+        CountryRankManager.MarkFirstEnterPopupShowing(true)
         local timer
         timer = Timer.New(function()
             pcall(function()
                 timer:Stop()
-                UIManager.OpenPanel(UIName.CountryFlagSelectPopup, function(code)
-                    Log("[CountryRank] first-enter country picked: " .. tostring(code))
-                end)
+                CountryRankManager.ShowFirstEnterPopup()
             end)
         end, 0.6, 1, true)
         timer:Start()
     end)
     if not ok then
+        CountryRankManager.MarkFirstEnterPopupShowing(false)
         LogError("[CountryRank] guide failed, ignored: " .. tostring(err))
+    end
+end
+
+--- 首次进主界面的国家选择面板是否正占着屏（新手引导据此排队）
+---
+--- 两种情况都算占屏：
+---   1. 面板已经真的开出来了 —— 一直算，直到它关闭；
+---   2. 面板还在等那 0.6s 延时 —— 也算，否则引导会在这个空档里抢在前面弹出来。
+--- 第 2 种带超时（POPUP_PENDING_TIMEOUT）：万一弹窗链路整段失败（资源缺失、异常），
+--- 标记不能把新手引导永久堵死。
+local POPUP_PENDING_TIMEOUT = 2 -- 秒（远大于 0.6s 延时，又短到不会让玩家干等）
+
+local function nowSeconds()
+    if Time ~= nil and Time.realtimeSinceStartup ~= nil then
+        return Time.realtimeSinceStartup
+    end
+    return 0
+end
+
+function CountryRankManager.IsFirstEnterPopupShowing()
+    if this._firstEnterPopupShowing ~= true then
+        return false
+    end
+    -- 已经真开出来了：以 UI 状态为准，直到关窗
+    if UIManager ~= nil and UIManager.IsOpen ~= nil
+            and UIManager.IsOpen(UIName.CountryFlagSelectPopup) then
+        return true
+    end
+    -- 还在等延时弹窗的空档
+    if this._firstEnterPopupDeadline ~= nil and nowSeconds() <= this._firstEnterPopupDeadline then
+        return true
+    end
+    return false
+end
+
+--- 置/清「占屏」标记；清除时立刻放行排队中的新手引导
+function CountryRankManager.MarkFirstEnterPopupShowing(showing)
+    this._firstEnterPopupShowing = showing and true or false
+    this._firstEnterPopupDeadline = showing and (nowSeconds() + POPUP_PENDING_TIMEOUT) or 0
+    if not this._firstEnterPopupShowing and GuideManager ~= nil and GuideManager.FlushPendingGuides ~= nil then
+        GuideManager.FlushPendingGuides()
+    end
+end
+
+--- 真正弹出面板（内部处理「引导正开着就先等它」与「打开失败要解除占屏」）
+function CountryRankManager.ShowFirstEnterPopup()
+    -- 新手引导已经开着：等它关掉再弹，避免两个界面压在一起
+    if UIManager.IsOpen(UIName.GuidePanel) then
+        local onGuideClose
+        onGuideClose = function(panelType)
+            if panelType ~= UIName.GuidePanel then
+                return
+            end
+            Game.GlobalEvent:RemoveEvent(GameEvent.UI.OnClose, onGuideClose)
+            -- 延后一点：本回调还在 UIManager.CloseStackPanel 的收尾流程里（还会重开/聚焦栈内面板），
+            -- 此刻直接 OpenPanel 会被它接着改层级
+            local timer
+            timer = Timer.New(function()
+                timer:Stop()
+                pcall(function()
+                    CountryRankManager.ShowFirstEnterPopup()
+                end)
+            end, 0.2, 1, true)
+            timer:Start()
+        end
+        Game.GlobalEvent:AddEvent(GameEvent.UI.OnClose, onGuideClose)
+        return
+    end
+
+    -- 关窗（选完 / 点遮罩 / 点关闭）时解除占屏标记，排队的新手引导随即放行
+    local onClose
+    onClose = function(panelType)
+        if panelType ~= UIName.CountryFlagSelectPopup then
+            return
+        end
+        Game.GlobalEvent:RemoveEvent(GameEvent.UI.OnClose, onClose)
+        CountryRankManager.MarkFirstEnterPopupShowing(false)
+    end
+    Game.GlobalEvent:AddEvent(GameEvent.UI.OnClose, onClose)
+
+    local panel = UIManager.OpenPanel(UIName.CountryFlagSelectPopup, function(code)
+        Log("[CountryRank] first-enter country picked: " .. tostring(code))
+    end)
+    if panel == nil then
+        -- 打开失败（缺资源等）：立刻解除占屏，别把新手引导永久卡在队列里
+        Game.GlobalEvent:RemoveEvent(GameEvent.UI.OnClose, onClose)
+        CountryRankManager.MarkFirstEnterPopupShowing(false)
     end
 end
 

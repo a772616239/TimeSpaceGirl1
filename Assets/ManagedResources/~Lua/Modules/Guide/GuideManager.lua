@@ -10,6 +10,8 @@ local json = require 'cjson'
 local _CarbonGuildList = {}
 local _IsFuncGuild = false
 local _FuncGuideList = {}
+-- 被「首次进主界面的国家选择面板」挡住的引导（面板优先，引导排队等它关）
+local _PendingGuideList = {}
 
 --初始化
 function this.Initialize()
@@ -118,7 +120,8 @@ end
 
 -- 检测功能引导
 function GuideManager.CheckFuncGuide()
-    if not GuideManager.IsInMainGuide() and not _IsFuncGuild and #_FuncGuideList > 0 then
+    if not GuideManager.IsInMainGuide() and not _IsFuncGuild and #_FuncGuideList > 0
+            and #_PendingGuideList == 0 then
         if BattleManager.IsInBackBattle() then
             return
         end
@@ -186,6 +189,36 @@ function this.CheckNextGuideListen(nextId)
 end
 
 function this.ShowGuide(id, ...)
+    --[[
+     * 「首次进主界面的选择国家」面板优先级高于新手引导。
+     *
+     * 背景：主界面 OnShow 末尾会弹 CountryFlagSelectPopup，而强制引导的
+     * openType==4 监听的是 MainPanel 的 UI.OnOpen —— 那个事件在 OnShow 之后派发，
+     * 于是引导会紧跟着弹出来，压在选择国家面板上（GuidePanel 是全屏面板，
+     * 还会把栈内的选择面板一起关掉）。这里改成「引导排队」，等面板关闭后
+     * 由 CountryRankManager.MarkFirstEnterPopupShowing(false) 回调 FlushPendingGuides 放行。
+     *]]
+    if this.IsBlockedByCountryPopup() then
+        local wasEmpty = (#_PendingGuideList == 0)
+        _PendingGuideList[#_PendingGuideList + 1] = {
+            id = id,
+            args = { ... },
+            argc = select("#", ...),
+        }
+        if wasEmpty then
+            -- 兜底：万一选择面板最终没能弹出来（缺资源/异常），也不能让引导一直卡在队列里。
+            -- FlushPendingGuidesNow 内部会重新判定是否还挡着，没挡住才真正放行。
+            local timer
+            timer = Timer.New(function()
+                timer:Stop()
+                this.FlushPendingGuidesNow()
+            end, 3, 1, true)
+            timer:Start()
+        end
+        Log("[Guide] 选择国家面板占屏中，引导排队：" .. tostring(id))
+        return
+    end
+
     -- 引导数据打点
     DataCenterManager.CommitClickStatus(GetLanguageStrById(10839), tostring(id))
     -- ThinkingAnalyticsManager.Track("guild", {
@@ -218,6 +251,47 @@ function this.ShowGuide(id, ...)
     Log("执行引导panel")
     -- 显示当前引导
     UIManager.OpenPanel(UIName.GuidePanel, id, onGuideClose, ...)
+end
+
+--- 当前是否被「首次进主界面的选择国家面板」挡着（该面板优先，引导要让路）
+--- 「待弹（延时中）」和「已弹」都算挡着，判断细节与超时兜底在 CountryRankManager 里。
+function this.IsBlockedByCountryPopup()
+    if CountryRankManager == nil or CountryRankManager.IsFirstEnterPopupShowing == nil then
+        return false
+    end
+    return CountryRankManager.IsFirstEnterPopupShowing() == true
+end
+
+--- 放行排队中的引导（CountryRankManager 在面板关闭时回调）
+--- 延后一帧多一点：本函数是在面板关闭的事件派发里被调用的，此时 UIManager
+--- 还在 CloseStackPanel 的收尾流程中（还会 Focus/重开栈内面板），立刻 OpenPanel
+--- 会被它接着改层级。
+function this.FlushPendingGuides()
+    if #_PendingGuideList == 0 then
+        return
+    end
+    local timer
+    timer = Timer.New(function()
+        timer:Stop()
+        this.FlushPendingGuidesNow()
+    end, 0.15, 1, true)
+    timer:Start()
+end
+
+--- 立刻放行（面板还挡着就什么都不做，等它下次关闭）
+function this.FlushPendingGuidesNow()
+    if #_PendingGuideList == 0 then
+        return
+    end
+    if this.IsBlockedByCountryPopup() then
+        return
+    end
+    local list = _PendingGuideList
+    _PendingGuideList = {}
+    for i = 1, #list do
+        local item = list[i]
+        this.ShowGuide(item.id, unpack(item.args, 1, item.argc))
+    end
 end
 
 -- 同步引导数据到服务器

@@ -1,7 +1,7 @@
 # UI 面板浮动 / 呼吸动画（弹入 + 循环呼吸）
 
 > 适用范围：TimeSpaceGirl1 项目（Unity 6000.6.5f1）
-> 更新时间：2026-10-20（第 4 次落地后重整：新增体检脚本 + 十坑 + 三层验收）
+> 更新时间：2026-10-20（第 4/5 次落地后重整：体检脚本 + 十坑 + 三层验收 + 附录 E 页签翻入）
 > 工具：`.workbuddy-ai/skills/ui-panel-float-anim/scripts/`
 > （`audit_panel.py` 体检 / `gen_float_anim_yaml.py` 生成 / `dump_prefab_tree.py` 看层级 / `UIPanelFloatAnimBuilder.template.cs` Unity 版）
 > 现成实现：`FirstRechargePanel`、`SupremeHeroPopup`、`ExpertPanel`、`DailyRechargePanel(原版)`
@@ -88,7 +88,7 @@ python3 $S/dump_prefab_tree.py <prefab> --depth 2                       # ② ba
 
 ## 2. 30 秒判断：这个面板能不能照搬
 
-按顺序问六个问题，任一命中就按"规避"列处理（除第 1 条，其余 `audit_panel.py` 都会直接打标记）：
+按顺序问七个问题，任一命中就按"规避"列处理（除第 1、7 条，其余 `audit_panel.py` 都会直接打标记）：
 
 | # | 情况 | 怎么判断 | 规避 |
 |---|---|---|---|
@@ -98,6 +98,7 @@ python3 $S/dump_prefab_tree.py <prefab> --depth 2                       # ② ba
 | 4 | 有 `PlayFlyAnim`(DOTween) 在写某个节点的位置 | 节点上有 `PlayFlyAnim.cs`，看 `tweenSequeue[].targetObj` | **不要写那个节点的 anchoredPosition**，只写 scale |
 | 5 | 目标节点是布局组的子节点 | 父节点挂 `HorizontalLayoutGroup`（guid `30649d3a…`）/ `VerticalLayoutGroup` | **只能写 scale，不能写位置**（位置每帧被布局组重算） |
 | 6 | 目标节点自己挂着 Animator（按钮常见：`CommonButton`） | 该节点 `!u!95` 且 `m_Enabled: 1` | **不要写它 clip 里已有的属性**：父子两级写同一属性时结果不可靠（首充实测按钮的缩放脉冲不生效），优先只写它没写的通道 |
+| 7 | 目标节点是 **Lua 运行时克隆**的列表项（数量不固定） | prefab 里只有一个模板（如 `tabsContent/btn`），源码里 `newObjToParent` + `name = "tab"..i` | **别写静态曲线**（数量/命名/激活态都不固定，绑定不上且会卡值）⇒ 走 Lua 驱动，见附录 E |
 
 > 第 2、3 条是 2026-10-20 落地 ExpertPanel 才暴露的：前三个面板都没有"整屏纯色遮罩"和"十几个未激活子页"。
 > 第 3 条尤其隐蔽——曲线写对了、`missing=0`、Unity 也不报错，只是**那个页面切过去时是 scale 0**。
@@ -504,3 +505,56 @@ prefab diff 只有 2 处（`m_Component` +1 条、文件尾 `!u!95`），对象�
 prefab → controller(`9c44e0eb`) → 两个 clip 闭合；`m_WriteDefaultValues: 1` 且 `start` 末值 = prefab 默认值（切态不跳）。
 
 **待做**：重打 AB（Unity 当前停在 Play mode 占着 `Temp/UnityLockfile`，batchmode 跑不了）。
+
+---
+
+## 附录 E：经营面板页签逐格翻入（2026-10-20，ExpertPanel，**Lua 驱动**）
+
+**参考素材**：`Assets/Art/UIAni/cn2-X1_UI_SevenDayCarnivalPanelV2.anim`（挂在 `SevenDayCarnivalPanelV2`
+根节点的 **legacy Animation** 上，prefab 里 `daysTabBg/tabsGroup` 是 `VerticalLayoutGroup`）：
+
+| 项 | 值 |
+|---|---|
+| 曲线 | 7 条，全在 `m_ScaleCurves`，path = `bg/daysTabBg/tabsGroup/day_1..7` |
+| 单格 | scaleX `0 → 1`，0.1667s（10 帧 @60fps） |
+| 错开 | 相邻两格 0.0333s，整体 0.3667s |
+| 循环 | `m_LoopTime: 1`（常驻循环） |
+
+> 只写 **scaleX**——`tabsGroup` 是 VerticalLayoutGroup，写位置每帧会被重算。这条和 §2 第 5 条一致。
+
+**为什么不能照抄成 clip**（三个障碍，任一就够否掉静态曲线）：
+
+| 障碍 | 证据 |
+|---|---|
+| 页签是 Lua 克隆 | `ExpertPanel.lua` 里 `newObjToParent(pre)` 克隆 `tabsContent/btn` 再 `name = "tab"..i`，数量随活动开关在 8~22 之间变 |
+| 显示顺序 ≠ tab 下标 | `TabSort()` 按 `ActivityGroups.Sort` 调 `SetSiblingIndex` |
+| 每格自带 Animator | `Animator(CommonButton.controller)`，Normal 状态是**单帧 clip**，照样每帧写 `m_LocalScale = 1` |
+
+**做法**（全部在 `ExpertPanel.lua`，prefab 一行没动）：
+
+| 函数 | 干什么 |
+|---|---|
+| `PlayTabFlipIn()` | 遍历 `tabs/viewPort/tabsContent` 的**子节点**（不是 tab 下标），跳过模板 `btn` 与 `activeSelf == false`，按顺序 `DOScale(one, 0.167):SetDelay(order * step)` |
+| `PlayTabSelectFlip(index)` | 切换页签时只翻 `selected` 高亮板（该节点没有 Animator，不抢通道） |
+| `StopTabAnims()` | Kill 全部 tween + `localScale = one` + **恢复 `Animator.enabled`**；重播 / `OnClose` / `OnDestroy` / 异常回滚都走它 |
+
+**🔴 必须先把该格的 `Animator.enabled` 置 false**：Unity 每帧顺序是 `Update → Animator 求值 → LateUpdate`，
+DOTween 默认在 `Update`。Animator 后写 ⇒ tween 被每帧盖回去，现象是「代码跑了、页签没动」。
+所以：翻入前 `anim.enabled = false`，`OnComplete` 里恢复（恢复后 Normal 写回 scale=1，与末值一致，不跳）。
+
+**参数与自适应**：`0.167s/格`、`0.033s` 错开；可见数多时压缩错开，保证整段 ≤ `0.5s`
+（20 格时实测错开 0.026，整体 0.66s 含单格时长）。**只播一次**——参考那边 loop=1 常驻循环，
+但 20+ 格一直翻很吵。
+
+**离线验证**（不启动 Unity，`/tmp` 里用假 `Util/Vector3/DOTween` 跑真源码）：
+
+| case | 断言 | 结果 |
+|---|---|---|
+| 顺序与错开 | 6 个子节点（1 个模板、1 个 inactive）⇒ 只起 4 条 tween，延迟 0/0.033/0.066/0.099 | ✅ |
+| 完成恢复 | 全部 `Complete()` 后 scale=1、`Animator.enabled=true` | ✅ |
+| 中途 Stop | 全部 Kill，scale 与 Animator 全部复位 | ✅ |
+| 数量自适应 | 24 格 ⇒ 末格延迟压到 0.5 | ✅ |
+| 高亮板 | 从 0 起、重播前 Kill 上一个 | ✅ |
+
+**收尾**：`bash scripts/lua-bytes-sync.sh <lua 路径>` 重编 `LuaBytes/Modules_Expert_ExpertPanel_64.bytes`
+（13403 → 15505 B），`--check` 复验「已同步」。**只改源码不改字节码 = 真机不生效**。

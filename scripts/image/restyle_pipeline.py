@@ -1259,6 +1259,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--layout", default=None, help="构图锁：文件路径或多行文本（默认用预设里的通用规则）")
     p.add_argument("--composition", choices=list(COMPOSITIONS), default=None,
                    help="lock=姿势/版式全锁（默认）；free=允许重设计人物姿势与镜头，只锁文案/空白区/画布")
+    p.add_argument("--pose", default=None,
+                   help="free 模式的姿势：留空=每次从主题候选里随机抽一条（推荐，避免每张图一个模子）；"
+                        "数字=指定第 N 条；none=不注入姿势；其它文字=当作自定义姿势句")
     p.set_defaults(func=cmd_prompt, key=None)
 
     p = sub.add_parser("prepare", help="校验源资源并建立工作目录")
@@ -1272,6 +1275,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--layout", default=None, help="构图锁：文件路径或多行文本（决定文案怎么保）")
     p.add_argument("--composition", choices=list(COMPOSITIONS), default=None,
                    help="lock=姿势/版式全锁（默认）；free=允许重设计人物姿势与镜头，只锁文案/空白区/画布")
+    p.add_argument("--pose", default=None,
+                   help="free 模式的姿势：留空=随机抽主题候选；数字=第 N 条；none=不注入；其它文字=自定义")
     p.set_defaults(func=cmd_prepare)
 
     p = sub.add_parser("postprocess", help="去水印 + 尺寸归位 + 出双版本 + 对比图")

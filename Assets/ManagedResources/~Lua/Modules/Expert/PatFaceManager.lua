@@ -1,3 +1,5 @@
+require("Modules/Popup/PopupQueue")
+
 PatFaceManager = {}
 local this = PatFaceManager
 this.isFirstLog = 0--0当天第一次登陆
@@ -404,7 +406,9 @@ function this.OpenPatFacePanel(_patFaceAllData)
         for i = #_patFaceAllData, 1, -1 do
             this.patFaceCallList:Push(function()
                 PatFaceManager.SetisFirstLogVal(1, { _patFaceAllData[i] })
-                UIManager.OpenPanel(UIName.PatFacePanel, _patFaceAllData[i], function()
+                --拍脸之间原本靠 0.5s 回调串行，但和登录期其它主动弹窗仍会撞车；
+                --统一进弹窗队列，由队列保证「关一个再开下一个」
+                PopupQueue.PushSilent(UIName.PatFacePanel, _patFaceAllData[i], function()
                     if this.time2 then
                         this.time2:Stop()
                         this.time2 = nil

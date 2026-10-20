@@ -1,4 +1,5 @@
 require("Modules/CountryRank/CountryConfig")
+require("Modules/Popup/PopupQueue")
 
 --[[
  * 国家排行榜 —— 数据与状态管理
@@ -243,6 +244,12 @@ function CountryRankManager.IsFirstEnterPopupShowing()
     if this._firstEnterPopupDeadline ~= nil and nowSeconds() <= this._firstEnterPopupDeadline then
         return true
     end
+    -- 已经进了弹窗队列、只是前面还有别的主动弹窗没关完：
+    -- 队列里排队同样算占屏，否则超时后引导会插到它前面去
+    if PopupQueue ~= nil and PopupQueue.IsQueued ~= nil
+            and PopupQueue.IsQueued(UIName.CountryFlagSelectPopup) then
+        return true
+    end
     return false
 end
 
@@ -291,11 +298,12 @@ function CountryRankManager.ShowFirstEnterPopup()
     end
     Game.GlobalEvent:AddEvent(GameEvent.UI.OnClose, onClose)
 
-    local panel = UIManager.OpenPanel(UIName.CountryFlagSelectPopup, function(code)
+    -- 走弹窗队列：前面若还有首充/拍脸/至尊英雄没关，就排在它们后面
+    local accepted = PopupQueue.PushSilent(UIName.CountryFlagSelectPopup, function(code)
         Log("[CountryRank] first-enter country picked: " .. tostring(code))
     end)
-    if panel == nil then
-        -- 打开失败（缺资源等）：立刻解除占屏，别把新手引导永久卡在队列里
+    if not accepted then
+        -- 入队/打开失败（缺资源等）：立刻解除占屏，别把新手引导永久卡在队列里
         Game.GlobalEvent:RemoveEvent(GameEvent.UI.OnClose, onClose)
         CountryRankManager.MarkFirstEnterPopupShowing(false)
     end

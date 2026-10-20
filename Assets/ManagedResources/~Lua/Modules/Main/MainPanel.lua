@@ -1,4 +1,5 @@
 require("Base/BasePanel")
+require("Modules/Popup/PopupQueue")
 MainPanel = Inherit(BasePanel)
 local this = MainPanel
 --local isPassChapter = {}
@@ -621,7 +622,8 @@ function this:OnShow()
             local isEject = PlayerPrefs.GetInt(PlayerManager.uid .. "FirstRechargePanelisEject") == 0
             if isEject then
                 PlayerPrefs.SetInt(PlayerManager.uid .. "FirstRechargePanelisEject", 1)
-                UIManager.OpenPanelWithSound(UIName.FirstRechargePanel)
+                --走弹窗队列：首充 / 拍脸 / 国家选择 / 至尊英雄同时请求时逐个展示，不再叠在一起
+                PopupQueue.Push(UIName.FirstRechargePanel)
             end
         end
     end
@@ -634,7 +636,7 @@ function this:OnShow()
             FirstRechargeManager.PlayerPrefsSetStrItemId(1)
             --发送埋点数据
             patBool = false
-            UIManager.OpenPanelWithSound(UIName.FirstRechargePanel,nil,function()
+            PopupQueue.Push(UIName.FirstRechargePanel, nil, function()
             end)
         end
     end
@@ -1579,7 +1581,8 @@ function this.RefreshActivityShow()
                                     local isEject = PlayerPrefs.GetInt(PlayerManager.uid .. "SupremeHeroPopupisEject") == 0
                                     if isEject then
                                         PlayerPrefs.SetInt(PlayerManager.uid .. "SupremeHeroPopupisEject", 1)
-                                        UIManager.OpenPanelWithSound(UIName.SupremeHeroPopup)
+                                        --走弹窗队列，避免和首充/拍脸/国家选择撞在一起
+                                        PopupQueue.Push(UIName.SupremeHeroPopup)
                                     end
                                 end
                             else

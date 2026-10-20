@@ -679,3 +679,75 @@ DOTween 默认在 `Update`。Animator 后写 ⇒ tween 被每帧盖回去，现�
 - 参考的"落 110px"作用在不可见的全屏遮罩上；这里作用在承内容的 `pageContent`，位移量仍取 110（与 ExpertPanel 一致）。
 
 **待做**：AB 重打；真机/实拍未做（需要登录态，纯 Lua 改动只能跑起来看）。
+
+---
+
+## 附录 H：充值主面板 MainRechargePanel（2026-10-20，**Lua 驱动**，第三次复用同一份参考）
+
+参考仍是 `cn2-X1_UI_SevenDayCarnivalPanelV2.anim`（7 条 `m_LocalScale.x` + 2 条 `bg` 的 `m_FloatCurves`）。
+本面板是第三次复用，`prefab` 一行没动。
+
+**S0 体检（`audit_panel.py` + `dump_prefab_tree.py --rect`）**
+
+| 节点 | 实况 | 处理 |
+|---|---|---|
+| `bg` | 四边拉满、**无 sprite**、`color=(0.255,0.161,0.471,1)` 不透光 | **不动**：它是整块纯色底，缩放只会露边 |
+| `content` | **无任何组件**的透明容器，四边拉满 / pivot 0.5 / 基准 `(0,0)`，下挂 `ShopView` / `VipPanel` / `GiftShop` | 落位写它（几何与参考 `bg` 等价，且看得见） |
+| `tabbox/tab` | 页签**模板**，挂 `CommonButton` 的 Animator，`TabBox:Init` 时 `SetActive(false)` 后克隆 | 只写克隆体的 scale |
+| `tabbox/box` | `HorizontalLayoutGroup` + `ContentSizeFitter` | 位置归布局组，不写位置 |
+| `tabbox` / `btnBack` | ScrollRect / 自带 `CommonButton` | 本次不写 |
+
+**面板已自带的动画：无。** 全 prefab 只有 16 个 `CommonButton` 的 Animator，
+没有任何 `Animation`（legacy）组件、也没有任何 `cn2-X1_UI_MainRecharge*` 的 clip
+⇒ 不存在通道互斥问题；唯一要抢的是每格 `CommonButton` 的 `CommonButtonAnim.anim`
+（`m_LocalScale 1.1→1`，0.083s，写全三条轴）。
+
+**为什么走 Lua**：
+
+| 判据 | 本面板 |
+|---|---|
+| 运行时克隆 | 页签由公共 `TabBox` 在 `OnOpen` 里 `newObjToParent` 克隆（可充值时 4 个、关闭充值只有 1 个）⇒ 静态曲线绑不上 |
+| 面板缓存复用 | 第二次打开不再走 `OnOpen`，静态 clip 得手动 `Animator.Play` |
+| 事件驱动 | 切页需单独翻新选中的高亮板 |
+| 数量自适应 | 页签数随 `RECHARGEABLE` 变 |
+
+**🔴 没有改 `TabBox`**：`Modules/Common/TabBox.lua` 是十几个面板共用的公共模块，
+动画全部写在面板侧（`MainRechargePanel.lua`），靠 `GetTabList()` 取页签列表。
+
+**实现**（`MainRechargePanel.lua`）：
+
+| 函数 | 干什么 |
+|---|---|
+| `PlayTabFlipIn()` | 按 `GetTabList()` 顺序（＝`box` 子节点顺序＝版面顺序）逐格 `scaleX 0→1`，跳过 inactive；翻入期间临时关掉该格 `CommonButton` 的 Animator |
+| `PlayTabSelectFlip(index)` | 切页签时翻 `Select` 高亮板（该节点无 Animator，不抢通道）。**必须冒号定义**，调用方是 `this:PlayTabSelectFlip(index)` |
+| `PlayDropIn()` | `content` 的 `anchoredPosition (0,110) → (0,0)`，0.3667s，`InOutQuad`；执行后置 `animReady` |
+| `StopOpenAnims()` | Kill 全部 tween + `scale=one` + 恢复 Animator + 高亮板复位 + 落位复位（`OnShow` 起始 / `OnClose` / `OnDestroy`） |
+
+参数沿用参考：`0.167s/格`、错开 `0.033s`、可见数多时压缩到 ≤ `0.5s` 跨度；落位 `110px / 0.3667s`。
+
+`OnShow` 顺序：`ChangeTab`（确定选中页）→ `PlayTabFlipIn()` → `PlayDropIn()`。
+**顺序不能反**：`PlayTabFlipIn` 第一行 `StopOpenAnims()` 会把先起的落位杀掉（harness case8 钉成断言）。
+
+**`animReady` 闸门**：`TabBox:Init` 在 `OnOpen` 里就会回调一次 `OnPageTabChange`（默认页），
+那次是初始化不是切页 ⇒ `PlayTabSelectFlip` 内部按 `animReady` 过滤，只有 `PlayDropIn`
+起过之后的切页才翻高亮板。
+
+**离线验收**：`scripts/lua-tests/test_mainshop_openanim.lua`，9 个 case 全过
+（逐格翻入 / 中途 Stop 回滚 / 压缩错开 / 高亮板+闸门 / 高亮板中途 Stop 复位 / 落位 /
+落位 Stop 与重播 / 顺序约束 / OnClose+OnDestroy 回收）。
+这份 harness **加载的是真 `TabBox`**，跑真克隆流程，比前两份更接近真机。
+
+**harness 抓到 3 个静默 bug**（都已修）：
+
+1. `PlayTabSelectFlip` 点式定义 + 冒号调用 ⇒ `index` 吃 `self`，`list[this]` 为 nil ⇒
+   真机上**高亮板永远不翻**（无报错、无日志）。
+2. `StopOpenAnims` Kill 高亮板 tween 后没复位 ⇒ 切页后 0.17s 内关面板会让那块板永久停在半截。
+   **OperatingPanel / ExpertPanel 是同款**，本轮一并修掉（各 +`tabSelectTf` 复位）。
+3. 缺 `animReady` 闸门 ⇒ `OnOpen` 那次初始化回调先翻一遍高亮板，随即被 `StopOpenAnims` 杀掉（白跑）。
+
+**偏离参考之处**：同附录 F/G —— 参考 `m_LoopTime: 1` 常驻循环，这里只播一次；
+参考"落 110px"作用在不可见的遮罩上，这里作用在承内容的 `content`；翻入一律"从 t=0 全隐藏"。
+
+**产物**：`LuaBytes/Modules_Recharge_MainRechargePanel_64.bytes`（5050 → 8363 B），`--check` 已同步。
+
+**待做**：AB 重打；实拍未做（需要登录态）。

@@ -401,6 +401,8 @@ foreach (var b in AnimationUtility.GetCurveBindings(clip))
 | S2 | 漏恢复 `Animator.enabled` | 那颗按钮永久失去按下反馈 |
 | S2 | `Stop` 只写在 `OnClose` | `DestroyPanel` 不走 `OnClose`；面板还会被缓存复用 |
 | S2 | 两个动画都自己 `Stop`，顺序反了 | 后起的把前一个的 tween 杀掉（本次 flip 必须先于 drop） |
+| S2 | `function this.F(i)`（点式）配 `this:F(i)`（冒号）调用 | 第一个实参被 `self` 吃掉 ⇒ `i` 拿到 table、`list[i]` 为 nil ⇒ **静默不播**（无报错、无日志） |
+| S2 | Kill 掉「先把节点置 0 再长回 1」的 tween 却不复位 | 那个节点永久停在半截缩放（切页后 0.17s 内关面板即触发） |
 | S3 | 校验用根节点 `Find(path)` | 口径错了，`missing=0` 是假阳性 |
 | S3 | 改了 Lua 没重编 Bytecode | 真机跑的是 `.bytes` |
 | S3 | 用 `sh` 跑 `lua-bytes-sync.sh` | 第 60 行需要 bash 语义 |
@@ -454,6 +456,28 @@ Commits：`b1b4580ed`（撤销错方向）、`2198f87da`（补落位曲线）、
 
 记录见配方文档附录 G。产物：`LuaBytes/Modules_Operating_OperatingPanel_64.bytes`（9850 → 13329 B）。
 
+### 第三次复用：`MainRechargePanel`（页签由公共 `TabBox` 克隆）
+
+第三遍，S0→S4 一轮走完，`prefab` 一行没动。与前两次的差异：
+
+| 环节 | 这次的判断 |
+|---|---|
+| S0 | 面板**没有任何** `Animation` / `Animator`（除 16 个 `CommonButton`）、也**没有**任何 `cn2-X1_UI_MainRecharge*` 的 clip ⇒ 通道全空，不用做互斥清单 |
+| S0 | `bg` 是**无 sprite 的纯色全屏块**（`color=(0.255,0.161,0.471,1)`，四边拉满）⇒ 只当背景，不写它；落位目标选 `content`（无组件的透明容器，四边拉满 / pivot 0.5 / 基准 `(0,0)`，与参考 `bg` 几何等价且**看得见**） |
+| S1 | 页签是 `TabBox`（`Modules/Common/TabBox.lua`）**运行时克隆**的，`box` 挂 `HorizontalLayoutGroup` ⇒ 位置被布局组接管，只写 scale。**没有改 `TabBox` 本体**（十几个面板共用），动画写在面板侧，靠 `GetTabList()` 拿列表 |
+| S2 | `GetTabList()` 的下标**就是版面顺序**（按 `box` 子节点顺序克隆），不需要像 OperatingPanel 那样按 sibling 遍历 |
+| S2 | 每格 `CommonButton` 的 clip 是 `CommonButtonAnim.anim`：`m_LocalScale 1.1→1`（0.083s，写全三条轴）⇒ 与翻入抢同一通道，照旧临时 `enabled=false` |
+| S2 | 切页回调 `OnPageTabChange` 在 `TabBox:Init`（`OnOpen` 内）就会被调一次 ⇒ 加 `animReady` 闸门，只让 `PlayDropIn` 之后起的切页翻高亮板 |
+| S3 | 新增 `scripts/lua-tests/test_mainshop_openanim.lua`（9 case，**加载真 `TabBox`** 跑真克隆流程）。第一次跑就抓到 3 个问题（见下） |
+
+**harness 这轮直接抓到 3 个 bug**（都是"能编译、能跑、但不动/半截"的静默故障）：
+
+1. `PlayTabSelectFlip` 写成 `function this.PlayTabSelectFlip(index)`（点式）却用 `this:PlayTabSelectFlip(index)` 调 ⇒ `index` 拿到的是 `this`，`list[this]` 为 nil ⇒ **真机上高亮板永远不翻**。改成冒号定义。
+2. `StopOpenAnims` Kill 高亮板 tween 后没复位 ⇒ 切页途中关面板会让那块板永久停在半截。顺手把 **OperatingPanel / ExpertPanel 同款**一并修了。
+3. `animReady` 闸门缺失会让 `OnOpen` 那次初始化回调提前翻一遍高亮板（先翻后被 `StopOpenAnims` 杀掉，白跑一次 tween）。
+
+记录见配方文档附录 H。产物：`LuaBytes/Modules_Recharge_MainRechargePanel_64.bytes`（5050 → 8363 B）。
+
 ---
 
 ## 10. 交付前自查（可直接贴进 PR）
@@ -468,6 +492,8 @@ Commits：`b1b4580ed`（撤销错方向）、`2198f87da`（补落位曲线）、
 [ ] S2  Stop 收口唯一，OnClose + OnDestroy 都调
 [ ] S2  临时禁用的 Animator 在 OnComplete 与 Stop 两处都恢复
 [ ] S3  离线条数/hash/首尾/guid 链全过
+[ ] S2  冒号调用对应的函数必须冒号定义（点式定义 + 冒号调用会静默不播）
+[ ] S2  Kill「先置 0」的 tween 时同步复位该节点
 [ ] S3  lua-tests harness ALL OK；lua-bytes-sync --check 已同步
 [ ] S4  回读 missing 相对 animator.transform 算；状态默认值一致
 [ ] S4  实拍截帧看过（含第 1 帧与中途）、开关 10 次无残留

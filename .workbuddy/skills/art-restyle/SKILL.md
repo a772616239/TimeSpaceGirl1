@@ -40,6 +40,21 @@ $PY scripts/image/restyle_pipeline.py publish --work "$W" --variant alpha --yes
 - `--composition free` 时源 alpha 是按老姿势抠的，会切掉新画的脸/帽子 ⇒ 自动降级 `keep`。
 - 写回成功 ≠ 进包：还要在 Unity 里重打该资源所在 AssetBundle（`FrameTool.BuildGameAssetBundles`）。
 
+### 1.1 provider 怎么选：额度按账号算，本机 Chrome 用尽就换 SunBrowser
+
+- 默认 `PROVIDER=chatgpt_web` 走**本机 Chrome 登录态**（profile `Profile 5`）。
+- 🔴 **本机 Chrome 一旦报「超时仍未拿到图 / 额度用尽 / 页面被关（page has been closed）/
+  `.codex-dialog-overlay` 遮罩挡住发送」——直接换 AdsPower 的 SunBrowser，不要原地重跑烧额度：**
+
+  ```bash
+  $PY scripts/image/find_browser_cdp.py      # → best port=64757（Chrome/144，端口不在命令行里，只能反查）
+  # Jenkins TS-Art-Restyle 里填 CDP_PORT=64757（= 给 driver 加 --reuse-cdp：只连不断、不关用户窗口）
+  ```
+
+  换号 = 在 AdsPower 里开另一个已登录 profile，再反查一次端口。SunBrowser 界面语言可能不是中文，
+  `GEN_ALT` 已覆盖中/英/日/韩/西/法/德/葡。
+- 右下角**自带亮装饰带**的图（千抽底板那条青/白 V 形带）会把水印判据骗过去 ⇒ 传 `WATERMARK=off`。
+
 ## 2. 边框三定律
 
 ### 2.1 语言必须是游戏自己的，不是相框

@@ -311,3 +311,58 @@ prefab 的 diff 只有两处（根节点 `m_Component` 里那条 fileID + 组件
 > 教训：Unity 对绑不上的曲线**不报错**，只在 Inspector / Animation 窗口标 Missing。所以"动画有没有生效"只能靠
 > `animator.transform.Find(path)` 逐条验，肉眼看面板"没动"分不清是没挂上、挂错节点、还是曲线本身没写。
 
+
+---
+
+## 附录 D：经营面板落地（2026-10-20，ExpertPanel）
+
+**这个面板和前面两个都不一样**：根节点上**什么动画组件都没有**，而且文件里已经存在**别的节点的**
+legacy `Animation`（`downLayout/ContinuityRecharge` 自带的）和 10 个 `CommonButton` 的 `Animator`。
+所以"取第一个 `!u!111`/`!u!95`"会直接挂到子页面上——第一次跑就撞上了（`check_paths` 报
+曲线解析不到，锚点变成了 `ExpertPanel/downLayout/ContinuityRecharge`）。**校验拦住了，prefab 没落盘。**
+
+**层级实况**（根子节点只有 4 个）：
+
+| 部件 | 路径 | 实际是什么 | 处理 |
+|---|---|---|---|
+| 黑底遮罩 | `bg` | Image **无 sprite**、color 黑、alpha=1 | 只写 `m_Color.a`（0 → 1，0→0.12s）。**不能写缩放**：它铺满全屏，缩下去四周露边 |
+| 内容区 | `downLayout` | 无 sprite 的透明容器，承载全部活动页 | 呼吸/落位都写它（y + scale），子页**不写** |
+| 页签列 | `tabs` | ScrollRect，底板 `cn2-X1_yingxiongxiangqing_yeqiandiban` | 只写 `tabs` 容器本身；`viewPort/tabsContent` 归 VerticalLayoutGroup，页签按钮是 Lua 克隆的 `tab1..32`（静态曲线绑不到） |
+| 返回 | `btnBack` | 自带 `CommonButton` 控制器 | 只写位置 |
+
+**为什么子页不写曲线**：`ExpertPanel.lua:ActivityRewardShow` 用 `SetActive` 切换十来个活动页
+（`exChangeGrid`/`UpLvRewardGrid`/`GiftBuy`/`BoxPool`…）。未激活的节点不参与动画求值，曲线等于白写；
+更糟的是先写 `0 → 1` 的弹入，页面在弹入之后才被激活时会**卡在 scale 0**。只给默认页的
+`downLayout/expertRewardGrid/banner` 留了一条弹入（它是默认展示页，打开时就在）。
+
+**曲线**（基准 y：`downLayout`/`tabs` = 0，`btnBack` = 73.5）：
+
+| 阶段 | 部件 | 曲线 |
+|---|---|---|
+| start 1.0s | `bg` alpha | 0 / .12 → 0, 1 |
+| | `downLayout` | y -22 → 0（.10–.44）；scale .94 / 1.02 / .99 / 1（.10/.26/.38/.46） |
+| | `tabs` | y -16 → 0（.18–.50）；scale .88 / 1.06 / .99 / 1（.18/.32/.44/.54） |
+| | `expertRewardGrid/banner` | scale .94 / 1.02 / 1（.22/.36/.48） |
+| | `btnBack` | y 55.5 → 73.5（.30–.52，只写位置） |
+| normal 3.0s | `downLayout` | y 0 / -9 / 0；scale 1 / 1.006 / 1（只放大） |
+| | `tabs` | y 0 / +5 / 0（与内容反相） |
+| | `btnBack` | y 73.5 / 75.5 / 73.5 |
+
+> 全屏 hub 不做 1.8 那种爆弹、也不缩到 1 以下——`start` 幅度整体压到 ±6%，靠**相位错开**（遮罩 0 →
+> 内容 .10 → 页签 .18 → banner .22 → 按钮 .30）出层次感。
+
+**生成器这次补的两个能力**（`gen_float_anim_yaml.py`）：
+
+| 能力 | 说明 |
+|---|---|
+| 目标节点既没 `Animation` 也没 `Animator` ⇒ **新增** | 往该 GameObject 的 `m_Component` 尾部追加一条 + 文件尾追加 `!u!95` 块（对象数 3070 → 3071） |
+| 锚点**只由层级决定** | 删掉 `pick_animator`（"取文件里第一个"就是附录 C 事故的根因），改成 `resolve_target_go`：默认根节点，`--animator-go` 显式指定；`_component_on(prefab, go, cls)` 只找挂在**这个** GO 上的组件 |
+
+**验收记录**（Unity 回读 + 临时 additive 场景实拍）：
+
+- `start` 1.000s / 16 条曲线、`normal` 3.000s / 6 条曲线，`loopTime` False/True
+- `missing(相对 Animator 节点)=0`；`bg` 默认 alpha=1（`start` 末值与 `normal` 的 WriteDefaultValues 一致，切态不跳）
+- `normal` 首尾同值：n=0 与 n=1 实测 `dlY 0 / dlS 1 / tabsY 0 / maskA 1` 完全相同
+- prefab diff 只有 2 处（`m_Component` 多一条 + 文件尾 `!u!95`），对象总数 3070 → 3071
+- 实拍：t=0 四周还是场景色，t=0.26 遮罩已盖住 ⇒ 遮罩淡入生效
+- **待做**：重打 AB（新 clip/controller 是 prefab 的依赖，不打资源包真机还是旧包）

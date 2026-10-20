@@ -29,7 +29,9 @@
 - 🔴 服务端下发收口 `AbstractRank.getOneUserRank` 的 `.setCountry(...)`；**关卡榜例外**：`getRank` 同分重排重建 `UserRank` 是逐字段复制，改行字段必须同步这段。
 - 🔴 改旗收口 `CountryRankManager.SetPlayerCountry`→`OnCountryChanged`+`RefreshSelfFlags()`；前三名只在 `SetHeadFlag` 写；「我的排名」走 `RefreshMyRankFlag`（空榜→未上榜→分会榜，Unranked 必须隐藏；公会战力榜取会长国籍）。
 - 🔴 测试陷阱：`GetPlayerCountry()` 优先服务端值 ⇒ 断言前先 `PlayerManager.country = nil`。
-- 🔴 「没旗」= 库没数据（209 号仅 44 有 country），无 country 画问号；10-20 起 `LoginRequestHandler` 落 IP + 离线 IP 库解析。
+- 🔴 「没旗」= 库没数据（209 号曾仅 44 有 country），无 country 画问号。10-20 已落地运行时 IP→国家（`9ed2c1f3`）：唯一入口 `PlayerCountryBootstrap.onLogin`（`LoginRequestHandler` 调一次）→ 取 `InetSocketAddress` 对端 IP（**别用** `NettyGameSession.getIp()`，`substring(1,len-6)` 遇 4 位端口截坏）→ `setIp` → country 空时查离线表 `server_game/conf/ipcountry.dat`（380k 条 12B/条，`tools/gen_ipcountry_table.py` 生成，零第三方 jar）。机房/VPN（IKUUU ASN 134972）与无证据 ⇒ 随机国籍（池＝客户端 249 国，主要市场 3 倍权重，`COMMON_RAW` 与脚本 `COMMON_CODES` 必须一致）。
+- 🔴 离线表**必须带 endIp**（空隙不建记录；只用 start 当上界会把空隙 IP 判成前一条，实测 `127.0.0.1→jp`）。IP 串归一化顺序＝剥 `/` → `::ffff:` → 最后 `:port`。`countrySource`：0 老/1 手选/2 IP/3 随机，手选永不覆盖、随机遇可信 IP 升级。
+- 🔴 榜单读 `UserManager.getUser(uid,true)` 实时 ⇒ **改库立即生效**（不用重启）；setter 走 `updateString`+`SimpleTransaction.commit` 刷盘，无需显式 save。
 
 ## 区服/语言（→ REF-server-ops）
 - 列表动态（`server_info`→登录服 HTTP）：新区服只插记录，`channel=pc/plat=android/sub_channel=1` 要对齐；`tk/getServerList` 的 server_version 传真版本 `1.26001`（传 0 ⇒ 空列表）；隐藏区服只能服务端不下发。

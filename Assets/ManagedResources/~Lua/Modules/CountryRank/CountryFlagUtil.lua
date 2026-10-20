@@ -13,6 +13,11 @@
  *    - 有国家（服务端记录 / 自己本地已选）→ 显示对应国旗
  *    - 没有国家数据 → 显示 cn2-guoqi_xx「问号旗」占位，避免名字旁空白
  *    - ⚠️ 刻意**没有**「按 uid 随机映射」：那会让人人都有真旗，但全是编的
+ *
+ * 🔴 例外：**聊天框**（2026-10-20 用户要求）
+ *    没选国旗的玩家不画问号占位旗，直接隐藏 countryFlag 节点（名字归位）。
+ *    入口是 ApplyToChat / ResolveChosenCountry；榜单、玩家信息面板仍按上面的
+ *    「问号占位」规则（那里一行只有一个名字，留白比缺一块更难看）。
 --]]
 
 CountryFlagUtil = {}
@@ -75,6 +80,32 @@ function CountryFlagUtil.ResolveCountry(uid, country)
     return nil
 end
 
+--- 解析某个玩家**真的选过**的国家码；没选过返回 nil（聊天框据此隐藏旗子）
+-- 与 ResolveCountry 的区别（关键，别混用）：
+--   ResolveCountry 最后会兜到 CountryRankManager.GetPlayerCountry()，它**永远不返回空**
+--   （设备地区 → xx），所以「没选过」和「选了其他地区」在那边看起来一模一样。
+--   聊天框要区分这两者：没选过 → 隐藏；选了 xx（其他地区）→ 照样显示那面灰旗。
+--   所以这里只认「有真实来源的值」：本地自选 / 服务端下发的非空 country。
+-- @param uid     玩家 uid（可为 nil）
+-- @param country 服务端下发的国家码（可为 nil / ""）
+function CountryFlagUtil.ResolveChosenCountry(uid, country)
+    -- 1. 自己：本地自选（player_country）——玩家选过才有值，没选过是 nil
+    if isSelfUid(uid) and CountryRankManager ~= nil and CountryRankManager.GetChosenCountry ~= nil then
+        local chosen = CountryRankManager.GetChosenCountry()
+        if chosen ~= nil and chosen ~= "" then
+            return CountryConfig.Normalize(chosen)
+        end
+    end
+
+    -- 2. 服务端下发的值（自己的兜底 + 其他玩家的唯一真源）；空串 = 服务端也没记录
+    if country ~= nil and tostring(country):gsub("%s", "") ~= "" then
+        return CountryConfig.Normalize(country)
+    end
+
+    -- 3. 都没有 → 没选过，调用方隐藏旗子（不要落到 GetPlayerCountry 的 xx 兜底）
+    return nil
+end
+
 --[[
  * 「自己」的旗子节点登记表：node -> uid
  *
@@ -83,6 +114,19 @@ end
  * 弱键：面板销毁后节点没人引用，条目自动回收，不会攒垃圾。
 --]]
 local selfFlagNodes = setmetatable({}, { __mode = "k" })
+
+--[[
+ * 聊天气泡旗子的「整段重排」回调：node -> function()
+ *
+ * 聊天里旗子可能是**隐藏**的（没选国旗），而名字位置跟着旗子让开/归位。
+ * RefreshSelfFlags 只重画 sprite 不够 —— 玩家在聊天面板开着时选完旗，
+ * 旗子要重新出现，同时名字得让开 52px，否则名字压在旗子上。
+ * 所以聊天节点登记的是「重跑一遍布局」，其他面板仍只重画 sprite。
+--]]
+local selfFlagRefreshers = setmetatable({}, { __mode = "k" })
+
+--- 聊天框里旗子让开名字的距离（= patch_chat_flag.py 的 SHIFT：46 宽 + 4 间距 + 2）
+local CHAT_FLAG_SHIFT = 52
 
 --- 给一个 Image 设置国旗 sprite
 -- 取不到国家码时显示 cn2-guoqi_xx 问号旗占位（名字旁不空一块）
@@ -99,6 +143,7 @@ function CountryFlagUtil.Apply(go, uid, country)
         selfFlagNodes[go] = uid
     else
         selfFlagNodes[go] = nil
+        selfFlagRefreshers[go] = nil
     end
 
     -- 没有真实数据时用问号占位旗（用户 2026-10-18 要求，名字旁不要留空）
@@ -115,15 +160,76 @@ function CountryFlagUtil.Apply(go, uid, country)
     return shownCode
 end
 
+--- 聊天气泡专用：**没选国旗就整个隐藏**，不画问号占位旗（用户 2026-10-20 要求）
+-- 与 Apply 的两点差异：
+--   1. 取不到真实国家码 → flagGo:SetActive(false)，而不是画 cn2-guoqi_xx；
+--   2. 顺带把名字 Text 的位置让开/归位（旗子藏在 name 容器里，隐藏后名字要挪回去）。
+-- 所有聊天气泡（ChatPanel / BattleChatPanel / FightPointMapChatPanel）都走这里，
+-- 别各自抄一遍——名字让开的像素值只能有一处定义。
+-- @param flagGo   countryFlag 节点
+-- @param nameRt   名字 Text 的 RectTransform（可为 nil，给了才做让位）
+-- @param isMyChat 是否自己的气泡（右侧镜像：名字向左让开）
+-- @param uid      发送者 uid（系统消息传 nil / 0）
+-- @param country  服务端下发的国家码（可为 nil / ""）
+-- @return 实际画上的国家码；隐藏时返回 nil
+function CountryFlagUtil.ApplyToChat(flagGo, nameRt, isMyChat, uid, country)
+    if flagGo == nil or IsNull(flagGo) then
+        return nil
+    end
+
+    -- 登记/注销「这个节点此刻画的是不是自己」：即使这次要隐藏也要登记，
+    -- 否则玩家在聊天面板开着时选完旗，RefreshSelfFlags 找不到节点、旗子永远不出现
+    if isSelfUid(uid) then
+        selfFlagNodes[flagGo] = uid
+        -- 重排回调带上布局信息；country 传 nil 是因为「自己」以本地选择为准
+        selfFlagRefreshers[flagGo] = function()
+            CountryFlagUtil.ApplyToChat(flagGo, nameRt, isMyChat, uid, nil)
+        end
+    else
+        selfFlagNodes[flagGo] = nil
+        selfFlagRefreshers[flagGo] = nil
+    end
+
+    local code = CountryFlagUtil.ResolveChosenCountry(uid, country)
+    local show = code ~= nil
+
+    flagGo:SetActive(show)
+    if show then
+        local img = flagGo:GetComponent("Image")
+        if img ~= nil then
+            img.sprite = Util.LoadSprite(CountryConfig.GetFlagSprite(code))
+        end
+    end
+
+    -- 名字让位/归位：左聊往右让，右聊（自己）往左让
+    if nameRt ~= nil and not IsNull(nameRt) then
+        local baseX = isMyChat and 0 or 1.1
+        local x = baseX
+        if show then
+            x = isMyChat and (baseX - CHAT_FLAG_SHIFT) or (baseX + CHAT_FLAG_SHIFT)
+        end
+        nameRt.anchoredPosition = Vector2.New(x, nameRt.anchoredPosition.y)
+    end
+
+    return code
+end
+
 --- 玩家改旗后调用：把所有「已经画出来的自己的旗」就地重画一遍
 -- 不改动别人的旗，也不碰列表数据（数据下次请求时自然带上新 country）。
 -- 面板关闭/销毁过的节点 IsNull 为真，直接跳过。
 function CountryFlagUtil.RefreshSelfFlags()
     for go, uid in pairs(selfFlagNodes) do
         if go ~= nil and not IsNull(go) then
-            CountryFlagUtil.Apply(go, uid, nil)
+            local refresh = selfFlagRefreshers[go]
+            if refresh ~= nil then
+                -- 聊天气泡：整段重排（旗子可能从隐藏变显示，名字要跟着让位）
+                refresh()
+            else
+                CountryFlagUtil.Apply(go, uid, nil)
+            end
         else
             selfFlagNodes[go] = nil
+            selfFlagRefreshers[go] = nil
         end
     end
 end

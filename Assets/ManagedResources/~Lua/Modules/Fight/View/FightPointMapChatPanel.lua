@@ -422,35 +422,26 @@ function this.ChatItemAdapter(node, data, isShowTime, isShowServerName)
 
     --[[
      * 国家小旗（节点 contentroot/bg/info/name/countryFlag，见 patch_chat_flag.py）
-     * 数据来自服务端 ChatInfo.country（field 28）；没下发时显示问号占位旗，
-     * 与排行榜 / 玩家信息面板同一条规则。走 CountryFlagUtil.Apply 而不是直接设
-     * sprite：自己的消息会被登记，改旗后由 CountryRankManager.SetPlayerCountry
-     * 触发的 RefreshSelfFlags 就地重画，不用重开面板。
+     * 数据来自服务端 ChatInfo.country（field 28）。⚠️ 聊天框与排行榜口径不同：
+     * 没选国旗的玩家**不画问号占位旗**，直接隐藏节点、名字归位（用户 2026-10-20 要求）。
+     * 走 CountryFlagUtil.ApplyToChat 而不是直接设 sprite：自己的消息会被登记，改旗后
+     * 由 CountryRankManager.SetPlayerCountry 触发的 RefreshSelfFlags 就地重画。
     --]]
     local flagGo = Util.GetGameObject(node, "contentroot/bg/info/name/countryFlag")
     if flagGo ~= nil then
-        -- 系统消息 / 广播（senderId 为 0 或空）没有国籍：不画旗，并把名字挪回原位
         local senderId = tonumber(data.senderId)
-        local showFlag = senderId ~= nil and senderId > 0
-        flagGo:SetActive(showFlag)
-        local nameRt = name.gameObject:GetComponent("RectTransform")
-        if nameRt ~= nil then
-            local baseX = isMyChat and 0 or 1.1
-            local x = baseX
-            if showFlag then
-                x = isMyChat and (baseX - 52) or (baseX + 52)
-            end
-            nameRt.anchoredPosition = Vector2.New(x, nameRt.anchoredPosition.y)
-        end
-        if showFlag then
+        local country = nil
+        if senderId ~= nil and senderId > 0 then
             -- 老消息（ChatInfo 加 country 字段之前写入的）没有国籍：
-            -- 用这个 uid 在其它消息里带过的国家码兜底，避免同一个人有的有旗、有的问号旗
-            local country = data.country
+            -- 用这个 uid 在其它消息里带过的国家码兜底，避免同一个人有的有旗、有的没旗
+            country = data.country
             if country == nil or country == "" then
                 country = ChatManager.GetPlayerCountry(senderId)
             end
-            CountryFlagUtil.Apply(flagGo, senderId, country)
         end
+        -- 系统消息 / 广播（senderId 为 0 或空）没有国籍；没选国旗的玩家同理 → 隐藏
+        CountryFlagUtil.ApplyToChat(flagGo, name.gameObject:GetComponent("RectTransform"),
+                isMyChat, senderId, country)
     end
     -- 判断是否显示时间
     -- time:SetActive(isShowTime)

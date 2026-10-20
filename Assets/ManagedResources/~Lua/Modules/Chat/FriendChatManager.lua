@@ -32,24 +32,36 @@ function this.ReceiveFriendChat(msg)
 end
 
 -- 初始化好友聊天数据
+-- 注意：这是登录加载链的第 19 步（45%）。它一抛错整条加载链就停在那里，
+-- 所以本地数据的解析/回写全部用 pcall 兜住，任何一条脏数据都不允许打断加载。
 function this.InitData(func)
     NetManager.RequestChatMsg(CHAT_CHANNEL.FRIEND, 0, function(data)
-        -- 好友，先加载本地数据
-        this.LoadFriendChatFromLocal()
-        this.LoadNewChatListFromLocal()
-        -- 先对数据排个序
-        table.sort(data.chatInfo, function(a, b)
-            return a.times < b.times
+        -- 好友，先加载本地数据（脏数据/半截文件都只能丢，不能抛）
+        MyPCall(function()
+            -- 每次登录重建，避免上一个账号（或上一次登录）残留的条目混进来一起回写
+            this.FriendChatList = {}
+            this.LoadFriendChatFromLocal()
+            this.LoadNewChatListFromLocal()
+        end)
+
+        local chatInfo = data and data.chatInfo or {}
+        -- 先对数据排个时间序（异常数据没有 times 时不参与排序）
+        pcall(table.sort, chatInfo, function(a, b)
+            return (a.times or 0) < (b.times or 0)
         end)
         -- 数据解析
-        for _, chat in ipairs(data.chatInfo) do
-            if this.FriendDataAdapter(chat.senderId, chat) then
-                -- 设置有最新消息
-                this.SetFriendNewChatState(chat.senderId, true)
+        for _, chat in ipairs(chatInfo) do
+            if chat and chat.senderId then
+                if this.FriendDataAdapter(chat.senderId, chat) then
+                    -- 设置有最新消息
+                    this.SetFriendNewChatState(chat.senderId, true)
+                end
             end
         end
         -- 加载完成，向本地保存一次数据
-        this.SaveAllFriendChatToLocal()
+        MyPCall(function()
+            this.SaveAllFriendChatToLocal()
+        end)
         if func then func() end
     end)
 end
@@ -181,35 +193,36 @@ function this.SaveAllFriendChatToLocal()
     for friendId, chatList in pairs(this.FriendChatList) do
         for i = 1, #chatList do
             local chat = chatList[i]
-            local msg = chat.msg
-            msg = string.gsub(msg,"#", "<1>")
-            msg = string.gsub(msg,"|", "<2>")
-            -- 构建数据
-            local chatStr = string.format("%d#%d#%s#%s", friendId, chat.senderId, chat.times, msg)
-            if this.ChatLocalData ~= "" then
-                this.ChatLocalData = this.ChatLocalData .."|"
+            -- string.format("%d") 遇到 nil 会抛错，脏条目直接跳过
+            if chat and chat.senderId and chat.msg then
+                local msg = chat.msg
+                msg = string.gsub(msg,"#", "<1>")
+                msg = string.gsub(msg,"|", "<2>")
+                -- 构建数据
+                local chatStr = string.format("%d#%d#%s#%s", friendId, chat.senderId, chat.times or 0, msg)
+                if this.ChatLocalData ~= "" then
+                    this.ChatLocalData = this.ChatLocalData .."|"
+                end
+                this.ChatLocalData = this.ChatLocalData .. chatStr
             end
-            this.ChatLocalData = this.ChatLocalData .. chatStr
         end
     end
     -- 保存数据
     Util.WriteFileToDataPath("FriendChat/"..PlayerManager.uid, this.ChatLocalData)
-    
-    
-    
 end
 
 
 -- 从本地加载好友数据, 加载完成后，读取数据，删除多余的数据
+-- 本地文件是"|"和"#"拼的纯文本，任何一条字段不全（进程被杀时写了半截、老版本格式）
+-- 都会让 chat[4] 为 nil，接着 string.gsub(nil) 抛错 —— 之前就是在登录第 19 步炸掉、
+-- 永久卡 45%。这里逐条校验，坏记录直接跳过。
 function this.LoadFriendChatFromLocal()
     -- 获取本地数据
     this.ChatLocalData = Util.ReadFileFromDataPath("FriendChat/"..PlayerManager.uid) or ""
-    
-    
-    
     if this.ChatLocalData == "" then return end
     -- 解析数据
     local chatList = string.split(this.ChatLocalData, "|")
+    local badCount = 0
     for i = 1, #chatList do
         local chat = string.split(chatList[i], "#")
         local friendId = tonumber(chat[1])
@@ -218,10 +231,18 @@ function this.LoadFriendChatFromLocal()
             times = chat[3],
             msg = chat[4],
         }
-        data.msg = string.gsub(data.msg,"<1>", "#")
-        data.msg = string.gsub(data.msg,"<2>", "|")
-        -- 聊天数据保存
-        this.FriendDataAdapter(friendId, data)
+        if friendId and data.senderId and data.msg then
+            data.msg = string.gsub(data.msg,"<1>", "#")
+            data.msg = string.gsub(data.msg,"<2>", "|")
+            -- 聊天数据保存
+            this.FriendDataAdapter(friendId, data)
+        else
+            badCount = badCount + 1
+        end
+    end
+    if badCount > 0 then
+        LogError(string.format("[FriendChat] 本地聊天数据有 %d/%d 条字段残缺，已跳过（uid=%s）",
+            badCount, #chatList, tostring(PlayerManager.uid)))
     end
 end
 

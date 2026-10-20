@@ -416,7 +416,7 @@ def main():
 
     # 🔴 打完补丁必须校验：曲线 path 是相对 Animator 所在节点解析的，
     # 挂错节点时 Unity 不报错，只是全部变成 Missing。
-    all_paths = sorted({p for k in ('start', 'normal') for p in curves[k]})
+    all_paths = sorted({c[1] for k in ('start', 'normal') for c in curves[k]})
     base, missing = check_paths(prefab, anim_go, all_paths)
     if missing:
         raise SystemExit('曲线路径解析不到（锚点 %s）：\n  %s'

@@ -519,6 +519,28 @@ Commits：`b1b4580ed`（撤销错方向）、`2198f87da`（补落位曲线）、
 > 含参考曲线表、位移承载节点选择表（布局组 / `ScrollCycleView` / `TabBox`）、方向一行切换、
 > 9 个坑、8 case 自证。复刻同类动画直接照那份走，本节的 S0~S3 只记录「这次怎么判断的」。
 
+### 第五次复用：`DailyCarbonPanel`（scaleX 翻入与已有的滑入同页共存）
+
+同一个面板里已经有第四次的「副本卡右滑入 + 底板淡入」，这次要给 **`TabBox` 的页签**加翻入。
+两种入场作用对象不重叠（页签 vs 卡片列表），各自一套常量与回收函数，互不干扰。
+
+| 环节 | 这次的判断 |
+|---|---|
+| S0 | 没有新参考：用的就是本配方（七日狂欢那 9 条）。本页第一版已经把「列表项滑入」按 `ui_item_slide_in_skill.md` 落在卡片上 ⇒ 这次只补页签那一条通道 |
+| S0 | 参考里 2 条 `bg` 的 `m_FloatCurves`（落位 110）**没复刻**：本面板 `Panel` 下是 `Scroll` 与 `TabBox` **并列**，没有 `content` 那种整块容器；动 `Scroll` 会让卡片列表跟着抖。偏离已写入代码注释 |
+| S1 | 页签由 `TabBox` 克隆（`_TabData` 5 个），且 `OnShow` 每次 `ClearChild` 重克隆 ⇒ 节点是新的、每次进面板都会重播；继续走 Lua，不动 prefab |
+| S2 | `box` 挂 `VerticalLayoutGroup`（spacing 87.98）⇒ 位置归布局组，**只写 scale**，正是 §4.3 的标准情形（不需要像 BattlePass 那样换承载节点） |
+| S2 | 这里可以放心用 `GetTabList()`：走的是 `Init_SetTabAndBox`（`tab` / `box` 都显式传了）⇒ `TabList` 有值。**BattlePassPanel_Mission 不是这个 shape**（`Init` 传 nil 提前 return、`TabCtrl` 被换成空实例），那次的教训不能反向套到这里 |
+| S2 | `PlayTabSelectFlip` 三道闸门：`tabAnimReady`（挡 `Init_SetTabAndBox` 那次初始化回调）、`suppressOpenAnim`（挡数据刷新）、`select.activeSelf`（未选中 / 已锁定的页签没有高亮板；对隐藏节点起 tween 看不见，还会让下次 `SetActive` 打开时从半截起） |
+| S2 | 数据刷新统一收口成 `RefreshTabSilently`：领奖弹窗关闭 ×2（原来是裸 `this.OnTabChange`）+ 5 点刷新。顺手把 `suppressCardAnim` 改名 `suppressOpenAnim` —— 一个标记同时管「卡片滑入」与「高亮板翻入」 |
+| S3 | `scripts/lua-tests/test_dailycarbon_tabflip.lua`（8 case，**加载真 `TabBox` 跑真克隆**）：5 格延迟 0/.033/.066/.099/.132、24 格压到 0.5、Animator 开关、高亮板三道闸门、`OnTabChange` 真实调用链、生命周期回收 |
+
+产物：`LuaBytes/Modules_Carbon_DailyCarbonPanel_64.bytes`（17197 → 19478 B）。
+
+> 观感提示：打开面板时「5 个页签逐格翻入」与「约 5 张副本卡右滑入」会同时发生。两者起点、
+> 方向、目标都在不同节点上，不冲突；若觉得太热闹，把 `kTabFlipStep` 提到 0.04~0.05 或把
+> 首次打开的卡片滑入也压掉（`suppressOpenAnim`）即可。
+
 ---
 
 ## 10. 交付前自查（可直接贴进 PR）

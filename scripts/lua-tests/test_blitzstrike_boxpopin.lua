@@ -287,11 +287,17 @@ for _, t in ipairs(tweens) do if not t.killed then live2 = live2 + 1 end end
 Check(live2 == 0, "OnDestroy 后没有存活 tween，实际 " .. live2)
 
 -- ---------------- case 5: 播的时机 ----------------
-print("== case5 打开播、刷新不播 ==")
+print("== case5 打开播、返回/刷新不播 ==")
 resetAll()
 tweens = {}
+Panel:OnOpen()                         -- 从外面打开：OnOpen 置位
 Panel:OnShow()
-Check(#tweens == 4, "打开面板（OnShow）就弹 4 个，实际 " .. #tweens)
+Check(#tweens == 4, "打开面板（OnOpen → OnShow）弹 4 个，实际 " .. #tweens)
+
+resetAll()
+tweens = {}
+Panel:OnShow()                         -- 战斗返回：IsBackOpen 只走 OnShow
+Check(#tweens == 0, "战斗返回（只走 OnShow）不重播，实际 " .. #tweens)
 
 resetAll()
 tweens = {}
@@ -302,10 +308,17 @@ resetAll()
 tweens = {}
 BlitzStrikeManager.difficultyLevel = 0  -- 还没选难度：弹选难度面板，没有宝箱状态
 openedPanels = {}
+Panel:OnOpen()
 Panel:OnShow()
 Check(openedPanels[1] == UIName.BlitzStrikeDifficultSelectPopup, "difficultyLevel = 0 时弹选难度面板")
 Check(#tweens == 0, "这一支不播宝箱入场，实际 " .. #tweens)
 BlitzStrikeManager.difficultyLevel = 1
+
+-- 一次性标记不能漏给下一次：上面那支把标记消费掉了，紧接着切回难度再 OnShow 不该补播
+resetAll()
+tweens = {}
+Panel:OnShow()
+Check(#tweens == 0, "标记被消费后紧接着 OnShow 不补播，实际 " .. #tweens)
 
 Check(#errors == 0, "没有 LogError（异常兜底没被触发）" .. (#errors > 0 and ("：" .. errors[1]) or ""))
 
@@ -336,6 +349,11 @@ Check(updateIdx and playIdx and playIdx > updateIdx, "入场排在 UpdateMain �
 
 local main = bodyOf("function BlitzStrikePanel.UpdateMain()")
 Check(main ~= nil and main:find("boxPopIn:Play", 1, true) == nil, "UpdateMain 里没有 Play（数据刷新不重播）")
+
+local open = bodyOf("function BlitzStrikePanel:OnOpen()")
+Check(open ~= nil and open:find("playBoxInOnShow = true", 1, true) ~= nil, "OnOpen 置一次性标记")
+Check(show ~= nil and show:find("playBoxInOnShow = false", 1, true) ~= nil, "OnShow 消费并清掉标记")
+Check(show ~= nil and show:find("if playBoxIn then", 1, true) ~= nil, "Play 被一次性标记包住（战斗返回不播）")
 
 local close = bodyOf("function BlitzStrikePanel:OnClose()")
 Check(close ~= nil and close:find("boxPopIn:Stop()", 1, true) ~= nil, "OnClose 里回收")

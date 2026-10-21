@@ -176,6 +176,7 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 | `AdjutantActivityPanel` | `PageTabCtrl:ChangeTab` 的回调（首开也走这条） | 无独立的事件刷新路径 |
 | `ThousandDrawPanel`（phases） | `Init` 的网络回调末尾（数据到位、卡面填好之后） | 领奖后的整表刷新会重播——那是**新一局**，可以接受 |
 | `DefenseTrainingPopup`（phases，关卡节点） | `OnOpen` 置位 → `OnShow` 末尾消费（`UpdateMain` 之后，status 节点已按状态激活） | 战斗返回（`IsBackOpen` 只走 `OnShow`，不经 `OnOpen`）、点「重置关卡」（回调里直接调 `OnShow`）——都是同屏刷新 |
+| `BlitzStrikePanel`（duang，未开宝箱） | 同上：`OnOpen` 置位 → `OnShow` 里 `UpdateMain` 之后消费 | 战斗返回（只走 `OnShow`）、领奖回调里的 `UpdateMain` 刷新；`difficultyLevel = 0`（弹选难度）那一支也不播 |
 | 抽中单张卡（phases） | 抽卡回调里 `SetCard` 之后 `PlayCardIn(msg.number)` | —— |
 
 **TabBox 点击为什么自动就有动画**：`GrowthManualPanel.SwitchView` 里本来就会调
@@ -430,6 +431,7 @@ end
 - **2026-10-21**（闪击战未开宝箱）：`BlitzStrikePanel` 接入（数组数据源 + `duang`）：打开面板时
   只弹**还没领**的宝箱（已领的换成开箱图，不参与），`0.45 → 1`、`OutElastic`、0.55s、相邻错开 0.08。
   放大目标是 `Bg/box`（箱体图那层）而不是 `Box1..5` 根节点——根节点 rect 是 261×115 的挂点带、箱体画在
-  pivot 上方 61px，缩放根会「从下面长出来」（见第 5 节第 15 条）。播的时机只有 `OnShow`（玩家打开/换屏）：
-  领奖回调走 `UpdateMain` 刷新，不重播；`difficultyLevel = 0`（弹选难度）那支也不播。
+  pivot 上方 61px，缩放根会「从下面长出来」（见第 5 节第 15 条）。播的时机沿用防守训练那一招
+  （`OnOpen` 置位 → `OnShow` 消费）：战斗返回（只走 `OnShow`）与领奖后的 `UpdateMain` 刷新都不重播，
+  `difficultyLevel = 0`（弹选难度）那支也不播。
   新增 `test_blitzstrike_boxpopin.lua`（6 组：队列采集 / 手感 / 回收 / 时机 / 源码接线）。

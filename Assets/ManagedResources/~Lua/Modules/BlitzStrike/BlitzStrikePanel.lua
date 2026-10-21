@@ -26,6 +26,11 @@ local kBoxPopInCfg = {
 
 local isCanClick = false
 
+-- 只在「从外面打开面板」那一轮播宝箱入场：OnOpen 置位、OnShow 消费。
+-- 战斗返回（BasePanel:OpenUI(IsBackOpen) → 只走 OnShow，不经 OnOpen）是同一屏刷新，不重播；
+-- 领奖后的 UpdateMain 刷新也不播（判据见 docs/ui_item_pop_in_skill.md 第 3 节）。
+local playBoxInOnShow = false
+
 local ItemConfig = ConfigManager.GetConfig(ConfigName.ItemConfig)
 --初始化组件（用于子类重写）
 function BlitzStrikePanel:InitComponent()
@@ -110,11 +115,14 @@ end
 --界面打开时调用（用于子类重写）
 function BlitzStrikePanel:OnOpen()
     PlaySoundWithoutClick(SoundConfig.Sound_INTERFACE_Button_Entergame)
-
+    playBoxInOnShow = true    --从外面打开（不是战斗中返回）⇒ 这一次 OnShow 播宝箱入场
 end
 
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）
 function BlitzStrikePanel:OnShow()
+    local playBoxIn = playBoxInOnShow
+    playBoxInOnShow = false    --一次性标记：不管播不播都清掉，别漏给下一次
+
     this.PlayerHeadFrameView:OnShow()
     this.UpView:OnOpen({ showType = UpViewOpenType.ShowRight, panelType = PanelType.BlitzStrikePanel })
 
@@ -128,8 +136,10 @@ function BlitzStrikePanel:OnShow()
             BlitzStrikeManager.RrefreshFormation()
         end)
         this.UpdateMain()
-        -- 🔴 只在这里播（玩家主动打开/换屏）：领奖后刷新走的是 UpdateMain，不重播
-        this.boxPopIn:Play()
+        -- 🔴 只在「从外面打开」这一轮播；战斗返回只走 OnShow，不重播
+        if playBoxIn then
+            this.boxPopIn:Play()
+        end
     end
 
 end

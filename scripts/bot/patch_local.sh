@@ -44,7 +44,7 @@ do_compile() {
     -cp "$LIB/*:$BASE" -implicit:none -d "$OUT" "${args[@]}"
   local n
   n=$(find "$OUT" -name '*.class' | wc -l | tr -d ' ')
-  echo "编译完成：$n 个 class（正常 21 个；多出来说明 -implicit:none 没生效）"
+  echo "编译完成：$n 个 class（正常 23 个；多出来说明 -implicit:none 没生效）"
   [ "$n" -le 25 ] || { echo "FATAL: 产物过多，检查 classpath"; exit 1; }
 }
 

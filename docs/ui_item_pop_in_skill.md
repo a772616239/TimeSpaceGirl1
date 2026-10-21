@@ -1,61 +1,63 @@
 # 列表项入场：逐格「放大缩小」（Coin Master 式）
 
-> 适用：TimeSpaceGirl1（Unity 6000.6.5f1）。礼包墙、奖励档位、任务列表这类
-> 「ScrollCycleView + 卡片」的入场——卡片按版面顺序一张接一张弹一下。
-> 唯一实现：`Assets/ManagedResources/~Lua/Modules/Common/ItemPopIn.lua`。
-> 已接入：`ValuePackPanel`（礼包墙）、`GrowthManual_RewardPreview`、`GrowthManual_TaskPreview`、
-> `RankingSingleListPanel`（榜单，A 方案 + 统一接点见第 3.1 节）；
-> 页签多的三个面板走「页面级接入」：`ExpertPanel`、`OperatingPanel`、`AdjutantActivityPanel`
-> （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / **成长礼金 page_3** / **终身限购 page_9** / 战令 /
-> 副官挑战 / 副官赠礼）；
-> 固定版面（不是列表）走关键帧模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位，`phases`）、
-> `DefenseTrainingPopup`（5 个关卡节点 `Stage1..5`，`phases`，只在 `OnOpen` 那一轮播）；
-> 地图上的单点元素走 `phases`：`BlitzStrikePanel`（**未开宝箱**从小到大弹一下，数组数据源，
-> 缩放目标是 `Bg/box` 而不是宝箱根节点，见第 5 节第 15 条）；
-> 地图上的据点走「由中心往外」的 `phases`：`ChallengePanel`（公会战 `map/city1..10`，
-> 数组数据源按 `anchoredPosition` 离中心远近排序 + `centerPivot = false`，见第 8 节末条）。
+> 适用：TimeSpaceGirl1（Unity 6000.6.5f1）。礼包墙、奖励档位、任务列表这类  
+> 「ScrollCycleView + 卡片」的入场——卡片按版面顺序一张接一张弹一下。  
+> 唯一实现：`Assets/ManagedResources/~Lua/Modules/Common/ItemPopIn.lua`。  
+> 已接入：`ValuePackPanel`（礼包墙）、`GrowthManual_RewardPreview`、`GrowthManual_TaskPreview`、  
+> `RankingSingleListPanel`（榜单，A 方案 + 统一接点见第 3.1 节）；  
+> 页签多的三个面板走「页面级接入」：`ExpertPanel`、`OperatingPanel`、`AdjutantActivityPanel`  
+> （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / **成长礼金 page_3** / **终身限购 page_9** / 战令 /  
+> 副官挑战 / 副官赠礼）；  
+> 固定版面（不是列表）走关键帧模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位，`phases`）、  
+> `DefenseTrainingPopup`（5 个关卡节点 `Stage1..5`，`phases`，只在 `OnOpen` 那一轮播）；  
+> 地图上的单点元素走 `phases`：`BlitzStrikePanel`（**未开宝箱**从小到大弹一下，数组数据源，  
+> 缩放目标是 `Bg/box` 而不是宝箱根节点，见第 5 节第 15 条）；  
+> 地图上的据点走「由中心往外」的 `phases`：`ChallengePanel`（公会战 `map/city1..10`，  
+> 数组数据源按 `anchoredPosition` 离中心远近排序 + `centerPivot = false`，见第 8 节末条）。  
 > 更新时间 2026-10-21。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
+
+
 
 ---
 
 ## 0. 一句话总则
 
-**一个公共模块 + 三处接线，不许复制第二份。** 配方（缩放/时长/错开）只写在
-`ItemPopIn.defaultCfg` 里；面板只负责「什么时候播、什么时候停」。
+**一个公共模块 + 三处接线，不许复制第二份。** 配方（缩放/时长/错开）只写在  
+`ItemPopIn.defaultCfg` 里；面板只负责「什么时候播、什么时候停」。  
 复制一份到新面板 = 下次调手感要改 N 处，且必然漂移（本项目已经吃过这种亏）。
 
 ---
 
 ## 1. 配方（缺省值）
 
-| 项 | 值 | 说明 |
-|---|---|---|
-| `from` | 0.82 | 起始缩放。弹跳感主要来自这个落差，而不是峰值 |
-| `peak` | 1.02 | 峰值，**受几何约束**（见第 4 节），不是手感参数 |
-| `riseDuration` | 0.14s | 放大段，`OutQuad`（快起慢收，冲峰值） |
-| `fallDuration` | 0.12s | 回落段，`InOutQuad`（两端切线为 0，落位不顿） |
-| `step` | 0.055s | 相邻项错开 |
-| `maxSpan` | 0.55s | 整体跨度上限，项多时自动压缩 step |
+| 项              | 值      | 说明                            |
+| -------------- | ------ | ----------------------------- |
+| `from`         | 0.82   | 起始缩放。弹跳感主要来自这个落差，而不是峰值        |
+| `peak`         | 1.02   | 峰值，**受几何约束**（见第 4 节），不是手感参数   |
+| `riseDuration` | 0.14s  | 放大段，`OutQuad`（快起慢收，冲峰值）       |
+| `fallDuration` | 0.12s  | 回落段，`InOutQuad`（两端切线为 0，落位不顿） |
+| `step`         | 0.055s | 相邻项错开                         |
+| `maxSpan`      | 0.55s  | 整体跨度上限，项多时自动压缩 step           |
 
 单张时间线：`t=delay` 起跳 → `+0.14s` 到峰值 → `+0.12s` 落回基准。5 张时总跨度 0.22+0.26 ≈ 0.50s。
 
-- `step` 取 0.055：参考七日狂欢 clip 的页签节奏是「0.167s/格、错开 0.033s」，
+- `step` 取 0.055：参考七日狂欢 clip 的页签节奏是「0.167s/格、错开 0.033s」，  
   卡片比页签体量大一倍，节奏也放慢一倍，否则像抽搐。
-- `maxSpan` 必须有：列表 20 项时按 0.055 会飘到 1.1s，玩家早滑走了还在弹。
+- `maxSpan` 必须有：列表 20 项时按 0.055 会飘到 1.1s，玩家早滑走了还在弹。  
   压缩后末项仍落在 0.55s 内（`step = maxSpan / (count-1)`）。
 
 ### 1.1 第二种手感：`duang`（弹性回弹）
 
-列表墙要的是「逐格放大缩小」（两段、有明确峰值）；抽卡/开箱要的是「duang 一下」——
+列表墙要的是「逐格放大缩小」（两段、有明确峰值）；抽卡/开箱要的是「duang 一下」——  
 一次冲过头再抖回来。两者别混：
 
-| 项 | `mode = "surge"`（缺省） | `mode = "duang"` |
-|---|---|---|
-| 曲线 | 基准 → `from` → `peak` → 基准（两段 tween） | 基准 → `from` → 基准（**一条** tween） |
-| 缓动 | 放大 `OutQuad` / 回落 `InOutQuad` | `ease`（缺省 `OutElastic`，过冲由缓动自带） |
-| 时长 | `riseDuration` 0.14 + `fallDuration` 0.12 | `duangDuration` 0.5 |
-| 每格 tween 数 | 2 | 1 |
-| 典型 | 礼包墙、奖励档位、任务列表 | 小图标、数字格、开箱 |
+| 项          | `mode = "surge"`（缺省）                      | `mode = "duang"`                |
+| ---------- | ----------------------------------------- | ------------------------------- |
+| 曲线         | 基准 → `from` → `peak` → 基准（两段 tween）       | 基准 → `from` → 基准（**一条** tween）  |
+| 缓动         | 放大 `OutQuad` / 回落 `InOutQuad`             | `ease`（缺省 `OutElastic`，过冲由缓动自带） |
+| 时长         | `riseDuration` 0.14 + `fallDuration` 0.12 | `duangDuration` 0.5             |
+| 每格 tween 数 | 2                                         | 1                               |
+| 典型         | 礼包墙、奖励档位、任务列表                             | 小图标、数字格、开箱                      |
 
 ```lua
 -- 小图标 duang 一下
@@ -64,21 +66,21 @@ local cfg = { mode = "duang", from = 0.6, duangDuration = 0.45, ease = "OutElast
 
 - `from = 0.5` 比 `surge` 的 0.82 更狠：`duang` 没有中间峰值，落差全靠起点。
 - 过冲幅度由缓动决定，**不需要也不该再设 `peak`**。想要「一冲到顶就停」就换 `ease = "OutBack"`（单次过冲，没有回抖）。
-- 🔴 **`OutElastic` 的过冲幅度和「落差」成正比**（DOTween 的振幅取 `change` 本身），
+- 🔴 **`OutElastic` 的过冲幅度和「落差」成正比**（DOTween 的振幅取 `change` 本身），  
   不是固定的 5%~10%：第一个峰约在 `t≈0.15` 处，冲过 1 的量 ≈ `落差 × 0.35`。
   - `from = 0.82`（落差 0.18）→ 峰值 ≈ 1.06，就是「5%~10%」那个印象；
-  - `from = 0.45`（落差 0.55）→ 峰值 ≈ **1.19**，半秒内还要抖三个来回（1.19 / 0.93 / 1.02）。
-  ⇒ **「起点压得很小」和「用 OutElastic」不能同时要**：前者放大过冲，后者把它抖成闪一下。
-  想要「从小长大 + 有弹性」，用 `phases` 把每次过冲的幅度写死（见 1.2），别靠缓动自己去飙。
-  （`BlitzStrikePanel` 的宝箱就是这么改的：先用 `from 0.45 + OutElastic 0.55s`，观感「弹出来 + 闪」，
-  换成 `0.55 → 1.06 → 0.975 → 1.012 → 1` 后才像「从小长大」。）
+  - `from = 0.45`（落差 0.55）→ 峰值 ≈ **1.19**，半秒内还要抖三个来回（1.19 / 0.93 / 1.02）。  
+    ⇒ **「起点压得很小」和「用 OutElastic」不能同时要**：前者放大过冲，后者把它抖成闪一下。  
+    想要「从小长大 + 有弹性」，用 `phases` 把每次过冲的幅度写死（见 1.2），别靠缓动自己去飙。  
+    （`BlitzStrikePanel` 的宝箱就是这么改的：先用 `from 0.45 + OutElastic 0.55s`，观感「弹出来 + 闪」，  
+    换成 `0.55 → 1.06 → 0.975 → 1.012 → 1` 后才像「从小长大」。）
 - `delay` 是**整批**延后：第二批比第一批晚 0.26s 起，同一个模块两份实例即可，不用手写 Timer。
-- ⚠️ 大块头（卡面 ≥250px）别用 `OutElastic`：它的抖动周期是按比例给的，0.5~0.55s 内
+- ⚠️ 大块头（卡面 ≥250px）别用 `OutElastic`：它的抖动周期是按比例给的，0.5~0.55s 内  
   抖 3 个来回，观感是「闪一下」；拉到 0.8s 又变成软塌塌的果冻。**大块头改用 `phases`。**
 
 ### 1.2 第三种手感：`phases`（多段关键帧，慢速「浮起—按回—落定」）
 
-`duang` 只有一个时长旋钮，越拉越拖沓；`phases` 把曲线拆成显式关键帧，段数、峰值、
+`duang` 只有一个时长旋钮，越拉越拖沓；`phases` 把曲线拆成显式关键帧，段数、峰值、  
 每段时长、每段缓动都由调用方给——这是「想按设计稿调手感」时唯一该用的模式。
 
 ```lua
@@ -97,78 +99,74 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
                { scale = 1,    duration = 0.10, ease = "OutQuad" } } }
 ```
 
-| 约定 | 说明 |
-|---|---|
-| `scale` | **相对基准的倍数**（1 = 原大小），不是绝对缩放；`ScrollCycleView` 的 `itemGoScale≠1` 也对 |
-| 首段延迟 | 只有第一段吃 `cfg.delay + order * step`，后段是链式的，不要再加 `SetDelay`（否则每段都卡一下） |
-| 链的建立 | 每段在上一段的 `OnComplete` 里建 ⇒ 被 `Stop`/`Kill` 时链自动断，不会在已关闭的面板上补建 tween |
-| 收尾 | 末段结束时把 `localScale` 吸附到基准，避免浮点残差（表现是「差一点点」的缩放） |
-| 时长节奏 | **先长后短**（0.38 / 0.24 / 0.18）：浮起要看清、按回要能察觉、落定要干脆；反过来会像卡顿 |
-| 峰值 | 受版面约束：卡 280 宽、相邻 −18 重叠时 1.05 已是上限（礼包墙 1.04 会直接顶出屏） |
-| 缺 `phases` | 退回 `surge` 配方（不报错），所以 `mode` 和 `phases` 可以分开配 |
+| 约定         | 说明                                                                 |
+| ---------- | ------------------------------------------------------------------ |
+| `scale`    | **相对基准的倍数**（1 = 原大小），不是绝对缩放；`ScrollCycleView` 的 `itemGoScale≠1` 也对 |
+| 首段延迟       | 只有第一段吃 `cfg.delay + order * step`，后段是链式的，不要再加 `SetDelay`（否则每段都卡一下） |
+| 链的建立       | 每段在上一段的 `OnComplete` 里建 ⇒ 被 `Stop`/`Kill` 时链自动断，不会在已关闭的面板上补建 tween |
+| 收尾         | 末段结束时把 `localScale` 吸附到基准，避免浮点残差（表现是「差一点点」的缩放）                     |
+| 时长节奏       | **先长后短**（0.38 / 0.24 / 0.18）：浮起要看清、按回要能察觉、落定要干脆；反过来会像卡顿            |
+| 峰值         | 受版面约束：卡 280 宽、相邻 −18 重叠时 1.05 已是上限（礼包墙 1.04 会直接顶出屏）                |
+| 缺 `phases` | 退回 `surge` 配方（不报错），所以 `mode` 和 `phases` 可以分开配                      |
 
-- `phases` 单卡总时长 0.8s 是**刻意比 `duang` 长**的：卡面有立绘，0.5s 内看不清；
+- `phases` 单卡总时长 0.8s 是**刻意比 `duang` 长**的：卡面有立绘，0.5s 内看不清；  
   0.8s 刚好在「能看清」和「不催人」之间，玩家点开面板不会觉得在等动画。
 - 想更慢就等比放大 `duration`（如 ×1.2），**不要**加段数——第 4 段开始就成了果冻。
-
 
 ---
 
 ## 2. 三处接线（照抄清单）
 
-| # | 位置 | 代码 |
-|---|---|---|
+| # | 位置                               | 代码                                                                  |
+| - | -------------------------------- | ------------------------------------------------------------------- |
 | ① | `InitComponent`（ScrollView 建好之后） | `this.popIn = ItemPopIn.New(function() return this.ScrollView end)` |
-| ② | 列表数据灌完之后 | `this.popIn:Play()` |
-| ③ | `OnClose` + `OnDestroy` | `this.popIn:Stop()` |
+| ② | 列表数据灌完之后                         | `this.popIn:Play()`                                                 |
+| ③ | `OnClose` + `OnDestroy`          | `this.popIn:Stop()`                                                 |
 
 数据源（`getScrollView` 的返回值）认四种，都交给 `_Collect` 自己分流：
 
-| 形态 | 场景 | 收集方式 |
-|---|---|---|
-| `ScrollCycleView` | 绝大多数列表 | `ForeachItemGO`，顺序 = 数据下标 |
-| 容器 `GameObject/RectTransform` | 手工 `newObject` 克隆的列表 | 取 active 子节点（模板自己 `SetActive(false)` 天然跳过） |
-| **Lua 数组 `{ go1, go2, ... }`** | 固定几格（千抽的 `card1..3`、终身限购的 `preList`） | 按数组顺序，元素 GO / transform 都收 |
-| 空 / nil | 这页没列表 | no-op |
+| 形态                             | 场景                                   | 收集方式                                       |
+| ------------------------------ | ------------------------------------ | ------------------------------------------ |
+| `ScrollCycleView`              | 绝大多数列表                               | `ForeachItemGO`，顺序 = 数据下标                  |
+| 容器 `GameObject/RectTransform`  | 手工 `newObject` 克隆的列表                 | 取 active 子节点（模板自己 `SetActive(false)` 天然跳过） |
+| **Lua 数组 `{ go1, go2, ... }`** | 固定几格（千抽的 `card1..3`、终身限购的 `preList`） | 按数组顺序，元素 GO / transform 都收                 |
+| 空 / nil                        | 这页没列表                                | no-op                                      |
 
 - 数组形态是给「容器里还挂着别的装饰/模板」的场景用的：**顺序自己定，模板天然不在里面**。
-- `Play(only)` 只弹第 `only` 格（下标 = 收集顺序）：抽中一张牌就 `Play(number)`，
+- `Play(only)` 只弹第 `only` 格（下标 = 收集顺序）：抽中一张牌就 `Play(number)`，  
   别整墙重弹。
-
 - ①传**函数**而不是实例：面板/子模块的 `ScrollView` 可能晚于本对象创建、也可能销毁重建。
 - ②**必须在 `SetData` 之后**：`ForeachItemGO` 只认得已克隆出来的 item；提前调一格都不会动。
-- ③🔴 **漏 `Stop` = 那一项永久停在 0.82 / 1.02 上**，下次进面板看起来像卡图。
+- ③🔴 **漏 `Stop` = 那一项永久停在 0.82 / 1.02 上**，下次进面板看起来像卡图。  
   `Play` 内部也会先 `Stop`，所以重播不会叠加。
 
 ### 2.1 B 方案：页面级接入（页签多的面板用这个）
 
-一个面板有十几个页签、每个页签一个内容页时，A 方案的「每页 3 行」就是几十行样板，
+一个面板有十几个页签、每个页签一个内容页时，A 方案的「每页 3 行」就是几十行样板，  
 而且「哪些页签有列表」这份名单一定会过期。B 方案把找列表也交给工具：
 
-| # | 位置 | 代码 |
-|---|---|---|
-| ① | 面板：`OnShow`（页内容 `OnShow` 之后） | `ItemPopIn.PlayPage(内容页)` |
-| ② | 面板：页签点击回调（`OnTabChanged` / `ActivityRewardShow` 之后） | `ItemPopIn.PlayPage(内容页)` |
-| ③ | 面板：`OnClose` + `OnDestroy` | `ItemPopIn.StopPage(内容页)`（多页就循环全停） |
+| # | 位置                                                  | 代码                                 |
+| - | --------------------------------------------------- | ---------------------------------- |
+| ① | 面板：`OnShow`（页内容 `OnShow` 之后）                        | `ItemPopIn.PlayPage(内容页)`          |
+| ② | 面板：页签点击回调（`OnTabChanged` / `ActivityRewardShow` 之后） | `ItemPopIn.PlayPage(内容页)`          |
+| ③ | 面板：`OnClose` + `OnDestroy`                          | `ItemPopIn.StopPage(内容页)`（多页就循环全停） |
 
 `PlayPage` 会到页面对象里自己找长列表，**找不到就 no-op**（返回 0），所以：
 
 - 不用维护「哪些页签有列表」的名单 —— 面板可以对每个页签无脑调用；
 - 首次打开就停在这类页签时会播（`OnShow` 那条路径），满足「首发也要弹」；
-- 扫描认三种挂法：实例字段（`self.scrollView`）、类表字段（`quick_class` 的 `local this = Class`）、
+- 扫描认三种挂法：实例字段（`self.scrollView`）、类表字段（`quick_class` 的 `local this = Class`）、  
   `metatable.__index`；一页多个列表（周/月礼包两个 `ScrollView`）会全部接上；
-- 手工克隆、不是 `ScrollCycleView` 的列表，页面实现 `GetPopInSource()` 返回**数据源**即可，
+- 手工克隆、不是 `ScrollCycleView` 的列表，页面实现 `GetPopInSource()` 返回**数据源**即可，  
   三种形态都认（按这个顺序判定，别乱）：
-
-  | 返回什么 | 收集方式 | 典型页 |
-  |---|---|---|
-  | 容器（`GameObject` / `Transform`，如 `taskList/viewPort/content`） | 取容器下 active 子节点，模板项自己 `SetActive(false)` 着天然跳过 | 积天豪礼 `ContinuityRechargePage` |
-  | 数组（`{go1, go2}` / `{ItemView1, ItemView2}`） | 按数组顺序，只收 active 的；元素可以是 GO、Transform、ItemView | 达人活动 `Expert`、升级豪礼 `Expert_UpLv`、开服双倍 `OpenService`、限时兑换 `ExChange`、扭蛋池 `BoxPool` |
-  | `ScrollCycleView` | 同自动扫描 | —— |
-
-- **列表是异步建的也没关系**：`PlayPage` 这一轮扫到 0 个 item 时会按
-  `kRetryDelays = {0.1, 0.25, 0.5}` 再扫三轮，扫到就播、一直扫不到就静默收工
-  （`Expert_UpLv` / `BoxPool` 的 `OnShow` 要等数据回调才造 item，切页签是同步调 `PlayPage` 的）。
+  | 返回什么                                                         | 收集方式                                           | 典型页                                                                               |
+  | ------------------------------------------------------------ | ---------------------------------------------- | --------------------------------------------------------------------------------- |
+  | 容器（`GameObject` / `Transform`，如 `taskList/viewPort/content`） | 取容器下 active 子节点，模板项自己 `SetActive(false)` 着天然跳过 | 积天豪礼 `ContinuityRechargePage`                                                     |
+  | 数组（`{go1, go2}` / `{ItemView1, ItemView2}`）                  | 按数组顺序，只收 active 的；元素可以是 GO、Transform、ItemView  | 达人活动 `Expert`、升级豪礼 `Expert_UpLv`、开服双倍 `OpenService`、限时兑换 `ExChange`、扭蛋池 `BoxPool` |
+  | `ScrollCycleView`                                            | 同自动扫描                                          | ——                                                                                |
+- **列表是异步建的也没关系**：`PlayPage` 这一轮扫到 0 个 item 时会按  
+  `kRetryDelays = {0.1, 0.25, 0.5}` 再扫三轮，扫到就播、一直扫不到就静默收工  
+  （`Expert_UpLv` / `BoxPool` 的 `OnShow` 要等数据回调才造 item，切页签是同步调 `PlayPage` 的）。  
   `StopPage` 会让待跑的重试作废，不会在隐藏页上补弹一次。
 - 绑定按页面缓存（弱表 key），第二次 `PlayPage` 复用第一次建的 popIn，`cfg` 只在首次生效。
 
@@ -176,37 +174,37 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 
 ## 3. 什么时候播、什么时候不播（本次三个面板）
 
-| 面板 | 播的时机 | 不播的时机 |
-|---|---|---|
-| `ValuePackPanel` | `OnShow`（`SetDataList()` 之后） | 购买后 `SetDataList` 刷新——它不经过 `OnShow`，所以天然不重播 |
-| `GrowthManual_RewardPreview` | `refresh(isTop, isAni)` 里 `isAni=true` | 领取奖励 / 余额变化等事件回调（`refresh(false,false)`） |
-| `GrowthManual_TaskPreview` | 同上；切日/周/月 toggle 也是 `refresh(true,true)` | 同上 |
-| `ExpertPanel` | `OnShow`、页签点击（`ActivityRewardShow` 之后） | `RefreshActivity`（活动开关 / 进度 / 5 点刷新 / 支付成功回调） |
-| `OperatingPanel` | `OnShow`、页签点击（`OnTabChanged` 之后） | `RefreshActivity`（月卡 / 活动开关 / 战令解锁） |
-| `AdjutantActivityPanel` | `PageTabCtrl:ChangeTab` 的回调（首开也走这条） | 无独立的事件刷新路径 |
-| `ThousandDrawPanel`（phases） | `Init` 的网络回调末尾（数据到位、卡面填好之后） | 领奖后的整表刷新会重播——那是**新一局**，可以接受 |
-| `DefenseTrainingPopup`（phases，关卡节点） | `OnOpen` 置位 → `OnShow` 末尾消费（`UpdateMain` 之后，status 节点已按状态激活） | 战斗返回（`IsBackOpen` 只走 `OnShow`，不经 `OnOpen`）、点「重置关卡」（回调里直接调 `OnShow`）——都是同屏刷新 |
-| `BlitzStrikePanel`（phases，未开宝箱） | 同上：`OnOpen` 置位 → `OnShow` 里 `UpdateMain` 之后消费 | 战斗返回（只走 `OnShow`）、领奖回调里的 `UpdateMain` 刷新；`difficultyLevel = 0`（弹选难度）那一支也不播 |
-| `ChallengePanel`（公会战地图据点，phases） | 父面板 `GuildBattlePanel:OnOpen` 调 `RequestCityPopIn()` 置位 → 本模块 `OnShow` 末尾（`ShowCity` 之后）消费 | 点「刷新」（回调里直接调 `OnShow`）、战斗返回（只走 `OnShow`）——都是同屏刷新 |
-| `RankingSingleListPanel` | `OnOpen` 置位 → 首轮榜单数据灌列表时消费（接点在 `CheckIsTop`，见 3.1 节） | 翻页 / 事件回调重灌列表（标记已消费）；空榜（`SetData` 前 return） |
-| 抽中单张卡（phases） | 抽卡回调里 `SetCard` 之后 `PlayCardIn(msg.number)` | —— |
+| 面板                                  | 播的时机                                                                                       | 不播的时机                                                                       |
+| ----------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `ValuePackPanel`                    | `OnShow`（`SetDataList()` 之后）                                                               | 购买后 `SetDataList` 刷新——它不经过 `OnShow`，所以天然不重播                                 |
+| `GrowthManual_RewardPreview`        | `refresh(isTop, isAni)` 里 `isAni=true`                                                     | 领取奖励 / 余额变化等事件回调（`refresh(false,false)`）                                    |
+| `GrowthManual_TaskPreview`          | 同上；切日/周/月 toggle 也是 `refresh(true,true)`                                                   | 同上                                                                          |
+| `ExpertPanel`                       | `OnShow`、页签点击（`ActivityRewardShow` 之后）                                                     | `RefreshActivity`（活动开关 / 进度 / 5 点刷新 / 支付成功回调）                               |
+| `OperatingPanel`                    | `OnShow`、页签点击（`OnTabChanged` 之后）                                                           | `RefreshActivity`（月卡 / 活动开关 / 战令解锁）                                         |
+| `AdjutantActivityPanel`             | `PageTabCtrl:ChangeTab` 的回调（首开也走这条）                                                        | 无独立的事件刷新路径                                                                  |
+| `ThousandDrawPanel`（phases）         | `Init` 的网络回调末尾（数据到位、卡面填好之后）                                                                | 领奖后的整表刷新会重播——那是**新一局**，可以接受                                                 |
+| `DefenseTrainingPopup`（phases，关卡节点） | `OnOpen` 置位 → `OnShow` 末尾消费（`UpdateMain` 之后，status 节点已按状态激活）                               | 战斗返回（`IsBackOpen` 只走 `OnShow`，不经 `OnOpen`）、点「重置关卡」（回调里直接调 `OnShow`）——都是同屏刷新 |
+| `BlitzStrikePanel`（phases，未开宝箱）     | 同上：`OnOpen` 置位 → `OnShow` 里 `UpdateMain` 之后消费                                              | 战斗返回（只走 `OnShow`）、领奖回调里的 `UpdateMain` 刷新；`difficultyLevel = 0`（弹选难度）那一支也不播  |
+| `ChallengePanel`（公会战地图据点，phases）    | 父面板 `GuildBattlePanel:OnOpen` 调 `RequestCityPopIn()` 置位 → 本模块 `OnShow` 末尾（`ShowCity` 之后）消费 | 点「刷新」（回调里直接调 `OnShow`）、战斗返回（只走 `OnShow`）——都是同屏刷新                            |
+| `RankingSingleListPanel`            | `OnOpen` 置位 → 首轮榜单数据灌列表时消费（接点在 `CheckIsTop`，见 3.1 节）                                       | 翻页 / 事件回调重灌列表（标记已消费）；空榜（`SetData` 前 return）                                 |
+| 抽中单张卡（phases）                       | 抽卡回调里 `SetCard` 之后 `PlayCardIn(msg.number)`                                                | ——                                                                          |
 
-**TabBox 点击为什么自动就有动画**：`GrowthManualPanel.SwitchView` 里本来就会调
-`contentScripts[index].view:OnShow(this)`，而两个子模块的 `OnShow` 都走 `refresh(true,true)`
+**TabBox 点击为什么自动就有动画**：`GrowthManualPanel.SwitchView` 里本来就会调  
+`contentScripts[index].view:OnShow(this)`，而两个子模块的 `OnShow` 都走 `refresh(true,true)`  
 ⇒ 切页 = 重新灌列表 = 重新弹一轮，不需要在面板侧加任何代码。
 
-🔴 判据只有一个：**「玩家主动换了一屏内容」才播；「数据回来了」不播**。
+🔴 判据只有一个：**「玩家主动换了一屏内容」才播；「数据回来了」不播**。  
 把 `Play` 挂到 `SetData` 或事件回调上，会让每次领奖、每次金币变动都重整列弹一遍。
 
-> 首开时会连播两次：`OnOpen` 调了一次 `view:OnShow`，`OnShow → TabCtrl:Init` 的回调又调一次。
-> 两次在同一帧里（`OnOpen`/`OnShow` 由 `UIManager.OpenPanel` 同步调用），中间没有渲染间隙，
+> 首开时会连播两次：`OnOpen` 调了一次 `view:OnShow`，`OnShow → TabCtrl:Init` 的回调又调一次。  
+> 两次在同一帧里（`OnOpen`/`OnShow` 由 `UIManager.OpenPanel` 同步调用），中间没有渲染间隙，  
 > 所以视觉上只有一次。**跨帧连播才需要去抖**，这里不需要。
 
 ### 3.1 单列表 + 异步网络数据（榜单形态：统一接点）
 
-`RankingSingleListPanel` 是另一类形态：**一个 ScrollCycleView，数据走网络回调**，
-12 条 `Set*Info` 路径（战力/竞技/爬塔/试炼/关卡/公会…）各自灌列表。逐条路径加
-`Play()` 就是 12 处样板，而且「哪些路径灌列表」这份名单一定会过期。接点选在
+`RankingSingleListPanel` 是另一类形态：**一个 ScrollCycleView，数据走网络回调**，  
+12 条 `Set*Info` 路径（战力/竞技/爬塔/试炼/关卡/公会…）各自灌列表。逐条路径加  
+`Play()` 就是 12 处样板，而且「哪些路径灌列表」这份名单一定会过期。接点选在  
 `CheckIsTop()`——**它本来就是每条路径在 `SetData` 之后都要调的收尾函数**：
 
 ```lua
@@ -225,10 +223,10 @@ function this.CheckIsTop()
 end
 ```
 
-- 🔴 一次性标记（`OnOpen` 置位 → 首次填充消费）是这里的关键：榜单的翻页请求会触发
+- 🔴 一次性标记（`OnOpen` 置位 → 首次填充消费）是这里的关键：榜单的翻页请求会触发  
   事件回调**重灌整个列表**（`SetData` 再来一遍），没有标记就会每翻一页整列重弹。
 - 空榜路径在 `SetData` 之前就 return，不会空耗标记（也正好不播——没东西可弹）。
-- A 方案没有 `PlayPage` 的重试机制，但这里不需要：`SetData` 是同步克隆 item 的，
+- A 方案没有 `PlayPage` 的重试机制，但这里不需要：`SetData` 是同步克隆 item 的，  
   `CheckIsTop` 被调到时 item 一定已经在了。
 
 ---
@@ -243,18 +241,19 @@ end
 
 再确认**链路上有没有 Mask**——有 Mask 就随便 overshoot，没有就是直接画到屏幕边上。
 
-| 面板 | item 宽 | 视口宽 | 每侧余量 | peak=1.04 时 | 结论 |
-|---|---|---|---|---|---|
-| `ValuePackPanel` | 1062 | 1080 | 9px | 越界 12.2px/侧 | 峰值只能 1.02（严格不越界是 1.016） |
+| 面板               | item 宽 | 视口宽  | 每侧余量 | peak=1.04 时 | 结论                      |
+| ---------------- | ------ | ---- | ---- | ----------- | ----------------------- |
+| `ValuePackPanel` | 1062   | 1080 | 9px  | 越界 12.2px/侧 | 峰值只能 1.02（严格不越界是 1.016） |
 
 `ValuePackPanel` 的实测取证（别靠猜，打开 prefab 看组件列表）：
 
 - `Bg`：`anchorMin(0,0)-anchorMax(1,1)`、`sizeDelta(0,0)`、纯色 Image ⇒ **铺满全屏**，画布宽即 1080。
 - `Bg/scroll`：**只有** `RectTransform + CanvasRenderer`，没有 Image/Mask。
 - `ScrollCycleView` 根：Image（材质+颜色）+ 一个自定义脚本，**没有 Mask**。
-- `ScrollCycleView/grid`：挂的是 **`GridLayoutGroup`（`m_Enabled: 0`，禁用）**。
-  🔴 它有 `m_Padding/m_CellSize/m_Spacing` 字段，容易被误读成 `RectMask2D`（后者序列化也有 `m_Padding`）——
+- `ScrollCycleView/grid`：挂的是 **`GridLayoutGroup`（`m_Enabled: 0`，禁用）**。  
+  🔴 它有 `m_Padding/m_CellSize/m_Spacing` 字段，容易被误读成 `RectMask2D`（后者序列化也有 `m_Padding`）——  
   判断依据是 `m_Script` 的 fileID 和有没有 `m_CellSize`，不是看有没有 `m_Padding`。
+
 
 ⇒ 结论：这套列表**全程无裁剪**，峰值必须按上面的公式卡死；item 越窄的面板（如 GrowthManual 的档位行）
 允许把 `peak` 提到 1.04~1.06，用 `ItemPopIn.New(getter, { peak = 1.05 })` 覆盖即可。

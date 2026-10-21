@@ -24,18 +24,44 @@
 var DB = db.getSiblingDB("m5_x1_game_10001");
 
 // 模板 → 机器人。tpl 必须是真实、非 GM 的玩家 uid。
+// ⚠️ 每个机器人必须用**不同模板**，否则两个机器人数据一模一样（曾经 Kai 和 Tester
+// 同源 10000044，面板上等级/战力/编队全一样，一眼就能看出是复制的）。
+// head/frame/country 显式写死，不要继承模板 —— 否则和模板玩家头像相同，也会露馅。
 var SPECS = [
-  { tpl: 10000002, uid: 90000001, name: "Nova" },   // lv50 vip1，158 个英雄，数据最完整
-  { tpl: 10000044, uid: 90000002, name: "Kai" },    // lv40，25 个英雄，轻量一些
+  { tpl: 10000002, uid: 90000001, name: "Nova",   head: 71041, frame: 80000, country: "ad" }, // lv50 vip1，158 英雄
+  { tpl: 10000044, uid: 90000002, name: "Kai",    head: 71018, frame: 80000, country: "pt" }, // lv40，25 英雄
   // 假玩家（GM `bot fake` / 控制台「模拟玩家发言」用的 99990001）。
   // 不建这份文档的话，客户端点它头像 → 服务端 getUser 抛异常 → **不回包** →
   // PlayerInfoPopup 停在上一个玩家的数据上（实测「点 Tester 弹出 Nova 的面板」）。
-  // 模板特意用 Kai 而不是 Nova：数据明显不同，一眼能看出不是串号。
-  { tpl: 90000002, uid: 99990001, name: "Tester" }
+  { tpl: 10000025, uid: 99990001, name: "Tester", head: 71000, frame: 80000, country: "us" }
 ];
 
 var DRY = (typeof process !== "undefined" && process.env.CLONE_DRY === "1");   // CLONE_DRY=1 只打印不落库
 var FORCE = (typeof process !== "undefined" && process.env.CLONE_FORCE === "1"); // CLONE_FORCE=1 覆盖已有文档
+
+// 🔴 mongoKey 是「这个子对象在 user 文档里的路径」，形如
+//      heroManager.heroMap.<uid><010><timestamp>
+// 它以 "heroManager" 开头，**不以 uid 开头**，所以上面 rewrite 的「前缀替换」抓不到它。
+// 漏改的后果（2026-10-22 踩到）：机器人英雄升级时 updateString("level") 拼出来的路径
+// 还是 heroManager.heroMap.10000002…，数据写到野路径上 → 面板等级永远不变，
+// 看起来就是「改了没生效」。这里专门把路径里的 .<oldUid> 段换掉。
+function fixMongoKeyPaths(o, oldStr, newStr) {
+  if (o === null || typeof o !== "object") return o;
+  if (o instanceof Date || isBson(o)) return o;
+  if (Array.isArray(o)) {
+    for (var i = 0; i < o.length; i++) o[i] = fixMongoKeyPaths(o[i], oldStr, newStr);
+    return o;
+  }
+  for (var k in o) {
+    if (typeof o[k] === "function") continue;
+    if (k === "mongoKey" && typeof o[k] === "string") {
+      o[k] = o[k].split("." + oldStr).join("." + newStr);
+    } else {
+      fixMongoKeyPaths(o[k], oldStr, newStr);
+    }
+  }
+  return o;
+}
 
 function isBson(v) {
   if (!v || typeof v !== "object") return false;
@@ -123,22 +149,43 @@ SPECS.forEach(function (s) {
   }
 
   var doc = rewrite(src, s.tpl, s.uid);
+  doc = fixMongoKeyPaths(doc, String(s.tpl), String(s.uid));
   doc = repairShellNumbers(doc);
   doc._id = s.uid;
   doc.playerManager.nickName = s.name;
   doc.playerManager.openId = "bot_" + s.uid;
+  // 头像/头像框/国家必须和模板不同，否则聊天条、面板上一模一样
+  if (s.head) doc.playerManager.head = NumberInt(s.head);
+  if (s.frame) doc.playerManager.headFrame = NumberInt(s.frame);
+  if (s.country) doc.playerManager.country = s.country;
 
-  // 让"最后在线"落在几小时前：太新像在线，太旧像死号
+  // 「最后登录」装成很久以前的老号 —— 刚做出来的号 loginTime 是「1 小时前」，
+  // 谁点开都像个人工造的号。这里按 uid 取固定种子（3~9 天前），
+  // 重跑脚本结果稳定，不会今天 3 天前、明天 5 天前。
   var now = Date.now();
-  doc.playerManager.offLineTime = NumberLong(String(now - 3600 * 1000));
-  doc.playerManager.loginTime = NumberLong(String(now - 7200 * 1000));
+  var seed = s.uid % 7;                                   // 0..6
+  var daysAgo = 3 + seed;                                 // 3 ~ 9 天
+  var lastLogin = now - daysAgo * 86400000 - (s.uid % 12) * 3600000;
+  var lastOffline = lastLogin + (20 + s.uid % 60) * 60000; // 上线 20~80 分钟后下线
+  doc.playerManager.loginTime = NumberLong(String(lastLogin));
+  doc.playerManager.offLineTime = NumberLong(String(lastOffline));
+  doc.playerManager.loginTimeTody = NumberLong(String(lastLogin));
+  doc.playerManager.OnlineTimeTody = NumberLong("0");
+  // createTime 必须早于 loginTime，否则「注册时间晚于最后登录」一眼假。
+  // 模板的 createTime 一般更早，只在真的晚于 loginTime 时才往前挪。
+  var ct = doc.playerManager.createTime;
+  var ctVal = (ct && ct.exactValueString) ? Number(ct.exactValueString) : Number(ct);
+  if (!ctVal || ctVal > lastLogin) {
+    doc.playerManager.createTime = NumberLong(String(lastLogin - (30 + seed) * 86400000));
+  }
 
   var pm = doc.playerManager;
   var heroes = doc.heroManager && doc.heroManager.heroMap ? Object.keys(doc.heroManager.heroMap).length : 0;
 
   print("→ " + s.tpl + "(" + src.playerManager.nickName + " lv" + src.playerManager.level + ")"
       + " 复制为 " + s.uid + "(" + s.name + ") lv" + pm.level + " vip" + pm.vipLevel
-      + " head=" + pm.head + " 英雄=" + heroes + " 文档=" + JSON.stringify(doc).length + "B");
+      + " head=" + pm.head + " 国家=" + pm.country + " 英雄=" + heroes
+      + " 最后登录=" + daysAgo + "天前 文档=" + JSON.stringify(doc).length + "B");
 
   if (DRY) { print("   [DRY] 未写入"); return; }
 

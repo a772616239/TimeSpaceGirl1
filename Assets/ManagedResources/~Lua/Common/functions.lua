@@ -2071,6 +2071,9 @@ end
 
 --本地文本显示统一调用此接口
 --查找不以Log开头或不以--开头的包括在双引号内中文的正则表达式:^((?!--|Log.*).)*".*[一-龠]+.*"
+--已报过"缺 id"的集合：同一个缺失 id 只刷一条红字（主界面系统聊天每 2s 重刷一次，
+--之前同一条消息会无限重复刷日志，见 2026-10-21 20:37:47 真机日志）
+local _missingLangLogged = {}
 function GetLanguageStrById(zhStr)
     if zhStr == nil then
         return zhStr
@@ -2104,7 +2107,10 @@ function GetLanguageStrById(zhStr)
             end
             return result or languageDic[languageID].zh
         else
-            LogRed("在language表内未找到 id："..zhStr)
+            if not _missingLangLogged[languageID] then
+                _missingLangLogged[languageID] = 1
+                LogRed("在language表内未找到 id："..zhStr)
+            end
             return tostring(zhStr)
         end
     end

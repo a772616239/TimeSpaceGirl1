@@ -1,9 +1,36 @@
 require("Base/BasePanel")
 local ThousandDrawPanel = Inherit(BasePanel)
 local this = ThousandDrawPanel
+local ItemPopIn = require("Modules/Common/ItemPopIn")--卡片/数字格的 duang（弹性入场）
 local ThousandDrawConfig = ConfigManager.GetAllConfigsData(ConfigName.ThousandDrawConfig)
 local round --轮次
 local thousandDrawCards = {} --卡组
+
+--==================== 卡片 / 数字格 duang（弹性入场） ====================
+-- 千抽不是长列表，是「三张卡 + 四位数字」的固定版面 ⇒ 用 ItemPopIn 的 duang 模式：
+-- 单段 0.5 → 1 + OutElastic，缓动自己会冲过 1 再抖回来，就是那一下「duang」；
+-- 卡片 0.09 错开，数字排在卡片之后（delay）。配方/坑见 docs/ui_item_pop_in_skill.md。
+-- 🔴 卡片根节点（card1..3）没有 Animator，Animator 在每个卡的子节点 btn 上 ⇒ 动根节点缩放
+--    不会被盖回去；但动 btn 自己会被盖（和页签翻入同一条坑）。
+local kCardNames = { "card1", "card2", "card3" }
+local kNumberNames = { "thousand", "hundred", "ten", "unit" }
+local kCardDuangCfg = {
+    mode = "duang",
+    from = 0.5,
+    duangDuration = 0.55,
+    ease = "OutElastic",
+    step = 0.09,
+    maxSpan = 0.4,
+}
+local kNumberDuangCfg = {
+    mode = "duang",
+    from = 0.6,
+    duangDuration = 0.42,
+    ease = "OutElastic",
+    delay = 0.26,      --等三张卡起完再弹，别和卡片糊在一起
+    step = 0.05,
+    maxSpan = 0.3,
+}
 
 function this:InitComponent()
     this.mask = Util.GetGameObject(self.gameObject, "mask")
@@ -16,6 +43,61 @@ function this:InitComponent()
     this.numberGrid = Util.GetGameObject(number, "grid")
     this.limitTxt = Util.GetGameObject(self.gameObject, "bg/limit"):GetComponent("Text")
     this.cardGrid = Util.GetGameObject(self.gameObject, "bg/grid")
+
+    --数据源是显式数组（ItemPopIn 认 Lua 数组：元素是 GameObject 或 transform）
+    this.cardDuang = ItemPopIn.New(function() return this:GetCardDuangItems() end, kCardDuangCfg)
+    this.numberDuang = ItemPopIn.New(function() return this:GetNumberDuangItems() end, kNumberDuangCfg)
+end
+
+--三张卡（版面顺序 card1 → card3）
+function this:GetCardDuangItems()
+    local list = {}
+    for i = 1, #kCardNames do
+        local go = this.cardGrid and Util.GetGameObject(this.cardGrid, kCardNames[i]) or nil
+        if go then
+            list[#list + 1] = go
+        end
+    end
+    return list
+end
+
+--剩余抽数（千/百/十/个），和版面顺序一致
+function this:GetNumberDuangItems()
+    local list = {}
+    for i = 1, #kNumberNames do
+        local go = this.numberGrid and Util.GetGameObject(this.numberGrid, kNumberNames[i]) or nil
+        if go then
+            list[#list + 1] = go
+        end
+    end
+    return list
+end
+
+--整版 duang：卡先、数字后（数字靠 cfg.delay 错开）
+function this:PlayDuang()
+    if this.cardDuang then
+        this.cardDuang:Play()
+    end
+    if this.numberDuang then
+        this.numberDuang:Play()
+    end
+end
+
+--只弹一张卡：下标就是 cardN 的 N（数组顺序即 card1..3）
+function this:PlayCardDuang(number)
+    if this.cardDuang then
+        this.cardDuang:Play(number)
+    end
+end
+
+--回收：Kill + 复位。🔴 漏调 = 卡片/数字永久停在 0.5 上
+function this:StopDuang()
+    if this.cardDuang then
+        this.cardDuang:Stop()
+    end
+    if this.numberDuang then
+        this.numberDuang:Stop()
+    end
 end
 
 --绑定事件（用于子类重写）
@@ -61,11 +143,14 @@ end
 
 --界面关闭时调用（用于子类重写）
 function this:OnClose()
+    --duang 播到一半被关掉也要复位
+    this:StopDuang()
     PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 --界面销毁时调用（用于子类重写）
 function this:OnDestroy()
+    this:StopDuang()
 end
 
 --初始化
@@ -101,6 +186,8 @@ function this.Init(msg)
         end
 
         this.SetInfo()
+        --数据到位再 duang：卡片是空的（只有「试炼」按钮）时弹，看不到卡面
+        this:PlayDuang()
     end)
 end
 
@@ -193,6 +280,8 @@ function this.SetCard(go, data)
                 end
                 this.SetInfo()
                 this.SetCard(Util.GetGameObject(this.cardGrid, "card" .. msg.number), msg)
+                --抽中的那张自己 duang 一下（其余两张不动，别整墙重弹）
+                this:PlayCardDuang(msg.number)
             end)
         end)
     end

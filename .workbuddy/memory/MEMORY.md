@@ -24,15 +24,18 @@
 - 全服排行宝箱（`RankingRewardLogic.takeRankingReward`）**只判宝箱非空、不判玩家在不在榜** ⇒ 人人可领（10-21 已定位，待决策）。领取后界面又变可领＝客户端不回写 `RankingRewardedList`。
 - 美术换风格出图**禁用内置 ImageGen**（10-21 用户明确），只走 AdsPower 换号；号池 6 个但换号链默认只试 3 个 ⇒ 必须显式 `ADSPOWER_PROFILES`，且换号要看过期台账 `_output/art_restyle/provider_state.json`。
 - 新增地图 = **三步都得做**：prefab 的 `.meta assetBundleName`（复制来的会继承成 mapN-1）+ `ResourcePathConfig.asset` 三处**末尾追加**（resAbNameList / resInfoList / assetBundleList，条数必须相等，插中间会平移几千个 resAbNameIndex）+ `MainLevelConfig.BG`。漏资源登记 ⇒ `resMgr:LoadAsset` 返 nil，挂机战斗起不来。
-- **本地 Unity 开着时不能跑 batchmode 导表**（`resource_build.sh` 检测同 `-projectpath` 进程直接拒绝）；导表走 Jenkins `TS-Resource-Build`，但打包目录从 origin 无条件 reset ⇒ **先 commit+push，产物再手动 copy 回开发目录**。
+- 🔴 **导表/资源构建一律走 Jenkins `TS-Resource-Build`（在独立 clone `TimeSpaceGirl1-build` 里跑），不要让用户关 Unity 编辑器**（10-21 用户明确纠正：开发工程开着也能导）。本地 `resource_build.sh` 才会被同 `-projectpath` 进程拒绝。打包目录从 origin 无条件 reset ⇒ **先 commit+push，再触发**（`EXPORT_TABLES=true SYNC_BYTES=true REBUILD_AB=true SERVER_ENV=正式服`），产物再手动 copy 回开发目录。`REBUILD_AB=false` 时 ⑤ 新鲜度闸门必红（正常，非导表失败）。
 - 美术翻译链 `TS-Art-Translate` 有**两族**，按源图目录自动分派：`ArtFont_zh/**` → artfont（版面锚点写死）、`Atlas/**` → atlas（纯色黑板自动定位）。🔴 `MODE=one` 推 `--only` 时命名要归一化（atlas 图**没有** `_zh` 后缀），否则 ②③④ 全绿但目标 0 张＝假绿球。
 - 🔴 **美术字写回 ≠ 生效**：`ArtFont_en/<同族>/<名>_en.png` 只让图就位；客户端真按语言切图还要求调用点走 `GetPictureFont`（`functions.lua`）＋ 该 `resName` 在 `ResourcePathConfig.asset` 有登记 ＋ 重打 AB，缺一步都白图。
+- 🔴 **`GetPictureFont` 只对「名字带 `_zh` 后缀」的资源成立**：它按 `GetLan()` 拼 `_zh/_en/_jp`。图集里的中文原图大量是**无后缀**命名（`Atlas/LaddersTypePanelAtlas` 9 张里只有 1 张带 `_zh`），套上去中文/日文会拼出不存在的名字 ⇒ 图片整块变白。这类资源改用**条目上的显式字段**（如 `bgEn = "<名>_en"`，`GetLan()==1` 才换），且要在刷新时求值、别写进 require 期的表构造（`GetLan()` 依赖启动期全局）。
+- 🔴 重建 AB = `BuildGameAssetBundles()` = `MarkGame(true)`，末尾会 `ResourcesPathEditor.CreateResourcePathConfig(true)` **整体重写 ResourcePathConfig**（索引重排）。所以手工追加的登记必须能在重扫中复现（目录进 `resPathList`、文件真存在），否则被静默删掉。子目录一目录一包靠 `BuildConfigs.asset` 的 `SubFloderOneBundle` 覆盖（`ArtFont_en`/`ArtFont_zh`/`Atlas` 都在里面）⇒ 新子目录不用改 BuildConfigs；AB 名 = `压缩类型小写/相对 ManagedResources 的路径`。
 
 ## 约定
 - 巡检只读、量化分级；打包/校验/commit/push 可自行做，**送审/重启生产服/改线上部署先问**。
 - 逐条 commit 且必须 push；中文 `type(scope): 摘要`；严禁 `git add -A`。
 - 「都推了」= 两仓 `rev-list --count origin/<b>..<b>` 都为 0；push 前看有没有混进并行会话的提交。凭据一律 `.secrets/`（700/600）。
-- 后台长任务 `Popen(..., start_new_session=True)`；zsh 下 `--include` 报 no matches（用 Grep）；GBK 源码 `grep -a`。
+- 后台长任务 `Popen(..., start_new_session=True)`；zsh 下 `--include` 报 no matches（用 Grep）；GBK 源码 `grep -a`，`.jenkins/*.groovy`、`BuildConfigs.asset` 也被判 binary ⇒ 同样要 `-a`，否则静默返回空、白查。
+- 🔴 并行会话共享工作区：**暂存完立刻 commit**（只 `git update-index` 不 commit，另一个会话提交时会连带带走你的改动）。要隔离对方未提交的改动：`git show HEAD:path` + 只套自己的改动造 blob → `git hash-object -w` → `git update-index --cacheinfo`，工作区仍保留对方改动。
 - 改系统级状态须当场验证并标注「重启后是否有效」；打补丁先用 `git show HEAD:path`。
 - UI「列表项逐格放大缩小」入场统一用 `Modules/Common/ItemPopIn`（配方/坑见 `docs/ui_item_pop_in_skill.md`），禁止各面板复写；只在「玩家主动换屏」播，数据回调刷新不播。列表项「从一侧滑入 + 底板淡入」走 `docs/ui_item_slide_in_skill.md`（承载节点选择表 + 11 坑 + 11 case 自证；已落地 BattlePass 任务卡 / DailyCarbon 副本卡）。🔴 参考 clip 的节奏（0.167/0.033）是**弹窗一次性入场**的，落在玩家反复触发的操作（切页签）上必然「太快」⇒ 打开 / 切页签分两套 preset，切页签另加 0.05s 整批延后起播躲开 `SetData` 那一帧，并挡连点叠播。`Util.GetGameObject` 按名字 **DFS** 找第一个同名节点，不是只找直接子节点 ⇒ 目标名必须整棵子树唯一。
 - 复刻 `.anim` 走 `docs/ui_anim_reproduce_skill.md` 五阶段（S0 反解先出分镜表，`dump_clip.py` 读全 `m_*Curves`）。**TabBox 页签取列表必须读 `box` 子节点，`this.TabCtrl:GetTabList()` 常为空实例（第二次 Init 传 nil 提前 return，但 TabCtrl 已被覆盖）⇒ 静默不播**；例外：走 `Init_SetTabAndBox`（tab/box 显式传）的面板 `GetTabList()` 有值，可放心用（DailyCarbon 已落）；布局组占位时位移改写到子节点而不是放弃；`ScrollCycleView` 的 item 根 `anchoredPosition` 由 `SetData`/`SetItemIndex` 直接重写（同理写子节点）。🔴 `dump_clip.py` 只给节点名（`grid/item1`）、给不出业务语义 ⇒ **动手前先确认是哪张列表**，别拿面板里第一个像列表的东西开刀。

@@ -1,4 +1,5 @@
 ----- 日常任务弹窗 -----
+local ItemPopIn = require("Modules/Common/ItemPopIn")
 local this = {}
 --传入父脚本模块
 local parent
@@ -20,6 +21,8 @@ function this:InitComponent(gameObject)
         this.itemPre,nil,Vector2.New(v2.width,v2.height),1,1,Vector2.New(0,5))
      this.ScrollView.moveTween.MomentumAmount = 1
      this.ScrollView.moveTween.Strength = 2
+     --列表项逐格入场（配方见 docs/ui_item_pop_in_skill.md）
+     this.popIn = ItemPopIn.New(function() return this.ScrollView end)
 end
 
 function this:BindEvent()   
@@ -65,9 +68,10 @@ function this:OnSortingOrderChange()
 end
 
 function this:OnClose()
-    
+    this:StopItemPopIn()
 end
 function this:OnDestroy()    
+    this:StopItemPopIn()
     itemsList = {}
 
     if self.timer then
@@ -82,6 +86,23 @@ this.refresh = function(isTop,isAni)
 
     this:showTaskList(isTop,isAni)
     CheckRedPointStatus(RedPointType.TreasureOfSl)
+    --列表重建完再逐格入场；只有打开/切页这类主动刷新（isAni=true）才播，
+    --领取奖励之类的数据回调刷新不播，否则每次回调整列都弹一遍
+    if isAni then
+        this:PlayItemPopIn()
+    end
+end
+
+function this:PlayItemPopIn()
+    if this.popIn then
+        this.popIn:Play()
+    end
+end
+
+function this:StopItemPopIn()
+    if this.popIn then
+        this.popIn:Stop()
+    end
 end
 
 --任务列表

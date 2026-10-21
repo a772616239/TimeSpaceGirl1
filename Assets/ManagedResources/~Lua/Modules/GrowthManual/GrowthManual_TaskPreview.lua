@@ -1,4 +1,5 @@
 ----- 日常任务弹窗 -----
+local ItemPopIn = require("Modules/Common/ItemPopIn")
 local this = {}
 --传入父脚本模块
 local parent
@@ -37,6 +38,8 @@ function this:InitComponent(gameObject)
     this.itemPre,nil,Vector2.New(v2.width,v2.height),1,1,Vector2.New(0,5))
     this.ScrollView.moveTween.MomentumAmount = 1
     this.ScrollView.moveTween.Strength = 2
+    --列表项逐格入场（配方见 docs/ui_item_pop_in_skill.md）
+    this.popIn = ItemPopIn.New(function() return this.ScrollView end)
     curType = 0
 end
 
@@ -133,15 +136,29 @@ function this:OnSortingOrderChange()
  end
 
 function this:OnClose()
+    this:StopItemPopIn()
     if self.timer then
         self.timer:Stop()
         self.timer = nil
     end
 end
 function this:OnDestroy()
+    this:StopItemPopIn()
     if self.timer then  
         self.timer:Stop()
         self.timer = nil
+    end
+end
+
+function this:PlayItemPopIn()
+    if this.popIn then
+        this.popIn:Play()
+    end
+end
+
+function this:StopItemPopIn()
+    if this.popIn then
+        this.popIn:Stop()
     end
 end
 
@@ -153,6 +170,11 @@ function this.refresh(isTop,isAni)
     CheckRedPointStatus(RedPointType.QinglongSerectTreasure)
     CheckRedPointStatus(RedPointType.TreasureOfSl)
     Game.GlobalEvent:DispatchEvent(GameEvent.GrowthManual.OnGrowthManualRedpointChange)
+    --列表重建完再逐格入场；打开/切页/切日周月这种主动刷新（isAni=true）才播，
+    --任务进度之类的数据回调刷新不播，否则每次回调整列都弹一遍
+    if isAni then
+        this:PlayItemPopIn()
+    end
 end
 
 local state = {

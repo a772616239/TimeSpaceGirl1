@@ -35,3 +35,16 @@
 - 导表是**确定性**的：全量重导后若只有你改过的表变化，说明其余 283 张与已提交 lua 逐字节一致（可当回归判据）。
 - 导表只写 `~Lua` + 服务端 txt，**不写 LuaBytes**；字节码必须另跑 `scripts/lua-bytes-sync.sh`（自动取 git 改动集）。
 - 导表会被 Unity GUI 占用挡住：`scripts/resource_build.sh` 的占用检查 2026-10-20 已修（旧版大小写不匹配 + 条件写反，从来没拦过）。
+
+## 🔴 2026-10-21：服务端 txt 空值必须 `null`，不能 `nil`
+- `DataHelper.GetValByDefault`（**仅** `DataToTxtExporter` 调用；客户端走 `GetClientValByDefault`）
+  原本默认 `"nil"`。服务端 `StringUtil.parseFiledInt/parseFiledInt2/parseFiledInt3`
+  （`gamecommon/src/main/java/util/StringUtil.java:20-56`）**只认 `null` / 空串 / `" "`**，其余直接
+  `Integer.parseInt` ⇒ 任何 `mut,int#...` 列的空单元格都抛 `NumberFormatException`，**整张表加载中断**。
+  `RechargeCommodityConfig` 就是 4547 格 → 本地服 15:10 那次起不来。已改 `"null"`（提交 `096d21d56`）。
+- 判据：导出后 `grep -c $'\tnil' xxx.txt` 必须为 0；`null` 数量应与空单元格数一致。
+- 为何长期没暴露：导出落影子目录 `TimeSpaceServer/skzc/.../conf/server`，真实仓
+  `Server_x1tag1.2.2/server_game/conf/server` 从没被覆盖过 ⇒ 这条链 2026-10-21 才第一次真正跑通。
+- 🔴 `scripts/resource_build.sh` 的 `ORIG_ARGS=("$@")` 必须在 **while 解析之前**取。
+  放在后面 = 重入时 argv 已空 ⇒ `--action export` 跑成 `all`（白多建一次 AB）、`--server-env` 丢失
+  （AB 打进工程当前 version.txt 口径 = 连错服）。已在 2026-10-21 修（提交 `69726cc00`）。

@@ -18,6 +18,7 @@
 - 删号/删英雄须清 rank 与引用（`rank-audit`/`refs-audit`），且**先归档**（`cheatctl archive`）。
 - `tk/getServerList` 的 `recommend` 只许来自 `is_new=1`；否则老客户端 `serverList[i].level` 空值比较中断 → 登录报 `SocketAddress is nil`。
 - 全服排行宝箱（`RankingRewardLogic.takeRankingReward`）**只判宝箱非空、不判玩家在不在榜** ⇒ 人人可领（10-21 已定位，待决策）。领取后界面又变可领＝客户端不回写 `RankingRewardedList`。
+- 美术换风格出图**禁用内置 ImageGen**（10-21 用户明确），只走 AdsPower 换号；号池 6 个但换号链默认只试 3 个 ⇒ 必须显式 `ADSPOWER_PROFILES`，且换号要看过期台账 `_output/art_restyle/provider_state.json`。
 
 ## 约定
 - 巡检只读、量化分级；打包/校验/commit/push 可自行做，**送审/重启生产服/改线上部署先问**。

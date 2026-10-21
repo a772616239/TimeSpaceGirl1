@@ -186,3 +186,11 @@ curl -s "http://127.0.0.1:8081/tk/getServerList?openId=7e65e2241bd6bd2bef8fbed63
 - `x1_cn_test_login.server_info` 两条服的 ip 已从 127.0.0.1 改为 **192.168.3.82**（用户明令：测试服口径必须局域网 IP，包/客户端分发到别的设备也要能连）。port 16081 不变；游戏服/登录服都监听 `*:端口`，无需改绑定。
 - 客户端侧口径链：build_envs.json「测试服」serverUrl=http://192.168.3.82:8081/（commit 2ea017a45）+ server_info ip=192.168.3.82。已用 getServerList 实测下发 ✓。
 - 本机 MongoDB 4.0（wire v7）连不上新 mongosh（要求 wire≥8），**用 /usr/local/mongodb/bin/mongo** 旧 shell。
+
+## 起服方式（2026-10-21 实测）
+- `start-local.sh restart gs` 里是 `nohup ... &`；在非交互/被回收的父进程下**活不过命令结束**（起来 ~40s 后静默退出，端口消失）。
+  要么 `start-local.sh install gs` 挂 launchd（`launchd=loaded`），要么用
+  `Popen(["/bin/bash", "~/home/java/run-gs.sh"], start_new_session=True)` 完全脱离会话。
+- 换表流程：备份 `~/home/java/gameserver/table-backup-<ts>/{conf,assets_*}*.txt` → 覆盖
+  `gameserver/conf/server/` **和** `gameserver/assets/conf/server/` 两处 → 重启 → 查 `run-gs.log`
+  有无 `clazz = [class config.SXxx]` / `NumberFormatException`（有 = 表格式不对，别等玩家报错）。

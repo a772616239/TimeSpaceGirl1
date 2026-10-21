@@ -42,6 +42,14 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode 'json={"parameter":[]}' \
 ```
 🔴 **`POST /job/<n>/build` 在 2.568 上恒 400 `Nothing is submitted`**（裸 POST / `--data ''` / `--data 'delay=0sec'` 都试过，全 400）。
 带参数就把 `json` 换成 `{"parameter":[{"name":"SKIP_PLAY","value":"true"}]}`。
+🔴 **但 `--data-urlencode "json@/tmp/p.json"` 实测等于没传**：HTTP 201、构建照样起，参数却全是默认值
+（`DEPLOY=true` 变 false，白跑一轮演练还占着 `concurrent:false` 的槽）。**逐字段传才可靠**：
+```bash
+curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode "DEPLOY=true" --data-urlencode "CONFIRM=正式服" \
+  --data-urlencode "ONLY_CLASSES=com/ljsd/jieling/logic/rankingReward/*" ... /job/<n>/buildWithParameters
+```
+**触发后 5 秒内必看 stage ① 的「动作/注入口径/审批」三行**，别等跑完才发现参数没进去。
+中止的构建会在服务端仓留下 `release/x1-<版本>-<stamp>` 分支（未推远端）⇒ 记得 `git branch -D` + `worktree prune`。
 
 ## 改 job 的标准动作
 ```bash
@@ -80,7 +88,9 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode 'json={"parameter":[]}' \
   一刀切当脏 ⇒ 永远过不去（这仓把 gradle 缓存也纳了版本管理）。
 - 🔴 `zip -u` 前必须 `touch` 全部条目（zip 按 mtime 2 秒粒度判更新，同秒静默跳过）⇒
   这就是为什么 ⑩ 要用 `verify-selected` 重新拉线上 jar 逐条目核对 CRC，而不是看 `zip` 的 rc。
-- 现状：演练 `#1/#2/#4` SUCCESS；**`DEPLOY=true` 未实跑**（写生产 + 重启踢线），首次需明确授权。
+- 现状：演练 `#1/#2/#4` SUCCESS；**`DEPLOY=true` 已实跑**：`#10`（2026-10-21 00:19，注入 11 条）、
+  `#13`（2026-10-21 13:27，注入 2 条，全服宝箱越权领奖 hotfix）。链路含备份→注入→重启→⑩ CRC 复核→
+  ⑩-2 协议自检，跑完 `UNSTABLE` 的常态原因只有 overlay 配置不一致那条 WARN。
 
 ## 🔴 导表在 CI 里的位置（2026-10-20 核）
 - **只有 `TS-Resource-Build` 的 ② 会导表**（`EXPORT_TABLES` 默认 true）→ `scripts/resource_build.sh --action export`

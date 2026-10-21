@@ -26,6 +26,13 @@ end
 function LifelongLimitBuy:RemoveEvent()
 end
 
+--手工克隆的长列表（content/rect/grid 下按配置克隆 rewardPre）：给通用入场动画声明数据源。
+--返回的是 Lua 数组 —— 不能返回 grid 容器，因为奖励模板 rewardPre 本身就挂在 grid 下，
+--按容器扫会把模板也算进去；数组顺序即版面顺序，模板天然不在里面。
+function LifelongLimitBuy:GetPopInSource()
+    return self.preList
+end
+
 function LifelongLimitBuy:OnShow(parentSorting, arg, pageIndex) 
     self.gameObject:SetActive(true)
 

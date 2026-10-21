@@ -117,5 +117,24 @@ Check(getter ~= nil, "声明了 GetPopInSource")
 Check(getter ~= nil and getter:find("continuityTaskContent", 1, true) ~= nil,
     "GetPopInSource 返回 taskList 的 content 容器")
 
+-- ---------------- OperatingPanel 的两个「漏页」 ----------------
+-- page_3 = GrowthGiftPage（成长礼金）、page_9 = LifelongLimitBuy（终身限购）。
+-- 这两页当初都接不上：一个被 DelayCreation 把 item 预先 SetActive(false)（工具收不到），
+-- 一个是手工克隆、数据源不是 ScrollCycleView（工具扫不到）。
+print("== 成长礼金 page_3 ==")
+local growth = readSource(BASE .. "Operating/GrowthGiftPage.lua")
+Check(growth:find("SubUIConfig.ScrollCycleView", 1, true) ~= nil, "列表是 ScrollCycleView（会被 PlayPage 自动扫到）")
+Check(growth:find("DelayCreation(", 1, true) == nil,
+    "不再调 DelayCreation（它会把 item 全部隐藏，逐格入场就一个都收不到）")
+Check(growth:find("self.scrollView", 1, true) ~= nil, "scrollView 挂在实例上（PlayPage 扫实例字段）")
+
+print("== 终身限购 page_9 ==")
+local lifelong = readSource(BASE .. "Operating/LifelongLimitBuy.lua")
+local lifelongGetter = bodyOf(lifelong, "function LifelongLimitBuy:GetPopInSource()")
+Check(lifelongGetter ~= nil, "声明了 GetPopInSource（手工克隆的列表）")
+Check(lifelongGetter ~= nil and lifelongGetter:find("self.preList", 1, true) ~= nil,
+    "返回 preList 数组，而不是 grid 容器（rewardPre 模板挂在 grid 下，按容器扫会把模板也算进去）")
+Check(lifelong:find("go:SetActive(true)", 1, true) ~= nil, "克隆项填完数据是 active 的（否则会被跳过）")
+
 print(failed == 0 and "ALL OK" or ("FAILED: " .. failed))
 if failed > 0 then os.exit(1) end

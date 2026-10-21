@@ -5,7 +5,6 @@ local actRewardConfig = ConfigManager.GetConfig(ConfigName.ActivityRewardConfig)
 local rewardNameConfig = ConfigManager.GetConfig(ConfigName.ItemConfig)--读取奖励名称信息
 local GlobalActivity = ConfigManager.GetConfig(ConfigName.GlobalActivity)
 local MainLevelConfig = ConfigManager.GetConfig(ConfigName.MainLevelConfig)
-local isFirstOn = true--是否首次打开页面
 
 local giftList = {
     [101] = 6,--表内没有礼包id（101、102、103、104、105）和ActivityId的对应关系，
@@ -51,7 +50,6 @@ function GrowthGiftPage:BindEvent()
 end
 
 function GrowthGiftPage:OnShow()
-    isFirstOn = true
     --> GlobalActivity 转
     local globalActivityConfigs = ConfigManager.GetAllConfigsDataByKey(ConfigName.GlobalActivity, "Type", 6)
     table.sort(globalActivityConfigs, function(a, b)
@@ -109,17 +107,13 @@ function GrowthGiftPage:RefreshGiftData()
         return state_a < state_b
     end)
 
-    local itemList = {}
-    local callBack = function(index, item)
+    self.scrollView:SetData(list, function(index, item)
         self:RefreshShowData(item, list[index])
-        itemList[index] = item
-    end
-    self.scrollView:SetData(list, callBack)
-
-    if isFirstOn then
-        isFirstOn = false
-        DelayCreation(itemList)
-    end
+    end)
+    -- 🔴 首开不要再用 DelayCreation 逐行显隐：它会把刚 SetData 出来的 item 全部
+    -- SetActive(false)，OperatingPanel 随后调的逐格入场（ItemPopIn.PlayPage）就一个都收不到
+    -- —— 这页的动画之前就是这么漏掉的（另一处是 page_9 的手工克隆列表）。
+    -- 逐格放大缩小本身就是「一行一行冒出来」，交给它，别叠两套。
 end
 
 --刷新每一条item

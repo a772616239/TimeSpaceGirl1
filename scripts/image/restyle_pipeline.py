@@ -175,7 +175,13 @@ COMPOSITIONS = {
                       #    这里只要求手「在做事」，能不能空手张开交给 pose 描述决定。
                       "frame - unless the pose above asks for an open hand, prefer a hand that is doing "
                       "something (resting on, leaning on or gripping something) over a stiff splayed "
-                      "empty fan of fingers; "
+                      "empty fan of fingers; if the pose does ask for a raised open hand, turn it "
+                      "three-quarter away from the camera with the fingers held together and softly "
+                      "curled - a flat palm fanned square at the viewer is the single worst case for "
+                      "anatomy - and grade the digits like a real hand: middle finger longest, then "
+                      "index and ring, pinky clearly shortest, thumb joined along the base of the palm "
+                      "with no gap, wrist narrower than the palm and visibly connecting it to the cuff, "
+                      "whole hand smaller than her face; "
                       "restyle the outfit into {outfit} by recolouring the SAME garments - keep their cut, "
                       "layering and coverage, never tear, slit, unzip or open them wider, and every trim "
                       "must follow a real garment edge. BODY INTEGRITY: never turn trousers into a skirt "
@@ -201,7 +207,11 @@ COMPOSITIONS = {
                       "(same face design, same hair color and style, same eye color, same age) so she reads "
                       "as the same heroine; both hands anatomically correct and fully inside the frame - "
                       "unless the pose above asks for an open hand, prefer a hand resting on or gripping "
-                      "something over an empty splayed fan of fingers; "
+                      "something over an empty splayed fan of fingers; a raised open hand is turned "
+                      "three-quarter with the fingers together and softly curled, never a flat palm "
+                      "fanned square at the camera, with digits graded middle-longest to pinky-shortest, "
+                      "a thumb joined along the base of the palm and a visible wrist narrower than the "
+                      "palm; "
                       "design the outfit as {outfit} - every garment must read as one coherent, intact "
                       "piece of clothing with a believable cut, hem and fastening: no torn, split, "
                       "half-off or unzipped fabric, and every trim must follow a real garment edge; her "
@@ -868,6 +878,55 @@ CARD_RIMS = {
 }
 
 
+def _bottom_fade_rgb(flat: Image.Image, px: int,
+                     rim: str = "violet") -> tuple[Image.Image, int]:
+    """底部紫色虚化（RGB 部分）：最后 px 行 = 渐进高斯模糊 + 过渡到紫色。
+
+    为什么不是「画一条紫色带」：面板底色是紫的，硬贴一条紫带会在不同底色的界面上
+    露出一条明显的色阶；模糊 + 过渡到紫 + 末段 alpha 收到 0，下沿才是「溶进去」而不是「贴上去」。
+    🔴 模糊和染色必须分开算权重：只染色看起来像「压了一层紫色滤镜」，底下的高频细节还在，
+    一眼能看出是加特效；先虚再染，画面才真的化开。
+    alpha 由调用方（_bottom_fade_alpha）单独做减法，RGB 这里不动 alpha 通道。
+    返回 (图, 实际生效的 px)。
+    """
+    if px <= 0:
+        return flat, 0
+    _light, mid, dark = CARD_RIMS.get(rim) or CARD_RIMS["violet"]
+    w, h = flat.size
+    px = int(min(px, h))
+    y0 = h - px
+    a = np.asarray(flat.convert("RGBA"), dtype=np.float32).copy()
+    t = np.linspace(0.0, 1.0, px, dtype=np.float32)
+    ease = (t * t * (3.0 - 2.0 * t))[:, None]           # 0→1 的 smoothstep，避开色带
+    band = a[y0:, :, :3]
+    # ① 先虚：整幅模糊一份（半径随带宽走），只把 blur 权重灌进底部带
+    radius = max(1.0, px / 12.0)
+    blurred = np.asarray(
+        flat.convert("RGB").filter(ImageFilter.GaussianBlur(radius)), dtype=np.float32)
+    bw = (ease * 0.92)[:, None, :]
+    band[...] = band * (1.0 - bw) + blurred[y0:] * bw
+    # ② 再染：紫中调 → 紫暗调（跟 violet 卡框的带色同源，落在紫面板上不跳）
+    col = np.array(mid, dtype=np.float32)[None, :] * (1.0 - t[:, None]) \
+        + np.array(dark, dtype=np.float32)[None, :] * t[:, None]
+    cw = (ease * 0.80)[:, None, :]
+    band[...] = band * (1.0 - cw) + col[:, None, :] * cw
+    out = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGBA")
+    return out, px
+
+
+def _bottom_fade_alpha(alpha: Image.Image, px: int) -> Image.Image:
+    """底部虚化的 alpha 侧：最后 px/3 行（4~28px）收到 0，消掉硬切的那条边。"""
+    if px <= 0:
+        return alpha
+    arr = np.asarray(alpha.convert("L"), dtype=np.float32).copy()
+    h = arr.shape[0]
+    edge = int(max(4, min(28, px // 3)))
+    edge = min(edge, h)
+    t = np.linspace(1.0, 0.0, edge, dtype=np.float32)
+    arr[h - edge:, :] *= (t * t * (3.0 - 2.0 * t))[:, None]
+    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "L")
+
+
 def _chamfer_rect(w: int, h: int, inset: int, c: int) -> list[tuple[int, int]]:
     """切角矩形（八个顶点）：四角各切掉 c 像素的 45° 三角。"""
     x0, y0, x1, y1 = inset, inset, w - 1 - inset, h - 1 - inset
@@ -1147,6 +1206,15 @@ def cmd_postprocess(args) -> int:
             log("postprocess", f"套游戏卡框（auto：{state.get('composition')} 构图必套，画面缩进框内）")
         else:
             log("postprocess", "不套画框（auto：lock 构图保留原透明轮廓）")
+    # 底部紫色虚化（opt-in，--bottom-fade）：放在套框之后、存盘之前 —— 框已经 inset 好，
+    # 渐变必须对齐最终下沿，否则会紫到框内侧的墨带上。
+    bf_used = 0
+    bf_rim = getattr(args, "bottom_fade_rim", "violet") or "violet"
+    bf_req = int(getattr(args, "bottom_fade", 0) or 0)
+    if bf_req:
+        flat, bf_used = _bottom_fade_rgb(flat, bf_req, bf_rim)
+        log("postprocess", f"底部紫色虚化：末 {bf_used}px 渐进高斯模糊 + 过渡到 {bf_rim} 紫"
+                           f"（模糊半径 {max(1.0, bf_used / 12.0):.0f}px，smoothstep）")
     # 🔴 源是 RGB 就必须还回 RGB：opaque 变体内部一直是 RGBA，直接存会把 RGB 资源写成 RGBA，
     #    Unity 的纹理导入/压缩口径随之变化（799KB→1.6MB 那次就是这么来的），肉眼看不出来但确实变了。
     if str(state.get("source_mode", "")).upper() == "RGB" and flat.mode != "RGB":
@@ -1177,6 +1245,9 @@ def cmd_postprocess(args) -> int:
             ramp = np.clip(np.arange(f, dtype=np.float32) / max(f - 1, 1), 0.0, 1.0)
             arr[:f, :] = (ramp[:, None] * 255).astype(np.uint8)
         alpha_img = Image.fromarray(arr, "L")
+    if bf_used:
+        # 虚化的 alpha 侧：末段收到 0，消掉底边那条硬切线（RGB 已在上面对齐同一段）
+        alpha_img = _bottom_fade_alpha(alpha_img, bf_used)
     with_alpha = flat.convert("RGBA")
     with_alpha.putalpha(alpha_img)
     with_alpha.save(alpha_path)
@@ -1200,6 +1271,8 @@ def cmd_postprocess(args) -> int:
         "hero_band": hb,
         "body_mode": body_mode,
         "alpha_mode": alpha_mode,
+        "bottom_fade": bf_used,
+        "bottom_fade_rim": bf_rim if bf_used else None,
         "frame": frame_mode,
         "frame_rim": frame_rim if frame_mode in ("card", "auto") else None,
         "watermark_mask_px": int(mask.sum()),
@@ -1524,12 +1597,39 @@ def cmd_publish(args) -> int:
         print("  这是原地改资源，需要 --yes 才执行")
         return RC_USAGE
 
+    record = backup_and_replace(asset, src, theme=state.get("theme") or "unknown",
+                                note=args.note or "", backup_root=args.backup_root,
+                                variant=variant, work=str(work))
+    if record is None:
+        return RC_OK
+    state["published"] = record
+    write_state(work, state)
+
+    im = Image.open(asset)
+    print(f"✅ 已写回 {asset.name}（变体 {variant}，{im.size[0]}x{im.size[1]} {im.mode}）")
+    print(f"   原图搬出工程 → {record['backup']}")
+    print(f"   方式：{record['backup_kind']}")
+    print(f"   台账：{backup_root_of(args.backup_root) / '_manifest.jsonl'}")
+    print("   .meta 未改动（保持原 textureType / spriteMode / packingTag）")
+    print(f"   回滚：restyle_pipeline.py restore --asset {rel_of(asset)}")
+    print("   🔴 还需重打该资源所在 AssetBundle 才会进包；Unity 编辑器里刷新一次确认没丢引用")
+    return RC_OK
+
+
+def backup_and_replace(asset: Path, src: Path, *, theme: str, note: str = "",
+                       backup_root: str | None = None, variant: str = "auto",
+                       work: str = "", register_table: bool = True) -> dict | None:
+    """把 src 覆盖到 asset，**原图先搬进背包**，写台账；返回 record（幂等跳过返回 None）。
+
+    publish 与 bottom_fade 共用一份实现：备份命名规则（「背包里是更早的原图，绝不能被这次
+    的成品覆盖」）踩过一次，两处各写一份必然分叉。
+    """
     before_sha = sha256(asset)
     if before_sha == sha256(src):
         log("publish", "⚠ 资源与产出字节完全相同，本次无需替换（幂等跳过）")
-        return RC_OK
+        return None
 
-    root = backup_root_of(args.backup_root)
+    root = backup_root_of(backup_root)
     dest = root / rel_of(asset)
     dest.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -1539,26 +1639,26 @@ def cmd_publish(args) -> int:
     elif sha256(dest) == before_sha:
         kind = "原图已在背包（字节一致，未重复写）"
     else:
-        # 🔴 背包里那份是**更早的原图**，绝不能被这次的「上次的圣诞版」覆盖掉。
+        # 🔴 背包里那份是**更早的原图**，绝不能被这次的「上次的成品」覆盖掉。
         #    再换一次就另存一版，命名带时间戳与主题，restore 时能挑。
-        dest = dest.with_name(f"{dest.stem}__{stamp}_{state['theme']}{dest.suffix}")
+        dest = dest.with_name(f"{dest.stem}__{stamp}_{theme}{dest.suffix}")
         shutil.copy2(asset, dest)
         kind = "追加一版（背包已存有更早原图，不覆盖）"
     if sha256(dest) != before_sha:
         log("publish", f"🔴 备份校验失败，中止（未改动资源）：{dest}")
-        return RC_FAIL
+        raise RuntimeError("backup-verify-failed")
 
     shutil.copy2(src, asset)
     after_sha = sha256(asset)
     if after_sha != sha256(src):
         log("publish", "🔴 写回后哈希不一致，请立刻 restore")
-        return RC_FAIL
+        raise RuntimeError("write-back-verify-failed")
 
     im = Image.open(asset)
     record = {
         "at": datetime.now().isoformat(timespec="seconds"),
         "asset": str(rel_of(asset)),
-        "theme": state["theme"],
+        "theme": theme,
         "variant": variant,
         "backup": str(dest),
         "backup_kind": kind,
@@ -1566,29 +1666,30 @@ def cmd_publish(args) -> int:
         "after_sha256": after_sha,
         "size": list(im.size),
         "mode": im.mode,
-        "note": args.note or "",
-        "work": str(work),
+        "note": note,
+        "work": work,
     }
     mf = append_manifest(root, record)
     # 🔴 表1 登记：每次写回成功自动进台账（Jenkins 与 batch_restyle 都走本子命令 ⇒ 两链路都覆盖）。
     #    登记失败绝不影响写回结果（资源已安全落位），只大声报警让人来补。
-    try:
-        import table1
-        reg = table1.record_publish(record, note_prefix="publish")
-        log("publish", f"表1 已登记：{reg}")
-    except Exception as e:  # noqa: BLE001
-        log("publish", f"⚠ 表1 登记失败（写回本身已成功，需手工补记）：{type(e).__name__}: {e}")
-    state["published"] = record
-    write_state(work, state)
-
-    print(f"✅ 已写回 {asset.name}（变体 {variant}，{im.size[0]}x{im.size[1]} {im.mode}）")
-    print(f"   原图搬出工程 → {dest}")
-    print(f"   方式：{kind}")
-    print(f"   台账：{mf}")
-    print("   .meta 未改动（保持原 textureType / spriteMode / packingTag）")
-    print(f"   回滚：restyle_pipeline.py restore --asset {rel_of(asset)}")
-    print("   🔴 还需重打该资源所在 AssetBundle 才会进包；Unity 编辑器里刷新一次确认没丢引用")
-    return RC_OK
+    #    register_table=False 用于「非主题类」的像素加工（如底部虚化）——它不该往
+    #    themes_done 里塞一个叫 fade 的假主题，否则 table1 check 会报「未知主题」。
+    if register_table:
+        try:
+            import table1
+            reg = table1.record_publish(record, note_prefix="publish")
+            log("publish", f"表1 已登记：{reg}")
+        except Exception as e:  # noqa: BLE001
+            log("publish", f"⚠ 表1 登记失败（写回本身已成功，需手工补记）：{type(e).__name__}: {e}")
+    else:
+        try:
+            import table1
+            table1.record_touch(record)
+            log("publish", f"表1 已 touch（不占主题额度）：{Path(record['asset']).name}")
+        except Exception as e:  # noqa: BLE001
+            log("publish", f"⚠ 表1 touch 失败（写回本身已成功）：{type(e).__name__}: {e}")
+    record["manifest"] = str(mf)
+    return record
 
 
 def cmd_restore(args) -> int:
@@ -1721,6 +1822,12 @@ def main(argv: list[str] | None = None) -> int:
                         "keep=整幅不透明（free 构图默认语义）；free=整幅不透明 + 顶边渐隐")
     p.add_argument("--feather-top", type=int, default=0,
                    help="--alpha-mode free 时顶边渐隐像素（默认 0=不渐隐，避免糊掉贴顶的帽子/头发）")
+    p.add_argument("--bottom-fade", type=int, default=0,
+                   help="底部紫色虚化像素（默认 0=关）：底边向紫色过渡 + 最后几行 alpha 渐隐到 0，"
+                        "让下沿溶进紫色面板而不是硬切。只影响像素，不影响构图/文案")
+    p.add_argument("--bottom-fade-rim", choices=[k for k in CARD_RIMS if k != "none"],
+                   default="violet",
+                   help="底部虚化用哪一档色板（复用卡框色板，默认 violet=紫白/紫中调/紫暗调）")
     p.add_argument("--frame", choices=["none", "auto", "card", "gold", "gold-overlay"],
                    default="none",
                    help="外框：none=不画（默认）；auto=free 构图自动套游戏卡框、lock 不套；"

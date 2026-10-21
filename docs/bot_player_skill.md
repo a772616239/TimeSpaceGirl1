@@ -220,8 +220,44 @@ gm_client.py --port 17916 'bot team 90000001'
 `bot team <uid>` 会**先 `UserManager.removeUser(uid)` 踢掉内存缓存**再读 Mongo，
 所以改完库直接执行就能看到新数据，不用重启服务器。
 
-配置里的 `level` / `vip` / `head` **必须和 `playerManager` 里的一致**，
-否则聊天条显示 lv62、点开面板 lv50，一眼假。
+配置里的 `level` / `vip` / `head` / `soulVal` **必须和 `playerManager` 里的一致**，
+否则聊天条显示 lv62、点开面板 lv50，一眼假。改完 clone 记得把 `conf/bot_config.json`
+的这四个值一起对齐（两个服各有一份，见坑 4）。
+
+🔴 **坑 3：面板「打不开 / 整页空白」= 服务端 `getUser` 抛异常**。
+`user` 集合里没有这条文档时，`getUserTeamOneInfo → UserManager.getUser(uid)` 抛
+`1-UserManager::getUser null exception：<uid>`，`BaseHandler` 回一个 errMsg(16651)，
+客户端拿不到 `teamInfo` 就一直停在未刷新的空 prefab —— 看起来就是「面板打不开」。
+**诊断口径**：在对应服的 `assets/log/jl_logs/<日期>/error-log.log` 里搜 `protoID=16650`，
+有这行就是没数据，不是客户端问题：
+
+```
+ERROR BaseHandler - processWithProto Exception protoID=16650,uid=10000005,proto=>playerId: 90000001
+ exception=java.lang.Exception: 1-UserManager::getUser null exception：90000001
+	at com.ljsd.jieling.logic.dao.UserManager.getUser(UserManager.java:297)
+	at com.ljsd.jieling.logic.player.PlayerLogic.getUserTeamOneInfo(PlayerLogic.java:812)
+```
+
+🔴 **坑 4：本地服和测试服是两套库、两份 jar，只改一边等于没改**。
+| | 本地自测服 | 测试服 |
+|---|---|---|
+| Mongo | `127.0.0.1:27017`（**4.0，wire version 7**） | 129.226.213.65（新版） |
+| jar | `~/home/java/gameserver/gameSrv-1.0.0.jar`（launchd `com.ts.localserver.gameserver`） | `/home/java/gameserver/gameSrv-1.0.0.jar` |
+| 重启 | `~/home/java/start-local.sh restart gs` | `bash RESTART-GAMESERVER.sh` |
+
+- 本地 Mongo 4.0 太老，**mongosh 和 pymongo 4.19 都连不上**（一个要 wire 8、一个要 wire 9），
+  `pymongo<4` 又没有 py3.13 的 wheel。所以本地灌数据走 **`mongodump` → scp → `mongorestore`**：
+  ```bash
+  ssh gs 'mongodump --uri="mongodb://…/m5_x1_game_10001?authSource=admin" -c user \
+            -q "{\"_id\":{\"\$in\":[90000001,90000002]}}" -o /tmp/botdump'
+  scp gs:/tmp/botdump/m5_x1_game_10001/user.bson /tmp/bot_user.bson
+  mongorestore -h 127.0.0.1:27017 -u <user> -p <pwd> --authenticationDatabase admin \
+               -d m5_x1_game_10001 -c user /tmp/bot_user.bson   # 本地 4.0 没有 --mode，_id 不冲突直接灌
+  ```
+- 本地 jar 是**另一份构建**，不能直接拿测试服的补丁 jar 覆盖。用 `compile_local.sh`
+  （`BASE=~/home/java/gameserver/gameSrv-1.0.0.jar`）编译后 `zip -qr` 打回本地 jar，
+  再 `start-local.sh restart gs`。否则本地还在跑老逻辑：`bot fake` 仍硬编码 10000004、
+  没有 `minSpeakGapSec` 节流、没有 `pickChatterLine` 去重、也没有 `bot team` 命令。
 
 ---
 

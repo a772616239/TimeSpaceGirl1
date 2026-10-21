@@ -108,9 +108,19 @@ local kNumberDuangCfg = { mode = "duang", from = 0.6, duangDuration = 0.42, dela
 - 首次打开就停在这类页签时会播（`OnShow` 那条路径），满足「首发也要弹」；
 - 扫描认三种挂法：实例字段（`self.scrollView`）、类表字段（`quick_class` 的 `local this = Class`）、
   `metatable.__index`；一页多个列表（周/月礼包两个 `ScrollView`）会全部接上；
-- 手工克隆、不是 `ScrollCycleView` 的列表（积天豪礼 `taskList/viewPort/content`），
-  页面实现 `GetPopInSource()` 返回容器即可，工具按容器下的 active 子节点播（模板项自己
-  `SetActive(false)` 着，天然跳过）；
+- 手工克隆、不是 `ScrollCycleView` 的列表，页面实现 `GetPopInSource()` 返回**数据源**即可，
+  三种形态都认（按这个顺序判定，别乱）：
+
+  | 返回什么 | 收集方式 | 典型页 |
+  |---|---|---|
+  | 容器（`GameObject` / `Transform`，如 `taskList/viewPort/content`） | 取容器下 active 子节点，模板项自己 `SetActive(false)` 着天然跳过 | 积天豪礼 `ContinuityRechargePage` |
+  | 数组（`{go1, go2}` / `{ItemView1, ItemView2}`） | 按数组顺序，只收 active 的；元素可以是 GO、Transform、ItemView | 达人活动 `Expert`、升级豪礼 `Expert_UpLv`、开服双倍 `OpenService`、限时兑换 `ExChange`、扭蛋池 `BoxPool` |
+  | `ScrollCycleView` | 同自动扫描 | —— |
+
+- **列表是异步建的也没关系**：`PlayPage` 这一轮扫到 0 个 item 时会按
+  `kRetryDelays = {0.1, 0.25, 0.5}` 再扫三轮，扫到就播、一直扫不到就静默收工
+  （`Expert_UpLv` / `BoxPool` 的 `OnShow` 要等数据回调才造 item，切页签是同步调 `PlayPage` 的）。
+  `StopPage` 会让待跑的重试作废，不会在隐藏页上补弹一次。
 - 绑定按页面缓存（弱表 key），第二次 `PlayPage` 复用第一次建的 popIn，`cfg` 只在首次生效。
 
 ---
@@ -169,7 +179,7 @@ local kNumberDuangCfg = { mode = "duang", from = 0.6, duangDuration = 0.42, dela
 
 ---
 
-## 5. 八个坑（都在这套代码里踩过或躲过）
+## 5. 十二个坑（都在这套代码里踩过或躲过）
 
 1. **Animator 抢缩放**：目标节点若挂 CommonButton 的 Animator（Normal 态是 1.1→1 的 pop），
    Animator 在 Update 之后求值，会把 DOTween 的缩放每帧盖回去——现象是「代码跑完了但没动」。
@@ -195,7 +205,25 @@ local kNumberDuangCfg = { mode = "duang", from = 0.6, duangDuration = 0.42, dela
    按容器扫会把模板算进去、在多出来的那一格上弹一下。这种页面让 `GetPopInSource()`
    **返回数组**（`preList`），不要返回容器。
 10. **同一 key 的 item 复用 `ItemList` 缓存**：`ValuePackPanel` 用 `this.ItemList[go]` 存内层 ItemView，
-   本模块只动 item 根节点的 `localScale`，不碰内层，两者互不影响——换面板时别把两者混在一起改。
+    本模块只动 item 根节点的 `localScale`，不碰内层，两者互不影响——换面板时别把两者混在一起改。
+11. **🔴 别在 tolua 的 userdata 上「探字段」**：GameObject 没有 `childCount` / `GetChild`，
+    而 tolua 对**不存在**的字段是**抛错**（`field or property 'childCount' does not exist`），
+    不是返回 `nil`。旧代码 `if container.childCount == nil then container = src.transform end`
+    在真机上直接抛错 ⇒ 整段 `pcall` 失败 ⇒ **积天豪礼那页永远没动画**，日志每次切页刷一条错误。
+    正确姿势：先 `SafeTransform(src)` 落到 `Transform` 再取子节点。
+    ⚠️ 离线测试要么用 `newproxy` 造「探不存在字段就抛错」的替身（`test_itempopin_page.lua` case6b），
+    要么这个坑在单测里根本复现不出来。
+12. **异步建列表 ⇒ 必须重试**：`Expert_UpLv` / `BoxPool` 的 `OnShow` 在数据回调里才造 item，
+    切页签那一刻 `_Collect` 必然 0 个。不要改成「在页面里回调时自己播」（会散成一堆样板），
+    交给 `PlayPage` 的重试；重试必须带「轮次号」作废机制，否则关面板后还会在隐藏页上补弹。
+11. **容器源是 `GameObject` 时不能探字段**：`ContinuityRechargePage:GetPopInSource()` 返回的是
+    `Util.GetGameObject` 出来的 **GameObject（userdata）**，不是 table。`_Collect` 原来用
+    `container.childCount == nil` 判断"要不要落 transform" ⇒ tolua 对 userdata 上**不存在**的字段是
+    **抛错**（`field or property 'childCount' does not exist`）而不是返回 nil ⇒ 整段 pcall 失败、
+    那页永远没动画（只在日志里刷错）。现在 userdata 一律先走 `SafeTransform()` 落 `.transform`
+    再取 `childCount` / `GetChild`；同理**别对 userdata 取下标 `[1]`**。离线用例
+    `test_itempopin_page` 的 case6b 用 `newproxy` 造同语义 userdata 守着这两条。
+
 
 ---
 
@@ -219,8 +247,8 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_t
 | `test_valuepack_openanim.lua` | 礼包墙：OnShow 顺序、跳过隐藏卡、购买刷新不重播、生命周期、`Play` 只有 1 处调用 |
 | `test_growthmanual_openanim.lua` | 两个列表页：OnShow 播、`isAni=false` 不播、切页重播、OnClose/OnDestroy 回收、面板 `SwitchView` 仍走 `view:OnShow` |
 
-| `test_itempopin_page.lua` | 页面级接入 8 组：实例/类表字段扫描、一页两列表、无列表 no-op、`StopPage` 复位、容器模式（`GetPopInSource`）、绑定缓存、重播不叠加 |
-| `test_panel_listpopin_wiring.lua` | 三个面板接线：`OnShow` 有播（首开即列表页也会播）、切页签有播、`RefreshActivity` 不播、`OnClose`/`OnDestroy` 回收、积天豪礼声明 `GetPopInSource`；**成长礼金不再调 `DelayCreation`**、**终身限购返回 `preList` 数组** |
+| `test_itempopin_page.lua` | 页面级接入 10 组：实例/类表字段扫描、一页两列表、无列表 no-op、`StopPage` 复位、容器模式（`GetPopInSource`）、**userdata 容器（探字段会抛错的替身）**、绑定缓存、重播不叠加、**异步列表自动重试 + 重试作废** |
+| `test_panel_listpopin_wiring.lua` | 三个面板接线：`OnShow` 有播（首开即列表页也会播）、切页签有播、`RefreshActivity` 不播、`OnClose`/`OnDestroy` 回收、积天豪礼声明 `GetPopInSource`；**成长礼金不再调 `DelayCreation`**、**终身限购返回 `preList` 数组**、**ExpertPanel 五个活动页各自的数据源（达人 / 升级豪礼 / 开服双倍 / 限时兑换 / 扭蛋池）** |
 | `test_thousanddraw_duang.lua` | 千抽：卡/数字数据源与顺序、整版 duang（3+4 条、卡片错开 0.09、数字 0.26 起）、`PlayCardDuang(n)` 只弹一张、`StopDuang` 复位、`OnClose`/`OnDestroy` 回收、数据到位才播 |
 
 六个用例都被 Jenkins `TS-Test-Lua` 自动发现（`tests/tests.json` 的 `tests_dir + pattern`），不用改配置。
@@ -300,3 +328,14 @@ end
   page_9 终身限购返回 `preList` 数组）；新增 `mode = "duang"`（单段 + `OutElastic`）、
   数组数据源、`Play(only)` 单格播放、`cfg.delay` 整批延后；`ThousandDrawPanel` 三张卡 + 剩余抽数
   接入 duang；新增 `test_thousanddraw_duang`，`test_itempopin` 扩到 12 组。
+- **2026-10-21**：修 `_Collect` 容器分支对 **GameObject（userdata）** 探 `childCount` 导致整段 pcall 失败
+  （积天豪礼页永远不播、日志刷 `field or property 'childCount' does not exist`）：新增 `SafeTransform()`，
+  userdata 一律先落 transform；数组分支补 `type(src)=="table"` 闸门。新增用例 case6b（`newproxy` 造
+  tolua 同语义 userdata）。
+- **2026-10-21**（ExpertPanel 全页签收官）：`SafeTransform` 修掉「在 userdata 上探 `childCount`
+  抛错」——这正是积天豪礼（页签 24）一直没动画的真因（`pcall` 把错误吞了，日志里只有一条
+  `field or property 'childCount' does not exist`）；`PlayPage` 增加**异步重试**（`kRetryDelays` +
+  轮次号作废）；五个活动页补 `GetPopInSource`：`Expert`（页签 7/9/10/11/12/13/14/15/16/17/19/20/21/22/26/27
+  这些「达人」活动共用）、`Expert_UpLv`(23)、`OpenService`(31)、`ExChange`(8)、`BoxPool`(32)；
+  至此 ExpertPanel 每个页签都有数据源（限定珍藏 25 靠 `ScrollCycleView` 自动扫描）。
+  新增 `test_itempopin_page` case6b / case9，`test_panel_listpopin_wiring` 增加五页数据源断言。

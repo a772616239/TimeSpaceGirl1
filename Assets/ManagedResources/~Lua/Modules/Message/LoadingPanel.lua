@@ -12,6 +12,43 @@ local STEP_TIMEOUT = 8
 -- 而不是让玩家盯着一个不动的百分比（原来没有任何超时，卡住就是永久卡住）。
 local MAX_FORCE_STEPS = 6
 
+-- 铭牌多语言贴片：底图九张只有中文版（资源表里没有 *_en），非中文时不能在铭牌上直接
+-- 读出英文，所以改成「底图共用 + 铭牌区叠一张小贴片」。贴片由
+-- scripts/image/loading_plate_overlay.py 生成，锚点是底图上的归一化矩形。
+-- require 失败（老包里没有这张表）不能让整条登录链炸掉，所以 pcall 兜住降级成「只显示中文底图」。
+local PlateGeom = nil
+do
+    local ok, ret = pcall(require, "Modules/Message/LoadingPlateGeom")
+    if ok and type(ret) == "table" then
+        PlateGeom = ret
+    end
+end
+
+--把当前语言的铭牌贴片叠到底图对应位置。中文直接用底图原样（贴片本来就是为覆盖中文而生成的）。
+local function ApplyLangPlate(picNode, pic)
+    local plateNode = Util.GetGameObject(picNode, "plate")
+    if plateNode == nil then return end
+    plateNode:SetActive(false)
+
+    if PlateGeom == nil or GetLan() == 0 then return end
+
+    local key = string.format("cn2-X1_loading_0%d", pic)
+    local geom = PlateGeom[key]
+    if geom == nil then return end
+
+    local sprite = Util.LoadSprite(GetPictureFont(key .. "_plate"))
+    if sprite == nil then return end
+
+    -- 用锚点而不是硬坐标：底图由 screenAdapte/aspect 拉伸，锚点跟着一起缩放才不会错位
+    local rect = plateNode:GetComponent("RectTransform")
+    rect.anchorMin = Vector2.New(geom.minX, geom.minY)
+    rect.anchorMax = Vector2.New(geom.maxX, geom.maxY)
+    rect.offsetMin = Vector2.New(0, 0)
+    rect.offsetMax = Vector2.New(0, 0)
+    plateNode:GetComponent("Image").sprite = sprite
+    plateNode:SetActive(true)
+end
+
 --初始化组件（用于子类重写）
 function LoadingPanel:InitComponent()
     this.Slider = Util.GetGameObject(self.gameObject, "Slider"):GetComponent("Slider")
@@ -62,10 +99,17 @@ function LoadingPanel.SetRandoBg()
     -- LogError(loadingSprit)
     local loadspr = string.format(loadingSprit,pic)
     local LoadingSprite = Util.LoadSprite(loadspr)
+    -- 只有中文版底图时回落 _zh：图上跟语言有关的只有铭牌两行，由 ApplyLangPlate 叠贴片覆盖，
+    -- 不必为每种语言再出一张 684x2048 的大图（九张 × 语言数，包里扛不住）。
+    if LoadingSprite == nil then
+        LoadingSprite = Util.LoadSprite(loadspr .. "_zh")
+    end
     if LoadingSprite ~= nil then
         this.oriBg:SetActive(false)
         this.NewBg:SetActive(true)
-        Util.GetGameObject(this.NewBg, "pic"):GetComponent("Image").sprite = LoadingSprite
+        local picNode = Util.GetGameObject(this.NewBg, "pic")
+        picNode:GetComponent("Image").sprite = LoadingSprite
+        ApplyLangPlate(picNode, pic)
     else
         this.NewBg:SetActive(false)
         this.oriBg:SetActive(true)

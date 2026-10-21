@@ -26,14 +26,55 @@ var DB = db.getSiblingDB("m5_x1_game_10001");
 // 模板 → 机器人。tpl 必须是真实、非 GM 的玩家 uid。
 var SPECS = [
   { tpl: 10000002, uid: 90000001, name: "Nova" },   // lv50 vip1，158 个英雄，数据最完整
-  { tpl: 10000044, uid: 90000002, name: "Kai" }     // lv40，25 个英雄，轻量一些
+  { tpl: 10000044, uid: 90000002, name: "Kai" },    // lv40，25 个英雄，轻量一些
+  // 假玩家（GM `bot fake` / 控制台「模拟玩家发言」用的 99990001）。
+  // 不建这份文档的话，客户端点它头像 → 服务端 getUser 抛异常 → **不回包** →
+  // PlayerInfoPopup 停在上一个玩家的数据上（实测「点 Tester 弹出 Nova 的面板」）。
+  // 模板特意用 Kai 而不是 Nova：数据明显不同，一眼能看出不是串号。
+  { tpl: 90000002, uid: 99990001, name: "Tester" }
 ];
 
 var DRY = (typeof process !== "undefined" && process.env.CLONE_DRY === "1");   // CLONE_DRY=1 只打印不落库
 var FORCE = (typeof process !== "undefined" && process.env.CLONE_FORCE === "1"); // CLONE_FORCE=1 覆盖已有文档
 
 function isBson(v) {
-  return v && typeof v === "object" && v._bsontype;
+  if (!v || typeof v !== "object") return false;
+  if (v._bsontype) return true;                       // mongosh / 新版驱动
+  // 🔴 老 mongo shell（4.0 只有它连得上）里 NumberLong/NumberInt 是**包装对象**，
+  // 没有 _bsontype，但带 floatApprox / exactValueString 这类内部字段。
+  // 漏判的后果：for...in 把它拆成 {floatApprox,top,bottom,exactValueString,tojson}，
+  // 写回后 Spring 报 "No mapping metadata found for long"，整个玩家读不出来
+  // （2026-10-22 实测：Tester 面板 500，createTime 被拆坏）。
+  if (v.floatApprox !== undefined || v.exactValueString !== undefined) return true;
+  if (v instanceof Date) return true;
+  if (typeof NumberLong !== "undefined" && v instanceof NumberLong) return true;
+  if (typeof NumberInt !== "undefined" && v instanceof NumberInt) return true;
+  if (typeof ObjectId !== "undefined" && v instanceof ObjectId) return true;
+  if (typeof Timestamp !== "undefined" && v instanceof Timestamp) return true;
+  if (typeof Binary !== "undefined" && v instanceof Binary) return true;
+  return false;
+}
+
+// 兜底修复：万一某个老 shell 类型还是被拆成了 {floatApprox, …}，这里还原成 NumberLong。
+// 只在「源文档本身已经脏了」（二次克隆）时才会命中，正常路径零改动。
+function repairShellNumbers(o) {
+  if (o === null || o === undefined) return o;
+  if (o instanceof Date || isBson(o)) return o;
+  if (Array.isArray(o)) {
+    for (var i = 0; i < o.length; i++) o[i] = repairShellNumbers(o[i]);
+    return o;
+  }
+  if (typeof o === "object") {
+    if (o.exactValueString !== undefined && o.floatApprox !== undefined) {
+      return NumberLong(String(o.exactValueString));
+    }
+    for (var k in o) {
+      if (typeof o[k] === "function") continue;
+      o[k] = repairShellNumbers(o[k]);
+    }
+    return o;
+  }
+  return o;
 }
 
 function rewrite(o, oldUid, newUid) {
@@ -82,6 +123,7 @@ SPECS.forEach(function (s) {
   }
 
   var doc = rewrite(src, s.tpl, s.uid);
+  doc = repairShellNumbers(doc);
   doc._id = s.uid;
   doc.playerManager.nickName = s.name;
   doc.playerManager.openId = "bot_" + s.uid;

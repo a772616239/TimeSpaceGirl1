@@ -248,6 +248,9 @@ private void maybeWake() {          // 每 15s tick 一次
 （`rootId`、`roleUid`、`_id`，`<uid><type><timestamp>` 形式的合成 map key，**以及同样形式的字符串值**），
 再换掉 `nickName` / `openId`。
 
+脚本里 `SPECS` 现在三条：`90000001/Nova`、`90000002/Kai`、**`99990001/Tester`**
+（第三条是控制台「模拟玩家发言」用的假玩家，模板特意取 Kai 而不是 Nova，数据明显不同）。
+
 ```bash
 scp scripts/bot/clone_bot_user.js gs:/tmp/
 ssh gs 'cd /tmp && mongosh "mongodb://<user>:<pwd>@127.0.0.1:27017/m5_x1_game_10001?authSource=admin" \
@@ -255,10 +258,21 @@ ssh gs 'cd /tmp && mongosh "mongodb://<user>:<pwd>@127.0.0.1:27017/m5_x1_game_10
 # CLONE_DRY=1 只打印不落库；CLONE_FORCE=1 覆盖已存在的文档
 ```
 
-🔴 **坑 1：`Date` 字段**。递归改写时如果把 `Date` 当普通对象遍历，会被 `for...in` 变成空文档 `{}`，
-写回后服务端 `getUser` 直接抛 `MappingException: No mapping metadata found for java.util.Date`，
-整个玩家读不出来（日志只有一行 `2-UserManager::getUser null exception<uid>`，不带堆栈时完全看不出原因）。
+🔴 **坑 1：`Date` / `NumberLong` 字段**。递归改写时如果把 BSON 特殊类型当普通对象遍历，
+会被 `for...in` 拆坏，写回后服务端 `getUser` 直接抛 `MappingException`，整个玩家读不出来
+（日志只有一行 `2-UserManager::getUser null exception<uid>`，不带堆栈时完全看不出原因）。
 所以改写函数里 **`o instanceof Date` 必须最先返回**，再判断 `_bsontype`。
+
+坑的第二个变种（2026-10-22 踩到）：**本地 `mongo` 4.0 shell 里的 `NumberLong` 没有 `_bsontype`**，
+`isBson()` 判定失败 → 被 `for...in` 拆成
+`{floatApprox, top, bottom, exactValueString, tojson}` 写回库，服务端报
+`No mapping metadata found for long`，面板 500。判定：`$type` 看 `playerManager.createTime`
+是不是 `object`（正常是 `long`）。修法：`isBson()` 里补
+`v.floatApprox !== undefined || v.exactValueString !== undefined`，并加 `repairShellNumbers()`
+把已经拆坏的对象还原成 `NumberLong`。
+
+> 症状连带：坏文档体积会**翻倍**（每个 NumberLong 变 5 字段对象）。实测同一份 Kai 数据
+> 正常 1.4MB、被拆坏 3.3MB —— 看到文档大小异常变大就该怀疑这个。
 
 🔴 **坑 2：只改 map key、不改字符串值 → 面板「有头像有等级，编队 0 人、战力 0」**。
 游戏里所有实例 id 都是 `uid + 类型 + 时间戳` 拼出来的字符串
@@ -288,19 +302,39 @@ gm_client.py --port 17916 'bot team 90000001'
 否则聊天条显示 lv62、点开面板 lv50，一眼假。改完 clone 记得把 `conf/bot_config.json`
 的这四个值一起对齐（两个服各有一份，见坑 4）。
 
-🔴 **坑 3：面板「打不开 / 整页空白」= 服务端 `getUser` 抛异常**。
+🔴 **坑 3：面板「打不开 / 整页空白 / 显示成上一个玩家」= 服务端 `getUser` 抛异常**。
 `user` 集合里没有这条文档时，`getUserTeamOneInfo → UserManager.getUser(uid)` 抛
-`1-UserManager::getUser null exception：<uid>`，`BaseHandler` 回一个 errMsg(16651)，
-客户端拿不到 `teamInfo` 就一直停在未刷新的空 prefab —— 看起来就是「面板打不开」。
-**诊断口径**：在对应服的 `assets/log/jl_logs/<日期>/error-log.log` 里搜 `protoID=16650`，
-有这行就是没数据，不是客户端问题：
+`1-UserManager::getUser null exception：<uid>`，`BaseHandler` 打一行 ERROR 后**不回包**。
+客户端 `PlayerInfoPopup` 只在**收到回包的回调里**才刷新，收不到就表现为两种：
+
+| 现象 | 触发条件 |
+|---|---|
+| 面板打不开 / 整页空白 | 第一次打开这个面板（prefab 还是空的） |
+| **显示成上一个玩家的数据** | 之前点过别人，面板实例复用了旧数据（实测：点 Tester 弹出 Nova 的面板） |
+
+第二种最容易被误判成「数据串号」，其实是**客户端残留**。**诊断口径**：在对应服的日志里搜
+`protoID=16650`，有这行就是没数据，不是客户端问题：
 
 ```
-ERROR BaseHandler - processWithProto Exception protoID=16650,uid=10000005,proto=>playerId: 90000001
- exception=java.lang.Exception: 1-UserManager::getUser null exception：90000001
+ERROR BaseHandler - processWithProto Exception protoID=16650,uid=10000005,proto=>playerId: 99990001
+ exception=java.lang.Exception: 1-UserManager::getUser null exception：99990001
 	at com.ljsd.jieling.logic.dao.UserManager.getUser(UserManager.java:297)
 	at com.ljsd.jieling.logic.player.PlayerLogic.getUserTeamOneInfo(PlayerLogic.java:812)
 ```
+
+**两道修法（2026-10-22 都已落地）**：
+
+1. **服务端兜底**（`handler/player/GetPlayerOneTeamInfo`）：`getOneTeamInfo` 外面包 try-catch，
+   查不到就回一个**合法但空**的面板（uid + `name=uid 字符串` + level 1 + head 71000/frame 80000 +
+   `team.totalForce=0`），把客户端旧数据覆盖掉。
+   ⚠️ 兜底包的字段必须齐 —— 客户端 `FormationAdapter(teamInfo, allteaminfo)` 第一行就读
+   `teamInfo.totalForce`，`team` 为 nil 会直接报错。
+2. **给假玩家也建一份 user 文档**：`clone_bot_user.js` 的 SPECS 里第三条把 Kai(90000002)
+   克隆成 `99990001 / Tester`，这样控制台「模拟玩家发言」点开是有内容的面板
+   （lv40 / force 14678 / 5 个编队英雄），和 Nova 数据明显不同，不会看着像串号。
+
+> `bot fake <任意名>` 的面板昵称固定是文档里的 `Tester`（聊天条显示的是消息里的 senderName），
+> 调试用可以接受；要改就重跑 clone 并把 `name` 换掉。
 
 🔴 **坑 4：本地服和测试服是两套库、两份 jar，只改一边等于没改**。
 | | 本地自测服 | 测试服 |

@@ -117,6 +117,20 @@ sleep 30; grep "\[bot\]" ~/home/java/logs/gameserver.log | tail -3
 
 如果不想让机器人回某个号（比如你自己的 GM 号），把它加进 `ignoreUids`。
 
+### 清掉测试注入的垃圾消息
+
+`bot fake` 的发言会真的进世界队列，客户端里能看到。测完想收拾干净：
+
+```bash
+# 走隧道连测试服，先看要删什么
+TS_REDIS_PORT=16379 TS_SERVER_ID=10001 python3 scripts/bot/clean_fake_chat.py --dry-run
+TS_REDIS_PORT=16379 TS_SERVER_ID=10001 python3 scripts/bot/clean_fake_chat.py
+```
+
+默认清 `99990001`（假玩家号）和 `10000004`（旧版冒用的真实号），
+并把假消息之后 180 秒内的机器人回话一起删掉（否则清完假消息会留下机器人自言自语）。
+**只改 Redis**，服务端内存 MessageCache 要重启游戏服才刷新。
+
 ---
 
 ## 4. 配置（`conf/bot_config.json`）

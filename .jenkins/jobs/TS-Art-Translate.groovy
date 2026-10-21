@@ -1,10 +1,10 @@
 /**@META
 {
-  "description": "战令横幅「中文美术字 → 英文版」流水线。ArtFont_zh/OperatingPanelAtlas 下这批横幅的标题和两行文案是烘进图里的中文艺术字，英文版必须重出一张图：自动圈污染区擦字 → 逐行中位色+六边形纹理补底板 → 按已上线英文图的层级排白字 → 像素级验收（尺寸/alpha/中文残留/背景未动）→ 写回 ArtFont_en 并补 .meta。缺哪张补哪张，已存在的不动。",
+  "description": "中文美术字 → 英文版流水线，两族资源共用一条链。① 战令横幅（ArtFont_zh/OperatingPanelAtlas/*_bg_zh.png，884x544）：标题+两行文案烘进图里，走写死的三段版面锚点；② 图集大图（Atlas/<面板>/*.png）：中文标题烘在一块纯色黑板上，走白字核+纯色板自动定位，板内填纯色、板外条带从上方取样。都是「自动圈污染区擦字 → 补底板 → 排白字 → 像素级验收（尺寸/alpha/中文残留/背景未动）→ 写回 ArtFont_en 并补 .meta」，写回路径统一是 ArtFont_en/<同族目录>/<名>_en.png。缺哪张补哪张，已存在的不动。",
   "concurrent": false,
   "params": [
-    {"name":"MODE","type":"choice","choices":["batch","one"],"default":"batch","description":"batch=扫描 ArtFont_zh 全目录，只补缺英文版且译名表里有条目的；one=只做 ASSET 指定的那一张"},
-    {"name":"ASSET","type":"string","default":"","description":"MODE=one 时必填：中文源图相对工程根的路径，如 Assets/ManagedResources/ArtFont_zh/OperatingPanelAtlas/cn2-X1_zhanling_mota_bg_zh.png"},
+    {"name":"MODE","type":"choice","choices":["batch","one"],"default":"batch","description":"batch=扫描全量（ArtFont_zh 横幅全目录 + 译名表里的 Atlas 白名单），只补缺英文版且译名表里有条目的；one=只做 ASSET 指定的那一张"},
+    {"name":"ASSET","type":"string","default":"","description":"MODE=one 时必填：源图相对工程根的路径。横幅如 Assets/ManagedResources/ArtFont_zh/OperatingPanelAtlas/cn2-X1_zhanling_mota_bg_zh.png；图集如 Assets/ManagedResources/Atlas/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou.png"},
     {"name":"FORCE","type":"boolean","default":false,"description":"已有英文版的也重做（会先把旧图备份到 ResBackpack/备份 再覆盖）。改了口径/译名时才勾"},
     {"name":"WRITE","type":"boolean","default":true,"description":"验收通过后写回 Assets/ManagedResources/ArtFont_en/... 并补 .meta。传 false 则只出图、不动工程里的资源（构建页的 compare.png 照样能看）"}
   ]
@@ -34,10 +34,21 @@ pipeline {
           env.TS_RUN_DIR = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
           env.TR_ONLY = ''
           if (params.MODE == 'one') {
-            if (!params.ASSET?.trim()) {
+            def asset = (params.ASSET ?: '').trim()
+            if (!asset) {
               error('MODE=one 时必须填 ASSET')
             }
-            env.TR_ONLY = params.ASSET.split('/').last().replace('_zh.png', '')
+            // 路径写错 / 指到别的目录时，②③④ 会因为「目标 0 张」全绿 —— 假绿球。
+            // 所以先在这里把源图存在性钉死，再谈翻译。
+            if (!fileExists("${env.PROJ}/${asset}")) {
+              error("ASSET 不存在：${asset}\n（要相对工程根的完整路径，如 Assets/ManagedResources/Atlas/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou.png）")
+            }
+            // 两种命名都要认：战令横幅带 _zh.png，Atlas 图集里的图没有后缀。
+            def base = asset.replaceAll('^.*/', '').replaceAll('\\.png$', '')
+            if (base.endsWith('_zh')) {
+              base = base.substring(0, base.length() - 3)
+            }
+            env.TR_ONLY = base
           }
         }
         sh(script: '''#!/usr/local/bin/bash
@@ -51,10 +62,16 @@ mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
   echo "模式：$MODE   ${TR_ONLY:+只做 $TR_ONLY   }强制重做：$FORCE   写回资源：$WRITE"
   echo ""
   echo "🔴 中文是烘进图里的艺术字（带发光/渐变/立体阴影），不是 TMP 文本 —— 只能重出一张图。"
-  echo "🔴 擦字按「亮像素 + 蓝色像素」自动圈污染区，不按矩形硬切（硬切会把右侧暗板装饰切出直边）。"
-  echo "🔴 底板靠「逐行中位色 + 六边形纹理镜像平铺」重建，所以重建区外的像素必须一个不动 —— 验收会硬卡这一条。"
-  echo "🔴 第三行「累计返利 __ 倍」不排：已上线的 pata_bg_en / shenyuan_bg_en 都把它删了，留给 UI 动态数字。"
+  echo "🔴 两族共用一条链，靠源图所在目录自动分派："
+  echo "     ArtFont_zh/**  → artfont 族（884x544 三段横幅，版面锚点写死）"
+  echo "     Atlas/**       → atlas 族（中文压在一块纯色黑板上，白字核+纯色板自动定位）"
+  echo "🔴 擦字一律按像素判据圈区域，不按矩形硬切 —— 硬切会把暗板/图集装饰切出直边。"
+  echo "🔴 板外条带（字越过板沿那几行）用「同行左右背景镜像平铺」补，不带亮度："
+  echo "     整条上移会把上方装饰线搬到板沿；inpaint 会吸板内白字、补出一片发亮的糊。"
+  echo "🔴 artfont 族第三行「累计返利 __ 倍」不排：已上线的 pata_bg_en / shenyuan_bg_en 都把它删了，留给 UI 动态数字。"
   echo "🔴 写回 ≠ 进包：真机生效还要重打该资源所在 AssetBundle（FrameTool.BuildGameAssetBundles）。"
+  echo "🔴 atlas 族写回只是「英文图就位」；客户端真显示英文还要求调用点走 GetPictureFont(...)"
+  echo "     ＋ 该 resName 在 ResourcePathConfig.asset 有登记 —— 缺一步都是白图。"
 } | tee "$TS_RUN_DIR/context.txt"
 ''')
         sh(script: '''#!/usr/local/bin/bash
@@ -96,8 +113,8 @@ ONLY=""
 [[ -n "${TR_ONLY:-}" ]] && ONLY="--only ${TR_ONLY}"
 FORCE_ARG=""
 [[ "${FORCE:-false}" == "true" ]] && FORCE_ARG="--force"
-# 断言六条：尺寸一致 / alpha 与源图逐像素一致 / 重建区外零改动 /
-#           粉色中文标题零残留 / 黄色中文文案零残留 / 英文白字已落版
+# 断言两族不同口径：artfont = 尺寸/alpha/重建区外零改动/粉色标题零残留/黄色文案零残留/英文白字已落版
+#                    atlas   = 尺寸/alpha/重建区外零改动/板内墨迹零残留/板底平整/英文白字已落版/板外条带无残字
 # shellcheck disable=SC2086
 "$BASH" .jenkins/lib/run_stage.sh --name "像素级验收" \
   --group "美术翻译链" --slug tr-verify --timeout 300 \

@@ -88,7 +88,42 @@ function GeneralInfoPanel:InitComponent()
     this.beams2[i] = Util.GetGameObject(self.gameObject, "bg/beams2/beam"..i)
     end
 
+    --红点节点一次性取好并先全部熄灭：prefab 里 btns/btnN/redpoint、btns/btnSelect/btnN/redpoint、
+    --roleSkillLayout/upRankBtn/redPoint 的 m_IsActive 默认是 1，只要刷新链路中途出错或被提前 return，
+    --就会停在「没材料也一直亮」的假状态。这里把节点的所有权收到 Lua，默认值不再参与显示。
+    this.dotTab, this.dotSel = {}, {}
+    for i = 1, 5 do
+        this.dotTab[i] = Util.GetGameObject(this.generalBtn[i], "redpoint")
+        this.dotSel[i] = Util.GetGameObject(this.btnSelects[i], "redpoint")
+    end
+    this.dotLvUp   = Util.GetGameObject(this.upLvBtn, "redPoint")
+    this.dotInfo   = Util.GetGameObject(this.btnInfo, "redPoint")
+    this.dotRank   = Util.GetGameObject(this.upRankBtn, "redPoint")
+    this.dotAdv    = Util.GetGameObject(this.btnAdvanced, "redPoint")
+    this.dotUnlock = Util.GetGameObject(this.unLockBtn, "redPoint")--解锁按钮红点（以前从来没人写过它）
+    this.ResetAllRedPoint()
+
     this.UpView = SubUIManager.Open(SubUIConfig.UpView, self.gameObject.transform)
+end
+
+--单个红点开关（节点缺失时静默跳过，不让一个空节点打断整轮刷新）
+function this.SetDot(go, state)
+    if go then
+        go:SetActive(state == true)
+    end
+end
+
+--红点全部熄灭（初始化用）
+function this.ResetAllRedPoint()
+    for i = 1, 5 do
+        this.SetDot(this.dotTab[i], false)
+        this.SetDot(this.dotSel[i], false)
+    end
+    this.SetDot(this.dotLvUp, false)
+    this.SetDot(this.dotInfo, false)
+    this.SetDot(this.dotRank, false)
+    this.SetDot(this.dotAdv, false)
+    this.SetDot(this.dotUnlock, false)
 end
 
 --绑定事件（用于子类重写）
@@ -252,9 +287,6 @@ function this.SetUpdata()
         this.btnSelects[i]:SetActive(i == this.generalID)
     end
 
-    --红点只在这里算一次，其它地方（背包变动/升级成功）统一走 RefreshRedPoint
-    this.RefreshRedPoint()
-
     this.general = GeneralManager.GetAllGeneralDatas(this.generalID)
     this.SetInfo()
 
@@ -269,34 +301,35 @@ function this.SetUpdata()
         this.UpdateUpLevel()
         this.UnpdateUpClass()
     end
+
+    --红点放在最后算：此时 this.general、页签选中态、按钮显隐都已就绪
+    --其它地方（背包变动、升级/进阶成功、点击校验失败）统一走 RefreshRedPoint
+    this.RefreshRedPoint()
 end
 
---统一刷新契约红点：5 个页签 + 升级/进阶按钮，判定与点击校验共用 GeneralManager 的同一套口径
+--统一刷新契约红点：5 个页签 + 升级/进阶按钮 + 解锁按钮
+--口径：页签红点只认「这个契约现在能不能升级/进阶」（材料够不够），与点击校验共用 GeneralManager；
+--      「能不能解锁」不再点亮页签，只落在未解锁页面的 unLockBtn 上。
 function this.RefreshRedPoint()
-    if this.generalBtn == nil or this.generalBtn[1] == nil then
+    if this.dotTab == nil then
         return
     end
+
     for i = 1, 5 do
-        local state = false
-        if GeneralManager.GetAllLock(i) then
-            state = GeneralManager.IsCanUnlock(i) or GeneralManager.IsCanUpLevel(i) or GeneralManager.IsCanAdvanced(i)
-        end
-        local tabDot = Util.GetGameObject(this.generalBtn[i],"redpoint")
-        if tabDot then tabDot:SetActive(state) end
-        local selDot = Util.GetGameObject(this.btnSelects[i],"redpoint")
-        if selDot then selDot:SetActive(state) end
+        local state = GeneralManager.CanUpgradeOrRank(i)
+        this.SetDot(this.dotTab[i], state)
+        this.SetDot(this.dotSel[i], state)
     end
 
-    local canLvUp = GeneralManager.IsCanUpLevel(this.generalID)
-    local canRank = GeneralManager.IsCanAdvanced(this.generalID)
-    local lvDot = Util.GetGameObject(this.upLvBtn, "redPoint")
-    if lvDot then lvDot:SetActive(canLvUp) end
-    local infoDot = Util.GetGameObject(this.btnInfo, "redPoint")
-    if infoDot then infoDot:SetActive(canLvUp) end
-    local rankDot = Util.GetGameObject(this.upRankBtn, "redPoint")
-    if rankDot then rankDot:SetActive(canRank) end
-    local advDot = Util.GetGameObject(this.btnAdvanced, "redPoint")
-    if advDot then advDot:SetActive(canRank) end
+    local canLvUp = GeneralManager.SafeCheck(GeneralManager.IsCanUpLevel, this.generalID)
+    local canRank = GeneralManager.SafeCheck(GeneralManager.IsCanAdvanced, this.generalID)
+    this.SetDot(this.dotLvUp, canLvUp)
+    this.SetDot(this.dotInfo, canLvUp)
+    this.SetDot(this.dotRank, canRank)
+    this.SetDot(this.dotAdv, canRank)
+
+    --未解锁的契约：只在解锁按钮上提示，不污染页签
+    this.SetDot(this.dotUnlock, GeneralManager.CanUnlockNow(this.generalID))
 end
 
 --基础信息

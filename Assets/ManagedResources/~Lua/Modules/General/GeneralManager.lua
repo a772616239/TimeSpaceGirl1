@@ -231,7 +231,9 @@ function this.IsCanUnlock(id)
             isCanUnLockNum = isCanUnLockNum + 1
         end
     end
-    return isCanUnLockNum > 0
+    --口径对齐 LockHero[2]：以前只判「有没有」，凑够 1 张就真，与真正能解锁的数量要求脱节
+    local needNum = G_GeneralConfig[id] and G_GeneralConfig[id].LockHero and G_GeneralConfig[id].LockHero[2] or 1
+    return isCanUnLockNum >= needNum
 end
 
 -- 消耗是否足够（红点与点击校验共用这一套口径，避免两处各算一遍）
@@ -284,13 +286,46 @@ function this.IsCanAdvanced(id)
     return this.IsCostEnough(advancedLv.UpgradeExpend)
 end
 
+--红点判定统一包一层：单个契约/单条配置判定出错，不能把整轮刷新打断。
+--一旦在循环里抛出，后面的页签与按钮都轮不到 SetActive，页签会停在 prefab 里默认亮着的红点上
+--（m_IsActive=1），表现就是「没材料也一直显示红点」。出错时打日志并当作不可操作。
+function this.SafeCheck(checkFunc, id)
+    local ok, ret = pcall(checkFunc, id)
+    if not ok then
+        LogRed("[General] 红点判定异常 id=" .. tostring(id) .. " : " .. tostring(ret))
+        return false
+    end
+    return ret == true
+end
+
+--页签红点口径：该契约现在能不能升级/能不能进阶（材料是否足够），与点击校验共用同一套函数
+function this.CanUpgradeOrRank(id)
+    return this.SafeCheck(this.IsCanUpLevel, id) or this.SafeCheck(this.IsCanAdvanced, id)
+end
+
+--可解锁（带保护）
+function this.CanUnlockSafe(id)
+    return this.SafeCheck(this.IsCanUnlock, id)
+end
+
+--解锁按钮红点口径 = 点击校验（GetAllLock）能通过 且 真有一张可献祭的卡
+--只判 GetAllLock 会把「卡都在编队里」也算成可解锁，红点亮着却点不动
+function this.CanUnlockNow(id)
+    local ok, ret = pcall(this.GetAllLock, id)
+    if not ok then
+        LogRed("[General] GetAllLock 异常 id=" .. tostring(id) .. " : " .. tostring(ret))
+        return false
+    end
+    return ret == true and this.CanUnlockSafe(id)
+end
+
 --刷新契约红点
 function this.RefreshRedPointState()
     if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.GENERAL) then
         return false
     end
     for i = 1, 5 do
-        if this.IsCanUnlock(i) or this.IsCanUpLevel(i) or this.IsCanAdvanced(i) then
+        if this.CanUnlockSafe(i) or this.CanUpgradeOrRank(i) then
             return true
         end
     end

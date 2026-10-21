@@ -61,6 +61,23 @@ local function Alive(obj)
     return true
 end
 
+-- 取 userdata 的 transform（GameObject / Component 都有，Transform 的 .transform 返回自身）。
+-- 🔴 绝对不要在 userdata 上直接探字段：tolua 对**不存在**的字段是抛错
+-- （field or property 'childCount' does not exist），不是返回 nil，一探就整段 pcall 失败。
+-- GameObject 没有 childCount / GetChild，只有 transform 有 ⇒ 必须先落 transform 再取。
+local function SafeTransform(obj)
+    if obj == nil or type(obj) == "table" then
+        return nil
+    end
+    local ok, tf = pcall(function()
+        return obj.transform
+    end)
+    if ok and Alive(tf) then
+        return tf
+    end
+    return nil
+end
+
 -- tolua 的枚举表是运行期注册的，取不到就不设：否则整段被 pcall 吃掉、什么都不动
 local function SetEaseSafe(tween, name)
     local enum = _G.Ease
@@ -114,8 +131,11 @@ end
 --   ③ 容器（手工克隆的长列表，如 ContinuityRechargePage）——取容器下所有 active 子节点，
 --      模板项自己 SetActive(false) 着，天然被跳过。
 --
--- 🔴 顺序不能改：ScrollCycleView 和数组都是 table，容器是 userdata。先判 table，
---    别对 userdata 取 [1]（tolua 的 GameObject 不支持下标，直接抛错）。
+-- 🔴 两条都不能碰（都踩过：整段 pcall 失败 ⇒ 那页永远没动画，还在日志里刷错误）：
+--    ① 先判 table：别对 userdata 取 [1]（tolua 的 GameObject 不支持下标，直接抛错）；
+--    ② 别在 userdata 上**探字段**：GameObject 没有 childCount，tolua 对不存在的字段是
+--       **抛错**而不是给 nil ⇒ 必须先 SafeTransform 落 transform 再取。积天豪礼页的
+--       GetPopInSource 返回的就是 GameObject，曾报 field or property 'childCount' does not exist。
 function this:_Collect()
     local targets = {}
     local getter = self.getScrollView
@@ -132,7 +152,8 @@ function this:_Collect()
         return targets
     end
     local ok, err = pcall(function()
-        if type(src) == "table" and src.ForeachItemGO then
+        -- ① ScrollCycleView：item 由 SetData 克隆，顺序即版面顺序
+        if type(src) == "table" and type(src.ForeachItemGO) == "function" then
             src:ForeachItemGO(function(_, go)
                 if Alive(go) and go.activeSelf then
                     targets[#targets + 1] = go.transform
@@ -140,15 +161,14 @@ function this:_Collect()
             end)
             return
         end
-        -- table 有两种形状：容器替身（有 GetChild）和显式数组；userdata 一定是容器
+        -- ② 容器：table 替身（有 GetChild）或 userdata（一律先落 transform，见 SafeTransform）
         local container
         if type(src) == "table" then
-            container = type(src.GetChild) == "function" and src or nil
-        else
-            container = src
-            if container.childCount == nil and Alive(src.transform) then
-                container = src.transform
+            if type(src.GetChild) == "function" then
+                container = src
             end
+        else
+            container = SafeTransform(src)
         end
         if container then
             local count = container.childCount or 0
@@ -160,14 +180,16 @@ function this:_Collect()
             end
             return
         end
-        for i = 1, #src do
-            local item = src[i]
-            if Alive(item) then
-                -- GO 有 transform，transform 有 gameObject，两种都收
-                local tf = item.transform or item
-                local go = item.gameObject or item
-                if Alive(go) and go.activeSelf and Alive(tf) then
-                    targets[#targets + 1] = tf
+        -- ③ Lua 数组 { go1, go2, ... }：元素 GO / transform 都收
+        if type(src) == "table" then
+            for i = 1, #src do
+                local item = src[i]
+                if Alive(item) then
+                    local tf = item.transform or item
+                    local go = item.gameObject or item
+                    if Alive(go) and go.activeSelf and Alive(tf) then
+                        targets[#targets + 1] = tf
+                    end
                 end
             end
         end

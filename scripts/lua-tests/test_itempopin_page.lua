@@ -187,6 +187,50 @@ Check(Near(c3.localScale.x, 1), "隐藏的模板行不该被动过")
 ItemPopIn.StopPage(cp)
 Check(Near(c1.localScale.x, 1), "StopPage 对容器同样复位")
 
+-- tolua 的 GameObject 是 userdata：取**不存在**的字段会抛错（不是给 nil），只能取出真实存在的。
+-- 用 newproxy 造一个同语义的替身，专治「按 table 写的代码在真机上一探字段就整段 pcall 失败」。
+local function newGameObjectUdata(tf)
+    local u = newproxy(true)
+    local mt = getmetatable(u)
+    mt.__index = function(_, k)
+        if k == "transform" then return tf end
+        error("field or property '" .. k .. "' does not exist", 2)
+    end
+    mt.__tostring = function() return "GameObject(userdata)" end
+    return u
+end
+
+-- ---------------- case 6b: GetPopInSource 返回 GameObject（userdata） ----------------
+-- 🔴 ExpertPanel 积天豪礼页真实形态：ContinuityRechargePage:GetPopInSource() 返回的是
+--     Util.GetGameObject 出来的 GameObject，不是 table。旧代码直接 container.childCount
+--     探字段 ⇒ tolua 抛 "field or property 'childCount' does not exist" ⇒ 整段 pcall 失败
+--     ⇒ 那页永远没动画，日志里每次切页都刷一条错误。
+print("== case6b GetPopInSource 返回 GameObject（userdata）==")
+tweens = {}
+errors = {}
+local probeOk = pcall(function()
+    return newGameObjectUdata(newContainer({})).childCount
+end)
+Check(not probeOk, "替身对不存在的字段抛错（与 tolua 行为一致，否则本用例无效）")
+
+local u1, u2, u3 = newItem("u1"), newItem("u2"), newItem("u3", false)
+local uContent = newContainer({ u1, u2, u3 })
+local GoPage = {}
+GoPage.__index = GoPage
+function GoPage:GetPopInSource()
+    return self.continuityTaskContent
+end
+local gp = setmetatable({ continuityTaskContent = newGameObjectUdata(uContent) }, GoPage)
+gp.class = GoPage
+n = ItemPopIn.PlayPage(gp)
+Check(#errors == 0, "不该报错，实际：" .. tostring(errors[1]))
+Check(n == 1, "userdata 容器算 1 个列表，实际 " .. n)
+Check(liveTweens() == 2, "3 个子节点里 1 个 inactive ⇒ 播 2 项，实际 " .. liveTweens())
+Check(Near(u1.localScale.x, 0.82) and Near(u2.localScale.x, 0.82), "userdata 容器项从 0.82 起")
+Check(Near(u3.localScale.x, 1), "隐藏的模板行不该被动过")
+ItemPopIn.StopPage(gp)
+Check(Near(u1.localScale.x, 1), "StopPage 对 userdata 容器同样复位")
+
 -- ---------------- case 7: 绑定缓存 ----------------
 print("== case7 同一页复用绑定 ==")
 tweens = {}

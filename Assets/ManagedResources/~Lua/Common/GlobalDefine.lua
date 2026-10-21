@@ -1117,8 +1117,14 @@ RedPointType = {
     Lead_Assembly = 99898,                  -- 主角装配技能
     Lead_Normal = 99897,                    -- 主角普通研发
     Lead_Privilege = 99878,                 -- 主角特权研发
-    Lead_UpLv = 99895,                      -- 主角升级
-    Lead_SpeedLvUp = 99894,                 -- 主角研发速度升级
+    -- 🔴 这两个原来分别是 99895 / 99894，与扭蛋的 BoxPoolCanDraw / BoxPool 撞号：
+    --   ① 99894 是扭蛋的父节点（子：BoxPoolFreeTime/BoxPoolCanDraw），父节点不能再注册检测函数
+    --      ⇒ Lead_SpeedLvUp 的检测函数被静默丢弃，该红点永远不刷新；
+    --   ② SetParent(Lead_UpLv=99895, Lead) 先执行，会让 BoxPoolCanDraw 挂不上扭蛋父节点，
+    --      扭蛋「可抽」状态直接写进神眷者入口的位掩码（外面亮、点进去没有红点）。
+    -- 改用原航母方案里预留的 101xxx 段（那段整块被注释掉了，没有占用）。
+    Lead_UpLv = 101003,                     -- 主角升级
+    Lead_SpeedLvUp = 101008,                -- 主角研发速度升级
     OpenServiceShop = 99879,                -- 开服热卖
     IncentivePlan = 99881,                  -- 激励计划
     EightTheLogin_2 = 99880,                -- 每日赠礼

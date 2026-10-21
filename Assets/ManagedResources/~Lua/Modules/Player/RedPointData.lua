@@ -51,6 +51,19 @@ end
 
 local RedPointData = {}
 
+--重置整棵红点树（Initialize 时调用）
+--不清会出事：SetParent 对「已经有父节点」的节点直接 return，
+--所以被删掉/改掉的父子关系在下一次 Initialize 时不会被覆盖，旧关系继续生效
+--（热更之后「改了代码但表现没变」多半就是这个）。
+function RedPointData:Reset()
+    _data = {}
+    _parentIndex = {}
+    _childNum = {}
+    _childIndex = {}
+    _checkFunc = {}
+    _serverRedData = {}
+end
+
 function RedPointData:SetParent(child, parent)
     -- 不能相反
     if _parentIndex[parent] == child then

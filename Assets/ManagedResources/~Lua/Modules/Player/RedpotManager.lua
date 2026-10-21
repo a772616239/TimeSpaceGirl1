@@ -55,6 +55,11 @@ function this.Initialize()
     -- 清除绑定物体
     BindObjs = {}
 
+    -- 清除上一轮残留的父子关系/检测函数/状态（热更或重登时 RedPointData 是同一个 Lua 模块）
+    if RPData.Reset then
+        RPData:Reset()
+    end
+
     -- 初始化数据
     this.SetServerRedPointData()
     this.InitRedPointAllRelate()

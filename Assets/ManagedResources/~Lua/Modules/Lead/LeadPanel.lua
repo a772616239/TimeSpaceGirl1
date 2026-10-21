@@ -101,6 +101,24 @@ function LeadPanel:BindEvent()
     BindRedPointObject(redpoint[2], this.normalRedpoint)
     BindRedPointObject(redpoint[3], this.privilegeRedpoint)
     BindRedPointObject(redpoint[4], this.btnUpLvRedpoint)
+
+    --自检：外面（LogisticsMainPanel/page4）亮、里面看不到红点时，先看这条日志区分两种情况：
+    --  node=nil  ⇒ prefab 里没有这个节点，红点根本绑不上；
+    --  node=ok   ⇒ 节点绑上了，visible 就是它现在的显示状态（false 说明红点值本身是灭的）。
+    local bindLog = {
+        { "Lead_Assembly", this.btnAssemblyRedpoint },
+        { "Lead_Normal", this.normalRedpoint },
+        { "Lead_Privilege", this.privilegeRedpoint },
+        { "Lead_UpLv", this.btnUpLvRedpoint },
+    }
+    for i = 1, #bindLog do
+        local obj = bindLog[i][2]
+        local state = "node=nil"
+        if obj and not IsNull(obj) then
+            state = "node=ok visible=" .. tostring(obj.activeSelf) .. " parentActive=" .. tostring(obj.transform.parent.gameObject.activeInHierarchy)
+        end
+        Log("[LeadPanel] redpoint " .. bindLog[i][1] .. " " .. state)
+    end
 end
 
 --添加事件监听（用于子类重写）

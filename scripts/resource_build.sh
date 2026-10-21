@@ -28,6 +28,15 @@ STAMP="$(date '+%Y%m%d-%H%M%S')"
 ACTION="all"
 SERVER_ENV=""
 
+# 🔴 2026-10-21 修：必须在解析参数**之前**留存原始 argv。
+# 旧写法把 ORIG_ARGS=("$@") 放在 while 之后，那时 $@ 已被 shift 掏空 ⇒ 下面
+# 「exec 自身套 unity 锁」重入时 args 为空，ACTION 回落成默认 all、SERVER_ENV 变空：
+#   · `--action export` 实际跑成 all（导表完又白重建一次 AB，+10 分钟；
+#     实测 TS-Resource-Build #13/#14 都是这样）
+#   · `--action ab --server-env 测试服` 丢掉环境注入 ⇒ AB 里打包的是工程
+#     当前 version.txt 的口径，不是请求的那个服（正是 job 自己警告的"连错服"）
+ORIG_ARGS=("$@")
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --action)     ACTION="${2:-}"; shift 2 ;;
@@ -36,8 +45,6 @@ while [[ $# -gt 0 ]]; do
         *) echo "未知参数：$1" >&2; exit 2 ;;
     esac
 done
-
-ORIG_ARGS=("$@")
 case "$ACTION" in
     export|ab|all) ;;
     *) echo "✗ --action 只能是 export / ab / all（收到：${ACTION}）" >&2; exit 2 ;;

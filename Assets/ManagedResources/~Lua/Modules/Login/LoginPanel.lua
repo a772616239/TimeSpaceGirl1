@@ -605,11 +605,20 @@ function this.SetServerList(data)
             if this.recommend then
                 if this.myServerList then
                     local levelLs = 0
-                    local severRecomend = 0
+                    local severRecomend = nil
                     for i = 1, #this.myServerList do
-                        if this.serverList[i].level > levelLs then
-                            levelLs = this.serverList[i].level
-                            severRecomend = this.serverList[i].server_id
+                        -- 🔴 serverList 是「区服」维度（server_id/name，**没有 level 字段**），
+                        --    myServerList 才是「我的角色」维度（serverid/level）。
+                        --    老代码拿 this.serverList[i].level 比较 → nil > 0 → 直接抛
+                        --    "attempt to compare number with nil"，SetServerList 中断，
+                        --    后面 637-641 的 SocketAddress/state 永远赋值不到 ⇒ 点登录必报
+                        --    "RequestSocketLogin failed: SocketAddress is nil or empty"。
+                        --    触发条件：服务端下发了 recommend（线上有玩家在线才会下发 recommend），
+                        --    而本账号没有最近登录记录（lastServer 缺省）。
+                        local lv = tonumber(this.myServerList[i].level) or 0
+                        if lv > levelLs then
+                            levelLs = lv
+                            severRecomend = this.myServerList[i].serverid
                         end
                     end
                     for i = 1, #this.serverList do
@@ -640,9 +649,15 @@ function this.SetServerList(data)
     LoginManager.ServerId = this.serverList[lastIndex].server_id
     LoginManager.state = this.serverList[lastIndex].state
 
-    -- local severArea = tonumber(string.sub(this.serverList[lastIndex].server_id, 0, -5))
-    this.serverImage.sprite = Util.LoadSprite(ServerStateIconDef[LoginManager.state])
-    this.serverMes.text = GetServerName(PlayerManager.serverInfo)
+    -- 区服图标/名字只是纯展示，缺图标或缺节点都不该让登录链路受影响
+    -- （SocketAddress 已在上面赋值，这里再抛异常只会让调用方的后续逻辑一起中断）
+    local stateIcon = ServerStateIconDef and ServerStateIconDef[LoginManager.state]
+    if this.serverImage and stateIcon then
+        this.serverImage.sprite = Util.LoadSprite(stateIcon)
+    end
+    if this.serverMes and PlayerManager.serverInfo then
+        this.serverMes.text = GetServerName(PlayerManager.serverInfo)
+    end
 
     RequestPanel.Hide()
 end
@@ -1351,6 +1366,32 @@ end
 
 -- 请求连接socket
 function this.RequestSocketLogin()
+    if ((not LoginManager.SocketAddress or LoginManager.SocketAddress == "") or not LoginManager.SocketPort)
+        and not this.isRequestingServerList then
+        -- 服务器列表还没到手（异步未回 / 解析失败 / 该账号无最近登录且 recommend 分支异常）：
+        -- 补拉一次再连，不要直接把玩家挡在门外弹「服务器维护中」。
+        -- isRequestingServerList 是重入锁，列表反复失败时只补拉一次。
+        this.isRequestingServerList = true
+        LogError("RequestSocketLogin: SocketAddress/SocketPort missing, retry getServerList")
+        local retryUserId = IsSDKLogin and AppConst.OpenId or PlayerPrefs.GetString(openIdkey, defaultOpenIdkey)
+        this.RequestServerList(retryUserId, function(str)
+            this.isRequestingServerList = false
+            if str ~= nil and str ~= "" then
+                MyPCall(function()
+                    local json = require "cjson"
+                    this.SetServerList(json.decode(str))
+                end)
+            end
+            if LoginManager.SocketAddress and LoginManager.SocketAddress ~= "" and LoginManager.SocketPort then
+                this.RequestSocketLogin()
+            else
+                LogError("RequestSocketLogin failed: SocketAddress is nil or empty")
+                PopupTipPanel.ShowTipByLanguageId(11132)
+                RequestPanel.Hide()
+            end
+        end)
+        return
+    end
     if not LoginManager.SocketAddress or LoginManager.SocketAddress == "" then
         LogError("RequestSocketLogin failed: SocketAddress is nil or empty")
         PopupTipPanel.ShowTipByLanguageId(11132)

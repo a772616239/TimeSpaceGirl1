@@ -58,6 +58,19 @@
 位移量换算：`目标宽 × 0.30` 起步。太小学不出来（870 宽的卡给 140px 只有 16%，肉眼几乎看不出），
 太大又会被 ScrollRect 的 viewport 裁掉一截。
 
+**一套节奏不够用：打开和切页签要分开配。** 打开是一次性入场，0.22s 刚好；但玩家反复触发切页签时，
+0.22s 会读成「一点就到位了，没看见动」，而且每帧位移大（260px / 0.22s ≈ 1180px/s），帧率一抖就明显跳格。
+所以第二个落地起用两套：
+
+| 场景 | 起点 | 单卡时长 | 错开 | 整批延时 |
+|---|---|---|---|---|
+| 打开面板 | 260px | 0.26s | 0.055s | 0 |
+| 切页签 | 170px | 0.30s | 0.05s | **0.05s** |
+
+切页签那 0.05s 不只是节奏 —— 它让「列表重建那一帧」的图标加载/文本排版先结束，动画第一帧不顶着卡顿跑
+（现象：动画起手跳一下再走）。判断走哪套用现成的标记即可，别新加状态：`tabAnimReady`
+（页签翻入是否播过）为 false 就是首次打开。
+
 ---
 
 ## 3. 方向（一行切换）
@@ -193,7 +206,7 @@ for i = 0, box.childCount - 1 do ...
 
 ---
 
-## 7. 九个坑（都在这套代码里踩过）
+## 7. 十一个坑（都在这套代码里踩过）
 
 1. **写 item 根节点 ⇒ 被抹回**。这是本配方的第一号坑，两种触发源（布局组 / 列表自己算位置）。写子节点根治。
 2. **`ScrollCycleView` 不是布局组也不能写根**。见 §4。
@@ -213,6 +226,11 @@ for i = 0, box.childCount - 1 do ...
     再递归所有子节点），不是"只找直接子节点"。所以子节点重名就会拿错 —— `DailyCarbonPanel` 的卡里
     `GoBtn/sweep` 和 `Tip/sweep` 同名，若把 `"sweep"` 写进 `kSlideNodes`，第二张卡的 `Tip/sweep` 就会被当成
     `GoBtn/sweep` 一起移走。**`kSlideNodes` 里的名字必须在整棵子树里唯一。**
+11. **连点会叠播，必须挡住**。上一轮没播完又来一次（连点页签、快速换页），现在的 `Play` 开头只
+    `Stop` 再重播 = 列表刚重建完又堆一批 tween，body 会明显一顿。加个 `slidePlaying` 标记：播中再请求就
+    **只复位、不重播** —— 复位到终值本来就是「立刻到位」，观感不比重播差。
+    🔴 `Kill` 不会回调 `OnComplete`，所以播中标记只能在 `Stop` 里清 + 每条 `OnComplete` 计数减到 0 时清，
+    两处都要有；漏一处会让后续所有入场被「当成播中」永久跳过。
 
 ---
 
@@ -225,7 +243,8 @@ cd LuaEncoder/luajit_mac/64
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_battlepass_cardslide.lua
 ```
 
-第二个落地有独立一份，改名字/节点即可（`DailyCarbonPanel`，一屏多卡、含未激活子节点跳过）：
+第二个落地有独立一份，改名字/节点即可（`DailyCarbonPanel`，一屏多卡、含未激活子节点跳过、外加
+切页签节奏与连点保护，共 11 case）：
 
 ```bash
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_dailycarbon_cardslide.lua
@@ -243,6 +262,9 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_d
 | 6 | 空列表 / 无列表组件：返回 0，不抛错 |
 | 7 | `OnClose` / `OnDestroy` 都回收（DestroyPanel 不走 OnClose，面板还会被 openedList 复用） |
 | 8 | 抑制标记：`suppressTaskAnim = true` 时 0 条 tween，放开后正常 |
+| 9 | 切页签那套：起点 `x + 170`、时长 0.30、整批 `delay = 0.05` |
+| 10 | 连点：上一轮播中再请求，返回 0、0 条新 tween、位置已回终值 |
+| 11 | `Stop` 之后 / 自然播完之后都能再次触发（证明播中标记没卡在 true） |
 
 ⚠️ 离线 harness 只能证明**逻辑**对。`DOAnchorPosX` / `DOFade` 在 tolua 的绑定要另外确认：
 
@@ -261,7 +283,7 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 |---|---|---|---|
 | `TreasureStorePopup`（参考） | `grid/item1..3` | 左 → 右 | -200/-150/-100 / 0.05~0.10s |
 | `BattlePassPanel_Mission` | 任务卡 `itempre`（一屏 1 张） | **右 → 左**（按要求反向） | +260 / 0.22s |
-| `DailyCarbonPanel` | 副本卡 `Pre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | +260 / 0.22s，错开 0.05 |
+| `DailyCarbonPanel` | 副本卡 `Pre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | 打开 +260 / 0.26s / 错开 0.055；切页签 +170 / 0.30s / 错开 0.05 / 整批 +0.05 |
 
 `DailyCarbonPanel` 是这套配方的**第二个落地**，也是第一个"一屏多卡"的场景，可以直接对照看：
 
@@ -283,3 +305,7 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 - 2026-10-21 第二个落地：`DailyCarbonPanel`（副本卡，一屏多卡、错开真正生效）。
   新增 §5 的数据刷新一行、§7 第 10 条（`Util.GetGameObject` 按名字 DFS，重名会拿错节点）、
   §9 的落地说明与 `RefreshScrollSilently` 写法（`pcall` 只为复位标记）。
+- 2026-10-21 复盘「切换太快 + 有点卡」：拆出**打开 / 切页签两套节奏**（§2）、切页签整批延 0.05s 起播
+  躲开重建帧、加连点保护（§7 第 11 条）。同时把 `DailyCarbonPanel` 的页签翻入从参考的 0.167/0.033
+  放慢到 0.21/0.045、切页高亮板单独给 0.26 —— 参考值适合一次性入场，放在玩家反复点的操作上偏快。
+

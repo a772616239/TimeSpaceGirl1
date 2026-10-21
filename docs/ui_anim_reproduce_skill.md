@@ -533,13 +533,27 @@ Commits：`b1b4580ed`（撤销错方向）、`2198f87da`（补落位曲线）、
 | S2 | 这里可以放心用 `GetTabList()`：走的是 `Init_SetTabAndBox`（`tab` / `box` 都显式传了）⇒ `TabList` 有值。**BattlePassPanel_Mission 不是这个 shape**（`Init` 传 nil 提前 return、`TabCtrl` 被换成空实例），那次的教训不能反向套到这里 |
 | S2 | `PlayTabSelectFlip` 三道闸门：`tabAnimReady`（挡 `Init_SetTabAndBox` 那次初始化回调）、`suppressOpenAnim`（挡数据刷新）、`select.activeSelf`（未选中 / 已锁定的页签没有高亮板；对隐藏节点起 tween 看不见，还会让下次 `SetActive` 打开时从半截起） |
 | S2 | 数据刷新统一收口成 `RefreshTabSilently`：领奖弹窗关闭 ×2（原来是裸 `this.OnTabChange`）+ 5 点刷新。顺手把 `suppressCardAnim` 改名 `suppressOpenAnim` —— 一个标记同时管「卡片滑入」与「高亮板翻入」 |
-| S3 | `scripts/lua-tests/test_dailycarbon_tabflip.lua`（8 case，**加载真 `TabBox` 跑真克隆**）：5 格延迟 0/.033/.066/.099/.132、24 格压到 0.5、Animator 开关、高亮板三道闸门、`OnTabChange` 真实调用链、生命周期回收 |
+| S3 | `scripts/lua-tests/test_dailycarbon_tabflip.lua`（8 case，**加载真 `TabBox` 跑真克隆**）：5 格延迟 0/.045/.09/.135/.18、24 格压到 0.55、Animator 开关、高亮板三道闸门、`OnTabChange` 真实调用链、生命周期回收 |
+| 复盘 | 上线后反馈「切换太快 + 有点卡」：参考的 0.167/0.033 是**弹窗一次性入场**的节奏，放在玩家反复点的页签上偏快 ⇒ 放慢到 0.21/0.045，切页高亮板单独给 0.26（见下表） |
 
 产物：`LuaBytes/Modules_Carbon_DailyCarbonPanel_64.bytes`（17197 → 19478 B）。
 
-> 观感提示：打开面板时「5 个页签逐格翻入」与「约 5 张副本卡右滑入」会同时发生。两者起点、
-> 方向、目标都在不同节点上，不冲突；若觉得太热闹，把 `kTabFlipStep` 提到 0.04~0.05 或把
-> 首次打开的卡片滑入也压掉（`suppressOpenAnim`）即可。
+### 第五次复用之后的节奏返工（2026-10-21）
+
+用户第一轮实机反馈是**「切换太快了 而且有点卡」**。分量拆清楚再动手，别拿「再放慢一点」一把糊上去：
+
+| 症状 | 真因 | 改法 |
+|---|---|---|
+| 太快 | 页签翻入抄的是弹窗一次性入场的 0.167/0.033；`PlayTabSelectFlip` 也只有 0.167 ⇒ 点一下「闪」完了 | 页签 0.21/0.045（末格 0.18）；切页高亮板单独 0.26 |
+| 太快 | 切页签的卡片滑入沿用打开时的 260px / 0.22s（≈1180px/s） | 拆第二套 preset：170px / 0.30s（≈570px/s），位移小、时间长 |
+| 卡 | 切页签那一帧同时做：`SetScroll` → 5 张卡各 178 行 `SetData`（`GetComponent`/`SetActive` 全在里面）→ 35 条 tween 起播 | 切页签整批 `SetDelay(0.05)`：让重建那一帧先结束，动画第一帧不顶着卡顿跑 |
+| 卡 | 连点页签 = 重建完又堆一批 tween | `cardSlidePlaying` 标记：播中再请求只 Stop 复位、不重播（`Kill` 不回调 `OnComplete` ⇒ `Stop` 里也要清标记） |
+
+两套节奏靠现成标记区分，不新增状态：`tabAnimReady`（页签翻入是否播过）false ⇒ 首次打开，true ⇒ 切页签。
+
+> 观感提示：打开面板时「5 个页签逐格翻入」与「约 5 张副本卡右滑入」仍会同时发生（不同节点、不冲突）。
+> 嫌热闹就提 `kTabFlipStep`；切页签想再稳一点，`kCardSwitchFrom` 收到 120~150 或用
+> `suppressOpenAnim` 把切页签的卡片滑入整个压掉（只留高亮板翻入）。
 
 ---
 

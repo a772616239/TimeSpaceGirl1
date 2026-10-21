@@ -56,6 +56,7 @@
 │   ├── TS-Client-Resources.groovy      Lua 源码 ↔ 字节码
 │   ├── TS-Art-Restyle.groovy           美术资源换节日风格（生图 + 归位 + 验收）
 │   ├── TS-Art-Translate.groovy         战令横幅中文美术字 → 英文版（擦字 + 补底板 + 排字）
+│   ├── TS-Art-BottomFade.groovy        底部紫色虚化（纯像素工序，不调 AI）
 │   ├── TS-Server-Health.groovy         生产服巡检（定时）
 │   ├── TS-Server-Ops.groovy            服务端/区服运维动作
 │   ├── TS-Server-Release.groovy        服务端代码发包正式服
@@ -95,9 +96,9 @@
 
 ---
 
-## 3. 十八个 job
+## 3. 十九个 job
 
-视图：**「时空美少女 · 全流程」**（`ListView`，含全部 18 个 job，带状态球/天气/上次成功/耗时/构建按钮列）。
+视图：**「时空美少女 · 全流程」**（`ListView`，含全部 19 个 job，带状态球/天气/上次成功/耗时/构建按钮列）。
 
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
@@ -145,6 +146,7 @@
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
 | **TS-Art-Restyle** | **美术资源换节日风格**（登录底板 → 圣诞版等）：生图交给 provider → 去水印 → 等比归位（绝不拉伸）→ 出不透明版 + 沿用原 alpha 的浮层版 → 像素级验收 → 可选写回 | `ASSET=` `THEME=christmas` `PROVIDER=chatgpt_web` `CDP_PORT=` `GEN_IMAGE=` `COMPOSITION=lock` `POSE=` `FRAME=auto` `WATERMARK=auto` `WRITE_BACK=True` `BACKUP_ROOT=` | — | **禁止** |
 | **TS-Art-Translate** | **战令横幅中文美术字 → 英文版**：圈污染区擦字 → 逐行中位色 + 六边形纹理补底板 → 按已上线英文图层级排白字 → 六项像素验收 → 写回 `ArtFont_en` 并补 `.meta`。缺哪张补哪张 | `MODE=batch` `ASSET=` `FORCE=False` `WRITE=True` | — | **禁止** |
+| **TS-Art-BottomFade** | **底部紫色虚化**（确定性像素工序，**不调 AI**）：末 N px 渐进高斯模糊 + 过渡到紫色 + 末行 alpha 收到 0，让横幅溶进紫色面板而不是一条硬切 | `ASSET=` `PX=130` `RIM=violet` `WRITE_BACK=True` `BACKUP_ROOT=` `COMPRESS=auto` `COMPRESS_MAX_DIFF=6` `FORCE=False` | — | **禁止** |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |
 | **TS-Server-Ops** | 服务端/区服运维动作统一入口 | `ACTION=health` `CONFIRM=` `REASON=` | — | 允许 |
 | **TS-Server-Release** | **服务端代码发包正式服**：切 release 分支 → JDK8 编译 → 与线上逐条目 CRC 比对 → 审批 → 备份 → 注入差异类 → 重启 → 上线自检 → **协议连通自检** → 回写发布记录 → 发布看板 → **异步触发 TS-Server-Health** | `ACTION=release` `SOURCE_BRANCH=x1-tag-1.2.2` `RELEASE_BRANCH=` `DEPLOY=False` `CONFIRM=` `AUTO_APPROVE=False` `ONLY_CLASSES=` `EXCLUDE_CLASSES=` `RESTART=gameserver` `PROTO_CHECK=True` `PROTO_LOGIN=False` `PROTO_OPERATOR=` `HEALTH_AFTER=True` `ALLOW_DIRTY=False` `PUSH_BRANCH=True` `ROLLBACK_DIR=` `NOTES=` `SEND_MAIL=False` | — | **禁止** |
@@ -670,6 +672,41 @@ $B .jenkins/lib/local_deploy.sh rollback ~/home/java/gameserver/backup/gameSrv-2
 > 只有 2 个合并层，用不上）。配方细节见 **`docs/art_banner_translate_skill.md`**。
 
 ---
+
+### 3.9 底部紫色虚化（`TS-Art-BottomFade`，2026-10-21 新增）
+
+**要解决的问题**：横幅/底板的底边是**硬切**。贴在深色或紫色面板上，下沿就是一条刀切的线；
+换成「下沿化开、溶进面板」的观感，本来是 PS 里拉个渐变蒙版+模糊的事。
+
+**为什么单独做一个 job、而不走 `TS-Art-Restyle`**：这是**已经定稿的图只改下沿**。
+走生图链路要烧一次模型额度，而且**出来的是另一张图**（构图/人物/文案全变了）——
+拿回来的根本不是「原来的图 + 虚化」。渐变+模糊+alpha 收边每一步都能写成确定的算法，
+所以它是纯像素工序：无额度、无随机性、可反复跑。
+
+| # | 环节 | 干什么 | 判红 / 判黄 |
+|---|---|---|---|
+| ① | 参数与上下文 | 打印资源/带宽/色系/写回口径（`evidence/context.txt`） | 永不判红 |
+| ② | 底部虚化 + 像素验收 | 末 N px 渐进高斯模糊 → 过渡到紫色 → 末行 alpha 收到 0，六条断言 | 断言不符 ⇒ **红**；已虚化过还重跑 ⇒ **黄**（`rc=3`） |
+| ③ | 写回资源 | `--publish-only` 只写回不重算，原图先入背包（`.meta` 不动） | 写回失败 ⇒ **红** |
+| ④ | 证据归档 | 对比图/成品/`fade.json` 收进 `evidence/`，并核对表1 的 `soft_bottom` / `post_ops` | 永不判红 |
+
+六条断言（`bottom_fade.py check`）：
+
+| # | 断言 | 阈值 |
+|---|---|---|
+| 1 | 尺寸未变 | 完全相等 |
+| 2 | 色彩模式未变 | `RGBA`→`RGBA`（源是 `RGB` 不许变成 `RGBA`） |
+| 3 | **虚化带以上零改动** | 最大通道差 = 0 |
+| 4 | 带内转向紫色相 | `(B-R)` 均值至少 +6 |
+| 5 | 带内高频能量下降 | 严格小于源 |
+| 6 | 底边 alpha 收到 0，且带以上 alpha 未动 | 末行均值 < 4 / 带以上差 = 0 |
+
+🔴 **幂等守卫**：已经虚化过的图（末行 alpha≈0）再跑一次会在原带上**再叠一层**——
+紫色更重、细节更糊，而且**一声不报**。工具默认拒绝并返 `rc=3`，要叠第二层必须显式 `FORCE=true`。
+
+**参数怎么调**：`PX` 是带宽（130 ≈ 436 高的 30%），`RIM` 是色系（`violet` 紫 / `ivory` 冷银 / `warm` 暖金）。
+紫色太重就减 `PX`，不要减覆盖率——覆盖率写在 `restyle_pipeline._bottom_fade_rgb` 里，
+模糊 0.92 / 染色 0.80 是分开的权重：只染色不模糊会像「压了一层紫滤镜」，一眼能看出是加了特效。
 
 ## 4. 「各环节可视化」到底指什么（四件产物）
 

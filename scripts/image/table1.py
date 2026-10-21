@@ -99,6 +99,50 @@ def guess_kind(asset: str) -> str:
 
 
 # ----------------------------------------------------------------------------- 登记
+def record_touch(published: dict, op: str | None = None) -> str:
+    """非主题类像素加工的登记入口（如底部虚化）：只更新 last_publish / post_ops，不碰 themes_done。
+
+    🔴 为什么不能复用 record_publish：它往 themes_done 里写 `published["theme"]`，
+       而底部虚化的 theme 是 "fade" —— 不是计划主题，check 会立刻报「未知主题 fade」，
+       而且 list 的「已换主题」列会多出一个假主题。
+    """
+    asset = published["asset"]
+    today = datetime.now().strftime("%Y-%m-%d")
+    data = load()
+    it = find(data, asset)
+    if it is None:
+        it = {
+            "asset": asset,
+            "kind": guess_kind(asset),
+            "size": published.get("size") or [0, 0],
+            "mode": published.get("mode", ""),
+            "added_at": today,
+            "added_by": "record_touch",
+            "themes_done": {},
+            "status": "active",
+            "note": "record_touch 自动建档",
+        }
+        data["items"].append(it)
+    it["last_publish"] = {
+        "at": published.get("at") or datetime.now().isoformat(timespec="seconds"),
+        "variant": published.get("variant"),
+        "sha256": published.get("after_sha256"),
+        "work": published.get("work"),
+    }
+    it["size"] = published.get("size") or it.get("size")
+    it["mode"] = published.get("mode") or it.get("mode")
+    it["updated_at"] = today
+    ops = it.setdefault("post_ops", [])
+    ops.append({
+        "at": today,
+        "op": op or published.get("theme") or "touch",
+        "note": published.get("note") or "",
+        "sha256": (published.get("after_sha256") or "")[:16],
+    })
+    save(data)
+    return f"touched: {Path(asset).name} post_ops += {ops[-1]['op']}"
+
+
 def record_publish(published: dict, note_prefix: str = "publish") -> str:
     """publish 写回成功后的登记入口（restyle_pipeline.cmd_publish 调用）。
 
@@ -184,11 +228,21 @@ def cmd_list(args) -> int:
     print(f"表1 {TABLE1.name}：共 {len(data['items'])} 条，显示 {len(rows)} 条；"
           f"计划主题：{', '.join(planned)}")
     print(f"{'资产':<74} {'kind':<8} {'已换主题':<22} 欠")
+    flagged = []
     for it in rows:
         done = it.get("themes_done") or {}
         owes = [t for t in planned if t not in done] if planned else []
-        print(f"{Path(it['asset']).name:<74} {it.get('kind', '?'):<8} "
+        name = Path(it["asset"]).name
+        # 画面自带缺陷（如底部虚化）挂在条目上，list 里打 ~ 标记，提醒换主题时避开
+        if it.get("soft_bottom"):
+            name += "~"
+            flagged.append((Path(it["asset"]).name, it["soft_bottom"]))
+        print(f"{name:<74} {it.get('kind', '?'):<8} "
               f"{','.join(done.keys()) or '-':<22} {','.join(owes) or '-'}")
+    for name, sb in flagged:
+        print(f"  ~ {name}：底部 {sb.get('soft_px', '?')}px 偏虚"
+              f"（{sb.get('mid_band_mean', '?')} → {sb.get('band_mean', '?')} 高频能量），"
+              f"底边不要放必须看清的元素")
     return 0
 
 

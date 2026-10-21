@@ -203,11 +203,12 @@ def step_postprocess(cfg: dict, work: Path) -> list[str]:
            "--gen", str(work / "inbox" / "gen_web.png")]
     for flag, key in (("--watermark", "watermark"), ("--alpha-mode", "alpha_mode"),
                       ("--frame", "frame"), ("--frame-rim", "frame_rim"),
+                      ("--bottom-fade-rim", "bottom_fade_rim"),
                       ("--body-mode", "body_mode")):
         if pp.get(key):
             cmd += [flag, str(pp[key])]
     for flag, key in (("--hero-band", "hero_band"), ("--blend", "blend"),
-                      ("--feather-top", "feather_top")):
+                      ("--feather-top", "feather_top"), ("--bottom-fade", "bottom_fade")):
         if pp.get(key):
             cmd += [flag, str(pp[key])]
     return cmd

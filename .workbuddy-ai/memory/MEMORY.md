@@ -43,3 +43,8 @@
   等满 timeout 判 rc=75）。TS-Resource-Build 已按此修过。
 - `aab_release.sh` 的工程根取 `${PROJ:-脚本所在工程上一级}`，**别写死开发目录**：
   Jenkins 在 `TimeSpaceGirl1-build` 里调它，写死会去构建开发目录（GUI Unity 占用必拦）。
+- **Lua 里「按 id 查表」的函数会被喂已翻译文本**：`GetLanguageStrById(x)` 的入参在项目里
+  经常是「查过一次的结果再查一次」（如 `GetLanguageStrById(this.getType())`），
+  `tonumber` 失败后 `languageID` 为 nil。任何以入参为键的**缓存/去重表**都要先挡 nil 键，
+  否则 `_cache[nil] = 1` 直接 `table index is nil`（2026-10-21 真机 Fatal，70807e4b1 修）。
+  现口径：非数字串原样返回，不查表不记日志。

@@ -7,7 +7,8 @@
 > 页签多的三个面板走「页面级接入」：`ExpertPanel`、`OperatingPanel`、`AdjutantActivityPanel`
 > （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / **成长礼金 page_3** / **终身限购 page_9** / 战令 /
 > 副官挑战 / 副官赠礼）；
-> 固定版面（不是列表）走关键帧模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位，`phases`）。
+> 固定版面（不是列表）走关键帧模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位，`phases`）、
+> `DefenseTrainingPopup`（5 个关卡节点 `Stage1..5`，`phases`，只在 `OnOpen` 那一轮播）。
 > 更新时间 2026-10-21。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
 
 ---
@@ -172,6 +173,7 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 | `OperatingPanel` | `OnShow`、页签点击（`OnTabChanged` 之后） | `RefreshActivity`（月卡 / 活动开关 / 战令解锁） |
 | `AdjutantActivityPanel` | `PageTabCtrl:ChangeTab` 的回调（首开也走这条） | 无独立的事件刷新路径 |
 | `ThousandDrawPanel`（phases） | `Init` 的网络回调末尾（数据到位、卡面填好之后） | 领奖后的整表刷新会重播——那是**新一局**，可以接受 |
+| `DefenseTrainingPopup`（phases，关卡节点） | `OnOpen` 置位 → `OnShow` 末尾消费（`UpdateMain` 之后，status 节点已按状态激活） | 战斗返回（`IsBackOpen` 只走 `OnShow`，不经 `OnOpen`）、点「重置关卡」（回调里直接调 `OnShow`）——都是同屏刷新 |
 | 抽中单张卡（phases） | 抽卡回调里 `SetCard` 之后 `PlayCardIn(msg.number)` | —— |
 
 **TabBox 点击为什么自动就有动画**：`GrowthManualPanel.SwitchView` 里本来就会调
@@ -406,6 +408,12 @@ end
   时整排卡片跳半个卡宽；`Stop` 写回老位置还会把滚动换过格的 item 拽回上一格。改为 `Settle`
   （动画结束即还原）+ 相对撤补偿（`当前值 - 补偿量`），`Stop` 只兜打断。`test_itempopin` 加
   case14b/14c/14d（播完还原、滚动量保住、换格重播不拽回），仍为 14 组。
+- **2026-10-21**（防守训练关卡节点）：`DefenseTrainingPopup` 的 5 个关卡节点（`Bg/bg/Stage1..5`）
+  接入（数组数据源 + `phases`）：`0.5 → 1.06 → 0.97 → 1.01 → 1`（0.26/0.13/0.09/0.07 ≈ 0.55s），
+  相邻错开 0.06、整批 0.79s。没用 `duang`/`OutElastic`：单节点画面 260×163（`status` 那张图）属大块头，
+  OutElastic 在 0.55s 内抖三个来回、观感是「闪一下」。播的时机刻意收在**面板打开那一轮**
+  （`OnOpen` 置位 / `OnShow` 消费一次性标记）：战斗返回与「重置关卡」都是同屏刷新，不重播。
+  新增 `test_defensetraining_stagein.lua`（6 组：数据源 / 起点与错开 / 四段关键帧链 / 时机 / 回收 / 接线与选型）。
 - **2026-10-21**（偏心 pivot）：OperatingPanel 页签 10（终身限购 page_9）的格子往右下长、像没居中——
   `rewardPre` 的 pivot 是 `(0,1)`，`DOScale` 绕 pivot 缩放。模块加 `CenterPivotOf`（临时居中 +
   `anchoredPosition` 补偿 ½ 尺寸、`Stop` 还原，`centerPivot = false` 可关），顺带修掉

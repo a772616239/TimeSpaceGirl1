@@ -1,9 +1,38 @@
 require("Base/BasePanel")
 DefenseTrainingPopup = Inherit(BasePanel)
 local this = DefenseTrainingPopup
+local ItemPopIn = require("Modules/Common/ItemPopIn")--关卡节点入场（从小到大的弹性）
 
 local DefTrainingRanking = ConfigManager.GetConfig(ConfigName.DefTrainingRanking)
 local isCanClick = false
+
+--==================== 关卡节点入场（从小到大的弹性）====================
+-- 5 个关卡节点（Bg/bg/Stage1..5）不是列表，是散在背景图上的固定版面 ⇒ 用数组数据源 + phases 关键帧。
+-- 不用 duang / OutElastic：单个节点的画面是 260x163（status 那张图），属「大块头」，
+-- OutElastic 在 0.5s 内抖 3 个来回、观感是「闪一下」（见 docs/ui_item_pop_in_skill.md 1.1）。
+--   0.50 → 1.06（0.26s OutCubic，冲出峰值）
+--        → 0.97（0.13s InOutQuad，被拉回）
+--        → 1.01（0.09s InOutQuad，二次微弹）
+--        → 1.00（0.07s OutQuad，落定）        单节点 ≈ 0.55s
+-- 相邻错开 0.06（0.24 内 5 个全起播），整批 ≈ 0.79s。
+-- 峰值 1.06 是版面允许的上限：节点画面 260 宽，Stage4(97.6,62) 与 Stage5(390.8,208.6) 横向只剩 32px 余量。
+local kStagePhases = {
+    { scale = 1.06, duration = 0.26, ease = "OutCubic" },
+    { scale = 0.97, duration = 0.13, ease = "InOutQuad" },
+    { scale = 1.01, duration = 0.09, ease = "InOutQuad" },
+    { scale = 1,    duration = 0.07, ease = "OutQuad" },
+}
+local kStageInCfg = {
+    mode = "phases",
+    from = 0.5,
+    phases = kStagePhases,
+    step = 0.06,
+    maxSpan = 0.24,
+}
+-- 只在「从外面打开面板」那一轮播：OnOpen 置位、OnShow 消费。
+-- 战斗返回（IsBackOpen → 只走 OnShow）、重置关卡（回调里直接调 OnShow）都是同一屏刷新，不重播
+-- （判据见 docs/ui_item_pop_in_skill.md 第 3 节）。
+local playStageInOnShow = false
 
 --初始化组件（用于子类重写）
 function DefenseTrainingPopup:InitComponent()
@@ -37,6 +66,8 @@ function DefenseTrainingPopup:InitComponent()
     for i = 1, 5 do
         this.Stages[i] = Util.GetGameObject(self.gameObject, "Bg/bg/Stage" .. tostring(i))
     end
+    --数据源是显式数组（ItemPopIn 认 Lua 数组：元素是 GameObject 或 transform），顺序 Stage1..Stage5
+    this.stageIn = ItemPopIn.New(function() return this.Stages end, kStageInCfg)
 
     this.repeatItemView = {}
 
@@ -155,10 +186,14 @@ end
 
 --界面打开时调用（用于子类重写）
 function DefenseTrainingPopup:OnOpen()
+    playStageInOnShow = true    --从外面打开面板（不是战斗中返回）⇒ 这一次 OnShow 播关卡入场
 end
 
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）
 function DefenseTrainingPopup:OnShow()
+    local playStageIn = playStageInOnShow
+    playStageInOnShow = false    --一次性标记：这次不管播不播都清掉，别漏给下一次
+
     this.HeadFrameView:OnShow()
     this.UpView:OnOpen({ showType = UpViewOpenType.ShowRight, panelType = PanelType.AlameinWarPanel })
 
@@ -171,12 +206,31 @@ function DefenseTrainingPopup:OnShow()
         self:Init()
         self:UpdateMain()
     -- end)
+
+    --> 关卡节点从小弹到原大小。🔴 必须在 UpdateMain（UpdateStageUI 把 status 节点按状态激活）之后
+    if playStageIn then
+        this:PlayStagePopIn()
+    end
 end
 
 function DefenseTrainingPopup:UpdateMain()
     DefenseTrainingPopup.UpdateStageUI()
     this:UpdateRank()
     this:UpdateFirstReward()
+end
+
+--整版入场：5 个关卡节点从小到大弹性弹一下（数据/状态刷新完之后调）
+function DefenseTrainingPopup:PlayStagePopIn()
+    if this.stageIn then
+        this.stageIn:Play()
+    end
+end
+
+--回收：Kill + 复位。🔴 漏调 = 关卡节点永久停在 0.5
+function DefenseTrainingPopup:StopStagePopIn()
+    if this.stageIn then
+        this.stageIn:Stop()
+    end
 end
 
 function DefenseTrainingPopup:Init()
@@ -391,10 +445,12 @@ end
 
 --界面关闭时调用（用于子类重写）
 function DefenseTrainingPopup:OnClose()
+    this:StopStagePopIn()
 end
 
 --界面销毁时调用（用于子类重写）
 function DefenseTrainingPopup:OnDestroy()
+    this:StopStagePopIn()
     SubUIManager.Close(this.HeadFrameView)
     SubUIManager.Close(this.UpView)
 

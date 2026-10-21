@@ -234,47 +234,54 @@ function this.IsCanUnlock(id)
     return isCanUnLockNum > 0
 end
 
--- 是否可升级
-function this.IsCanUpLevel(id)
-    local general = this.GetAllGeneralDatas(id)
-    if general == nil then return false end
-
-    -- local upRank = this.RankInfo(id, general.rankUpLevel)
-    local upData = this.UpgradeExpend(id, general.level).UpgradeExpend
-    if general.level >= this.MaxLevel(id) then
+-- 消耗是否足够（红点与点击校验共用这一套口径，避免两处各算一遍）
+-- cost 形如 {{itemId,num},...}，按实际条目数遍历，不再写死 2 项
+function this.IsCostEnough(cost)
+    if cost == nil or cost[1] == nil then
         return false
-    -- elseif upRank == nil then
-    --     return false
-    else
-        if BagManager.GetItemCountById(upData[1][1]) < upData[1][2] or BagManager.GetItemCountById(upData[2][1]) < upData[2][2] then
+    end
+    for i = 1, #cost do
+        local item = cost[i]
+        if item == nil or item[1] == nil or item[2] == nil then
+            return false
+        end
+        if BagManager.GetItemCountById(item[1]) < item[2] then
             return false
         end
     end
     return true
 end
 
+-- 是否可升级
+function this.IsCanUpLevel(id)
+    local general = this.GetAllGeneralDatas(id)
+    if general == nil then return false end
+    -- 先判满级，再取消耗，避免末级/缺行时对 nil 取下标
+    if general.level >= this.MaxLevel(id) then
+        return false
+    end
+    local upCfg = this.UpgradeExpend(id, general.level)
+    if upCfg == nil then
+        return false
+    end
+    return this.IsCostEnough(upCfg.UpgradeExpend)
+end
+
 -- 是否可进阶
 function this.IsCanAdvanced(id)
     local general = this.GetAllGeneralDatas(id)
     if general == nil then return false end
-    
-    local upRank = this.RankInfo(id, general.rankUpLevel)
-    if general.rankUpLevel + 1 > 50 then
+
+    local nextRank = general.rankUpLevel + 1
+    local advancedLv = ConfigManager.TryGetConfigDataByDoubleKey(ConfigName.GeneralStepConfig,"GeneralId", id,"StepLev",nextRank)
+    if advancedLv == nil then
         return false
     end
-    local advancedLv = ConfigManager.TryGetConfigDataByDoubleKey(ConfigName.GeneralStepConfig,"GeneralId", id,"StepLev",general.rankUpLevel + 1)
-    if advancedLv.GeneralLev <= general.level then
-        if general.rankUpLevel == 50 then
-            return false
-        else
-            if BagManager.GetItemCountById(upRank[2][1]) < upRank[2][2] or BagManager.GetItemCountById(upRank[1][1]) < upRank[1][2] then
-                return false
-            end
-        end
-    else
+    -- 等级不达标（与服务端 rankUp 的 GeneralLev 校验一致）
+    if advancedLv.GeneralLev > general.level then
         return false
     end
-    return true
+    return this.IsCostEnough(advancedLv.UpgradeExpend)
 end
 
 --刷新契约红点
@@ -288,6 +295,15 @@ function this.RefreshRedPointState()
         end
     end
     return false
+end
+
+-- 统一刷新契约红点：入口红点（LogisticsMainPanel）+ 已打开的契约面板
+-- 背包/金钱变动、升级升阶成功都要走这里，否则红点会停在旧状态（点亮但点进去材料不足）
+function this.RefreshRedPoint()
+    CheckRedPointStatus(RedPointType.General)
+    if UIManager.IsOpen(UIName.GeneralInfoPanel) and GeneralInfoPanel and GeneralInfoPanel.RefreshRedPoint then
+        GeneralInfoPanel.RefreshRedPoint()
+    end
 end
 
 return this

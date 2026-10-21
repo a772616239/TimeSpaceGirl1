@@ -148,6 +148,8 @@ function GeneralInfoPanel:BindEvent()
                 FormationManager.FlutterPower(oldPower)
             end)
         else
+            --校验没通过说明红点是旧状态（背包/金钱刚被别处消耗），当场校准一次
+            this.RefreshRedPoint()
             PopupTipPanel.ShowTipByLanguageId(10073)
         end
     end)
@@ -162,9 +164,16 @@ function GeneralInfoPanel:BindEvent()
                 FormationManager.FlutterPower(oldPower)
             end)
         else
+            this.RefreshRedPoint()
             local general = GeneralManager.GetAllGeneralDatas(this.generalID)
-            local generalRankUpOld = ConfigManager.TryGetConfigDataByDoubleKey(ConfigName.GeneralStepConfig,"GeneralId",this.generalID,"StepLev",general.rankUpLevel+1)
-            PopupTipPanel.ShowTip(string.format(GetLanguageStrById(12737),generalRankUpOld.GeneralLev))
+            local advancedLv = general and ConfigManager.TryGetConfigDataByDoubleKey(ConfigName.GeneralStepConfig,"GeneralId",this.generalID,"StepLev",general.rankUpLevel+1) or nil
+            if advancedLv and advancedLv.GeneralLev > general.level then
+                --等级不达标
+                PopupTipPanel.ShowTip(string.format(GetLanguageStrById(12737),advancedLv.GeneralLev))
+            else
+                --等级够但材料不足
+                PopupTipPanel.ShowTipByLanguageId(10073)
+            end
         end
     end)
     Util.AddClick(this.upRankDataBtn,function ()
@@ -237,23 +246,14 @@ function this.SetUpdata()
     for i = 1, 5 do
         this.lock[i].gameObject:SetActive(false)
 
-        local state = false
-        if GeneralManager.GetAllLock(i) then
-            state = GeneralManager.IsCanUnlock(i) or GeneralManager.IsCanUpLevel(i) or GeneralManager.IsCanAdvanced(i)
-        end
-        Util.GetGameObject(this.generalBtn[i],"redpoint"):SetActive(state)
-        Util.GetGameObject(this.btnSelects[i],"redpoint"):SetActive(state)
-
         this.beams1[i]:SetActive(i ~= this.generalID)
         this.beams2[i]:SetActive(i == this.generalID)
         this.generalBtn[i]:SetActive(i ~= this.generalID)
         this.btnSelects[i]:SetActive(i == this.generalID)
     end
 
-    Util.GetGameObject(this.upLvBtn, "redPoint"):SetActive(GeneralManager.IsCanUpLevel(this.generalID))
-    Util.GetGameObject(this.btnInfo, "redPoint"):SetActive(GeneralManager.IsCanUpLevel(this.generalID))
-    Util.GetGameObject(this.upRankBtn, "redPoint"):SetActive(GeneralManager.IsCanAdvanced(this.generalID))
-    Util.GetGameObject(this.btnAdvanced, "redPoint"):SetActive(GeneralManager.IsCanAdvanced(this.generalID))
+    --红点只在这里算一次，其它地方（背包变动/升级成功）统一走 RefreshRedPoint
+    this.RefreshRedPoint()
 
     this.general = GeneralManager.GetAllGeneralDatas(this.generalID)
     this.SetInfo()
@@ -269,6 +269,34 @@ function this.SetUpdata()
         this.UpdateUpLevel()
         this.UnpdateUpClass()
     end
+end
+
+--统一刷新契约红点：5 个页签 + 升级/进阶按钮，判定与点击校验共用 GeneralManager 的同一套口径
+function this.RefreshRedPoint()
+    if this.generalBtn == nil or this.generalBtn[1] == nil then
+        return
+    end
+    for i = 1, 5 do
+        local state = false
+        if GeneralManager.GetAllLock(i) then
+            state = GeneralManager.IsCanUnlock(i) or GeneralManager.IsCanUpLevel(i) or GeneralManager.IsCanAdvanced(i)
+        end
+        local tabDot = Util.GetGameObject(this.generalBtn[i],"redpoint")
+        if tabDot then tabDot:SetActive(state) end
+        local selDot = Util.GetGameObject(this.btnSelects[i],"redpoint")
+        if selDot then selDot:SetActive(state) end
+    end
+
+    local canLvUp = GeneralManager.IsCanUpLevel(this.generalID)
+    local canRank = GeneralManager.IsCanAdvanced(this.generalID)
+    local lvDot = Util.GetGameObject(this.upLvBtn, "redPoint")
+    if lvDot then lvDot:SetActive(canLvUp) end
+    local infoDot = Util.GetGameObject(this.btnInfo, "redPoint")
+    if infoDot then infoDot:SetActive(canLvUp) end
+    local rankDot = Util.GetGameObject(this.upRankBtn, "redPoint")
+    if rankDot then rankDot:SetActive(canRank) end
+    local advDot = Util.GetGameObject(this.btnAdvanced, "redPoint")
+    if advDot then advDot:SetActive(canRank) end
 end
 
 --基础信息

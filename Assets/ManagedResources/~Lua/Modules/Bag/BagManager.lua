@@ -1193,6 +1193,11 @@ function this.BagIndicationRefresh(msg)
         SupportPanel.CheckRedPoint()
     end
     CheckRedPointStatus(RedPointType.Adjutant)
+
+    -- 契约（名将升级/升阶）：材料或金钱只要变了就得重算，否则红点会残留
+    if GeneralManager and GeneralManager.RefreshRedPoint then
+        GeneralManager.RefreshRedPoint()
+    end
 end
 
 --> 掉落tips

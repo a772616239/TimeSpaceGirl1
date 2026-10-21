@@ -11,6 +11,7 @@
 --   ⑩ 数组数据源      { go1, go2, go3 }（固定几格，如千抽的三张卡）/ 元素也可以是 transform
 --   ⑪ duang 模式      单段 from→基准 + OutElastic，只建 1 条 tween；Play(n) 只弹第 n 格
 --   ⑫ 整批延迟        cfg.delay 让第二批复用同一配方、错开起播（卡片先、数字后）
+--   ⑬ phases 模式     按关键帧逐段播（浮起—按回—落定），段数/峰值/时长/缓动全由调用方给
 --
 -- 用法（与其他 lua-tests 一致）：
 --   cd LuaEncoder/luajit_mac/64
@@ -46,7 +47,8 @@ local function v3(x, y, z)
     return setmetatable({ x = x, y = y, z = z }, v3mt)
 end
 Vector3 = { one = v3(1, 1, 1), zero = v3(0, 0, 0), New = v3 }
-Ease = { Linear = "Linear", InOutQuad = "InOutQuad", OutQuad = "OutQuad", OutElastic = "OutElastic" }
+Ease = { Linear = "Linear", InOutQuad = "InOutQuad", OutQuad = "OutQuad",
+         OutCubic = "OutCubic", OutElastic = "OutElastic" }
 IsNull = function() return false end
 local errors = {}
 LogError = function(msg) errors[#errors + 1] = msg end
@@ -306,6 +308,37 @@ p:Play()
 Check(Near(tweens[1].delay, 0.26), "第 1 格延迟应含 delay=0.26，实际 " .. tweens[1].delay)
 Check(Near(tweens[4].delay, 0.26 + 0.15), "第 4 格 0.26+0.15，实际 " .. tweens[4].delay)
 print("  数字格排在卡片之后：同一配方 + delay 即可")
+
+-- ---------------- case 13: phases 模式（多段关键帧）----------------
+print("== case13 phases 模式 ==")
+tweens = {}
+local phItems = { newItem("p1"), newItem("p2") }
+local kPhases = {
+    { scale = 1.05, duration = 0.38, ease = "OutCubic" },
+    { scale = 0.985, duration = 0.24, ease = "InOutQuad" },
+    { scale = 1, duration = 0.18, ease = "OutQuad" },
+}
+p = ItemPopIn.New(function() return phItems end,
+    { mode = "phases", from = 0.78, phases = kPhases, step = 0.11, maxSpan = 1 })
+p:Play()
+Check(#tweens == 2, "每格先建第一段，共 2 条，实际 " .. #tweens)
+Check(Near(phItems[1].localScale.x, 0.78), "起点取 cfg.from，实际 " .. phItems[1].localScale.x)
+Check(Near(tweens[1].endv.x, 1.05) and tweens[1].dur == 0.38, "第一段 → 1.05 / 0.38s")
+Check(tweens[1].ease == Ease.OutCubic, "第一段 ease 取 phases 里给的 OutCubic")
+Check(Near(tweens[2].delay, 0.11), "第二格错开 0.11，实际 " .. tweens[2].delay)
+tweens[1]:Complete()
+Check(#tweens == 3 and Near(tweens[3].endv.x, 0.985), "第二段在上一段的 OnComplete 里建")
+tweens[3]:Complete()
+Check(#tweens == 4 and Near(tweens[4].endv.x, 1), "第三段落回基准")
+tweens[4]:Complete()
+Check(Near(phItems[1].localScale.x, 1), "末段收尾吸附到基准")
+-- 缺 phases 时退回 surge，不能炸
+tweens = {}
+p = ItemPopIn.New(function() return phItems end, { mode = "phases", from = 0.9 })
+p:Play()
+Check(#tweens == 2 and Near(tweens[1].endv.x, 1.02), "phases 空 → 退回 surge 配方")
+p:Stop()
+print("  三段关键帧逐段建、末段吸附；phases 缺失时退回 surge")
 
 -- 取数据源抛错也不炸
 tweens = {}

@@ -22,12 +22,16 @@
 ---   ③ Lua 数组 { go1, go2, ... }——元素可以是 GameObject 或 transform（card1..card3 这种固定的几格）
 ---   ④ 无 → no-op
 ---
---- 两种手感（cfg.mode）：
+--- 三种手感（cfg.mode）：
 ---   "surge"（缺省）0.82 → 1.02 → 1，两段 + 逐格错开 = 礼包墙那种「逐格放大缩小」
 ---   "duang"        0.5 → 1，单段 OutElastic，自带回弹过冲 = 抽卡那种「duang 一下」（不会和别的配方混）
+---   "phases"       0.78 → 1.05 → 0.985 → 1，按 cfg.phases 逐段走 = 「浮起—按回—落定」的慢速手感，
+---                  段数/峰值/时长/缓动全由调用方给，想多慢就多慢（duang 的时长只能整体拉长，越拉越拖沓）
 ---
 --- 可调项（New 的第二参，缺省即下面的 defaultCfg）：
----   mode               "surge" / "duang"
+---   mode               "surge" / "duang" / "phases"
+---   phases             phases 模式的关键帧数组：{{scale=1.05,duration=0.38,ease="OutCubic"}, ...}
+---                      scale 是相对基准的倍数（1 = 原大小），最后一段落回 1 时自动吸附复位
 ---   from/peak          起始与峰值缩放
 ---   riseDuration       放大段时长，fallDuration 缩小回落时长
 ---   duangDuration      duang 模式的整体时长，ease 是它的缓动（缺省 OutElastic）
@@ -44,6 +48,7 @@ local defaultCfg = {
     fallDuration = 0.12,
     duangDuration = 0.5,
     ease = "OutElastic",
+    phases = nil,
     delay = 0,
     step = 0.055,
     maxSpan = 0.55,
@@ -201,6 +206,34 @@ function this:_Collect()
     return targets
 end
 
+-- phases 模式：按关键帧逐段播，每段在 OnComplete 里建下一段。
+-- 中途被 Kill 时 OnComplete 不回调 ⇒ 链自然断掉，不会在已关闭的面板上补建 tween。
+local function RunPhases(o, tf, base, phases, startDelay)
+    local function run(i)
+        local p = phases[i]
+        if not p then
+            return
+        end
+        local tween = tf:DOScale(base * (p.scale or 1), p.duration or 0.2)
+        if i == 1 then
+            tween:SetDelay(startDelay)
+        end
+        SetEaseSafe(tween, p.ease or "OutQuad")
+        o.tweens[#o.tweens + 1] = tween
+        tween:OnComplete(function()
+            if not Alive(tf) then
+                return
+            end
+            if i < #phases then
+                run(i + 1)
+            else
+                tf.localScale = base -- 收尾吸附，别把浮点残差留在 item 上
+            end
+        end)
+    end
+    run(1)
+end
+
 -- 播放。only 传下标就只弹那一格（抽到牌时「duang 一下」就是这么用的），
 -- 下标对应 _Collect 的收集顺序（ScrollCycleView = 数据下标，数组 = 数组下标）。
 function this:Play(only)
@@ -219,7 +252,9 @@ function this:Play(only)
     if count > 1 and step * (count - 1) > cfg.maxSpan then
         step = cfg.maxSpan / (count - 1)
     end
-    local duang = cfg.mode == "duang"
+    local mode = cfg.mode
+    local duang = mode == "duang"
+    local phases = mode == "phases" and type(cfg.phases) == "table" and #cfg.phases > 0 and cfg.phases or nil
 
     local order = 0
     local ok, err = pcall(function()
@@ -240,6 +275,9 @@ function this:Play(only)
                         tf.localScale = base
                     end
                 end)
+            elseif phases then
+                -- 多段关键帧：起始位由 cfg.from 给定，之后每段的目标/时长/缓动都来自 phases
+                RunPhases(self, tf, base, phases, cfg.delay + order * step)
             else
                 local rise = tf:DOScale(base * cfg.peak, cfg.riseDuration)
                 rise:SetDelay(cfg.delay + order * step)

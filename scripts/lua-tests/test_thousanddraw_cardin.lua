@@ -1,13 +1,14 @@
--- 千抽面板（ThousandDrawPanel）卡片 / 数字格 duang —— 离线验证，不依赖 Unity：
---   ① 数据源          三张卡（card1..3）+ 剩余抽数四位（千/百/十/个），按版面顺序
---   ② 整版 duang      卡片先弹（0.5 → 1 + OutElastic），数字靠 cfg.delay 排在后面
---   ③ 单卡 duang      PlayCardDuang(n) 只弹抽中的那一张，其余不动
---   ④ 生命周期        StopDuang / OnClose / OnDestroy 都 Kill + 复位（漏了 = 卡永久停在 0.5）
---   ⑤ 接线            数据到位（Init 回调）才整版 duang；抽中一张只弹那一格
+-- 千抽面板（ThousandDrawPanel）卡片 / 数字格入场 —— 离线验证，不依赖 Unity：
+--   ① 数据源       三张卡（card1..3）+ 剩余抽数四位（千/百/十/个），按版面顺序
+--   ② 整版入场     卡片先浮（0.78 → 1.05/0.38s，OutCubic），数字靠 cfg.delay 0.34 排在后面
+--   ③ 关键帧链     0.78 → 1.05 → 0.985 → 1，每段在上一段的 OnComplete 里建，收尾吸附到 1
+--   ④ 单卡入场     PlayCardIn(n) 只弹抽中的那一张，其余不动
+--   ⑤ 生命周期     StopCardsIn / OnClose / OnDestroy 都 Kill + 复位（漏了 = 卡永久停在 0.78）
+--   ⑥ 接线         数据到位（Init 回调）才整版入场；抽中一张只弹那一格
 --
 -- 用法：
 --   cd LuaEncoder/luajit_mac/64
---   TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_thousanddraw_duang.lua
+--   TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_thousanddraw_cardin.lua
 
 local ROOT = (os.getenv("TS_ROOT") or ".") .. "/"
 local SRC = ROOT .. "Assets/ManagedResources/~Lua/Modules/ThousandDraw/ThousandDrawPanel.lua"
@@ -41,7 +42,10 @@ local function v3(x, y, z)
 end
 Vector3 = { one = v3(1, 1, 1), zero = v3(0, 0, 0), New = v3 }
 Vector2 = { New = function(x, y) return { x = x, y = y } end }
-Ease = { Linear = "Linear", InOutQuad = "InOutQuad", OutQuad = "OutQuad", OutElastic = "OutElastic" }
+Ease = {
+    Linear = "Linear", InOutQuad = "InOutQuad", OutQuad = "OutQuad",
+    OutCubic = "OutCubic", OutElastic = "OutElastic",
+}
 IsNull = function(o) return o == nil end
 local errors = {}
 LogError = function(msg) errors[#errors + 1] = msg end
@@ -126,60 +130,104 @@ end
 
 local Panel = assert(loadfile(SRC))()
 
+-- ---------------- 小工具 ----------------
+local allNodes = {
+    cardNodes["card1"], cardNodes["card2"], cardNodes["card3"],
+    numberGrid.children["thousand"], numberGrid.children["hundred"],
+    numberGrid.children["ten"], numberGrid.children["unit"],
+}
+local function resetAll()
+    for _, n in ipairs(allNodes) do
+        n.localScale = v3(1, 1, 1)
+    end
+end
+
 -- ---------------- case 1: 数据源 ----------------
 print("== case1 数据源（卡 + 数字）==")
 Panel.gameObject = root
 Panel:InitComponent()
-local cards = Panel:GetCardDuangItems()
+local cards = Panel:GetCardItems()
 Check(#cards == 3, "三张卡都应收集到，实际 " .. #cards)
 Check(cards[1] == cardNodes["card1"] and cards[3] == cardNodes["card3"], "数组顺序 = card1..card3")
-local digits = Panel:GetNumberDuangItems()
+local digits = Panel:GetNumberItems()
 Check(#digits == 4, "四位数字都应收集到，实际 " .. #digits)
 Check(digits[1] == numberGrid.children["thousand"] and digits[4] == numberGrid.children["unit"],
     "数字顺序 = 千/百/十/个")
 
--- ---------------- case 2: 整版 duang ----------------
-print("== case2 整版 duang ==")
+-- ---------------- case 2: 整版入场 ----------------
+print("== case2 整版入场（关键帧）==")
+resetAll()
 tweens = {}
-Panel:PlayDuang()
-Check(#tweens == 7, "3 张卡 + 4 位数字 = 7 条 tween，实际 " .. #tweens)
+Panel:PlayCardsIn()
+-- 3 张卡各 1 条 + 4 位数字各 1 条（后续相位在 OnComplete 里才建）
+Check(#tweens == 7, "第一轮建 3 张卡 + 4 位数字 = 7 条，实际 " .. #tweens)
 local cardTween = tweens[1]
 Check(cardTween.tf == cardNodes["card1"], "第一条是 card1")
-Check(cardTween.ease == Ease.OutElastic, "卡片用 OutElastic（自带回弹过冲）")
-Check(Near(cardTween.endv.x, 1), "卡片弹回 1")
-Check(Near(cardNodes["card1"].localScale.x, 0.5), "卡片起点 0.5，实际 " .. cardNodes["card1"].localScale.x)
-Check(Near(tweens[2].delay, 0.09) and Near(tweens[3].delay, 0.18), "卡片错开 0.09")
+Check(Near(cardTween.endv.x, 1.05), "卡片第一段目标 1.05（不是直接回 1），实际 " .. cardTween.endv.x)
+Check(Near(cardTween.dur, 0.38), "卡片第一段 0.38s，实际 " .. cardTween.dur)
+Check(cardTween.ease == Ease.OutCubic, "卡片第一段 OutCubic（减速浮起）")
+Check(Near(cardNodes["card1"].localScale.x, 0.78), "卡片起点 0.78，实际 " .. cardNodes["card1"].localScale.x)
+Check(Near(tweens[2].delay, 0.11) and Near(tweens[3].delay, 0.22), "卡片错开 0.11")
 local firstDigit = tweens[4]
-Check(Near(firstDigit.delay, 0.26), "数字整批排在 0.26 之后，实际 " .. firstDigit.delay)
-Check(Near(tweens[7].delay, 0.26 + 3 * 0.05), "末位数字 0.26+0.15，实际 " .. tweens[7].delay)
-Check(Near(numberGrid.children["thousand"].localScale.x, 0.6), "数字起点 0.6")
-print("  卡片 0/0.09/0.18 起，数字 0.26 起 0.05 错开")
+Check(Near(firstDigit.delay, 0.34), "数字整批排在 0.34 之后，实际 " .. firstDigit.delay)
+Check(Near(tweens[7].delay, 0.34 + 3 * 0.06), "末位数字 0.34+0.18，实际 " .. tweens[7].delay)
+Check(Near(numberGrid.children["thousand"].localScale.x, 0.82), "数字起点 0.82")
+print("  卡片 0/0.11/0.22 起，数字 0.34 起 0.06 错开")
 
--- ---------------- case 3: 单卡 duang ----------------
-print("== case3 只弹抽中的那张 ==")
+-- ---------------- case 3: 关键帧链 ----------------
+print("== case3 三段关键帧链 ==")
+resetAll()
 tweens = {}
-Panel:PlayCardDuang(2)
+Panel:PlayCardIn(1)
+Check(#tweens == 1, "单卡先建 1 条，实际 " .. #tweens)
+tweens[1]:Complete()                -- 第一段结束 → 建第二段
+Check(#tweens == 2, "第一段完成后再建第二段，实际 " .. #tweens)
+Check(Near(tweens[2].endv.x, 0.985) and Near(tweens[2].dur, 0.24), "第二段 1 → 0.985 / 0.24s")
+Check(tweens[2].ease == Ease.InOutQuad, "第二段 InOutQuad（按回）")
+tweens[2]:Complete()                -- 第二段结束 → 建第三段
+Check(#tweens == 3, "第二段完成后再建第三段，实际 " .. #tweens)
+Check(Near(tweens[3].endv.x, 1) and Near(tweens[3].dur, 0.18), "第三段 0.985 → 1 / 0.18s")
+tweens[3]:Complete()
+Check(Near(cardNodes["card1"].localScale.x, 1), "落定吸附在 1（不留浮点残差）")
+local total = 0
+for _, t in ipairs(tweens) do total = total + t.dur end
+Check(Near(total, 0.8), "单卡总时长 0.8s（旧 duang 是 0.55s），实际 " .. total)
+
+-- ---------------- case 4: 只弹抽中的那张 ----------------
+print("== case4 只弹抽中的那张 ==")
+resetAll()
+tweens = {}
+Panel:PlayCardIn(2)
 Check(#tweens == 1, "只建 1 条 tween，实际 " .. #tweens)
 Check(tweens[1].tf == cardNodes["card2"], "弹的是 card2")
 Check(Near(cardNodes["card1"].localScale.x, 1) and Near(cardNodes["card3"].localScale.x, 1), "其余两张不动")
 Check(Near(tweens[1].delay, 0), "单卡没有错开延迟")
--- 抽完落回 1
 tweens[1]:Complete()
-Check(Near(cardNodes["card2"].localScale.x, 1), "弹完落回 1")
+Check(Near(cardNodes["card2"].localScale.x, 1.05), "第一段停在 1.05（浮起来那一刻）")
 
--- ---------------- case 4: 回收 ----------------
-print("== case4 回收 ==")
+-- ---------------- case 5: 回收 ----------------
+print("== case5 回收 ==")
+resetAll()
 tweens = {}
-Panel:PlayDuang()
-Panel:StopDuang()
+Panel:PlayCardsIn()
+Panel:StopCardsIn()
 local live = 0
 for _, t in ipairs(tweens) do if not t.killed then live = live + 1 end end
-Check(live == 0, "StopDuang 后没有存活 tween，实际 " .. live)
+Check(live == 0, "StopCardsIn 后没有存活 tween，实际 " .. live)
 Check(Near(cardNodes["card1"].localScale.x, 1) and Near(numberGrid.children["unit"].localScale.x, 1),
-    "全部复位到 1（不会停在 0.5/0.6）")
+    "全部复位到 1（不会停在 0.78/0.82）")
 
--- ---------------- case 5: 接线（源码断言）----------------
-print("== case5 接线 ==")
+-- 链被 Kill 后不再补建下一段
+resetAll()
+tweens = {}
+Panel:PlayCardIn(3)
+Panel:StopCardsIn()
+local killedTween = tweens[1]
+killedTween:Complete()              -- 就算外部强行 Complete
+Check(#tweens == 1, "Kill 后不会补建下一段，实际 " .. #tweens)
+
+-- ---------------- case 6: 接线（源码断言）----------------
+print("== case6 接线 ==")
 local f = assert(io.open(SRC, "rb"))
 local src = (f:read("*a")):gsub("\r\n", "\n")
 f:close()
@@ -199,18 +247,20 @@ local idx = 0
 for line in (initBody or ""):gmatch("[^\n]+") do
     idx = idx + 1
     if line:find("this.SetInfo()", 1, true) then setInfo = idx end
-    if line:find("this:PlayDuang()", 1, true) then play = idx end
+    if line:find("this:PlayCardsIn()", 1, true) then play = idx end
 end
-Check(setInfo and play and play > setInfo, "整版 duang 排在 SetInfo 之后（数据到位才弹）")
+Check(setInfo and play and play > setInfo, "整版入场排在 SetInfo 之后（数据到位才弹）")
 
 local close = bodyOf("function this:OnClose()")
-Check(close ~= nil and close:find("StopDuang", 1, true) ~= nil, "OnClose 里回收")
+Check(close ~= nil and close:find("StopCardsIn", 1, true) ~= nil, "OnClose 里回收")
 local destroy = bodyOf("function this:OnDestroy()")
-Check(destroy ~= nil and destroy:find("StopDuang", 1, true) ~= nil, "OnDestroy 里回收")
+Check(destroy ~= nil and destroy:find("StopCardsIn", 1, true) ~= nil, "OnDestroy 里回收")
 
 local ok = src:find("this.SetCard(Util.GetGameObject(this.cardGrid, \"card\" .. msg.number), msg)", 1, true)
-local single = src:find("this:PlayCardDuang(msg.number)", 1, true)
+local single = src:find("this:PlayCardIn(msg.number)", 1, true)
 Check(ok ~= nil and single ~= nil and single > ok, "抽中一张：SetCard 之后只弹那一格")
+Check(src:find('mode = "duang"', 1, true) == nil and src:find('ease = "OutElastic"', 1, true) == nil,
+    "不再配置 duang / OutElastic 单段回弹（换设计了，别偷偷回滚）")
 
 print(failed == 0 and "ALL OK" or ("FAILED: " .. failed))
 if failed > 0 then os.exit(1) end

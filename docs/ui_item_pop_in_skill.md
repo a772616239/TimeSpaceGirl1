@@ -252,14 +252,20 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 12. **异步建列表 ⇒ 必须重试**：`Expert_UpLv` / `BoxPool` 的 `OnShow` 在数据回调里才造 item，
     切页签那一刻 `_Collect` 必然 0 个。不要改成「在页面里回调时自己播」（会散成一堆样板），
     交给 `PlayPage` 的重试；重试必须带「轮次号」作废机制，否则关面板后还会在隐藏页上补弹。
-13. **pivot 不在中心 ⇒ 缩放方向不对**：`DOScale` 是绕 `pivot` 缩放的。手工搭的模板 pivot 常是
+13. **pivot 不在「内容中心」⇒ 缩放方向不对**：`DOScale` 是绕 `pivot` 缩放的。手工搭的模板 pivot 常是
     `(0,1)`（美术按左上角摆位），放大时就往**右下长**，看着像「左对齐 / 没居中」——
     OperatingPanel page_9（终身限购 `rewardPre`，pivot (0,1)、871×265）和 ExpertPanel 的
     `rewardPre1..10`、`ItemPre`（限定珍藏）都是这样。模块已内置 `CenterPivotOf`：播放时把 pivot
-    临时挪到 `(0.5,0.5)` 并给 `anchoredPosition` 反向补偿 ½ 尺寸（视觉位置不动），**动画一结束
-    （`Settle`）就还原**，打断时 `Stop` 也还原。
-    - 补偿量 = `(0.5 - pivot) * rect.size`，用 `rect.width/height` 而不是 `sizeDelta`
-      （拉伸态 rect 的 `sizeDelta` 不是真实尺寸）。
+    挪到**内容中心**并给 `anchoredPosition` 反向补偿（视觉位置不动），**动画一结束（`Settle`）
+    就还原**，打断时 `Stop` 也还原。
+    - 🔴 中心要按**画面内容**算，不能拿 `rect` 中心硬套：页签 25 的 `ItemPre` 的 rect 871×265
+      只是个「挂点容器」，卡片整片画在 pivot 周围（子节点并集 `[-449,423]×[-127,117]`，
+      中心 ≈ `(-13,-5)`）。按 rect 中心去居中就把它挪 `+435`，整排卡推右半格 —— 现象正是
+      **「锚点好像跑到右边」**。模块按子节点矩形并集量内容中心，两种模板都对得上。
+    - 补偿量 = 内容中心偏移 `c`：`pivot += c / size`、`anchoredPosition += c`（改 pivot 会让 rect
+      平移 `-c`，正好抵消）。用 `rect.width/height` 而不是 `sizeDelta`（拉伸态 `sizeDelta` 不是真实尺寸）。
+    - 量不到（纯图片 item）或者量出来离得比 item 还远（把特效/被拖出去的装饰算进来了）⇒ 退回 rect 中心；
+      结果按 item 缓存（弱表），不会每次播放都扫一遍。
     - 父级是 `LayoutGroup` 也不会错位：Unity 的 `SetChildAlongAxis` 把 pivot 算进位置，
       重心挪过之后重建出来覆盖同一片区域。
     - 想保留模板原点（比如设计上就要「从底部长出来」）就传 `centerPivot = false`。
@@ -292,7 +298,7 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_t
 
 | 用例 | 覆盖 |
 |---|---|
-| `test_itempopin.lua` | 公共模块 14 组：逐格时序 / 回落段 / 跳过隐藏 / 压缩错开 / Stop 复位 / 重播不叠加 / `itemGoScale≠1` 基准 / 异常兜底 / 自定义配方 / **数组源** / **duang 模式 + `Play(n)`** / **整批 `delay`** / **phases 关键帧链** / **偏心 pivot 居中 + 位置补偿** / **播完即还原（相对撤补偿、换格不拽回）** |
+| `test_itempopin.lua` | 公共模块 15 组：逐格时序 / 回落段 / 跳过隐藏 / 压缩错开 / Stop 复位 / 重播不叠加 / `itemGoScale≠1` 基准 / 异常兜底 / 自定义配方 / **数组源** / **duang 模式 + `Play(n)`** / **整批 `delay`** / **phases 关键帧链** / **偏心 pivot 居中 + 位置补偿** / **播完即还原（相对撤补偿、换格不拽回）** / **内容中心按子节点并集量（≈pivot 不动 / 偏了才挪 / 离谱退回 rect 中心）** |
 | `test_valuepack_openanim.lua` | 礼包墙：OnShow 顺序、跳过隐藏卡、购买刷新不重播、生命周期、`Play` 只有 1 处调用 |
 | `test_growthmanual_openanim.lua` | 两个列表页：OnShow 播、`isAni=false` 不播、切页重播、OnClose/OnDestroy 回收、面板 `SwitchView` 仍走 `view:OnShow` |
 
@@ -390,6 +396,11 @@ end
   被 Kill 自动断链、末段吸附基准、`phases` 缺失退回 `surge`）；接口改名
   `PlayDuang/PlayCardDuang/StopDuang → PlayCardsIn/PlayCardIn/StopCardsIn`；
   `test_thousanddraw_duang` → `test_thousanddraw_cardin`，`test_itempopin` 扩到 13 组。
+- **2026-10-21**（内容中心≠rect 中心）：页签 25 改成「锚点跑到右边」——`CenterPivotOf` 拿 `rect` 中心
+  当内容中心，而 `ItemPre` 的 rect 871×265 只是挂点容器（卡片画在 pivot 周围，并集中心 ≈ `(-13,-5)`），
+  于是整排被推右 435。改为 `ArtCenterOf` 按**子节点矩形并集**量内容中心（按 item 缓存；量不到或量得
+  离谱时退回 rect 中心），`pivot += c/size`、`anchoredPosition += c`。`test_itempopin` 加 case15a/15b/15c，
+  扩到 15 组。
 - **2026-10-21**（pivot 还原时机）：ExpertPanel 页签 25（限定珍藏）位置会跑偏。`CenterPivotOf` 原来
   一直留到 `Stop` 才还原，而 `ScrollCycleView.SetData` 按模板 pivot 写绝对值 ⇒ 买礼包 / 切走再切回
   时整排卡片跳半个卡宽；`Stop` 写回老位置还会把滚动换过格的 item 拽回上一格。改为 `Settle`

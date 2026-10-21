@@ -37,8 +37,10 @@
 ---   duangDuration      duang 模式的整体时长，ease 是它的缓动（缺省 OutElastic）
 ---   delay              整批延后多久起播（同一页里两批要错开时用，比如卡片先、数字后）
 ---   step               相邻 item 的间隔，maxSpan 是整体跨度上限（item 多时自动压缩 step）
----   centerPivot        缺省 true：item 的 pivot 不在中心时临时挪到中心再缩放（否则会「往右下长」，
----                      看着像没对齐）。置 false 表示保持模板原来的 pivot 当缩放原点。
+---   centerPivot        缺省 true：pivot 不在「画面内容中心」时临时挪过去再缩放（否则会「往右下长」，
+---                      看着像没对齐）。内容中心是量出来的（子节点矩形并集），不是 rect 中心 ——
+---                      有些模板 rect 只是挂点、图全画在 pivot 周围，按 rect 中心会把整排推歪。
+---                      置 false 表示保持模板原来的 pivot 当缩放原点。
 ---                      除了 localScale，这是本模块唯一会动的属性：**动画一结束就还原**
 ---                      （不是等 Stop 才还原，见 Settle 上面的注释）。
 local ItemPopIn = {}
@@ -88,11 +90,71 @@ local function SafeTransform(obj)
     return nil
 end
 
--- 「以中心缩放」的前提是 pivot 在中心。手工搭的模板 pivot 常常是 (0,1)（作者按左上角摆位），
--- 直接 DOScale 就是以左上角为原点放大 ⇒ 看起来往右下「长」，和别的格子对不齐（终身限购 page_9 踩过）。
--- 这里把 pivot 临时挪到中心，并把 anchoredPosition 反向补偿 ½ 尺寸，视觉位置完全不动；Stop 时连 pivot 一起还原。
--- 父级是 LayoutGroup 也不会错位：Unity 的 SetChildAlongAxis 会把 pivot 算进位置，
--- 重心挪过之后重建出来的 rect 覆盖同一片区域。
+-- 「以中心缩放」的前提是 pivot 落在**画面内容**的中心。手工搭的模板 pivot 常常是 (0,1)
+-- （作者按左上角摆位），直接 DOScale 就是以左上角为原点放大 ⇒ 往右下「长」（终身限购 page_9 踩过）。
+--
+-- 🔴 但「内容中心」不等于「rect 中心」：模板有两种，必须量出来才能判断。
+--   ① 内容铺满 rect（rewardPre 系列、礼包墙）：内容中心 = rect 中心；
+--   ② rect 只是个「挂点容器」、图全画在 pivot 周围（ExpertPanel 页签 25 的 ItemPre，
+--      rect 871×265，内容并集 [-449,423]×[-127,117]，中心 ≈ (-13,-5) ≈ pivot）。
+--      这种模板按 rect 中心去居中，会把整排卡整体推右 435 ⇒ 看着「锚点跑到右边」（页签 25 踩过）。
+-- 所以按**子节点矩形并集**算内容中心：两种模板都能对上，量不到（纯图片 item）才退回 rect 中心。
+-- 内容中心 ≈ 当前 pivot 时什么都不做（模板本来就对）。
+local artCenterCache = setmetatable({}, { __mode = "k" })
+
+-- 子节点矩形并集的中心（坐标系就是子节点的 localPosition：原点 = 父节点 pivot）。
+-- 纯 Transform / 已经销毁的节点 pcall 跳过；一个都量不到返回 nil。
+local function ArtCenterOf(tf, w, h)
+    local cached = artCenterCache[tf]
+    if cached ~= nil then
+        return cached or nil
+    end
+    local ok, center = pcall(function()
+        local count = tf.childCount or 0
+        if count <= 0 then
+            return nil
+        end
+        local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
+        local found = false
+        for i = 0, count - 1 do
+            local ct = tf:GetChild(i)
+            if Alive(ct) and ct.gameObject.activeSelf then
+                -- 子节点自己的 rect 是「未缩放」的，得乘上 localScale 才是它实际占的地方
+                local okc, x0, x1, y0, y1 = pcall(function()
+                    local r = ct.rect
+                    local p = ct.localPosition
+                    local s = ct.localScale
+                    local pv = ct.pivot
+                    local hw = r.width * s.x
+                    local hh = r.height * s.y
+                    return p.x - pv.x * hw, p.x + (1 - pv.x) * hw,
+                        p.y - pv.y * hh, p.y + (1 - pv.y) * hh
+                end)
+                if okc then
+                    found = true
+                    if x0 < minX then minX = x0 end
+                    if x1 > maxX then maxX = x1 end
+                    if y0 < minY then minY = y0 end
+                    if y1 > maxY then maxY = y1 end
+                end
+            end
+        end
+        if not found then
+            return nil
+        end
+        return { x = (minX + maxX) * 0.5, y = (minY + maxY) * 0.5 }
+    end)
+    if not ok then
+        center = nil
+    end
+    -- 量出来离得比 item 本身还远 ⇒ 多半把特效/被拖出去的装饰节点算进来了，不可信
+    if center and (math.abs(center.x) > w or math.abs(center.y) > h) then
+        center = nil
+    end
+    artCenterCache[tf] = center or false
+    return center
+end
+
 local function CenterPivotOf(tf)
     -- plain Transform（非 UI 节点）没有 pivot / rect / anchoredPosition，探不存在字段会抛错 ⇒ 整段 pcall
     local okPivot, pivot = pcall(function()
@@ -116,19 +178,33 @@ local function CenterPivotOf(tf)
     end)
     local w = (okRect and rect) and rect.width or 0
     local h = (okRect and rect) and rect.height or 0
+    if w <= 0 or h <= 0 then
+        return nil -- 没有尺寸就谈不上「居中」，别去改 pivot（改了也算不出补偿量）
+    end
+    -- 「内容中心」相对 pivot 原点的偏移；量不到就退回 rect 中心
+    local center = ArtCenterOf(tf, w, h)
+    local cx, cy
+    if center then
+        cx, cy = center.x, center.y
+    else
+        cx, cy = (kCenter - pivot.x) * w, (kCenter - pivot.y) * h
+    end
+    if math.abs(cx) < 0.5 and math.abs(cy) < 0.5 then
+        return nil -- 内容中心本来就在 pivot 上，模板是对的，别动
+    end
+    -- 目标：pivot 落到内容中心，同时内容视觉位置不动。
+    -- 改 pivot 会让 rect 平移 (pivot-old - pivot-new)·size = -c，故位置补偿 +c 正好抵消。
+    local newPivot = Vector2.New(pivot.x + cx / w, pivot.y + cy / h)
     local okSet = pcall(function()
-        tf.pivot = Vector2.New(kCenter, kCenter)
-        -- 以中心为原点后，pivot 点要往「原来的中心」挪 ½ 尺寸，rect 才停在原处
-        tf.anchoredPosition = Vector2.New(pos.x + (kCenter - pivot.x) * w, pos.y + (kCenter - pivot.y) * h)
+        tf.pivot = newPivot
+        tf.anchoredPosition = Vector2.New(pos.x + cx, pos.y + cy)
     end)
     if not okSet then
         return nil
     end
-    local dx = (kCenter - pivot.x) * w
-    local dy = (kCenter - pivot.y) * h
     -- 还原用「相对减」而不是写回记录下来的老位置：
     -- 🔴 动画期间列表可能被滚动/回收，item 已经换到别的格子（anchoredPosition 由 ScrollCycleView
-    --    加过偏移）。写回老位置会把它拽回上一个格子；相对减只撤掉我们自己加的那 ½ 尺寸。
+    --    加过偏移）。写回老位置会把它拽回上一个格子；相对减只撤掉我们自己加的那一份补偿。
     return function()
         if not Alive(tf) then
             return
@@ -136,7 +212,7 @@ local function CenterPivotOf(tf)
         pcall(function()
             local cur = tf.anchoredPosition
             tf.pivot = pivot
-            tf.anchoredPosition = Vector2.New(cur.x - dx, cur.y - dy)
+            tf.anchoredPosition = Vector2.New(cur.x - cx, cur.y - cy)
         end)
     end
 end

@@ -13,6 +13,8 @@
 --   ⑫ 整批延迟        cfg.delay 让第二批复用同一配方、错开起播（卡片先、数字后）
 --   ⑬ phases 模式     按关键帧逐段播（浮起—按回—落定），段数/峰值/时长/缓动全由调用方给
 --   ⑭ 偏心 pivot      pivot≠(0.5,0.5) 的 item 临时居中再缩放（位置补偿 ½ 尺寸），Stop 还原
+--   ⑮ 内容中心≠rect   item 的「画面内容」由子节点矩形并集量出来，不是拿 rect 中心硬套
+--                     （页签 25 的 ItemPre：rect 只是挂点、图全画在 pivot 周围 ⇒ 按 rect 居中会推右 435）
 --
 -- 用法（与其他 lua-tests 一致）：
 --   cd LuaEncoder/luajit_mac/64
@@ -439,6 +441,59 @@ p:Play()
 Check(#errors == 0 and #tweens == 1, "非 UI 节点（无 pivot）跳过居中处理，照常缩放")
 p:Stop()
 print("  偏心 pivot 临时居中 + 位置补偿，Stop 全部还原")
+
+-- ---------------- case 15: 内容中心 ≠ rect 中心 ----------------
+-- 「以中心缩放」的中心必须按**画面内容**算：页签 25（限定珍藏）的 ItemPre rect 871×265 只是个
+-- 挂点容器，卡片整片画在 pivot 周围 ⇒ 按 rect 中心把它挪 ½ 宽（+435）就成了「锚点跑到右边」。
+print("== case15 内容中心≠rect 中心 ==")
+local function newChild(x, y, w, h)
+    return { rect = { width = w, height = h }, localPosition = v3(x, y, 0),
+             localScale = v3(1, 1, 1), pivot = { x = 0.5, y = 0.5 },
+             gameObject = { activeSelf = true } }
+end
+local function newArtItem(name, children)
+    local o = newItem(name)
+    o.pivot = { x = 0, y = 1 }
+    o.rect = { width = 871, height = 265 }
+    o.anchoredPosition = { x = 0, y = -135 }
+    o.children = children
+    o.childCount = #children
+    function o:GetChild(i) return self.children[i + 1] end
+    return o
+end
+
+-- 15a：内容并集中心就在 pivot 上（ItemPre 的形态）⇒ 模板本来就是对的，一个像素都不该动
+tweens = {}
+local artAtPivot = newArtItem("ItemPre", { newChild(0, 0, 872, 245) })
+p = ItemPopIn.New(function() return { artAtPivot } end)
+p:Play()
+Check(Near(artAtPivot.pivot.x, 0) and Near(artAtPivot.pivot.y, 1), "内容中心≈pivot 时不改 pivot")
+Check(Near(artAtPivot.anchoredPosition.x, 0) and Near(artAtPivot.anchoredPosition.y, -135),
+    ("位置也不动，实际 (%s, %s)"):format(artAtPivot.anchoredPosition.x, artAtPivot.anchoredPosition.y))
+Check(Near(artAtPivot.localScale.x, 0.82), "照常缩放")
+p:Stop()
+
+-- 15b：内容中心偏在 rect 内某处 ⇒ pivot 挪到内容中心，位置补偿 = 内容中心偏移（视觉不动）
+tweens = {}
+local artOffset = newArtItem("rewardPre", { newChild(200, -50, 400, 100) })
+p = ItemPopIn.New(function() return { artOffset } end)
+p:Play()
+Check(Near(artOffset.pivot.x, 200 / 871) and Near(artOffset.pivot.y, 1 - 50 / 265),
+    ("pivot 落在内容中心，实际 (%s, %s)"):format(artOffset.pivot.x, artOffset.pivot.y))
+Check(Near(artOffset.anchoredPosition.x, 0 + 200) and Near(artOffset.anchoredPosition.y, -135 - 50),
+    ("位置补偿内容中心偏移，实际 (%s, %s)"):format(artOffset.anchoredPosition.x, artOffset.anchoredPosition.y))
+p:Stop()
+Check(Near(artOffset.pivot.x, 0) and Near(artOffset.pivot.y, 1), "Stop 还原 pivot")
+Check(Near(artOffset.anchoredPosition.x, 0) and Near(artOffset.anchoredPosition.y, -135), "Stop 还原位置")
+
+-- 15c：量到的东西离得离谱（特效/被拖出去的装饰）⇒ 不信，退回 rect 中心
+tweens = {}
+local artBad = newArtItem("weird", { newChild(5000, 0, 100, 100) })
+p = ItemPopIn.New(function() return { artBad } end)
+p:Play()
+Check(Near(artBad.pivot.x, 0.5) and Near(artBad.pivot.y, 0.5), "内容中心不可信时退回 rect 中心")
+p:Stop()
+print("  内容中心按子节点并集量；≈pivot 不动、偏了才挪、离谱就退回 rect 中心")
 
 -- 取数据源抛错也不炸
 tweens = {}

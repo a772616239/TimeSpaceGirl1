@@ -12,6 +12,7 @@
 --   ⑪ duang 模式      单段 from→基准 + OutElastic，只建 1 条 tween；Play(n) 只弹第 n 格
 --   ⑫ 整批延迟        cfg.delay 让第二批复用同一配方、错开起播（卡片先、数字后）
 --   ⑬ phases 模式     按关键帧逐段播（浮起—按回—落定），段数/峰值/时长/缓动全由调用方给
+--   ⑭ 偏心 pivot      pivot≠(0.5,0.5) 的 item 临时居中再缩放（位置补偿 ½ 尺寸），Stop 还原
 --
 -- 用法（与其他 lua-tests 一致）：
 --   cd LuaEncoder/luajit_mac/64
@@ -47,6 +48,7 @@ local function v3(x, y, z)
     return setmetatable({ x = x, y = y, z = z }, v3mt)
 end
 Vector3 = { one = v3(1, 1, 1), zero = v3(0, 0, 0), New = v3 }
+Vector2 = { New = function(x, y) return { x = x, y = y } end }
 Ease = { Linear = "Linear", InOutQuad = "InOutQuad", OutQuad = "OutQuad",
          OutCubic = "OutCubic", OutElastic = "OutElastic" }
 IsNull = function() return false end
@@ -72,7 +74,11 @@ end
 
 local function newItem(name, active, baseScale)
     local o = { name = name, activeSelf = active ~= false,
-                localScale = v3(baseScale or 1, baseScale or 1, baseScale or 1) }
+                localScale = v3(baseScale or 1, baseScale or 1, baseScale or 1),
+                -- RectTransform 四件套：pivot / rect / anchoredPosition 供「居中缩放」用
+                pivot = { x = 0.5, y = 0.5 },
+                anchoredPosition = { x = 0, y = 0 },
+                rect = { width = 100, height = 50 } }
     o.transform = o
     function o:DOScale(v, dur) return newTween(self, v, dur) end
     return o
@@ -339,6 +345,50 @@ p:Play()
 Check(#tweens == 2 and Near(tweens[1].endv.x, 1.02), "phases 空 → 退回 surge 配方")
 p:Stop()
 print("  三段关键帧逐段建、末段吸附；phases 缺失时退回 surge")
+
+-- ---------------- case 14: 偏心 pivot 也要居中缩放 ----------------
+print("== case14 偏心 pivot（居中缩放） ==")
+tweens = {}
+-- 终身限购 page_9 的 rewardPre：pivot (0,1)、871×265、摆位 (5,-10)
+local offc = newItem("rewardPre")
+offc.pivot = { x = 0, y = 1 }
+offc.rect = { width = 871, height = 265 }
+offc.anchoredPosition = { x = 5, y = -10 }
+p = ItemPopIn.New(function() return { offc } end)
+p:Play()
+Check(Near(offc.pivot.x, 0.5) and Near(offc.pivot.y, 0.5), "播放时 pivot 临时挪到中心")
+Check(Near(offc.anchoredPosition.x, 5 + 0.5 * 871) and Near(offc.anchoredPosition.y, -10 - 0.5 * 265),
+    ("位置反向补偿 ½ 尺寸，实际 (%s, %s)"):format(offc.anchoredPosition.x, offc.anchoredPosition.y))
+p:Stop()
+Check(Near(offc.pivot.x, 0) and Near(offc.pivot.y, 1), "Stop 后 pivot 还原成 (0,1)")
+Check(Near(offc.anchoredPosition.x, 5) and Near(offc.anchoredPosition.y, -10), "Stop 后位置还原（不累计偏移）")
+Check(Near(offc.localScale.x, 1), "Stop 后缩放还原")
+-- 中心 pivot 不该被动过
+tweens = {}
+local centered = newItem("centered")
+p = ItemPopIn.New(function() return { centered } end)
+p:Play()
+Check(Near(centered.anchoredPosition.x, 0) and Near(centered.anchoredPosition.y, 0), "本来居中的 item 不动位置")
+p:Stop()
+-- cfg.centerPivot = false 时保持模板原点
+tweens = {}
+p = ItemPopIn.New(function() return { offc } end, { centerPivot = false })
+p:Play()
+Check(Near(offc.pivot.x, 0) and Near(offc.pivot.y, 1), "centerPivot=false 时不改 pivot")
+Check(Near(offc.anchoredPosition.x, 5), "centerPivot=false 时不动位置")
+p:Stop()
+-- plain Transform（没有 pivot 字段）不能炸
+tweens = {}
+errors = {}
+local plain = { name = "plain", activeSelf = true, localScale = v3(1, 1, 1) }
+plain.transform = plain
+plain.gameObject = plain
+function plain:DOScale(v, dur) return newTween(self, v, dur) end
+p = ItemPopIn.New(function() return { plain } end)
+p:Play()
+Check(#errors == 0 and #tweens == 1, "非 UI 节点（无 pivot）跳过居中处理，照常缩放")
+p:Stop()
+print("  偏心 pivot 临时居中 + 位置补偿，Stop 全部还原")
 
 -- 取数据源抛错也不炸
 tweens = {}

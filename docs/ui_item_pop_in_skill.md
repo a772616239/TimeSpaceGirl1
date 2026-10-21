@@ -215,7 +215,7 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 
 ---
 
-## 5. 十二个坑（都在这套代码里踩过或躲过）
+## 5. 十三个坑（都在这套代码里踩过或躲过）
 
 1. **Animator 抢缩放**：目标节点若挂 CommonButton 的 Animator（Normal 态是 1.1→1 的 pop），
    Animator 在 Update 之后求值，会把 DOTween 的缩放每帧盖回去——现象是「代码跑完了但没动」。
@@ -252,6 +252,16 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 12. **异步建列表 ⇒ 必须重试**：`Expert_UpLv` / `BoxPool` 的 `OnShow` 在数据回调里才造 item，
     切页签那一刻 `_Collect` 必然 0 个。不要改成「在页面里回调时自己播」（会散成一堆样板），
     交给 `PlayPage` 的重试；重试必须带「轮次号」作废机制，否则关面板后还会在隐藏页上补弹。
+13. **pivot 不在中心 ⇒ 缩放方向不对**：`DOScale` 是绕 `pivot` 缩放的。手工搭的模板 pivot 常是
+    `(0,1)`（美术按左上角摆位），放大时就往**右下长**，看着像「左对齐 / 没居中」——
+    OperatingPanel page_9（终身限购 `rewardPre`，pivot (0,1)、871×265）和 ExpertPanel 的
+    `rewardPre1..10` 都是这样。模块已内置 `CenterPivotOf`：播放时把 pivot 临时挪到 `(0.5,0.5)`
+    并给 `anchoredPosition` 反向补偿 ½ 尺寸（视觉位置不动），`Stop` 时连 pivot 一起还原。
+    - 补偿量 = `(0.5 - pivot) * rect.size`，用 `rect.width/height` 而不是 `sizeDelta`
+      （拉伸态 rect 的 `sizeDelta` 不是真实尺寸）。
+    - 父级是 `LayoutGroup` 也不会错位：Unity 的 `SetChildAlongAxis` 把 pivot 算进位置，
+      重心挪过之后重建出来覆盖同一片区域。
+    - 想保留模板原点（比如设计上就要「从底部长出来」）就传 `centerPivot = false`。
 
 
 ---
@@ -272,7 +282,7 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_t
 
 | 用例 | 覆盖 |
 |---|---|
-| `test_itempopin.lua` | 公共模块 13 组：逐格时序 / 回落段 / 跳过隐藏 / 压缩错开 / Stop 复位 / 重播不叠加 / `itemGoScale≠1` 基准 / 异常兜底 / 自定义配方 / **数组源** / **duang 模式 + `Play(n)`** / **整批 `delay`** / **phases 关键帧链** |
+| `test_itempopin.lua` | 公共模块 14 组：逐格时序 / 回落段 / 跳过隐藏 / 压缩错开 / Stop 复位 / 重播不叠加 / `itemGoScale≠1` 基准 / 异常兜底 / 自定义配方 / **数组源** / **duang 模式 + `Play(n)`** / **整批 `delay`** / **phases 关键帧链** / **偏心 pivot 居中 + 位置补偿** |
 | `test_valuepack_openanim.lua` | 礼包墙：OnShow 顺序、跳过隐藏卡、购买刷新不重播、生命周期、`Play` 只有 1 处调用 |
 | `test_growthmanual_openanim.lua` | 两个列表页：OnShow 播、`isAni=false` 不播、切页重播、OnClose/OnDestroy 回收、面板 `SwitchView` 仍走 `view:OnShow` |
 
@@ -370,3 +380,7 @@ end
   被 Kill 自动断链、末段吸附基准、`phases` 缺失退回 `surge`）；接口改名
   `PlayDuang/PlayCardDuang/StopDuang → PlayCardsIn/PlayCardIn/StopCardsIn`；
   `test_thousanddraw_duang` → `test_thousanddraw_cardin`，`test_itempopin` 扩到 13 组。
+- **2026-10-21**（偏心 pivot）：OperatingPanel 页签 10（终身限购 page_9）的格子往右下长、像没居中——
+  `rewardPre` 的 pivot 是 `(0,1)`，`DOScale` 绕 pivot 缩放。模块加 `CenterPivotOf`（临时居中 +
+  `anchoredPosition` 补偿 ½ 尺寸、`Stop` 还原，`centerPivot = false` 可关），顺带修掉
+  ExpertPanel `rewardPre1..10` 同样的偏心；`test_itempopin` 加 case14，扩到 14 组。

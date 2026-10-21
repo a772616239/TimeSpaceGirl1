@@ -37,6 +37,9 @@
 ---   duangDuration      duang 模式的整体时长，ease 是它的缓动（缺省 OutElastic）
 ---   delay              整批延后多久起播（同一页里两批要错开时用，比如卡片先、数字后）
 ---   step               相邻 item 的间隔，maxSpan 是整体跨度上限（item 多时自动压缩 step）
+---   centerPivot        缺省 true：item 的 pivot 不在中心时临时挪到中心再缩放（否则会「往右下长」，
+---                      看着像没对齐）。置 false 表示保持模板原来的 pivot 当缩放原点。
+---                      除了 localScale，这是本模块唯一会动的属性，且 Stop 时一定还原。
 local ItemPopIn = {}
 local this = ItemPopIn
 
@@ -49,6 +52,7 @@ local defaultCfg = {
     duangDuration = 0.5,
     ease = "OutElastic",
     phases = nil,
+    centerPivot = true,
     delay = 0,
     step = 0.055,
     maxSpan = 0.55,
@@ -81,6 +85,53 @@ local function SafeTransform(obj)
         return tf
     end
     return nil
+end
+
+-- 「以中心缩放」的前提是 pivot 在中心。手工搭的模板 pivot 常常是 (0,1)（作者按左上角摆位），
+-- 直接 DOScale 就是以左上角为原点放大 ⇒ 看起来往右下「长」，和别的格子对不齐（终身限购 page_9 踩过）。
+-- 这里把 pivot 临时挪到中心，并把 anchoredPosition 反向补偿 ½ 尺寸，视觉位置完全不动；Stop 时连 pivot 一起还原。
+-- 父级是 LayoutGroup 也不会错位：Unity 的 SetChildAlongAxis 会把 pivot 算进位置，
+-- 重心挪过之后重建出来的 rect 覆盖同一片区域。
+local function CenterPivotOf(tf)
+    -- plain Transform（非 UI 节点）没有 pivot / rect / anchoredPosition，探不存在字段会抛错 ⇒ 整段 pcall
+    local okPivot, pivot = pcall(function()
+        return tf.pivot
+    end)
+    if not okPivot or pivot == nil then
+        return nil
+    end
+    local kCenter = 0.5
+    if math.abs(pivot.x - kCenter) < 1e-4 and math.abs(pivot.y - kCenter) < 1e-4 then
+        return nil -- 本来就在中心，什么都不做
+    end
+    local okPos, pos = pcall(function()
+        return tf.anchoredPosition
+    end)
+    if not okPos or pos == nil then
+        return nil
+    end
+    local okRect, rect = pcall(function()
+        return tf.rect
+    end)
+    local w = (okRect and rect) and rect.width or 0
+    local h = (okRect and rect) and rect.height or 0
+    local okSet = pcall(function()
+        tf.pivot = Vector2.New(kCenter, kCenter)
+        -- 以中心为原点后，pivot 点要往「原来的中心」挪 ½ 尺寸，rect 才停在原处
+        tf.anchoredPosition = Vector2.New(pos.x + (kCenter - pivot.x) * w, pos.y + (kCenter - pivot.y) * h)
+    end)
+    if not okSet then
+        return nil
+    end
+    return function()
+        if not Alive(tf) then
+            return
+        end
+        pcall(function()
+            tf.pivot = pivot
+            tf.anchoredPosition = pos
+        end)
+    end
 end
 
 -- tolua 的枚举表是运行期注册的，取不到就不设：否则整段被 pcall 吃掉、什么都不动
@@ -122,6 +173,10 @@ function this:Stop()
         local item = self.items[i]
         if Alive(item.tf) then
             item.tf.localScale = item.base
+        end
+        -- 偏心 pivot 挪过就要挪回去，否则下次进面板位置会累计偏移
+        if item.restorePivot then
+            item.restorePivot()
         end
         self.items[i] = nil
     end
@@ -261,7 +316,12 @@ function this:Play(only)
         for i = 1, count do
             local tf = targets[i]
             local base = tf.localScale
-            self.items[#self.items + 1] = { tf = tf, base = base }
+            -- pivot 不在中心的 item 临时挪到中心，保证「居中放大缩小」（Stop 会还原）
+            local restorePivot = nil
+            if cfg.centerPivot ~= false then
+                restorePivot = CenterPivotOf(tf)
+            end
+            self.items[#self.items + 1] = { tf = tf, base = base, restorePivot = restorePivot }
             tf.localScale = base * cfg.from
 
             if duang then

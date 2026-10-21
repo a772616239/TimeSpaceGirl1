@@ -1,7 +1,9 @@
 {
   "_readme": [
-    "战令横幅中文美术字 → 英文译名表。key 是 ArtFont_zh/OperatingPanelAtlas 下的文件名。",
-    "title = 小标题（对应原图大标题那四个字）；lines = 下方大标题，按数组逐行排（最多 4 行）。",
+    "中文美术字 → 英文译名表，两族共用一份。",
+    "artfont 族：key 是 ArtFont_zh/OperatingPanelAtlas 下的文件名（*_bg_zh.png），title = 小标题、lines = 下方大标题按数组逐行排（最多 4 行）。",
+    "atlas 族：key 是 Atlas/<面板>/ 下的文件名（没有 _zh 后缀，如 cn2-X1_kuafu_rukou.png），图上本来就只有一块大标语 ⇒ 只写 lines，不写 title。",
+    "atlas 族没有「扫全目录」的余地（图集里绝大多数图没有中文），所以本表就是白名单：有 lines 的才做。",
     "译名口径以 Assets/ManagedResources/~Lua/Config/Data/Language.lua 为准；",
     "已上线英文图（pata_bg_en / shenyuan_bg_en）的用词与之不完全一致时，以已上线图为准，别自己另造。",
     "第三行「累计返利 __ 倍」在 pata_bg_en / shenyuan_bg_en 里都是被删掉的（留给 UI 动态数字），这里同样不排。"
@@ -35,5 +37,9 @@
     "title": "Heresy Project",
     "lines": ["UNLOCK", "ADVANCED", "BATTLE PASS"],
     "note": "异端计划（第二版底板）"
+  },
+  "cn2-X1_kuafu_rukou.png": {
+    "lines": ["REIGN OF", "CHAOS"],
+    "note": "跨服入口「混乱之治」（Atlas/LaddersTypePanelAtlas，1080x488，标题烘在右侧纯色板上）"
   }
 }

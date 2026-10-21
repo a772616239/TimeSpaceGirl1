@@ -52,6 +52,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 ROOT = Path(__file__).resolve().parents[2]
 ZH_DIR = ROOT / "Assets/ManagedResources/ArtFont_zh/OperatingPanelAtlas"
 EN_DIR = ROOT / "Assets/ManagedResources/ArtFont_en/OperatingPanelAtlas"
+ATLAS_ROOT = ROOT / "Assets/ManagedResources/Atlas"
+EN_ROOT = ROOT / "Assets/ManagedResources/ArtFont_en"
 MAP_FILE = ROOT / "scripts/image/banner_translate_map.json"
 WORK_ROOT = ROOT / "_output/art_translate"
 BACKUP_ROOT = ROOT / "ResBackpack/备份"
@@ -77,6 +79,23 @@ ZONE_RIGHT = 342
 # 别把 *_peitu_zh.png 之类的无字配图卷进来，它们没有文字要翻。
 BANNER_GLOB = "*_bg_zh.png"
 
+# --------------------------------------------------------------------------- #
+# 家族（family）
+# --------------------------------------------------------------------------- #
+# artfont：战令横幅，ArtFont_zh/OperatingPanelAtlas/*_bg_zh.png → ArtFont_en/…/*_en.png
+#          版面靠上面那组写死的锚点（三段文字、左对齐、右侧不许碰）。
+# atlas  ：图集里的入口/横幅大图（Atlas/<面板>/*.png），中文标题烘在一块纯色板上。
+#          版面不写死：白字核定文字块，纯色板定填充色，逐列拟合板体上沿，
+#          板内填纯色、板外条带从上方取样 —— 这套规则对同族的图都成立。
+FAMILY_ARTFONT = "artfont"
+FAMILY_ATLAS = "atlas"
+
+ATLAS_PLATE_TOL = 30       # 板体底色容差（实测 std≈1.5，留余量给 PNG 抖动）
+ATLAS_CORE_MIN = 190       # 白字核：三通道都不低于它才算字（青/品红描边不算）
+ATLAS_CORE_AREA = 200      # 白字零件最小面积，滤掉背景高光
+ATLAS_LINE_CLEAN = 175     # 拟合板体上沿时，上沿落在这之下的列视为「被字切断」
+ATLAS_STRIP_SAMPLE = 30    # 板外条带从上方多少像素处取样
+
 
 # --------------------------------------------------------------------------- #
 # 基础工具
@@ -96,9 +115,34 @@ def load_font(size: int) -> ImageFont.FreeTypeFont:
     raise SystemExit("找不到可用粗体字体，请把 Arial Bold.ttf 放到系统字体目录")
 
 
-def en_path_for(zh_path: Path) -> Path:
-    """cn2-X1_zhanling_miwu_bg_zh.png → ArtFont_en/OperatingPanelAtlas/cn2-X1_zhanling_miwu_bg_en.png"""
-    name = zh_path.name
+def family_of(zh: Path) -> str:
+    """Atlas/<面板>/<名>.png 走 atlas 家族，其余按战令横幅处理。"""
+    try:
+        Path(zh).resolve().relative_to(ATLAS_ROOT)
+        return FAMILY_ATLAS
+    except ValueError:
+        return FAMILY_ARTFONT
+
+
+def _pick_family(zh: Path, family: str | None) -> str:
+    if family and family != "auto":
+        return family
+    return family_of(zh)
+
+
+def en_path_for(zh: Path, family: str | None = None) -> Path:
+    """中文源图 → 英文版目标路径。
+
+    artfont：…/ArtFont_zh/OperatingPanelAtlas/cn2-X1_zhanling_miwu_bg_zh.png
+          → …/ArtFont_en/OperatingPanelAtlas/cn2-X1_zhanling_miwu_bg_en.png
+    atlas  ：…/Atlas/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou.png
+          → …/ArtFont_en/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou_en.png
+    """
+    fam = _pick_family(zh, family)
+    if fam == FAMILY_ATLAS:
+        rel = Path(zh).resolve().relative_to(ATLAS_ROOT)   # LaddersTypePanelAtlas/x.png
+        return EN_ROOT / rel.parent / (Path(zh).stem + "_en.png")
+    name = Path(zh).name
     if not name.endswith("_zh.png"):
         raise SystemExit(f"不是 _zh.png 命名：{name}")
     return EN_DIR / (name[: -len("_zh.png")] + "_en.png")
@@ -285,16 +329,270 @@ def draw_text(img: Image.Image, title: str, lines: list[str],
 
 
 # --------------------------------------------------------------------------- #
+# atlas 家族：白核定位 → 板内填纯色 / 板外条带取样 → 板内居中排字
+# --------------------------------------------------------------------------- #
+def atlas_white_core(a: np.ndarray) -> np.ndarray:
+    """白字核。青/品红描边（R 低或 G 低）不算 —— 只认「三通道都接近纯白」的字芯。"""
+    mn = a.min(axis=2)
+    core = (mn >= ATLAS_CORE_MIN).astype(np.uint8)
+    h, w = core.shape
+    box = np.zeros_like(core)
+    box[: int(h * 0.25)] = 0
+    box[int(h * 0.25): int(h * 0.85), int(w * 0.5):] = 1   # 文字在右半区中段
+    core *= box
+    n, lab, st, _ = cv2.connectedComponentsWithStats(core, 8)
+    keep = np.zeros_like(core)
+    for i in range(1, n):
+        if st[i][4] >= ATLAS_CORE_AREA:                     # 背景高光也是白的，按面积筛
+            keep[lab == i] = 1
+    if not keep.any():
+        raise SystemExit("没检测到白色字核，无法确定文字块")
+    return keep > 0
+
+
+def atlas_plate(a: np.ndarray, cx0: int, cx1: int):
+    """返回 (板体掩膜, 逐列上沿, 逐列下沿, 板底色, 左右界)。
+
+    板体是一块纯色黑（实测 std≈1.5），所以「底色」直接取中位色即可。
+    上/下沿都用**未被文字切断的列**拟合直线 —— 被字盖住的列若逐列取极值，会掉到
+    字的下方，擦完就会在板体边上留一个缺口。
+    """
+    mx = a.max(axis=2)
+    h, w = mx.shape
+    zone_rows = np.zeros_like(mx, bool)
+    zone_rows[int(h * 0.15): int(h * 0.80)] = True
+    plate = (mx <= ATLAS_PLATE_TOL) & zone_rows
+
+    xs, tops, bots = [], [], []
+    for x in range(w):
+        col = np.nonzero(plate[:, x])[0]
+        if len(col) >= 25:                 # 一根柱子至少 25px 高，滤掉暗角噪点
+            xs.append(x)
+            tops.append(col.min())
+            bots.append(col.max())
+    if len(xs) < 60:
+        raise SystemExit("没检测到纯色底板，这张可能不属于 atlas 家族")
+    xs, tops, bots = np.array(xs), np.array(tops), np.array(bots)
+
+    # 板体是「又高又宽」的一块：右侧暗角也能凑出 25px 的暗柱，按高度把它筛掉
+    heights = bots - tops
+    keep_h = heights >= max(25, 0.4 * float(np.median(heights)))
+    xs, tops, bots = xs[keep_h], tops[keep_h], bots[keep_h]
+
+    # 只保留「覆盖文字块的那一整段」板体：断口超过 10 列的另起一块，别把远处暗角算进来
+    center = (cx0 + cx1) // 2
+    cuts = np.nonzero(np.diff(xs) > 10)[0]
+    seg_starts = np.concatenate([[0], cuts + 1])
+    seg_ends = np.concatenate([cuts, [len(xs) - 1]])
+    keep = None
+    for s, e in zip(seg_starts, seg_ends):
+        if xs[s] - 20 <= center <= xs[e] + 20:
+            keep = (s, e)
+            break
+    if keep is None:
+        raise SystemExit("板体没有覆盖文字块，这张可能不属于 atlas 家族")
+    s, e = keep
+    xs, tops, bots = xs[s:e + 1], tops[s:e + 1], bots[s:e + 1]
+
+    clean = tops < ATLAS_LINE_CLEAN        # 被字切断的列上沿会掉到 200 附近
+    if clean.sum() < 30:
+        raise SystemExit("板体上沿可用列太少，无法拟合")
+    kt, bt = np.polyfit(xs[clean], tops[clean], 1)
+    kb, bb = np.polyfit(xs, bots, 1)
+    grid = np.arange(w)
+    top = np.polyval([kt, bt], grid)
+    bot = np.polyval([kb, bb], grid)
+
+    yy = np.arange(h)[:, None]
+    left, right = int(xs.min()), int(xs.max())
+    band = (yy >= top[None, :]) & (yy <= bot[None, :])
+    band[:, :left] = False
+    band[:, right + 1:] = False
+
+    color = np.median(a[plate & band], axis=0).astype(np.uint8)
+    print(f"板体 x {left}..{right}  y {top[left:right+1].min():.0f}..{bot[left:right+1].max():.0f}  "
+          f"底色 {tuple(int(v) for v in color)}")
+    return band, top, bot, color, left, right
+
+
+def _edge_scan(row: np.ndarray, x0: int, x1: int, span: int = 20, want: str = "right"):
+    """在一行里找「连续 span 个板色像素」的最外侧边界（从窗口外往里扫）。
+
+    从板体中心往外扫是不行的：字身会把连续段截断，量出来的边界就落在字的边缘上，
+    框随之缩水，英文字号会被压到原文的一半。
+    """
+    seg = row[x0:x1]
+    idx = np.nonzero(seg)[0]
+    if not len(idx):
+        return None
+    runs, s = [], idx[0]
+    for i in range(1, len(idx)):
+        if idx[i] != idx[i - 1] + 1:
+            runs.append((s, idx[i - 1]))
+            s = idx[i]
+    runs.append((s, idx[-1]))
+    runs = [(a_, b_) for a_, b_ in runs if b_ - a_ + 1 >= span]
+    if not runs:
+        return None
+    return x0 + (runs[-1][1] if want == "right" else runs[0][0])
+
+
+def _fill_strip_mirror(out: np.ndarray, a: np.ndarray, strip: np.ndarray,
+                       x_lo: int, x_hi: int, ctx: int = 60) -> np.ndarray:
+    """把 strip 掩膜里的像素用「同一行、字块左右两侧的背景」镜像平铺补上。
+
+    只动 strip 内的像素：板沿以外一个像素都不碰，所以不会在板边上留下矩形接缝。
+    """
+    rows = np.nonzero(strip.any(axis=1))[0]
+    if not len(rows):
+        return out
+    l0, l1 = max(0, x_lo - ctx), x_lo
+    r0, r1 = min(a.shape[1], x_hi + 1), min(a.shape[1], x_hi + 1 + ctx)
+    for y in rows:
+        src = np.concatenate([a[y, l0:l1][::-1], a[y, r0:r1]])
+        if not len(src):
+            continue
+        span = x_hi - x_lo + 1
+        times = span // max(1, len(src)) + 2
+        tile = np.concatenate([src if i % 2 == 0 else src[::-1] for i in range(times)])
+        tile = np.concatenate([tile, tile])[:span]
+        m = strip[y, x_lo:x_hi + 1]
+        out[y, x_lo:x_hi + 1][m] = tile[m]
+    return out
+
+
+def rebuild_atlas(a: np.ndarray) -> tuple[np.ndarray, tuple, dict]:
+    core = atlas_white_core(a)
+    ys, xs = np.nonzero(core)
+    cx0, cx1 = max(0, int(xs.min()) - 40), int(xs.max()) + 40
+    band, top, bot, color, left, right = atlas_plate(a, cx0, cx1)
+
+    # 板内用大膨胀：要把字的抗锯齿晕一起吃掉，不然板底会留下一圈灰边。
+    ink = cv2.dilate(core.astype(np.uint8), np.ones((13, 13), np.uint8)) > 0
+    # 板外只留 2px 晕：实测白核越出板沿最多 6px，13×13 的膨胀会把它撑成 13px，
+    # 那条带子越宽、横向镜像平铺的纹理就越假（一片横条纹）。
+    halo = cv2.dilate(core.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    yy = np.arange(a.shape[0])[:, None]
+    above = halo & (yy < top[None, :])
+    below = ink & ~(yy < top[None, :])
+
+    out = a.copy()
+    out[below] = color
+
+    # 板外条带：只补「越过板沿的那几行墨迹」，取样用**同一行、字块左右两侧的背景**镜像平铺。
+    # 三条弯路都试过：整条上移 30px 会把上方的装饰亮线搬到板沿（假边）；
+    # 反射紧邻列会连字一起反射回来（残字）；inpaint 的边界挨着黑板，会往上渗出一条黑边。
+    strip = above.copy()
+    strip[:, : int(xs.min()) - 4] = False
+    strip[:, int(xs.max()) + 5:] = False
+    out = _fill_strip_mirror(out, a, strip, int(xs.min()), int(xs.max()))
+
+    y_top = int(top[left:right + 1].min())
+    y_bot = int(bot[left:right + 1].max())
+    zone = (max(0, y_top - 18), y_bot, left, right)   # (y0, y1, x0, x1)，含条带
+
+    # 排版区必须落在「文字所在高度上的板体内侧」：板体是斜的（上窄下宽），
+    # 拿整块板的左右极值居中排，字就会从上沿的法线方向溢出去。
+    # 测边缘一律从板外往里扫、并要求连续 20px 板色 —— 从中心往外扫会被字身截断。
+    plate_src = a.max(axis=2) <= ATLAS_PLATE_TOL
+    l_rows, r_rows = [], []
+    for y in range(y_top + 10, min(a.shape[0] - 1, y_top + 80)):
+        lft = _edge_scan(plate_src[y], 0, left + 80, span=20, want="left")
+        rgt = _edge_scan(plate_src[y], right - 80, a.shape[1], span=20, want="right")
+        if lft is not None and rgt is not None and rgt > lft:
+            l_rows.append(lft)
+            r_rows.append(rgt)
+    if l_rows:
+        left_s, right_s = int(np.median(l_rows)), int(np.median(r_rows))
+    else:
+        left_s, right_s = left, right
+
+    core_w = int(xs.max() - xs.min()) + 1
+    box_w = min(right_s - left_s - 32, int(core_w * 1.3))
+    cx = (left_s + right_s) // 2
+    text_box = (cx - box_w // 2, y_top + 8, cx + box_w // 2, y_bot - 8)
+    print(f"排版区 x {text_box[0]}..{text_box[2]} y {text_box[1]}..{text_box[3]}  "
+          f"（板内左右界 {left_s}..{right_s}，原文块宽 {core_w}）")
+
+    # 复核用的「板内重建区」：真实板色像素 + 被字覆盖的像素，
+    # 不能直接用 band —— band 是上下沿直线之间的矩形，右侧暗角会被算进来，
+    # 那样「板底平整」这条会被背景的渐变污染成假红。
+    plate_chk = band & (plate_src | ink)
+    info = {"plate": plate_chk, "strip": strip, "ink": ink, "color": color,
+            "top": top, "core": core, "text_box": text_box}
+    return out, zone, info
+
+
+def _atlas_glyph(text: str, font, skew: float) -> Image.Image:
+    """白字芯 + 青色左上偏移 + 品红右下偏移（原图的故障风），偏移量按字高比例走。"""
+    b = font.getbbox(text)
+    w, h = b[2] + 40, b[3] + 40
+    tile = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(tile).text((10 - b[0], 10 - b[1]), text, font=font, fill=(255, 255, 255, 255))
+    if skew:
+        tile = tile.transform(tile.size, Image.AFFINE, (1, skew, -skew * h / 2, 0, 1, 0),
+                              resample=Image.BICUBIC)
+    pad = 26
+    canvas = Image.new("RGBA", (w + pad * 2, h + pad * 2), (0, 0, 0, 0))
+    alpha = tile.getchannel("A")
+    for color, dx, dy in (((255, 80, 225, 235), 5, 6), ((110, 235, 255, 235), -4, -4)):
+        layer = Image.new("RGBA", tile.size, (0, 0, 0, 0))
+        layer.paste(color, (0, 0), alpha)
+        canvas.alpha_composite(layer, (pad + dx, pad + dy))
+    canvas.alpha_composite(tile, (pad, pad))
+    return canvas
+
+
+def draw_atlas_text(img: Image.Image, lines: list[str], zone: tuple, skew: float = 0.12):
+    """在板体里居中排字。返回 (图, 画上去的掩膜)。"""
+    x0, y0, x1, y1 = zone
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    max_w, max_h = x1 - x0, y1 - y0
+    gap, size = 2, 200
+    font = None
+    while size > 12:
+        font = load_font(size)
+        boxes = [font.getbbox(t) for t in lines]
+        ws = [b[2] - b[0] for b in boxes]
+        hs = [b[3] - b[1] for b in boxes]
+        total = sum(hs) + gap * (len(lines) - 1)
+        if max(ws) <= max_w and total <= max_h:
+            break
+        size -= 1
+    boxes = [font.getbbox(t) for t in lines]
+    ws = [b[2] - b[0] for b in boxes]
+    hs = [b[3] - b[1] for b in boxes]
+
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    y = cy - (sum(hs) + gap * (len(lines) - 1)) / 2
+    for text, w, h in zip(lines, ws, hs):
+        layer.alpha_composite(_atlas_glyph(text, font, skew),
+                              (int(cx - w / 2) - 26, int(y) - 26))
+        y += h + gap
+    out = Image.alpha_composite(img.convert("RGBA"), layer).convert("RGB")
+    mask = np.asarray(layer.getchannel("A")) > 8
+    print(f"排版：{len(lines)} 行，字号 {size}，行宽 {ws}，字块高 {sum(hs) + gap * (len(lines) - 1)}")
+    return out, mask
+
+
+# --------------------------------------------------------------------------- #
 # 子命令：scan
 # --------------------------------------------------------------------------- #
 def cmd_scan(args) -> int:
     mapping = load_map()
+    family = getattr(args, "family", "auto") or "auto"
+    pool: list[Path] = []
+    if family in ("auto", FAMILY_ARTFONT):
+        pool += sorted(ZH_DIR.glob(BANNER_GLOB))
+    if family in ("auto", FAMILY_ATLAS):
+        pool += atlas_targets(mapping)
+
     rows, todo, notitle = [], [], []
-    for zh in sorted(ZH_DIR.glob(BANNER_GLOB)):
-        en = en_path_for(zh)
+    for zh in pool:
+        en = en_path_for(zh, family)
         entry = mapping.get(zh.name) or {}
         has_en = en.exists()
-        has_title = bool(entry.get("title"))
+        has_title = bool(entry.get("title") or entry.get("lines"))
         rows.append(
             {
                 "asset": str(zh.relative_to(ROOT)),
@@ -317,13 +615,16 @@ def cmd_scan(args) -> int:
     else:
         print(f"{'状态':<8}{'资源':<52}{'英文标题'}")
         for r in rows:
+            # atlas 家族的条目只有 lines、没有 title（图上本来就只有一块大标语），
+            # 判「有没有译名」必须 title/lines 一起看，否则会误标成缺译名。
+            text = r["title"] or " / ".join(r["lines"] or [])
             if r["en_exists"]:
                 flag = "✅已有"
-            elif r["title"]:
+            elif text:
                 flag = "⏳待译"
             else:
                 flag = "⚠缺译名"
-            print(f"{flag:<8}{Path(r['asset']).name:<52}{r['title'] or '—'}")
+            print(f"{flag:<8}{Path(r['asset']).name:<52}{text or '—'}")
         print()
         print(f"共 {len(rows)} 张：已有英文版 {len(rows) - len(todo) - len(notitle)} 张，"
               f"待生成 {len(todo)} 张，缺译名 {len(notitle)} 张")
@@ -340,8 +641,23 @@ def cmd_scan(args) -> int:
 # --------------------------------------------------------------------------- #
 # 子命令：run
 # --------------------------------------------------------------------------- #
-def work_dir_for(zh: Path) -> Path:
-    return WORK_ROOT / zh.name[: -len("_zh.png")]
+def work_dir_for(zh: Path, family: str | None = None) -> Path:
+    fam = _pick_family(zh, family)
+    stem = Path(zh).stem if fam == FAMILY_ATLAS else Path(zh).name[: -len("_zh.png")]
+    return WORK_ROOT / stem
+
+
+def _compare_sheet(zh_im: Image.Image, en_im: Image.Image, work: Path) -> None:
+    """中英对照图（构建页直接能看）。上下排：宽图横幅上下排比左右排更好认。"""
+    w, h = zh_im.size
+    canvas = Image.new("RGB", (w, h * 2 + 40), (250, 250, 252))
+    canvas.paste(zh_im, (0, 24))
+    canvas.paste(en_im, (0, h + 32))
+    d = ImageDraw.Draw(canvas)
+    f = load_font(16)
+    d.text((8, 4), "ZH (source)", font=f, fill=(30, 30, 40))
+    d.text((8, h + 28), "EN (generated)", font=f, fill=(30, 30, 40))
+    canvas.save(work / "compare.png")
 
 
 def cmd_run(args) -> int:
@@ -350,23 +666,23 @@ def cmd_run(args) -> int:
         print(f"源图不存在：{zh}", file=sys.stderr)
         return 1
 
+    fam = _pick_family(zh, getattr(args, "family", None))
     entry = load_map().get(zh.name, {})
     title = args.title or entry.get("title") or ""
     lines = args.lines.split("|") if args.lines else entry.get("lines") or []
-    if not title or not lines:
+    if not lines or (fam == FAMILY_ARTFONT and not title):
         print(f"⚠ {zh.name} 没有译名：请在 {MAP_FILE.relative_to(ROOT)} 里补 title/lines，"
               f"或用 --title/--lines 传", file=sys.stderr)
         return 3
 
-    # 尺寸闸门：这批横幅都是 884x544。工程里有几张同名占位图只有 100x100，
-    # 直接跑会在补底板时炸出形状不匹配，所以先挡掉（rc=3 只标黄，不算失败）。
+    # 尺寸闸门：工程里有几张同名占位图只有 100x100，直接跑会在补底板时炸出形状不匹配
     with Image.open(zh) as probe:
         if probe.size[0] < 600 or probe.size[1] < 400:
             print(f"⚠ {zh.name} 尺寸异常（{probe.size[0]}x{probe.size[1]}），不是可翻译的横幅，跳过",
                   file=sys.stderr)
             return 3
 
-    work = Path(args.work) if args.work else work_dir_for(zh)
+    work = Path(args.work) if args.work else work_dir_for(zh, fam)
     work.mkdir(parents=True, exist_ok=True)
     src = work / "src.png"
     shutil.copyfile(zh, src)
@@ -376,31 +692,34 @@ def cmd_run(args) -> int:
     a = np.asarray(src_im.convert("RGB"))
 
     t0 = time.time()
-    panel, zone = rebuild_panel(a)
-    (work / "panel.png").write_bytes(b"")  # 占位，下面覆盖
-    Image.fromarray(panel).save(work / "panel.png")
-    out = draw_text(Image.fromarray(panel), title, lines, zone)
+    extra = {}
+    if fam == FAMILY_ATLAS:
+        panel, zone, info = rebuild_atlas(a)
+        Image.fromarray(panel).save(work / "panel.png")
+        out, en_mask = draw_atlas_text(Image.fromarray(panel), lines, info["text_box"])
+        Image.fromarray((info["plate"] * 255).astype(np.uint8)).save(work / "plate_mask.png")
+        Image.fromarray((info["strip"] * 255).astype(np.uint8)).save(work / "strip_mask.png")
+        Image.fromarray((en_mask * 255).astype(np.uint8)).save(work / "en_mask.png")
+        extra = {"erase_px": int(info["ink"].sum()), "en_px": int(en_mask.sum()),
+                 "plate_rgb": [int(v) for v in info["color"]]}
+    else:
+        panel, zone = rebuild_panel(a)
+        Image.fromarray(panel).save(work / "panel.png")
+        out = draw_text(Image.fromarray(panel), title, lines, zone)
+
     if alpha_orig is not None:
         out = out.convert("RGB")
         out.putalpha(alpha_orig)
     out.save(work / "out.png")
 
-    # 中英对照图（构建页直接能看）
-    zh_im = Image.open(src).convert("RGB")
-    en_im = Image.open(work / "out.png").convert("RGB")
-    w, h = zh_im.size
-    canvas = Image.new("RGB", (w * 2 + 16, h + 34), (250, 250, 252))
-    canvas.paste(zh_im, (0, 34))
-    canvas.paste(en_im, (w + 16, 34))
-    d = ImageDraw.Draw(canvas)
-    f = load_font(18)
-    d.text((10, 8), "ZH (source)", font=f, fill=(30, 30, 40))
-    d.text((w + 26, 8), "EN (generated)", font=f, fill=(30, 30, 40))
-    canvas.save(work / "compare.png")
+    _compare_sheet(Image.open(src).convert("RGB"),
+                   Image.open(work / "out.png").convert("RGB"), work)
 
+    en_path = en_path_for(zh, fam)
     state = {
+        "family": fam,
         "asset": str(zh.relative_to(ROOT)),
-        "en": str(en_path_for(zh).relative_to(ROOT)),
+        "en": str(en_path.relative_to(ROOT)),
         "title": title,
         "lines": lines,
         "zone": list(zone),
@@ -411,13 +730,15 @@ def cmd_run(args) -> int:
         "elapsed": round(time.time() - t0, 2),
         "verified": None,
         "published": None,
+        **extra,
     }
     (work / "state.json").write_text(json.dumps(state, ensure_ascii=False, indent=2),
                                      encoding="utf-8")
 
+    print(f"家族   : {fam}")
     print(f"源图   : {state['asset']}  {state['size'][0]}x{state['size'][1]} {state['mode']}")
     print(f"重建区 : y {zone[0]}..{zone[1]}  x {zone[2]}..{zone[3]}")
-    print(f"译名   : {title} / {' | '.join(lines)}")
+    print(f"译名   : {' / '.join(filter(None, [title]))} {lines}")
     print(f"输出   : {work / 'out.png'}  ({state['elapsed']}s)")
     return 0
 
@@ -425,9 +746,7 @@ def cmd_run(args) -> int:
 # --------------------------------------------------------------------------- #
 # 子命令：verify
 # --------------------------------------------------------------------------- #
-def cmd_verify(args) -> int:
-    work = Path(args.work)
-    state = json.loads((work / "state.json").read_text(encoding="utf-8"))
+def verify_artfont(work: Path, state: dict) -> list[tuple[str, bool, str]]:
     src = Image.open(work / "src.png")
     out = Image.open(work / "out.png")
 
@@ -466,9 +785,69 @@ def cmd_verify(args) -> int:
     # 英文必须真的画上去了：重建区里要有成片的纯白
     white = int((zone_rgb.min(axis=2) > 245).sum())
     checks.append(("英文白字已落版", white > 2000, f"纯白像素 {white}"))
+    return checks
+
+
+def verify_atlas(work: Path, state: dict) -> list[tuple[str, bool, str]]:
+    """atlas 家族的断言：板外一个像素都不能动、板内不许有残字、板底必须补得平整。"""
+    src = Image.open(work / "src.png")
+    out = Image.open(work / "out.png")
+    a_src = np.asarray(src.convert("RGB")).astype(int)
+    a_out = np.asarray(out.convert("RGB")).astype(int)
+
+    checks: list[tuple[str, bool, str]] = []
+    same_size = src.size == out.size
+    checks.append(("尺寸一致", same_size, f"{src.size[0]}x{src.size[1]} vs {out.size[0]}x{out.size[1]}"))
+    if src.mode == "RGBA":
+        sa = np.asarray(src.getchannel("A"))
+        oa = np.asarray(out.getchannel("A")) if out.mode == "RGBA" else None
+        checks.append(("alpha 与源图逐像素一致",
+                       oa is not None and np.array_equal(sa, oa), "原图透明边必须原样保留"))
+    else:
+        checks.append(("alpha 与源图逐像素一致", True, "源图无 alpha，跳过"))
+
+    y0, y1, x0, x1 = state["zone"]
+    outside = np.ones(a_src.shape[:2], bool)
+    outside[y0:y1, x0:x1] = False
+    changed = int((np.abs(a_src - a_out).max(axis=2)[outside] > 0).sum())
+    checks.append(("重建区外像素未被改动", changed == 0, f"越界改动 {changed} px"))
+
+    plate = np.asarray(Image.open(work / "plate_mask.png")) > 127
+    en = np.asarray(Image.open(work / "en_mask.png")) > 127
+    plate_max = int(np.array(state.get("plate_rgb") or [0, 8, 15]).max())
+
+    # 板内、且不在新英文笔画附近的位置，必须全是板底色 —— 亮出一点就是中文残影
+    near_en = cv2.dilate(en.astype(np.uint8), np.ones((11, 11), np.uint8)) > 0
+    bare = plate & ~near_en
+    resid = int(((a_out.max(axis=2) > plate_max + 40) & bare).sum())
+    checks.append(("板内中文墨迹零残留", resid < 120, f"越界像素 {resid}（源图字形量级 1.3 万）"))
+
+    flat = a_out[bare]
+    flat_std = float(flat.std(axis=0).mean()) if len(flat) else 99.0
+    checks.append(("板底补得平整", flat_std < 8.0, f"板内非字区 RGB std {flat_std:.2f}"))
+
+    white = int(((a_out.min(axis=2) > 245) & en).sum())
+    checks.append(("英文白字已落版", white > 800, f"新笔画内纯白像素 {white}"))
+
+    # 板外条带：中文墨迹跨过板沿的那一小条，补完不许留白（白=没擦干净的字）。
+    # 阈值取 235 而不是 200 —— 条带是照上方 30px 的背景搬的，背景本身有 200~230 的城市亮斑，
+    # 拿 200 当线会把背景灯当残字，属于典型假红。
+    strip_f = work / "strip_mask.png"
+    if strip_f.exists():
+        strip = np.asarray(Image.open(strip_f)) > 127
+        left_white = int(((a_out.min(axis=2) > 235) & strip).sum())
+        checks.append(("板外条带无残字", left_white < 30, f"条带内近白像素 {left_white}"))
+    return checks
+
+
+def cmd_verify(args) -> int:
+    work = Path(args.work)
+    state = json.loads((work / "state.json").read_text(encoding="utf-8"))
+    fam = state.get("family") or FAMILY_ARTFONT
+    checks = verify_atlas(work, state) if fam == FAMILY_ATLAS else verify_artfont(work, state)
 
     ok = all(c[1] for c in checks)
-    print(f"验收：{state['asset']}")
+    print(f"验收（{fam}）：{state['asset']}")
     for name, passed, detail in checks:
         print(f"  {'✅' if passed else '❌'} {name}  —— {detail}")
 
@@ -486,16 +865,26 @@ def cmd_verify(args) -> int:
 # --------------------------------------------------------------------------- #
 # 子命令：publish
 # --------------------------------------------------------------------------- #
-def ensure_meta(target: Path) -> str:
+def ensure_meta(target: Path, src_hint: Path | None = None) -> str:
     """目标 png 缺 .meta 时，从同族资源复制一份并换新 guid。
 
     模板必须挑**同族**的：实测同目录 `chaozhijj_diban_en` 与 `zhanling_pata_bg_en` 的导入设置
     差了 filterMode / spriteMeshType / applyGammaDecoding / 平台 override 四项，
     随便抓第一份会让横幅在 Unity 里糊掉或走错压缩口径。
+
+    atlas 家族直接拿**中文源图自己的 .meta** 当模板 —— 同一张图、同一个图集、
+    同一套导入设置，不可能更准。
     """
     meta = Path(str(target) + ".meta")
     if meta.exists():
         return "已存在，保持原 guid"
+
+    src_meta = Path(str(src_hint) + ".meta") if src_hint is not None else None
+    if src_meta is not None and src_meta.exists():
+        text = re.sub(r"^guid: .*$", "guid: " + uuid.uuid4().hex,
+                      src_meta.read_text(encoding="utf-8"), count=1, flags=re.M)
+        meta.write_text(text, encoding="utf-8")
+        return f"按中文源图 {src_meta.name} 模板生成（新 guid，导入设置完全一致）"
 
     stem = target.name[: -len("_en.png")]  # cn2-X1_zhanling_miwu_bg
     family = stem.split("_")[1] if "_" in stem else ""  # zhanling
@@ -545,7 +934,8 @@ def cmd_publish(args) -> int:
         shutil.copy2(target, backup)
 
     shutil.copyfile(work / "out.png", target)
-    meta_note = ensure_meta(target)
+    fam = state.get("family") or FAMILY_ARTFONT
+    meta_note = ensure_meta(target, ROOT / state["asset"] if fam == FAMILY_ATLAS else None)
 
     state["published"] = {
         "target": state["en"],
@@ -570,18 +960,46 @@ def cmd_publish(args) -> int:
 # --------------------------------------------------------------------------- #
 # 子命令：batch
 # --------------------------------------------------------------------------- #
+def atlas_targets(mapping: dict) -> list[Path]:
+    """atlas 家族没有「扫全目录」的余地：图集里绝大多数图没有中文要翻。
+    译名表就是白名单 —— 表里有 lines 的才做，且源图必须真的存在。"""
+    out: list[Path] = []
+    for name, entry in mapping.items():
+        if name.startswith("_") or not entry.get("lines"):
+            continue
+        for hit in ATLAS_ROOT.rglob(name):
+            out.append(hit)
+    return sorted(out)
+
+
+def _name_keys(zh: Path) -> set[str]:
+    """`--only` 的可接受写法：带扩展名、不带扩展名、去掉 _zh 后缀，三种都认。
+
+    atlas 家族的源图**没有** `_zh` 后缀（cn2-X1_kuafu_rukou.png），
+    以前只比 `name[:-len("_zh.png")]`，会把它的名字剁成 cn2-X1_kuafu_ 直接失配，
+    于是 ②③④ 全绿但一张图都没做 —— 假绿球。
+    """
+    keys = {zh.name, zh.stem}
+    if zh.name.endswith("_zh.png"):
+        keys.add(zh.name[: -len("_zh.png")])
+    return keys
+
+
 def cmd_batch(args) -> int:
     """批量跑一个阶段：run / verify / publish 分开调用，方便在 Jenkins 里各占一个 stage。
 
     每张图单独登记一条环节结论，构建页一眼看清是哪张红的。
+    --asset 直接指定一张（MODE=one），不再走目录扫描 —— 这样 Atlas 家族的图
+    也能和战令横幅共用同一条流水线。
     """
     mapping = load_map()
     only = {s.strip() for s in args.only.split(",") if s.strip()} if args.only else None
+    family = getattr(args, "family", "auto") or "auto"
 
     def wanted(zh: Path) -> bool:
         if not only:
             return True
-        return zh.name in only or zh.name[: -len("_zh.png")] in only
+        return bool(_name_keys(zh) & only)
 
     stage = args.stage
 
@@ -589,24 +1007,38 @@ def cmd_batch(args) -> int:
     targets: list[Path] = []
     skipped: list[str] = []
     notitle: list[str] = []
-    if stage == "run":
-        for zh in sorted(ZH_DIR.glob(BANNER_GLOB)):
+    if args.asset:
+        zh = (ROOT / args.asset) if not Path(args.asset).is_absolute() else Path(args.asset)
+        zh = zh.resolve()
+        if not zh.exists():
+            print(f"源图不存在：{zh}", file=sys.stderr)
+            return 1
+        targets = [zh]
+    elif stage == "run":
+        pool: list[Path] = []
+        if family in ("auto", FAMILY_ARTFONT):
+            pool += sorted(ZH_DIR.glob(BANNER_GLOB))
+        if family in ("auto", FAMILY_ATLAS):
+            pool += atlas_targets(mapping)
+        for zh in pool:
             if not wanted(zh):
                 continue
-            if en_path_for(zh).exists() and not args.force:
+            fam = _pick_family(zh, family)
+            if en_path_for(zh, fam).exists() and not args.force:
                 skipped.append(zh.name)
                 continue
-            if not (mapping.get(zh.name) or {}).get("title"):
+            entry = mapping.get(zh.name) or {}
+            if not entry.get("lines") and not entry.get("title"):
                 notitle.append(zh.name)
                 continue
             targets.append(zh)
     else:
-        for work in sorted(WORK_ROOT.glob("*/state.json")) if WORK_ROOT.exists() else []:
-            st = json.loads(work.read_text(encoding="utf-8"))
+        for stf in sorted(WORK_ROOT.glob("*/state.json")) if WORK_ROOT.exists() else []:
+            st = json.loads(stf.read_text(encoding="utf-8"))
             zh_name = Path(st["asset"]).name
-            if not wanted(Path(zh_name)):
+            if only and not (_name_keys(Path(zh_name)) & only):
                 continue
-            zh = ZH_DIR / zh_name
+            zh = ROOT / st["asset"]
             if not zh.exists():
                 continue
             if stage == "verify" and (st.get("verified") is None or args.force):
@@ -615,7 +1047,8 @@ def cmd_batch(args) -> int:
                 if not (st.get("verified") or {}).get("ok"):
                     skipped.append(zh_name + "（验收未过）")
                     continue
-                if en_path_for(zh).exists() and not args.force:
+                fam = st.get("family") or _pick_family(zh, None)
+                if en_path_for(zh, fam).exists() and not args.force:
                     skipped.append(zh_name + "（已有英文版）")
                     continue
                 targets.append(zh)
@@ -631,12 +1064,13 @@ def cmd_batch(args) -> int:
     # ---- 逐张执行 -------------------------------------------------------- #
     failures = 0
     for zh in targets:
-        work = work_dir_for(zh)
-        stem = zh.name[: -len("_zh.png")]
-        print(f"\n── [{stage}] {zh.name} ──")
+        fam = _pick_family(zh, family)
+        work = work_dir_for(zh, fam)
+        stem = zh.stem if fam == FAMILY_ATLAS else zh.name[: -len("_zh.png")]
+        print(f"\n── [{stage}] {zh.name}（{fam}）──")
         if stage == "run":
             rc = cmd_run(argparse.Namespace(asset=str(zh), title=None, lines=None,
-                                            work=None))
+                                            work=None, family=fam))
             if rc == 3:
                 if args.run:
                     register(args.run, f"生成·{stem}", "warn", "美术翻译链",
@@ -677,14 +1111,18 @@ def register(run_dir: str, name: str, status: str, group: str, detail: str) -> N
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="战令横幅中文美术字 → 英文版")
+    ap = argparse.ArgumentParser(description="中文美术字 → 英文版（战令横幅 / 图集大图）")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("scan", help="扫描 ArtFont_zh，列出缺英文版的资源")
+    fam_help = "auto=按路径判断（Atlas/ 下走 atlas，其余走 artfont）"
+
+    p = sub.add_parser("scan", help="列出缺英文版的资源")
     p.add_argument("--json", action="store_true")
     p.add_argument("--quiet", action="store_true", help="只打一行汇总（收尾复核用）")
     p.add_argument("--run", default="", help="Jenkins 证据目录（登记环节结论用）")
     p.add_argument("--strict-ok", action="store_true", help="即使有缺失也返回 0")
+    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_ATLAS],
+                   help=fam_help)
     p.set_defaults(func=cmd_scan)
 
     p = sub.add_parser("run", help="生成一张英文版（不写回工程）")
@@ -692,6 +1130,8 @@ def main() -> int:
     p.add_argument("--title", default="")
     p.add_argument("--lines", default="", help='用 | 分隔，如 "UNLOCK|ADVANCED|BATTLE PASS"')
     p.add_argument("--work", default="")
+    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_ATLAS],
+                   help=fam_help)
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("verify", help="像素级验收")
@@ -709,8 +1149,11 @@ def main() -> int:
     p = sub.add_parser("batch", help="批量跑一个阶段（run / verify / publish）")
     p.add_argument("--stage", choices=["run", "verify", "publish"], default="run")
     p.add_argument("--only", default="", help="只跑指定资源（逗号分隔，可不带 _zh.png）")
+    p.add_argument("--asset", default="", help="只跑这一张（相对工程根，MODE=one 用）")
     p.add_argument("--force", action="store_true", help="已有英文版 / 已验收过也重做")
     p.add_argument("--run", default="")
+    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_ATLAS],
+                   help=fam_help)
     p.set_defaults(func=cmd_batch)
 
     args = ap.parse_args()

@@ -102,7 +102,7 @@ grep "\[bot\]" $HOME/home/java/logs/gameserver.log | tail
 | `bot reload` | 重读 `conf/bot_config.json`，**不用重启** |
 | `bot say <文本>` | 让在线机器人在世界频道说一句 |
 | `bot announce [heroId]` | 触发一次英雄公告（不填随机挑 5 星） |
-| `bot fake <名字> <文本>` | **造一条真人发言**，没有客户端也能验证 AI 回话链路 |
+| `bot fake <名字> <文本>` | **造一条玩家发言**，没有客户端也能验证 AI 回话链路。uid 走 `fakeSenderUid`（默认 99990001），**不占用任何真实玩家身份** |
 | `bot reply` | 跳过等待立刻回一次 |
 
 ```bash
@@ -110,6 +110,12 @@ PY=/Users/wangxufeng/.workbuddy-ai/binaries/python/envs/default/bin/python   # �
 $PY scripts/gm_client.py 'bot fake Mia do u know where to farm gold'
 sleep 30; grep "\[bot\]" ~/home/java/logs/gameserver.log | tail -3
 ```
+
+⚠️ `bot fake` 以前硬编码 `senderId = 10000004`，那是个真实账号 —— 注入后客户端看到的是「那个号在说话」，
+机器人再回复就像在替玩家回答。现在改成独立的 99990001，配置项 `fakeSenderUid` 可改，
+但**不能填真实号段**（< 90000000），`normalize()` 会强制回退。
+
+如果不想让机器人回某个号（比如你自己的 GM 号），把它加进 `ignoreUids`。
 
 ---
 
@@ -134,6 +140,8 @@ sleep 30; grep "\[bot\]" ~/home/java/logs/gameserver.log | tail -3
 | `announceMin/MaxSec` | 1500 / 4500 | 英雄公告间隔 |
 | `onlineFlipMin/MaxSec` | 600 / 1800 | 上下线抖动间隔（至少保留 1 个在线） |
 | `bots[]` | Nova / Kai | uid、name、level、vip、head、frame、country、soulVal、persona |
+| `fakeSenderUid` | 99990001 | `bot fake` 注入假玩家用的 uid，**不能落真实号段** |
+| `ignoreUids` | `[10000004]` | 这些 uid 发言只进上下文、不触发回复（GM 号/测试号） |
 
 机器人 uid 固定落在 **9xxxxxxx** 段（默认 90000001/90000002），与真实号段（1xxxxxxxx）天然隔开，
 `isBotUid()` 靠这个判断「这条消息是不是自己人发的」，避免自问自答。

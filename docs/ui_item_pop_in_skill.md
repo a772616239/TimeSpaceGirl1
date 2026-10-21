@@ -7,7 +7,7 @@
 > 页签多的三个面板走「页面级接入」：`ExpertPanel`、`OperatingPanel`、`AdjutantActivityPanel`
 > （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / **成长礼金 page_3** / **终身限购 page_9** / 战令 /
 > 副官挑战 / 副官赠礼）；
-> 固定版面（不是列表）走「duang」模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位）。
+> 固定版面（不是列表）走关键帧模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位，`phases`）。
 > 更新时间 2026-10-21。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
 
 ---
@@ -49,19 +49,55 @@
 | 缓动 | 放大 `OutQuad` / 回落 `InOutQuad` | `ease`（缺省 `OutElastic`，过冲由缓动自带） |
 | 时长 | `riseDuration` 0.14 + `fallDuration` 0.12 | `duangDuration` 0.5 |
 | 每格 tween 数 | 2 | 1 |
-| 典型 | 礼包墙、奖励档位、任务列表 | 抽卡卡面、数字格、开箱 |
+| 典型 | 礼包墙、奖励档位、任务列表 | 小图标、数字格、开箱 |
 
 ```lua
--- 千抽：三张卡 duang，剩余抽数排在后面再 duang
-local kCardDuangCfg   = { mode = "duang", from = 0.5, duangDuration = 0.55, ease = "OutElastic", step = 0.09 }
-local kNumberDuangCfg = { mode = "duang", from = 0.6, duangDuration = 0.42, delay = 0.26, step = 0.05 }
+-- 小图标 duang 一下
+local cfg = { mode = "duang", from = 0.6, duangDuration = 0.45, ease = "OutElastic" }
 ```
 
 - `from = 0.5` 比 `surge` 的 0.82 更狠：`duang` 没有中间峰值，落差全靠起点。
 - 过冲幅度由缓动决定（`OutElastic` 约冲过 1 的 5%~10%），**不需要也不该再设 `peak`**。
   想要「一冲到顶就停」就换 `ease = "OutBack"`（单次过冲，没有回抖）。
-- `delay` 是**整批**延后：数字格比卡片晚 0.26s 起，同一个模块两份实例即可，不用手写 Timer。
-- 卡面这种大块头别用 `OutElastic` 弹太久（>0.6s 会显得软塌），0.5~0.55s 比较脆。
+- `delay` 是**整批**延后：第二批比第一批晚 0.26s 起，同一个模块两份实例即可，不用手写 Timer。
+- ⚠️ 大块头（卡面 ≥250px）别用 `OutElastic`：它的抖动周期是按比例给的，0.5~0.55s 内
+  抖 3 个来回，观感是「闪一下」；拉到 0.8s 又变成软塌塌的果冻。**大块头改用 `phases`。**
+
+### 1.2 第三种手感：`phases`（多段关键帧，慢速「浮起—按回—落定」）
+
+`duang` 只有一个时长旋钮，越拉越拖沓；`phases` 把曲线拆成显式关键帧，段数、峰值、
+每段时长、每段缓动都由调用方给——这是「想按设计稿调手感」时唯一该用的模式。
+
+```lua
+-- 千抽：三张卡（大块头）浮起—按回—落定
+local kCardPhases = {
+    { scale = 1.05,  duration = 0.38, ease = "OutCubic" },   -- 浮起（减速上升）
+    { scale = 0.985, duration = 0.24, ease = "InOutQuad" },  -- 按回（两端切线为 0）
+    { scale = 1,     duration = 0.18, ease = "OutQuad" },    -- 落定
+}
+local kCardInCfg = { mode = "phases", from = 0.78, phases = kCardPhases, step = 0.11, maxSpan = 0.44 }
+
+-- 数字格比卡片小，同配方压一档，整批晚 0.34s 起
+local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, maxSpan = 0.36,
+    phases = { { scale = 1.04, duration = 0.24, ease = "OutCubic" },
+               { scale = 0.99, duration = 0.14, ease = "InOutQuad" },
+               { scale = 1,    duration = 0.10, ease = "OutQuad" } } }
+```
+
+| 约定 | 说明 |
+|---|---|
+| `scale` | **相对基准的倍数**（1 = 原大小），不是绝对缩放；`ScrollCycleView` 的 `itemGoScale≠1` 也对 |
+| 首段延迟 | 只有第一段吃 `cfg.delay + order * step`，后段是链式的，不要再加 `SetDelay`（否则每段都卡一下） |
+| 链的建立 | 每段在上一段的 `OnComplete` 里建 ⇒ 被 `Stop`/`Kill` 时链自动断，不会在已关闭的面板上补建 tween |
+| 收尾 | 末段结束时把 `localScale` 吸附到基准，避免浮点残差（表现是「差一点点」的缩放） |
+| 时长节奏 | **先长后短**（0.38 / 0.24 / 0.18）：浮起要看清、按回要能察觉、落定要干脆；反过来会像卡顿 |
+| 峰值 | 受版面约束：卡 280 宽、相邻 −18 重叠时 1.05 已是上限（礼包墙 1.04 会直接顶出屏） |
+| 缺 `phases` | 退回 `surge` 配方（不报错），所以 `mode` 和 `phases` 可以分开配 |
+
+- `phases` 单卡总时长 0.8s 是**刻意比 `duang` 长**的：卡面有立绘，0.5s 内看不清；
+  0.8s 刚好在「能看清」和「不催人」之间，玩家点开面板不会觉得在等动画。
+- 想更慢就等比放大 `duration`（如 ×1.2），**不要**加段数——第 4 段开始就成了果冻。
+
 
 ---
 
@@ -135,8 +171,8 @@ local kNumberDuangCfg = { mode = "duang", from = 0.6, duangDuration = 0.42, dela
 | `ExpertPanel` | `OnShow`、页签点击（`ActivityRewardShow` 之后） | `RefreshActivity`（活动开关 / 进度 / 5 点刷新 / 支付成功回调） |
 | `OperatingPanel` | `OnShow`、页签点击（`OnTabChanged` 之后） | `RefreshActivity`（月卡 / 活动开关 / 战令解锁） |
 | `AdjutantActivityPanel` | `PageTabCtrl:ChangeTab` 的回调（首开也走这条） | 无独立的事件刷新路径 |
-| `ThousandDrawPanel`（duang） | `Init` 的网络回调末尾（数据到位、卡面填好之后） | 领奖后的整表刷新会重播——那是**新一局**，可以接受 |
-| 抽中单张卡（duang） | 抽卡回调里 `SetCard` 之后 `PlayCardDuang(msg.number)` | —— |
+| `ThousandDrawPanel`（phases） | `Init` 的网络回调末尾（数据到位、卡面填好之后） | 领奖后的整表刷新会重播——那是**新一局**，可以接受 |
+| 抽中单张卡（phases） | 抽卡回调里 `SetCard` 之后 `PlayCardIn(msg.number)` | —— |
 
 **TabBox 点击为什么自动就有动画**：`GrowthManualPanel.SwitchView` 里本来就会调
 `contentScripts[index].view:OnShow(this)`，而两个子模块的 `OnShow` 都走 `refresh(true,true)`
@@ -231,18 +267,18 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_v
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_growthmanual_openanim.lua
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_itempopin_page.lua
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_panel_listpopin_wiring.lua
-TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_thousanddraw_duang.lua
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_thousanddraw_cardin.lua
 ```
 
 | 用例 | 覆盖 |
 |---|---|
-| `test_itempopin.lua` | 公共模块 12 组：逐格时序 / 回落段 / 跳过隐藏 / 压缩错开 / Stop 复位 / 重播不叠加 / `itemGoScale≠1` 基准 / 异常兜底 / 自定义配方 / **数组源** / **duang 模式 + `Play(n)`** / **整批 `delay`** |
+| `test_itempopin.lua` | 公共模块 13 组：逐格时序 / 回落段 / 跳过隐藏 / 压缩错开 / Stop 复位 / 重播不叠加 / `itemGoScale≠1` 基准 / 异常兜底 / 自定义配方 / **数组源** / **duang 模式 + `Play(n)`** / **整批 `delay`** / **phases 关键帧链** |
 | `test_valuepack_openanim.lua` | 礼包墙：OnShow 顺序、跳过隐藏卡、购买刷新不重播、生命周期、`Play` 只有 1 处调用 |
 | `test_growthmanual_openanim.lua` | 两个列表页：OnShow 播、`isAni=false` 不播、切页重播、OnClose/OnDestroy 回收、面板 `SwitchView` 仍走 `view:OnShow` |
 
 | `test_itempopin_page.lua` | 页面级接入 10 组：实例/类表字段扫描、一页两列表、无列表 no-op、`StopPage` 复位、容器模式（`GetPopInSource`）、**userdata 容器（探字段会抛错的替身）**、绑定缓存、重播不叠加、**异步列表自动重试 + 重试作废** |
 | `test_panel_listpopin_wiring.lua` | 三个面板接线：`OnShow` 有播（首开即列表页也会播）、切页签有播、`RefreshActivity` 不播、`OnClose`/`OnDestroy` 回收、积天豪礼声明 `GetPopInSource`；**成长礼金不再调 `DelayCreation`**、**终身限购返回 `preList` 数组**、**ExpertPanel 五个活动页各自的数据源（达人 / 升级豪礼 / 开服双倍 / 限时兑换 / 扭蛋池）** |
-| `test_thousanddraw_duang.lua` | 千抽：卡/数字数据源与顺序、整版 duang（3+4 条、卡片错开 0.09、数字 0.26 起）、`PlayCardDuang(n)` 只弹一张、`StopDuang` 复位、`OnClose`/`OnDestroy` 回收、数据到位才播 |
+| `test_thousanddraw_cardin.lua` | 千抽：卡/数字数据源与顺序、整版入场（3+4 条、卡片错开 0.11、数字 0.34 起）、**三段关键帧链 0.78→1.05→0.985→1**、`PlayCardIn(n)` 只弹一张、`StopCardsIn` 复位、`OnClose`/`OnDestroy` 回收、数据到位才播、不再退回 `duang` |
 
 六个用例都被 Jenkins `TS-Test-Lua` 自动发现（`tests/tests.json` 的 `tests_dir + pattern`），不用改配置。
 
@@ -328,3 +364,9 @@ end
   这些「达人」活动共用）、`Expert_UpLv`(23)、`OpenService`(31)、`ExChange`(8)、`BoxPool`(32)；
   至此 ExpertPanel 每个页签都有数据源（限定珍藏 25 靠 `ScrollCycleView` 自动扫描）。
   新增 `test_itempopin_page` case6b / case9，`test_panel_listpopin_wiring` 增加五页数据源断言。
+- **2026-10-21**（千抽换手感）：`ThousandDrawPanel` 的卡片从 `duang`（0.5 → 1 + `OutElastic`，0.55s）
+  改为 `phases` 三段关键帧 `0.78 → 1.05 → 0.985 → 1`（0.38 / 0.24 / 0.18 ≈ 0.8s，错开 0.11），
+  数字格同步压一档并后移 0.34s；`ItemPopIn` 新增 `mode = "phases"`（`RunPhases`：链式建段、
+  被 Kill 自动断链、末段吸附基准、`phases` 缺失退回 `surge`）；接口改名
+  `PlayDuang/PlayCardDuang/StopDuang → PlayCardsIn/PlayCardIn/StopCardsIn`；
+  `test_thousanddraw_duang` → `test_thousanddraw_cardin`，`test_itempopin` 扩到 13 组。

@@ -18,6 +18,7 @@
 - 🔴 红点排障先看 `Logs/Editor.log`（项目内，不是 `~/Library/Logs`）的 `[RedPoint]` 行；`RedPointType` **会撞号**（已修 Lead_UpLv/SpeedLvUp ↔ 扭蛋），改父子关系后**必须重启客户端**——`RedPointData` 的树是模块级局部变量，`SetParent` 对已有父节点直接 return（已加 `RedPointData:Reset()`，但旧 session 仍要重启）。
 - `ActivityRewardConfig.Values` 是 `{{参数...},{阈值...}}` 两组，但 **1216 行里 617 行只有一组** ⇒ 活动红点/面板里一律走 `ActivityGiftManager` 的 `GetMissionNeedValue(conFigData, 组号)`，**禁止直接 `Values[2][1]`**（nil 索引会把 `MainPanel.OnShow` 整条链打断）。达人活动自己的行全是两组，报错意味着 missionId 落到了别的活动的行（老号残留 / 服务端配置与外网不一致）。
 - 配置表真源 `data_execl/base_data/*.xlsx`，改后同步 CRC32 + lua + LuaBytes + 服务端 `conf/server/*.txt`；备份禁放 `base_data/`。
+- 🔴 **服务端下发给聊天/邮件/跑马灯的文案一律是客户端语言表 id（数字串），禁止中文字面量**：客户端 `GetLanguageStrById` 对非数字串原样返回（functions.lua:2091）⇒ 英文/日文包直接显示中文。占位补位消息（`MessageCache.SEED_TEXT_IDS` 91001612~91001621，commit `cecc70f8f`）就栽过：Redis 里 7 天 TTL 的旧中文种子要手工清掉才会消失。语言表 id 用尽段：10xxx 全占，新文案挂 910016xx 尾部。
 - 正式服 `server.debug=false`；versionCode 只增不减、同号只能上一次；`--status draft` 是 production 不送审的唯一姿势。
 - 删号/删英雄须清 rank 与引用（`rank-audit`/`refs-audit`），且**先归档**（`cheatctl archive`）。
 - `tk/getServerList` 的 `recommend` 只许来自 `is_new=1`；否则老客户端 `serverList[i].level` 空值比较中断 → 登录报 `SocketAddress is nil`。

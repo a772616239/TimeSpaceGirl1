@@ -2,6 +2,15 @@ require("Base/BasePanel")
 ChaosSelectCampPanel = Inherit(BasePanel)
 local this = ChaosSelectCampPanel
 local minBattleNumIndex=1
+-- 阵营名多语言 id（50361 秩序 / 50362 混沌 / 50363 腐化）
+local CampNameLanguageId =
+{
+    [1] = 50361,
+    [2] = 50362,
+    [3] = 50363,
+}
+-- 确认加入阵营弹窗（%s = 阵营名）
+local CAMP_CONFIRM_LANGUAGE_ID = 50386
 local CampData={}
 local CampItems =
 {
@@ -43,15 +52,9 @@ function ChaosSelectCampPanel:InitComponent()
 end
 --申请加入阵营
 function ChaosSelectCampPanel:ItemBtnOnClick(campItem)
-        local name = ""
-        if campItem.campType == 1 then
-            name = "秩序阵营"
-        elseif campItem.campType == 2 then
-            name = "混沌阵营"
-        elseif campItem.campType == 3 then
-            name = "腐化阵营"
-        end
-        MsgPanel.ShowTwo("是否确认加入"..name.."？注意：加入阵营后直至本期混乱之治结束将无法更换阵营，请慎重选择", nil,function()
+        local nameId = CampNameLanguageId[campItem.campType]
+        local name = nameId and GetLanguageStrById(nameId) or ""
+        MsgPanel.ShowTwo(string.format(GetLanguageStrById(CAMP_CONFIRM_LANGUAGE_ID), name), nil,function()
                 -- -- 确定加入阵营
                     NetManager.CampSetReq(campItem.campType,function (msg)
                         NetManager.CampWarInfoGetReq(function (msg)

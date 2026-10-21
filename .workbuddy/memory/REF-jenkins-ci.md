@@ -98,8 +98,15 @@ curl -X POST -u "$U:$T" -H "$CRUMB" --data-urlencode "DEPLOY=true" --data-urlenc
   → `~Lua/Config/Data/<X>.lua` + `TimeSpaceServer/skzc/home/java/gameserver/conf/server/<X>.txt`。
 - `TS-Client-Resources` **不导表**（只 lua↔LuaBytes + AB 体检）；`TS-Android-Release` 的 `EXPORT_TABLES` **默认 false**
   （导表会用 xlsx 覆盖手改 lua），只在 ②-2 `scripts/check_tables_exported.sh` 用 mtime 判黄球；`TS-Pipeline-Overview` 不链 job。
-- **至今没有一次成功导表**：#1 `resource_build.sh` 同行 `local` 展开 ⇒ `tag: unbound`；#2 Unity 编译错
-  `BatchResourceBuild.cs:174/176` 少 `global::` ⇒ 被解析成 `GameEditor.GameEditor.FrameTool`；#3~#6 一律 `导表=false`。
+- ✅ **导表已跑通**（更正 2026-10-20 的「至今 0 次成功」）：`#13/#14/#15` 均 `EXPORT_TABLES=True` 且 ② 环节成功
+  （`unity exit 0`，约 87s，导表顺带把 `LuaBytes/*_64.bytes` 也刷新了）。早期失败原因是
+  `#1` `resource_build.sh` 同行 `local` 展开 ⇒ `tag: unbound`、`#2` `BatchResourceBuild.cs:174/176` 少 `global::`。
+- 🔴 **改 xlsx 要生效＝不用关开发工程的 Unity**：直接触发 `TS-Resource-Build`（它在 `TimeSpaceGirl1-build` 跑），
+  开发目录开着编辑器照样导。但 `REBUILD_AB=False` 时 ⑤「Lua bundle 新鲜度」**必红**（`#15` 实锤：
+  字节码 17:15 比 bundle 15:43 新 ⇒ rc=1）—— 闸门红不代表导表失败，② 的产物是有效的。
+  要真机生效/闸门绿就得 `REBUILD_AB=True + SERVER_ENV=<环境>`（`#13` 全环节 1367s ≈ 23min）。
+- 触发模板（逐字段传，`json@file` 会被忽略）：
+  `EXPORT_TABLES=true SYNC_BYTES=true REBUILD_AB=true SERVER_ENV=正式服 LUA_FILES=`
 - 🔴 batch 导表**不刷新** `DataConfigMD5Record`、**不删孤儿 lua**（GUI `excelALLConfig` 两件都做）⇒ 导完 CRC 与磁盘不一致、
   已删表的 lua 会残留进包。
 - 🔴 服务端 txt 落在 `TimeSpaceServer/skzc/`，客户端仓 `git status -- TimeSpaceServer` 恒空 ⇒ ⑥ 变更清单看不到，必须去服务端仓提交。

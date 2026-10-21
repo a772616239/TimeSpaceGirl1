@@ -216,13 +216,6 @@ local kNumberDuangCfg = { mode = "duang", from = 0.6, duangDuration = 0.42, dela
 12. **异步建列表 ⇒ 必须重试**：`Expert_UpLv` / `BoxPool` 的 `OnShow` 在数据回调里才造 item，
     切页签那一刻 `_Collect` 必然 0 个。不要改成「在页面里回调时自己播」（会散成一堆样板），
     交给 `PlayPage` 的重试；重试必须带「轮次号」作废机制，否则关面板后还会在隐藏页上补弹。
-11. **容器源是 `GameObject` 时不能探字段**：`ContinuityRechargePage:GetPopInSource()` 返回的是
-    `Util.GetGameObject` 出来的 **GameObject（userdata）**，不是 table。`_Collect` 原来用
-    `container.childCount == nil` 判断"要不要落 transform" ⇒ tolua 对 userdata 上**不存在**的字段是
-    **抛错**（`field or property 'childCount' does not exist`）而不是返回 nil ⇒ 整段 pcall 失败、
-    那页永远没动画（只在日志里刷错）。现在 userdata 一律先走 `SafeTransform()` 落 `.transform`
-    再取 `childCount` / `GetChild`；同理**别对 userdata 取下标 `[1]`**。离线用例
-    `test_itempopin_page` 的 case6b 用 `newproxy` 造同语义 userdata 守着这两条。
 
 
 ---
@@ -328,10 +321,6 @@ end
   page_9 终身限购返回 `preList` 数组）；新增 `mode = "duang"`（单段 + `OutElastic`）、
   数组数据源、`Play(only)` 单格播放、`cfg.delay` 整批延后；`ThousandDrawPanel` 三张卡 + 剩余抽数
   接入 duang；新增 `test_thousanddraw_duang`，`test_itempopin` 扩到 12 组。
-- **2026-10-21**：修 `_Collect` 容器分支对 **GameObject（userdata）** 探 `childCount` 导致整段 pcall 失败
-  （积天豪礼页永远不播、日志刷 `field or property 'childCount' does not exist`）：新增 `SafeTransform()`，
-  userdata 一律先落 transform；数组分支补 `type(src)=="table"` 闸门。新增用例 case6b（`newproxy` 造
-  tolua 同语义 userdata）。
 - **2026-10-21**（ExpertPanel 全页签收官）：`SafeTransform` 修掉「在 userdata 上探 `childCount`
   抛错」——这正是积天豪礼（页签 24）一直没动画的真因（`pcall` 把错误吞了，日志里只有一条
   `field or property 'childCount' does not exist`）；`PlayPage` 增加**异步重试**（`kRetryDelays` +

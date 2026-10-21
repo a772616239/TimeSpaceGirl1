@@ -11,6 +11,7 @@
 
 ## 🔴 红线
 - 真机读 `LuaBytes/<路径>_64.bytes` ⇒ 源码+字节码成对提交（`scripts/lua-bytes-sync.sh`，不加 `-g`）。
+- `~Lua/*.lua` 是 **CRLF**（`docs/`、`scripts/` 是 LF）：脚本/Write 改完必须转回 CRLF，否则 diff 变「全文件重写」。
 - 货币 id `16=钻石 3=英雄经验 14=金钱 17=经验 79=情报`；名字走 `scripts/cheat/currency.py` 现算，禁写死。`item17` 语义未定，不能当离群基线；`reason=1` 永不产出钻石。
 - `tolua` fake-null 只能 `IsNull()`；红点 `BindObjs[rpType]` 不幂等；`Timer.New` 第 4 参 UI 传 `true`。
 - 配置表真源 `data_execl/base_data/*.xlsx`，改后同步 CRC32 + lua + LuaBytes + 服务端 `conf/server/*.txt`；备份禁放 `base_data/`。
@@ -28,3 +29,4 @@
 - 「都推了」= 两仓 `rev-list --count origin/<b>..<b>` 都为 0；push 前看有没有混进并行会话的提交。凭据一律 `.secrets/`（700/600）。
 - 后台长任务 `Popen(..., start_new_session=True)`；zsh 下 `--include` 报 no matches（用 Grep）；GBK 源码 `grep -a`。
 - 改系统级状态须当场验证并标注「重启后是否有效」；打补丁先用 `git show HEAD:path`。
+- UI「列表项逐格放大缩小」入场统一用 `Modules/Common/ItemPopIn`（配方/坑见 `docs/ui_item_pop_in_skill.md`），禁止各面板复写；只在「玩家主动换屏」播，数据回调刷新不播。

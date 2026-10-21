@@ -873,6 +873,13 @@ end
 function this:CreateEnemy()
     --清空右方
     for i = 1, #roleLiveGoRight, 1 do
+        -- ClearChild 会销毁挂在该位置上的人物 spine 节点，但 liveNodesRight/liveNamesRight 里
+        -- 留的是已销毁的 userdata：tolua 下这种值在 Lua 侧非 nil（fake-null），判 `not` 判不出来。
+        -- 不同步清掉登记，本波没随机到的位置就会一直指向上一波的死节点，
+        -- RoleOnDead / HeroAttack 里 SetActive / GetComponent 直接抛
+        -- "Object reference not set to an instance of an object"（2026-10-21 20:37:44 真机日志）。
+        liveNodesRight[i] = nil
+        liveNamesRight[i] = nil
         ClearChild(roleLiveGoRight[i])
     end
 
@@ -1053,7 +1060,10 @@ function this:HeroAttack()
 
         if dataAttack.combat.Move == 0 then
             --bullet
-            self:PlaySpineAnim(liveNodesAttack[turnIdx]:GetComponent(SpineComponentName), 0, dataAttack.combat.Animation, false)
+            -- 出手方节点可能已被回收（换波 ClearChild / 面板销毁），只跳表现，不能中断 turn 链
+            if not IsNull(liveNodesAttack[turnIdx]) then
+                self:PlaySpineAnim(liveNodesAttack[turnIdx]:GetComponent(SpineComponentName), 0, dataAttack.combat.Animation, false)
+            end
 
             --skillbefore
             if not isLeftTurn then --右方释放
@@ -1114,7 +1124,10 @@ function this:HeroAttack()
                     return
                 end
 
-                self:PlaySpineAnim(liveNodesAttack[turnIdx]:GetComponent(SpineComponentName), 0, dataAttack.combat.Animation, false)
+                -- 同上：出手方节点可能已被回收，跳表现即可
+                if not IsNull(liveNodesAttack[turnIdx]) then
+                    self:PlaySpineAnim(liveNodesAttack[turnIdx]:GetComponent(SpineComponentName), 0, dataAttack.combat.Animation, false)
+                end
                 --skillbefore
                 if not isLeftTurn then --右方释放
                     this:CheckSkillForoleEffect(isLeftTurn, dataAttack.combat, turnIdx, targetIndex, 2)
@@ -1730,6 +1743,8 @@ function this:OnDamaged(livego, livenode, dmg, bCrit, combat, skill, isLeft, tur
         LogError("onhook OnDamaged combat nil")
         return
     end
+    -- 本次伤害结算的受击方条目快照，供 _effectFinish 判断这一波是否已经被换掉
+    local targetEntry = isLeft and turnArrayRight and turnArrayRight[targetIndex] or nil
     if combat and #combat.SkillDuration > 0 and combat.SkillNumber > 1 and #combat.SkillDuration == combat.SkillNumber - 1 then
         local count = combat.SkillNumber
         local d = math.floor(dmg / count)
@@ -1771,6 +1786,12 @@ function this:OnDamaged(livego, livenode, dmg, bCrit, combat, skill, isLeft, tur
     local _effectFinish = function()
         if isLeft then --发出攻击的是左方,判断右方血量
             if not turnArrayRight or not turnArrayRight[targetIndex] then
+                return
+            end
+            -- 这条回调要等整段技能演完才跑，期间可能已经换波（CreateEnemy 重建 turnArrayRight）。
+            -- 条目换了就说明本次伤害已经过期：再扣 deadTimes 会把新一波的敌人直接判死，
+            -- 并让 RoleOnDead 拿着旧位置的已销毁节点去 SetActive（真机 NRE 日志的来路之一）。
+            if targetEntry and turnArrayRight[targetIndex] ~= targetEntry then
                 return
             end
             turnArrayRight[targetIndex].deadTimes = turnArrayRight[targetIndex].deadTimes - 1
@@ -1962,7 +1983,12 @@ function this:RoleOnDead(pos)
         return
     end
 
-    if not liveNodes[pos] then
+    -- liveNodes[pos] 可能是已被回收的节点（换波 CreateEnemy 的 ClearChild、或 RoleOnDead 末尾
+    -- 延迟 0.5s 的 UnLoadSpine）。tolua 下这种 userdata 非 nil，`not` 判不出来，
+    -- 必须用 IsNull 判活，否则下面的 SetActive 抛 NRE。
+    if IsNull(liveNodes[pos]) then
+        liveNodes[pos] = nil
+        liveNames[pos] = nil
         return
     end
 
@@ -2019,10 +2045,23 @@ function this:RoleOnDead(pos)
                         table.remove(DeadMaterial_Tweener, removeIndex)
                     end
 
+                    -- 死亡淡出这段 tween 要跑 0.8s+，期间完全可能已经换波（ClearChild 销毁节点）
+                    -- 或面板已销毁，节点成了 fake-null，SetActive/GetComponent 会抛 NRE
+                    if IsNull(liveNodes[pos]) then
+                        liveNodes[pos] = nil
+                        liveNames[pos] = nil
+                        return
+                    end
+
                     roleLiveGo[pos]:SetActive(false)
                     liveNodes[pos]:SetActive(false)
                     spineComponent.AnimationState:SetAnimation(0, RoleAnimationName.Stand, true)
                     this:DelayFunc(0.5,function()
+                        if IsNull(liveNodes[pos]) then
+                            liveNodes[pos] = nil
+                            liveNames[pos] = nil
+                            return
+                        end
                         poolManager:UnLoadSpine(liveNames[pos], liveNodes[pos])
                     end)
 
@@ -2244,6 +2283,18 @@ this.MakeHookCombat = MakeHookCombat
 this.ResolveLoadout = ResolveLoadout
 this.ULT_TALK_TYPE_BASE = ULT_TALK_TYPE_BASE
 this.ULT_TALK_TYPE_GENERIC = ULT_TALK_TYPE_GENERIC
+
+--暴露给 scripts/lua-tests：真机 NRE 回归（换波后位置上的节点已被销毁，RoleOnDead 不能抛错）
+this.__SetRoleNodeForTest = function(pos, roleGo, liveNode, liveName)
+    roleLiveGoRight[pos] = roleGo
+    liveNodesRight[pos] = liveNode
+    liveNamesRight[pos] = liveName
+    turnArrayRight[pos] = { livego = roleGo, deadTimes = 1 }
+end
+
+this.__GetRoleNodeForTest = function(pos)
+    return liveNodesRight[pos], liveNamesRight[pos]
+end
 this.ULT_HERO_PERCENT = ULT_HERO_PERCENT
 this.ULT_OPEN_PERCENT = ULT_OPEN_PERCENT
 this.ULT_HIT_CAP = ULT_HIT_CAP

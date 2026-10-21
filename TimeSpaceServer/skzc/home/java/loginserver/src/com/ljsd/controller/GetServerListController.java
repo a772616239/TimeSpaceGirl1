@@ -103,8 +103,6 @@ public class GetServerListController extends HttpServlet {
             List<DBObject> ipList = BaseGlobal.getInstance().mongoDBPool.find(_BLACK_LIST, whiteIPListDBObject);
             List<DBObject> serverInfoList = BaseGlobal.getInstance().mongoDBPool.find(_COLLECTION_NAME, req);
             SortedSet<String> newServerList = new TreeSet<String>();
-            String maxNumServerId = "";
-            int maxNum = 0;
             int shenheNum = 0;
             for (DBObject serverInfo : serverInfoList) {
                 String server_version1 = serverInfo.get("server_version").toString();
@@ -130,10 +128,6 @@ public class GetServerListController extends HttpServlet {
                 if (state == 0) continue;
                 if (state == -1) continue;
                 if (System.currentTimeMillis() < time && whiteList.size() == 0) continue;
-                if (state == 2 && maxNum < num) {
-                    maxNum = num;
-                    maxNumServerId = server_id;
-                }
                 if (!server_version2.equals("0") ? !server_version.equals(server_version2) : shenheNum >= 1) continue;
                 int isnew = 0;
                 if (serverInfo.containsField("is_new")) {
@@ -167,10 +161,18 @@ public class GetServerListController extends HttpServlet {
                 serverList.add(res);
                 serverInfosCache.put(serverInfo.get("server_id").toString(), res);
             }
+            // 🔴 recommend 只按「新服（is_new=1）」下发，**不再**按在线人数最多的服兜底。
+            //    原因：客户端 LoginPanel.SetServerList 里，只要响应带 recommend 且账号没有
+            //    lastServer 记录（有角色记录但 loginTime 缺失/新号），就会走进
+            //    `for i = 1, #myServerList do if this.serverList[i].level > ...` 这个用错维度
+            //    （serverList 是区服，没有 level 字段）的分支 → nil > 0 抛异常 →
+            //    SetServerList 在给 SocketAddress 赋值前中断 → 登录必报
+            //    “RequestSocketLogin failed: SocketAddress is nil or empty”。
+            //    而按在线人数兜底只在「线上有人玩」时才成立，测试服没人上线永不下发
+            //    ⇒ 表现为同一份包测试服能登、线上不能登。单服场景下 recommend 本来也
+            //    毫无作用（两种响应最终都落到同一个服），删掉兜底零功能损失，老包永久免疫。
             if (newServerList.size() != 0) {
                 recommend = newServerList.first();
-            } else {
-                recommend = maxNumServerId;
             }
             Map<String, UserRecentLoginInfo> userServerInfoMap = BaseGlobal.getInstance().redisApp.hgetAll("JL_USER_SERVER_INFO", openId, UserRecentLoginInfo.class, -1, false);
             DBObject myLastServer = null;

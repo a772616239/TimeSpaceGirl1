@@ -21,10 +21,22 @@ def index_by_server_id(obj):
 
 
 def main():
-    a = load(sys.argv[1])          # 原版
-    b = load(sys.argv[2])          # 补丁版
-    label_a = sys.argv[3] if len(sys.argv) > 3 else "原版"
-    label_b = sys.argv[4] if len(sys.argv) > 4 else "补丁版"
+    argv = sys.argv[1:]
+    allow_drop = set()
+    positional = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--allow-drop":
+            allow_drop.add(argv[i + 1])
+            i += 2
+        else:
+            positional.append(argv[i])
+            i += 1
+
+    a = load(positional[0])          # 原版
+    b = load(positional[1])          # 补丁版
+    label_a = positional[2] if len(positional) > 2 else "原版"
+    label_b = positional[3] if len(positional) > 3 else "补丁版"
     allowed_new = {"name_en", "name_jp", "name_kr"}
     problems = []
 
@@ -35,6 +47,10 @@ def main():
             continue
         if va == vb:
             print("  %-14s 一致" % key)
+        elif key in allow_drop and vb == "<缺失>":
+            print("  %-14s 已被补丁版移除（--allow-drop 预期行为）：原版 %s" % (key, va))
+        elif key in allow_drop:
+            print("  %-14s 未移除（本用例下补丁版仍下发 %s）" % (key, vb))
         else:
             print("  %-14s ⚠️  %s -> %s" % (key, va, vb))
             problems.append("顶层字段 %s 发生变化" % key)

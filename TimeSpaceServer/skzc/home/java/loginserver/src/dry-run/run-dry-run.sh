@@ -200,8 +200,108 @@ EOF
   return $rc
 }
 
+# ---------- 模式三：recommend 收窄的行为对照（本地隔离库 + 本地 redis 假在线数） ----------
+#
+# 线上 recommend 的来源有两个：is_new=1 的新服，或「state==2 且 ONLINE_NUM>0 时在线人数最多的服」。
+# 后一个来源正是把老客户端打死的那个分支（响应一多出 recommend，客户端没有 lastServer 的老号
+# 就会走进 serverList[i].level 的空值比较）。本模式把「在线人数」在**本地临时 redis 键**上伪造，
+# 三组用例证明：
+#   A 有人在线、无新服  → 原版下发 recommend（会打死老包），补丁版不下发
+#   B 有人在线、有新服  → 两版都只推荐新服（新服推荐功能没被误删）
+#   C 无人在线（线上现状）→ 两版都不下发，响应逐字段一致（零回归）
+mode_recommend() {
+  prepare
+  [ -x "$MONGO" ] || die "找不到 mongo 客户端：${MONGO}"
+  local RP="${REDIS_PORT:-6379}"
+  RCM_REDIS_PORT="$RP"   # 供 trap 里的 cleanup 使用（local 变量出作用域就没了）
+  redis-cli -p "$RP" -t 2 ping >/dev/null 2>&1 || die "本地 redis ${RP} 不可用（可用 REDIS_PORT= 指定）"
+
+  cat > "$WORK/rcm.properties" <<EOF
+mongodb_url = mongodb://127.0.0.1:27017/?&authSource=admin
+mongodb_name = gsl_rcm_dryrun
+mongodb_maximumNumberOfConnections = 10
+mongodb_connectTimeout = 10000
+mongodb_maxWaitTime = 5000
+mongodb_threadsAllowedToBlockForConnectionMultiplier = 5
+mongodb_maxConnectionIdleTime = 0
+mongodb_maxConnectionLifeTime = 0
+mongodb_socketTimeout = 0
+mongodb_socketKeepAlive = true
+redis_host = 127.0.0.1
+redis_port = ${RP}
+redis_password =
+redis_maxTotal = 4
+redis_minIdle = 1
+redis_maxWaitMillis = 20
+redis_maxIdle = 2
+redis_testOnBorrow = false
+isTestLan = 1
+openAdultCheck = false
+EOF
+
+  seed() { # $1 = with_new(0/1)
+    "$MONGO" --quiet "127.0.0.1:27017/gsl_rcm_dryrun" --eval "
+      db.server_info.drop();
+      db.server_info.insert({
+        \"_id\":1,\"channel\":\"pc\",\"sub_channel\":\"1\",\"plat\":\"android\",\"server_id\":\"10001\",
+        \"name\":\"霓虹序曲\",\"state\":\"2\",\"open_time\":\"1700622508\",\"server_version\":\"1.26001\",
+        \"is_new\":\"0\",\"is_banreg\":\"0\",\"ip\":\"127.0.0.1\",\"port\":\"16081\"});
+      if ($1 == 1) {
+        db.server_info.insert({
+          \"_id\":2,\"channel\":\"pc\",\"sub_channel\":\"1\",\"plat\":\"android\",\"server_id\":\"10002\",
+          \"name\":\"新服\",\"state\":\"2\",\"open_time\":\"1700622508\",\"server_version\":\"1.26001\",
+          \"is_new\":\"1\",\"is_banreg\":\"0\",\"ip\":\"127.0.0.1\",\"port\":\"16081\"});
+      }
+      print('server_info=' + db.server_info.count());
+    " | tail -1
+  }
+
+  cleanup() { redis-cli -p "${RCM_REDIS_PORT:-6379}" del ONLINE_NUM:10001 >/dev/null 2>&1 || true; }
+  trap 'cleanup; rm -rf "$WORK"' EXIT
+
+  local rc_global=0
+
+  echo
+  echo "=== 用例 A：有人在线（ONLINE_NUM:10001=1）+ 无新服 —— 老包会挂的那一格 ==="
+  seed 0
+  redis-cli -p "$RP" set ONLINE_NUM:10001 1 >/dev/null
+  run_pair "A" "$WORK/rcm.properties" "$WORK/rcm_A" "probe-openid" pc 1 android 1.26001
+  set +e
+  "$PYTHON" "$HERE/compare.py" "$WORK/rcm_A.orig.json" "$WORK/rcm_A.patch.json" \
+      "原版" "补丁版" --allow-drop recommend || rc_global=1
+  set -e
+  echo "  原版 recommend   = $("$PYTHON" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('recommend','<无>'))" "$WORK/rcm_A.orig.json")"
+  echo "  补丁版 recommend = $("$PYTHON" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('recommend','<无>'))" "$WORK/rcm_A.patch.json")"
+
+  echo
+  echo "=== 用例 B：有人在线 + 存在 is_new=1 的新服 —— 新服推荐必须保留 ==="
+  seed 1
+  redis-cli -p "$RP" set ONLINE_NUM:10001 1 >/dev/null
+  run_pair "B" "$WORK/rcm.properties" "$WORK/rcm_B" "probe-openid" pc 1 android 1.26001
+  set +e
+  "$PYTHON" "$HERE/compare.py" "$WORK/rcm_B.orig.json" "$WORK/rcm_B.patch.json" "原版" "补丁版" || rc_global=1
+  set -e
+  echo "  原版 recommend   = $("$PYTHON" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('recommend','<无>'))" "$WORK/rcm_B.orig.json")"
+  echo "  补丁版 recommend = $("$PYTHON" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('recommend','<无>'))" "$WORK/rcm_B.patch.json")"
+
+  echo
+  echo "=== 用例 C：无人在线（= 线上当前状态 ONLINE_NUM=0）—— 必须零差异 ==="
+  seed 0
+  cleanup
+  run_pair "C" "$WORK/rcm.properties" "$WORK/rcm_C" "probe-openid" pc 1 android 1.26001
+  set +e
+  "$PYTHON" "$HERE/compare.py" "$WORK/rcm_C.orig.json" "$WORK/rcm_C.patch.json" "原版" "补丁版" || rc_global=1
+  set -e
+  cmp -s "$WORK/rcm_C.orig.json" "$WORK/rcm_C.patch.json" \
+    && echo "  ✅ 响应体逐字节一致（$(wc -c < "$WORK/rcm_C.patch.json" | tr -d ' ') bytes）" \
+    || echo "  ℹ️ 响应体文本有差异，按语义比对结论为准"
+
+  return $rc_global
+}
+
 case "$MODE" in
   local) mode_local ;;
   prod)  mode_prod ;;
-  *) echo "用法: $0 {local|prod}"; exit 2 ;;
+  recommend) mode_recommend ;;
+  *) echo "用法: $0 {local|prod|recommend}"; exit 2 ;;
 esac

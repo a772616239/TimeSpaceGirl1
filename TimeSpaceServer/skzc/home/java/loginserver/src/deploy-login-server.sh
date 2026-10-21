@@ -44,7 +44,7 @@ WAR_PATH="$TC/webapps/tk.war"
 CATALINA_OUT="$TC/logs/catalina.out"
 BACKUP_DIR="$TC/backup-gsl-i18n"
 LOCAL_BACKUP="$HERE/backup-gsl-i18n"
-BASELINE_MD5="87104ceebb8898be15d3a1398354a3e4"
+BASELINE_MD5="d2a576bb00d5e42a6e896af93bd9d312"   # = 10-12 部署的 i18n 版（recommend 收窄前的线上版本）
 # 客户端硬编码 channel=pc / plat=android / sub_channel=1；server_version 用线上真实版本号
 URL="http://127.0.0.1:8080/tk/getServerList?openId=deploy-check&channel=pc&plat=android&sub_channel=1&server_version=1.26001"
 
@@ -201,6 +201,13 @@ case "$MODE" in
     else
       say "   ⚠️ 响应里没有 name_en/name_jp/name_kr —— 请确认 server_info 里这几个字段是否已写"
     fi
+    # 🔴 本补丁的核心断言：recommend 只允许来自 is_new=1 的新服。
+    #    线上当前没有新服 ⇒ 响应里绝不该出现 recommend（老客户端就是被它打死的）。
+    if printf '%s' "$BODY" | grep -q '"recommend"'; then
+      die "🔴 补丁版仍在下发 recommend —— 补丁未生效或 server_info 里存在 is_new=1 的新服。
+   响应：$BODY"
+    fi
+    say "   ✅ 响应里没有 recommend（recommend 只按新服下发，不再按在线人数兜底）"
     say "部署完成"
     ;;
 

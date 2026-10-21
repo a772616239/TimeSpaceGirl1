@@ -157,13 +157,23 @@ const snapshot = ({ alts, quota, refusal }) => {
         alt: im.alt,
       }))
       .filter((o) => o.w >= 300 && o.h >= 300),
-    // 生成中：停止按钮 / 进度百分比 / 「正在勾勒草图」
-    busy:
-      !!document.querySelector('[data-testid="stop-button"]') ||
-      /\d{1,3}\s*%/.test(body) ||
-      /正在(勾勒|生成|绘制|创建)|Creating image|Generating image|画像を(生成|作成)|그림을 그리는/i.test(
-        body
-      ),
+    // 生成中判据。🔴 2026-10-21 实测：body 里**包含用户自己的提示词**，所以任何「数字+%」
+    //   都可能是提示词里的约束（例如 "keep everything inside a 4% safe margin"）——
+    //   一命中就 busy=true ⇒ 图其实早就画完了（页面尾部明确写着「回答已完成」）却永远等不到
+    //   连续两轮 stable，最后白等 7 分钟超时、白烧一次额度（design 档首跑就是这么废的）。
+    //   所以：① 完成标记优先，② 百分比只认进度组件，绝不扫全文。
+    busy: (() => {
+      const DONE =
+        /回答已完成|回答が完了しました|已完成回答|生成已完成|Response (now )?complete|Answer (now )?complete|생성 완료/i;
+      if (DONE.test(body) && !document.querySelector('[data-testid="stop-button"]')) return false;
+      return (
+        !!document.querySelector('[data-testid="stop-button"]') ||
+        !!document.querySelector('[role="progressbar"], [data-testid*="progress"], [aria-valuenow]') ||
+        /正在(勾勒|生成|绘制|创建)|Creating image|Generating image|画像を(生成|作成)|그림을 그리는/i.test(
+          body
+        )
+      );
+    })(),
     quota: hit,
     refusal: refused,
     text: body.slice(-600),

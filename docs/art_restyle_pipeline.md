@@ -22,6 +22,28 @@
 
 ---
 
+## 构图三档：lock / free / design（2026-10-21 加 design）
+
+| 档 | 提示词动词 | 放开 | 护栏在哪 |
+|---|---|---|---|
+| `lock` | Restyle | 只换衣服/配色/材质 | `layout_default` |
+| `free` | Restyle | 人物姿势、镜头、裁切 | `layout_free` |
+| `design` | **Redesign** | 版面、场景、镜头、道具、装饰全部重排 | `layout_design`（画风/画布/文案/UI 空区四条硬边界） |
+
+`design` 的由来（用户 2026-10-21 要求「让 AI 自主设计，只要符合整体画风、更吸引人」）：
+
+- **动词必须换掉**：写 `Restyle` 时模型会老老实实沿用原版面 —— 它把任务理解成「换材质」。
+  `design` 用 `Redesign` + `DESIGN_BRIEF`，第一句就是「你是美术指导，不要照抄原版面」。
+- **画风锁不能顺手锁构图**：`DEFAULT_STYLE_LOCK` 原来结尾是「只有配色/材质/服装/布景变」，
+  放进 design 档跟「你可以重排版面」自相矛盾，模型会挑一句听。现在「可变范围」拆到
+  `COMPOSITIONS[x]["style_scope"]`，按档给不同的一句。
+- **UI 契约一条不放**：design 只是「美术层自由」，文案策略、UI 空区位置、画布比例与安全边
+  仍然是硬的。`themes --check` 按关键词卡 `layout_design` 的四项，缺一项直接红。
+- **alpha**：整幅重绘 ⇒ `keep`（`source` 会被自动改写并打提示）；源是 RGB 就 `--variant opaque`。
+- **姿势**：design 默认不注入 `pose_hints`（姿势也归模型），显式 `--pose` 才生效。
+
+---
+
 ## 命令速查
 
 ```bash
@@ -31,6 +53,7 @@ W=_output/art_restyle/<资源名>/<主题>
 $PY scripts/image/restyle_pipeline.py themes                     # 列内置主题
 $PY scripts/image/restyle_pipeline.py prompt --theme christmas   # 打印完整提示词（含参数）
 $PY scripts/image/restyle_pipeline.py prompt --theme christmas --composition free   # 自由构图（人物可重设计）
+$PY scripts/image/restyle_pipeline.py prompt --theme christmas --composition design # AI 自主设计整张图（2026-10-21）
 $PY scripts/image/restyle_pipeline.py prepare   --asset Assets/.../x.png --theme christmas [--layout F] [--composition free]
 $PY scripts/image/restyle_pipeline.py postprocess --work "$W" --gen "$W/inbox/gen.png" [--hero-band 930] [--watermark off]
 $PY scripts/image/restyle_pipeline.py verify    --work "$W"

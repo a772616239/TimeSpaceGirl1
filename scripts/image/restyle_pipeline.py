@@ -81,18 +81,29 @@ def slug_of(path: Path) -> str:
 # ----------------------------------------------------------------------------- 提示词拼装
 # 🔴 提示词不能把文案写死。底板资源每张的文字都不同（8-DAY / 50x Rebate / …），
 #    写死一次就会在下一张图上画出上一张的字 —— 这是本管线最贵的错误（废一张图 = 一次额度 + 30 分钟）。
-PROMPT_TEMPLATE = """Restyle this mobile-game UI panel asset into {theme_en} style, {frame}.
+PROMPT_TEMPLATE = """{verb} this mobile-game UI panel asset into {theme_en} style, {frame}.
 
 {style_lock}{heading}
 {layout}
 
-TEXT: keep every glyph complete, sharp and readable; restyle the material only - {text_style}.
+{text_line}
 
 CHARACTER: {character}
 
-EMPTY BODY: {body}.
+{body_label}: {body}.
 
 MOOD: {decor_sentence}; the upper banner background becomes {banner}. Rich glossy high-contrast mobile-game key art, crisp 2D anime illustration, sharp edges, cinematic lighting, no watermark, no extra text, no logos."""
+
+# 文案段的默认句（lock/free 用；design 有自己的版本，见 COMPOSITIONS）
+DEFAULT_TEXT_LINE = ("TEXT: keep every glyph complete, sharp and readable; restyle the material only - "
+                     "{text_style}.")
+DEFAULT_BODY_LABEL = "EMPTY BODY"
+# prepare 打印用的人话（一眼看出这档放开了什么）
+COMPOSITION_LABELS = {
+    "lock": "姿势/版式全锁，只换衣服与配色",
+    "free": "人物可重设计，文案/空区/画布仍锁",
+    "design": "AI 自主设计整张图，只锁画风 + 画布 + UI 契约",
+}
 
 
 # 🔴 画风漂移是本管线最贵的隐性失败：模型会把「换风格」理解成「重新渲染一遍」——
@@ -106,24 +117,38 @@ DEFAULT_STYLE_LOCK = (
     "two-tone cel shadows (one shadow tone plus one highlight), clean unblended colour blocks and the "
     "same line weight as the source. Do NOT switch to painterly brushwork, soft airbrushed gradients, "
     "3D/CGI or photoreal rendering, subsurface scattering, bloom, rim-light glow or textured skin "
-    "painting. Only the palette, materials, outfit and set dressing change - the rendering style does not."
+    "painting."
 )
+# 🔴 画风锁只管「画法」，不许顺手把「什么能动」也写死：原来结尾是
+#    「只有配色/材质/服装/布景变」——放进 free/design 档就自相矛盾（上面刚说可以重排构图，
+#    这里又说构图不许动），模型会挑一句听的，结果 designs 出来还是原版面。
+#    所以「可变范围」按构图档分开写（COMPOSITIONS[x]["style_scope"]）。
 
 
-# 构图自由度。lock = 老行为（姿势/位置/缩放全锁死），free = 允许重设计人物姿势换吸引力。
-# 🔴 free 不是「随便画」：它只放开「人」，仍然锁死三件功能约束（文案完整、底部空白区、
-#    画布比例与透明边）。放开的是美术，不是 UI 契约。
+# 构图自由度（--composition）。三档，放开的东西严格递增：
+#   lock   姿势/版式/文案位置全锁，只换衣服与配色（可预期，适合「只换皮」的批量）
+#   free   放开「人」：允许重设计姿势与镜头；文案、底部空白区、画布比例仍锁
+#   design 放开「画」：AI 当美术，可以重排整个版面、换场景、加道具；只锁三件不能碰的东西
+#          —— 画风（跟这款游戏同一套画法）、画布比例与安全边、UI 功能位（空区/文案）。
+# 🔴 design ≠ 「随便画」。它的自由度全在美术层，UI 契约一条都没放。放开 UI 契约
+#    就会画出「很好看但盖住字/挡住按钮」的图 —— 那种图在真机上等于报废。
 COMPOSITIONS = {
     "lock": {
+        "verb": "Restyle",
         "frame": "keeping the EXACT same composition, layout, proportions, camera framing "
                  "and visual hierarchy as the input image",
         "heading": "LAYOUT_LOCK (must not change):",
+        "style_scope": "Only the palette, materials, outfit and set dressing change - the composition "
+                       "and the rendering technique do not.",
         "character": "keep the same pose, position, scale and silhouette; change the outfit into {outfit}.",
     },
     "free": {
+        "verb": "Restyle",
         "frame": "re-composing the artwork freely for maximum visual appeal and stopping power, "
                  "while keeping the panel's UI function intact",
         "heading": "FRAME_RULES (functional constraints that must not change):",
+        "style_scope": "Only the palette, materials, outfit, pose and framing change - the rendering "
+                       "technique does not.",
         "character": ("redesign the character for far stronger appeal: a new, dynamic, inviting pose "
                       "and a more attractive camera angle - position, crop and scale may all change - "
                       "with an expressive gesture and lively hair/cloth motion. Hands must stay EMPTY: "
@@ -132,6 +157,34 @@ COMPOSITIONS = {
                       "SAME character identity (same face design, same hair color and style, same eye "
                       "color, same art style and rendering quality) so it reads as the same heroine, "
                       "only much more attractive; restyle the outfit into {outfit}."),
+    },
+    "design": {
+        # 动词换掉：design 是「重新设计」，不是「换风格」。写 Restyle 模型会老老实实沿用原版面。
+        "verb": "Redesign",
+        "frame": ("as brand-new key art for the same game: you have full creative authority over the "
+                  "composition - new scene concept, new staging, new camera angle, new props and new set "
+                  "dressing - the goal is the most striking, most appealing version of this panel that "
+                  "still belongs to this game"),
+        "heading": "DESIGN_BRIEF (you are the art director; only these limits are hard):",
+        "style_scope": "The palette, materials, outfit, staging and set dressing may all change - only "
+                       "the rendering technique is locked.",
+        # design 允许拿道具：自主设计却不许拿东西，等于把「圣诞」画成一棵没挂饰的树。
+        "character": ("re-invent her staging for maximum appeal: a fresh camera angle, a dynamic gesture, "
+                      "an expressive face and lively hair/cloth motion are all encouraged; she MAY hold or "
+                      "lean on theme props (a bauble, a candy cane, a gift, a string of lights) and props may "
+                      "fill the scene around her - as long as her face and eyes stay clearly visible and she "
+                      "never covers the text or the reserved UI areas. Keep the SAME character identity "
+                      "(same face design, same hair color and style, same eye color, same age) so she reads "
+                      "as the same heroine; restyle the outfit into {outfit}{pose_hint}."),
+        # 没字的图不许凭空造字；有字的图逐字保留（两种资源都在跑，不能二选一写死）
+        "text_line": ("TEXT: invent NO lettering, numerals, labels, signage, logos, signatures or "
+                      "watermarks. If the input image already contains text, keep it verbatim, complete, "
+                      "sharp and readable in the same place and only restyle its material - {text_style}."),
+        "body_label": "UI AREA",
+        "body_note": ("whatever empty area the input reserves for UI overlays (bottom band, side column, "
+                      "blank plate) stays where it is, keeps its margins and stays calm and low-contrast: "
+                      "no busy detail, no bright clutter, nothing that competes with overlaid interface "
+                      "elements"),
     },
 }
 
@@ -166,6 +219,20 @@ def resolve_pose_hint(theme: dict, pose: str | int | None = None) -> str:
     return ". Ideal pose: " + random.choice(hints)
 
 
+def pose_for(composition: str, theme: dict, pose=None) -> str:
+    """按构图档决定要不要注入姿势。
+
+    free   ：默认从主题 pose_hints 随机抽（避免每张一个模子）
+    design ：**默认不注入**——自主设计里姿势本身就该归模型；只有显式 --pose 才给
+    lock   ：永不注入（{pose_hint} 只出现在 free/design 分支）
+    """
+    if composition == "free":
+        return resolve_pose_hint(theme, pose)
+    if composition == "design" and pose is not None and str(pose).strip():
+        return resolve_pose_hint(theme, pose)
+    return ""
+
+
 def build_prompt(name: str, layout: list[str] | None = None, composition: str | None = None,
                  pose_hint: str = "", outfit_override: str = "") -> str:
     """把「主题字段 + 构图规则」拼成完整 prompt。
@@ -185,11 +252,21 @@ def build_prompt(name: str, layout: list[str] | None = None, composition: str | 
     if layout:
         lines = layout
     else:
-        # 老数据只有 layout_default(=lock)，free 缺失时回落到它，但打印警告
+        # 老数据只有 layout_default(=lock)，其它档缺失时回落并打印警告
         lines = presets.get(f"layout_{key}") or presets.get("layout_default", [])
+        if f"layout_{key}" not in presets and key != "lock":
+            print(f"⚠ 预设里没有 layout_{key}，回落到 layout_default（构图约束会按 lock 的写）",
+                  file=sys.stderr)
     # 预设里显式写 "" 表示这张管线不锁画风（资源本来就要换渲染方式时用）
     style_lock = str(presets.get("style_lock", DEFAULT_STYLE_LOCK) or "").strip()
+    # 「什么能动」跟着构图档走，不能写死在 style_lock 里（否则 free/design 会自相矛盾）
+    scope = str(comp.get("style_scope") or "").strip()
+    if style_lock and scope:
+        style_lock = f"{style_lock} {scope}"
+    body_note = str(comp.get("body_note") or "").strip()
+    body_text = theme["body"] + (f"; {body_note}" if body_note else "")
     return PROMPT_TEMPLATE.format(
+        verb=comp.get("verb", "Restyle"),
         theme_en=theme.get("en", theme["zh"]),
         frame=comp["frame"],
         style_lock=(style_lock + "\n\n") if style_lock else "",
@@ -197,13 +274,15 @@ def build_prompt(name: str, layout: list[str] | None = None, composition: str | 
         layout="\n".join(f"{i}) {ln}" if not ln[:2].strip().rstrip(")").isdigit() else ln
                        for i, ln in enumerate(lines, 1)),
         text_style=theme["text_style"],
+        text_line=comp.get("text_line", DEFAULT_TEXT_LINE).format(text_style=theme["text_style"]),
+        body_label=comp.get("body_label", DEFAULT_BODY_LABEL),
         character=comp["character"].format(
             # 🔴 服装按图覆盖：主题里的 outfit 是「这个题材通常穿什么」，
             #    但同一张图里角色的剪裁/露肤度是设计的一部分（舞娘、泳装、战甲…），
             #    主题的默认大衣套上去会把人裹住、把构图改掉。--outfit 只覆盖服装这一句。
             outfit=(outfit_override.strip() or theme["outfit"]),
             pose_hint=pose_hint),
-        body=theme["body"],
+        body=body_text,
         banner=theme["banner"],
         decor_sentence=theme["decor_sentence"],
     )
@@ -313,7 +392,7 @@ def cmd_prepare(args) -> int:
     # 提示词在这里就定版落盘：provider 出图、Agent 手工出图、事后复盘都用同一份字符串。
     layout = read_layout(args.layout, work)
     composition = getattr(args, "composition", None) or load_presets().get("composition_default", "lock")
-    pose_hint = resolve_pose_hint(theme, getattr(args, "pose", None)) if composition == "free" else ""
+    pose_hint = pose_for(composition, theme, getattr(args, "pose", None))
     prompt = build_prompt(args.theme, layout, composition, pose_hint, getattr(args, "outfit", "") or "")
     (work / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
 
@@ -350,7 +429,7 @@ def cmd_prepare(args) -> int:
     print(f"  alpha     : 透明 {100 * (1 - coverage):.2f}%  半透明 {state['pixels_partial_alpha']} px"
           f"（参照 {state['alpha_source']}）")
     print(f"  主题      : {args.theme}（{theme['zh']}）")
-    print(f"  构图      : {composition}（{'人物可重设计' if composition == 'free' else '姿势/版式全锁'}）")
+    print(f"  构图      : {composition}（{COMPOSITION_LABELS.get(composition, composition)}）")
     if pose_hint:
         print(f"  姿势      : {pose_hint.replace('. Ideal pose: ', '')}")
     print(f"  work      : {work}")
@@ -382,7 +461,7 @@ def cmd_prompt(args) -> int:
     theme = theme_of(args.theme)
     layout = read_layout(getattr(args, "layout", None))
     composition = getattr(args, "composition", None) or load_presets().get("composition_default", "lock")
-    pose_hint = resolve_pose_hint(theme, getattr(args, "pose", None)) if composition == "free" else ""
+    pose_hint = pose_for(composition, theme, getattr(args, "pose", None))
     print(f"# theme={args.theme} size={theme.get('size')} quality={theme.get('quality')} "
           f"input_fidelity={theme.get('input_fidelity')} composition={composition}")
     if composition == "free":
@@ -436,9 +515,21 @@ def lint_presets(presets: dict | None = None) -> int:
 
     if presets.get("composition_default") not in COMPOSITIONS:
         err("presets", f"composition_default={presets.get('composition_default')!r} 不在 {list(COMPOSITIONS)}")
-    for key in ("layout_default", "layout_free"):
+    for key in ("layout_default", "layout_free", "layout_design"):
         if not presets.get(key):
-            err("presets", f"{key} 缺失或为空（free/lock 会退化成无构图锁）")
+            err("presets", f"{key} 缺失或为空（对应构图档会退化成无构图锁）")
+    # design 档放开了版面，剩下的全靠这四条硬边界撑着：画风 / 画布与安全边 / 文案 / UI 功能位。
+    # 少一条都会画出「好看但进游戏就废」的图，所以按关键词卡住，别靠人记。
+    dm = " ".join(str(x) for x in (presets.get("layout_design") or [])).lower()
+    if dm:
+        for token, why in ((("art direction", "style", "same artist"), "画风一致性"),
+                           (("aspect", "ratio"), "画布比例"),
+                           (("text", "lettering"), "文案/不许造字"),
+                           (("ui",), "UI 功能位（空区/覆盖层）")):
+            if not any(t in dm for t in token):
+                err("presets", f"layout_design 没提到「{why}」——design 档放开了版面，这条是硬边界")
+        if len(presets["layout_design"]) < 4:
+            err("presets", "layout_design 少于 4 条：硬边界漏项，模型会当「随便画」")
 
     # 画风锁：整段进 prompt，同样不能混中文；写了但太短等于没写
     sl = presets.get("style_lock", DEFAULT_STYLE_LOCK)
@@ -1010,9 +1101,9 @@ def cmd_postprocess(args) -> int:
         log("postprocess", f"套红金画框：框宽 {max(20, round(flat.width * frame_ratio))}px"
                            f"（{'画面缩进框内' if inset else '压在画面上'}）")
     elif frame_mode == "auto":
-        if state.get("composition") == "free":
+        if state.get("composition") in ("free", "design"):
             flat = frame_card(flat, band_ratio=frame_ratio, rim=frame_rim, hairline=frame_hair)
-            log("postprocess", "套游戏卡框（auto：free 构图必套，画面缩进框内）")
+            log("postprocess", f"套游戏卡框（auto：{state.get('composition')} 构图必套，画面缩进框内）")
         else:
             log("postprocess", "不套画框（auto：lock 构图保留原透明轮廓）")
     # 🔴 源是 RGB 就必须还回 RGB：opaque 变体内部一直是 RGBA，直接存会把 RGB 资源写成 RGBA，
@@ -1030,9 +1121,10 @@ def cmd_postprocess(args) -> int:
     #   free  —— 整幅不透明 + 顶边渐隐 N px（--feather-top），让上沿融进面板背景。
     src_alpha = Image.open(work / "src" / "source_alpha.png").convert("L").resize(target, Image.LANCZOS)
     alpha_mode = getattr(args, "alpha_mode", "source") or "source"
-    if alpha_mode == "source" and state.get("composition") == "free":
-        log("postprocess", "🔴 free 构图却要用源 alpha —— 源掩膜按老姿势抠的，会把新人物裁掉；"
-                           "已自动改用 keep。要沿用源 alpha 请把 alpha-mode 显式写成 source")
+    if alpha_mode == "source" and state.get("composition") in ("free", "design"):
+        log("postprocess", f"🔴 {state.get('composition')} 构图却要用源 alpha —— 源掩膜按老构图抠的，"
+                           "会把新人物/新场景裁掉；已自动改用 keep。"
+                           "要沿用源 alpha 请把 alpha-mode 显式写成 source")
         alpha_mode = "keep"
     if alpha_mode == "source":
         alpha_img = src_alpha
@@ -1526,10 +1618,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--theme", required=True)
     p.add_argument("--layout", default=None, help="构图锁：文件路径或多行文本（默认用预设里的通用规则）")
     p.add_argument("--composition", choices=list(COMPOSITIONS), default=None,
-                   help="lock=姿势/版式全锁（默认）；free=允许重设计人物姿势与镜头，只锁文案/空白区/画布")
+                   help="lock=姿势/版式全锁（默认）；free=人物姿势与镜头可重设计，"
+                        "只锁文案/空白区/画布；design=AI 自主设计整张图"
+                        "（版面/场景/道具全放开，只锁画风+画布+文案+UI 空区）")
     p.add_argument("--pose", default=None,
                    help="free 模式的姿势：留空=每次从主题候选里随机抽一条（推荐，避免每张图一个模子）；"
-                        "数字=指定第 N 条；none=不注入姿势；其它文字=当作自定义姿势句")
+                        "数字=指定第 N 条；none=不注入姿势；其它文字=当作自定义姿势句。"
+                        "design 档默认不注入（姿势归模型自主决定），显式传值才生效")
     p.add_argument("--outfit", default=None,
                    help="覆盖主题预设里的服装句（只改「穿什么」，不动主题的配色/装饰）。"
                         "角色剪裁/露肤度是设计的一部分时用，别让主题的默认大衣把构图改掉")
@@ -1545,9 +1640,12 @@ def main(argv: list[str] | None = None) -> int:
                    help="改前参照图（默认=资源本身）；支持 git:HEAD:<path>")
     p.add_argument("--layout", default=None, help="构图锁：文件路径或多行文本（决定文案怎么保）")
     p.add_argument("--composition", choices=list(COMPOSITIONS), default=None,
-                   help="lock=姿势/版式全锁（默认）；free=允许重设计人物姿势与镜头，只锁文案/空白区/画布")
+                   help="lock=姿势/版式全锁（默认）；free=人物姿势与镜头可重设计，"
+                        "只锁文案/空白区/画布；design=AI 自主设计整张图"
+                        "（版面/场景/道具全放开，只锁画风+画布+文案+UI 空区）")
     p.add_argument("--pose", default=None,
-                   help="free 模式的姿势：留空=随机抽主题候选；数字=第 N 条；none=不注入；其它文字=自定义")
+                   help="free 模式的姿势：留空=随机抽主题候选；数字=第 N 条；none=不注入；其它文字=自定义。"
+                        "design 档默认不注入")
     p.add_argument("--outfit", default=None,
                    help="覆盖主题预设里的服装句（只改「穿什么」，配色/装饰仍走主题）。"
                         "角色剪裁/露肤度属于设计的一部分时用，避免主题默认大衣把人裹住")

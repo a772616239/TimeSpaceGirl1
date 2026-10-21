@@ -18,9 +18,10 @@ description: TimeSpaceGirl1 美术 UI 资源换节日风格 / 换皮肤 / 给整
 | 用户说 | 走哪条 |
 |---|---|
 | 「这张图换成圣诞/春节风格」 | §1 五段式，主题取 `themes` 里的 key |
-| 「这批图都换」「三语一起换」「一次出好几个主题」 | §1.4 `batch_restyle.py`（先 `--dry-run` 数组数） |
+| 「这批图都换」「三语一起换」「一次出好几个主题」 | §1.5 `batch_restyle.py`（先 `--dry-run` 数组数） |
 | 「加个夏日冲浪/普罗旺斯/万圣/感恩/赛博主题」 | 改 `theme_presets.json` → `themes --check` → `docs/art_restyle_themes.md` §4 |
 | 「换皮肤但人物姿势也重设计」 | `--composition free`，必配 `--alpha-mode keep` + `--frame auto` |
+| 「让 AI 自己设计这张图」「版面/场景也重做，只要画风对、更抓眼」 | `--composition design`（§1.4），只锁画风/画布/文案/UI 空区 |
 | 「套个边框」「边框不好看」 | §2 边框三定律，**先做真机预览再给用户看** |
 | 「黑底上看不见框」 | §2.2 亮边，一条 `--frame-rim` 解决 |
 | 「把紫色/金色再深一点」 | 改 `CARD_RIMS` 里那一档色板（亮边/斜面/带色三值一起动） |
@@ -103,7 +104,36 @@ free 构图提示词 ⇒ **每张 free 图都是同一个「抱着礼盒递出�
 - `state.json` 的 `pose_hint` 记录了本次实际用的那句，出图不理想时按它复现或换一条。
 - `lock` 构图不注入姿势（`{pose_hint}` 只出现在 free 分支），`--pose` 对 lock 无副作用。
 
-### 1.4 一次要换一批（多资源 / 多主题）走 batch_restyle.py
+### 1.4 「AI 自主设计」= `--composition design`（2026-10-21 新增）
+
+想让模型**当美术**重做一张更抓眼的图（不是换皮），而不是魔改原版面时用它：
+
+```bash
+$PY scripts/image/restyle_pipeline.py prepare --asset Assets/.../xxx.png --theme christmas \
+    --composition design                      # 提示词里换成 Redesign + DESIGN_BRIEF
+$PY scripts/image/gen_chatgpt_web.py --image <原图> --prompt-file "$W/prompt.txt" --out "$W/inbox/gen_web.png"
+$PY scripts/image/restyle_pipeline.py postprocess --work "$W" --gen "$W/inbox/gen_web.png" \
+    --alpha-mode keep --frame none            # 整幅重绘 ⇒ 必须 keep；源是 RGB 就 --variant opaque
+```
+
+三档放开的东西严格递增（`lock` < `free` < `design`），锁的护栏各写在 `theme_presets.json` 的
+`layout_<档>` 里：`design` 用 `layout_design`，是全主题共用的**四条硬边界**——
+① `ART DIRECTION` 同一画师（线宽/平涂赛璐璐/细节密度/脸眼发画法/道具语言）、
+② `CANVAS` 原比例 + 4% 安全边 + 不加外框、③ `TEXT` 无字图不许造字（原图有字则逐字保留）、
+④ `UI FUNCTION` 原本留给 UI 的空区位置不变且保持低对比。
+
+- 🔴 **`design` 不是「随便画」**：放开的是版面，UI 契约一条没放。少了第 ④ 条就会画出
+  「很好看但盖上按钮/压住字」的图，真机上等于报废。`themes --check` 按关键词卡这四条。
+- 🔴 提示词里的**可变范围**跟着档走（`COMPOSITIONS[x]["style_scope"]`）：早先把
+  「只有配色/材质/服装/布景变」写死在 `style_lock` 结尾，放进 design 档就自相矛盾，
+  模型挑一句听 ⇒ design 出来的还是原版面。
+- `design` 默认**不注入** `pose_hints`（姿势也归模型），显式 `--pose N/文字` 才注入。
+- `free/design` 会自动把 `--alpha-mode source` 改成 `keep`（源掩膜按老构图抠的，会裁掉新图）；
+  `--frame auto` 两档都套卡框。
+- Jenkins：`COMPOSITION=design`（下拉已加），工作目录自动加 `_design` 后缀，三版并存可对比。
+- 主题设计意图与实跑配方：**`docs/art_restyle_themes.md` §2.9**。
+
+### 1.5 一次要换一批（多资源 / 多主题）走 batch_restyle.py
 
 ```bash
 $PY scripts/image/batch_restyle.py scripts/image/batch_example.json --dry-run   # 先数清组数：N×M 组＝N×M 份额度
@@ -118,7 +148,7 @@ $PY scripts/image/batch_restyle.py my.json --publish                            
 - 汇总落在 `_output/art_restyle/_batch/<时间戳>/summary.md`，逐组日志在 `logs/<slug>__<theme>.<step>.log`。
 - 主题设计意图、每类图该配什么参数、新主题接入步骤：**`docs/art_restyle_themes.md`**。
 
-### 1.5 表1：换皮大图台账（用户 2026-10-21 要求，替换完必须记录在案）
+### 1.6 表1：换皮大图台账（用户 2026-10-21 要求，替换完必须记录在案）
 
 - 表文件 `scripts/image/table1.json`，工具 `scripts/image/table1.py`。所有改过的大图（非标题类）都在表里，记 `kind` / `themes_done` / 欠哪些主题。
 - **publish 自动登记**：`restyle_pipeline.py publish` 写回成功即调 `table1.record_publish()`——Jenkins 与 batch_restyle 两链路都覆盖，**不需要也不会再忘了手工记录**；登记失败只报警不阻断写回。
@@ -198,6 +228,11 @@ $PY scripts/image/preview_ingame.py new.png --zoom 3 --out /tmp/corner.jpg
     但换了纹理导入/压缩口径。`prepare` 打印「源资源是整幅不透明」就是这种情况。
 7. **提示词不许写死文案**：文案由 `LAYOUT` 构图锁逐字保持，主题预设只描述风格（初版写死 `8-DAY`，
    换主题就串字）。
+8. 🔴 **提示词里别写「数字+%」**（如 `4% safe margin`）：chatgpt.com 页面会把提示词原样回显，
+   driver 的「生成中」判据曾经扫全文 `\d{1,3}%` ⇒ 提示词里的百分比把它骗成永远 busy，
+   图早画完了（页面尾写着「回答已完成」）却等不到稳定、7 分钟超时白烧一次额度。
+   现在 driver 已改成「完成标记优先 + 只认进度组件」，但提示词侧仍然绕开（写 `five percent`）。
+   同类隐患：任何会在页面上出现的「进度样式」文本都不要进提示词。
 
 ## 5. 验收清单
 

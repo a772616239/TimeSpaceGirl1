@@ -17,9 +17,14 @@
     "providers: manual=人/Agent 出图后丢进 inbox；chatgpt_web=浏览器 cookie 驱动 chatgpt.com；",
     "           任何能写文件的模型都可以用 manual 接入，本文件不绑定具体厂商。",
     "body_colors: 长条底板（banner + 大片空白区）的续接渐变两端色，postprocess --hero-band 用。",
-    "composition（构图自由度，--composition 或 COMPOSITION=）：lock=人物姿势/位置/缩放全锁，只换衣服与配色（默认，可预期）；",
-    "   free=允许重设计人物姿势与镜头换吸引力，但**仍然锁死**文案完整可读、底部 UI 空白区、画布比例与透明边。",
-    "   free 用 layout_free，lock 用 layout_default；主题可用 pose_hints 给 free 模式几个候选姿势。",
+    "composition（构图自由度，--composition 或 COMPOSITION=）：三档，放开的东西严格递增。",
+    "   lock=人物姿势/位置/缩放全锁，只换衣服与配色（默认，可预期）；",
+    "   free=允许重设计人物姿势与镜头换吸引力，但**仍然锁死**文案完整可读、底部 UI 空白区、画布比例与透明边；",
+    "   design=AI 自主设计整张图（版面/场景/镜头/道具/装饰全放开，只要像这款游戏的画法、更抓眼），",
+    "          只锁四件硬边界：画风一致、画布比例与安全边、文案策略（无字不许造字）、UI 功能空区。",
+    "   free 用 layout_free，lock 用 layout_default，design 用 layout_design；主题可用 pose_hints 给 free 模式候选姿势。",
+    "🔴 layout_design 是 design 档唯一的护栏：删掉任何一条都等于把 UI 契约也放开了（themes --check 会拦）。",
+    "🔴 design 档默认**不注入** pose_hint（姿势归模型自主决定），只有显式 --pose 才注入；free 档仍走随机池。",
     "🔴 pose_hints 必须是「数组 + 手里不拿新道具」：早期写死成 pose_hint 单条且指定『递出一个礼盒』，",
     "   结果每张 free 图都变成同一个抱礼物姿势（不是随机，是硬编码）。现在每次随机抽一条，--pose N 可指定，--pose none 关掉。",
     "主题分档（画法/参数配方）与批量出图见 docs/art_restyle_themes.md；新增主题跑 `restyle_pipeline.py themes --check` 自检后再用。",
@@ -38,6 +43,14 @@
     "4) Keep the original canvas aspect ratio, framing, bleed and rounded-corner silhouettes."
   ],
   "composition_default": "lock",
+  "layout_design": [
+    "1) DESIGN FREEDOM - you are the art director: re-invent the layout, the scene, the camera, the staging, the props and the decorative framing. Do NOT trace the input layout for safety. Design the strongest, most appealing version of this panel - the kind of key art that stops a player mid-scroll - and make it read instantly as the same game.",
+    "2) HARD LIMIT - ART DIRECTION: it must look painted by the same artist as the input image and hang next to the game's other panels without clashing: same lineart weight and line colour, same flat two-tone cel shading, same level of detail, same face / eye / hair rendering, same prop and ornament design language. No painterly brushwork, no 3D or CGI, no photoreal, no western cartoon, no mixed styles.",
+    "3) HARD LIMIT - CANVAS: keep the EXACT aspect ratio of the input image (a wide horizontal banner stays a wide horizontal banner). Every important element - face, hands, focal prop, decorations that must be seen - stays fully inside a five-percent safe margin, nothing clipped by an edge. Add no border, frame, letterbox or outer glow.",
+    "4) HARD LIMIT - TEXT: draw NO lettering, numerals, labels, badges, signage, logos, signatures or watermarks. If (and only if) the input image already contains text, keep that text verbatim in the same reading order, complete and razor-sharp, and restyle its material only.",
+    "5) HARD LIMIT - UI FUNCTION: any area the input reserves for UI overlays (blank plate, bottom band, side column, dead space behind buttons) keeps its position, size and margins and stays calm and low contrast - no busy detail, no bright ornament, no high-frequency texture there, and never put the face, hands or a focal prop in front of it.",
+    "6) COMPOSITION CRAFT: one clear focal point; the character carries the strongest value contrast; staged depth (foreground ornament - mid character - background scene) with air around the subject. No flat wall of decoration, no ornament colliding with her silhouette."
+  ],
   "layout_free": [
     "1) Every piece of text keeps the EXACT same wording, spelling and language as the input image - no added, removed or reworded words, and every glyph must stay complete, sharp and fully readable. You may re-position or re-scale the text block for a better composition, but it must stay in the upper banner area, inside the canvas and inside the safe margins (nothing clipped at the edges, nothing hidden behind the character).",
     "2) The character may be completely re-posed and re-framed (see CHARACTER), but her face must stay clearly visible and must never cover the text.",

@@ -13,12 +13,12 @@
     {"name":"SOURCE_FROM","type":"string","default":"","description":"改前参照图。默认=资源本身；资源已换过要重跑时填 git:HEAD:<path>，否则对比图会变成「新版 vs 新版」"},
     {"name":"LAYOUT","type":"text","default":"","description":"构图锁（锁文案/角色/空区）。留空=预设里的通用规则：一律保字、只改材质。某张图有特殊要求时填这里，别改 theme_presets.json"},
     {"name":"OUTFIT","type":"text","default":"","description":"覆盖主题预设里的服装句（只改「穿什么」，配色/装饰仍走主题）。留空=用主题默认。角色剪裁/露肤度是设计的一部分时填这里——主题的默认大衣会把舞娘/泳装这类角色裹住，等于改构图"},
-    {"name":"COMPOSITION","type":"choice","choices":["lock","free"],"default":"lock","description":"构图自由度：lock=人物姿势/位置/缩放全锁，只换衣服与配色（默认，可预期）；free=允许重设计人物姿势与镜头换吸引力，但文案完整可读、底部 UI 空白区、画布比例与透明边仍锁死（出图需人眼过一遍）"},
-    {"name":"POSE","type":"string","default":"","description":"free 模式的姿势。留空=每次从主题候选里随机抽一条（推荐：同一主题连跑也不会每张都是同一个姿势）；数字=指定第 N 条；none=不注入姿势；其它文字=自定义姿势句。🔴 曾经这段是硬编码单条「递礼盒」，导致每张 free 图都抱着礼物"},
+    {"name":"COMPOSITION","type":"choice","choices":["lock","free","design"],"default":"lock","description":"构图自由度：lock=人物姿势/位置/缩放全锁，只换衣服与配色（默认，可预期）；free=允许重设计人物姿势与镜头换吸引力，但文案完整可读、底部 UI 空白区、画布比例与透明边仍锁死；design=AI 自主设计整张图（版面/场景/镜头/道具/装饰全放开，只锁画风一致 + 画布比例与安全边 + 文案策略 + UI 功能空区，出图需人眼过一遍）"},
+    {"name":"POSE","type":"string","default":"","description":"free 模式的姿势。留空=每次从主题候选里随机抽一条（推荐：同一主题连跑也不会每张都是同一个姿势）；数字=指定第 N 条；none=不注入姿势；其它文字=自定义姿势句。COMPOSITION=design 时默认不注入（姿势归模型自主决定），只有填了才生效。🔴 曾经这段是硬编码单条「递礼盒」，导致每张 free 图都抱着礼物"},
     {"name":"HERO_BAND","type":"string","default":"","description":"超长条底板用（如 856x2048）：填英雄带像素高度（如 930）或 auto。生成图只当这条带子贴顶，下方补空卡体；留空=整幅等比 cover（适合比例接近 3:4 的图）"},
     {"name":"BODY_MODE","type":"choice","choices":["auto","source","synthetic"],"default":"auto","description":"HERO_BAND 模式下空卡体怎么来：source=用原资源下半截的明暗结构重上色（几何与原图逐像素对齐，首选）；synthetic=按主题色合成渐变（兜底）；auto=能 source 就 source"},
-    {"name":"ALPHA_MODE","type":"choice","choices":["source","keep","free"],"default":"source","description":"alpha 版怎么取：source=沿用源掩膜（只对 lock 构图成立，free 会被自动改成 keep）；keep=整幅不透明；free=整幅不透明+顶边渐隐。COMPOSITION=free 时源掩膜按老姿势抠的，会把人脸/头发裁掉"},
-    {"name":"FRAME","type":"choice","choices":["auto","card","gold","none"],"default":"auto","description":"外框：auto=free 构图自动套游戏卡框、lock 不套；card=游戏卡框（亮边+墨带+菱形纹+切角，参考道具槽/英雄卡，画面缩进框内）；gold=旧红金雕花框（游戏里没有这种语言，仅兜底）；none=不套"},
+    {"name":"ALPHA_MODE","type":"choice","choices":["source","keep","free"],"default":"source","description":"alpha 版怎么取：source=沿用源掩膜（只对 lock 构图成立，free/design 会被自动改成 keep）；keep=整幅不透明；free=整幅不透明+顶边渐隐。COMPOSITION=free/design 时源掩膜按老构图抠的，会把人脸/头发裁掉"},
+    {"name":"FRAME","type":"choice","choices":["auto","card","gold","none"],"default":"auto","description":"外框：auto=free/design 构图自动套游戏卡框、lock 不套；card=游戏卡框（亮边+墨带+菱形纹+切角，参考道具槽/英雄卡，画面缩进框内）；gold=旧红金雕花框（游戏里没有这种语言，仅兜底）；none=不套"},
     {"name":"FRAME_RIM","type":"choice","choices":["warm","ivory","violet","none"],"default":"warm","description":"卡框最外那道亮边（跟游戏道具槽一致的「暗带+亮边」）。warm=暖金（配圣诞等暖色主题）；ivory=银白；violet=紫白（跟紫色面板同色系）；none=不画亮边——🔴 深色面板(17,17,25)上墨带跟底色同亮度，框会直接看不见"},
     {"name":"WATERMARK","type":"choice","choices":["auto","off","force"],"default":"auto","description":"去水印。auto=按「亮+灰+排成一行」判据自动修；off=完全不碰像素（生成图本来没水印、或右下角有亮装饰带会被误判成水印时用；掩码为 0 时验收自动跳过这条）；force=已知有水印但判据没认出来"},
     {"name":"WRITE_BACK","type":"boolean","default":true,"description":"替换原图（默认开）：验收通过后把成品写回资源，**原图先搬出工程**到 BACKUP_ROOT（默认 ResBackpack/备份，.meta 不动），再覆盖；写回前先复核哈希，可 restore 回滚。传 false 则只出图、不改工程里的资源"},
@@ -56,8 +56,8 @@ pipeline {
           env.ART_THEME  = params.THEME
           // 工作目录按「资源名/主题」分桶：同一张图的不同节日版本互不覆盖
           def assetName = params.ASSET.split('/').last().replace('.png', '')
-          // free 构图单独分桶：同一张图的「锁姿势版」和「重设计版」要能同时留在磁盘上对比
-          def compSuffix = params.COMPOSITION == 'free' ? '_free' : ''
+          // free/design 构图单独分桶：同一张图的「锁姿势版」「重设计版」「自主设计版」要能同时留在磁盘上对比
+          def compSuffix = params.COMPOSITION == 'free' ? '_free' : (params.COMPOSITION == 'design' ? '_design' : '')
           env.ART_COMP   = params.COMPOSITION
           env.ART_WDIR   = "${env.ART_WORK}/${assetName}/${params.THEME}${compSuffix}"
         }

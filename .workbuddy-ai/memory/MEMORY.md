@@ -48,3 +48,21 @@
   `tonumber` 失败后 `languageID` 为 nil。任何以入参为键的**缓存/去重表**都要先挡 nil 键，
   否则 `_cache[nil] = 1` 直接 `table index is nil`（2026-10-21 真机 Fatal，70807e4b1 修）。
   现口径：非数字串原样返回，不查表不记日志。
+
+## 服务端虚拟玩家（机器人）
+
+- 代码在服务端仓 `com.ljsd.jieling.bot`（BotProfile/BotConfig/BotText/BotManager/DshClient/BotTask），
+  配置 `server_game/conf/bot_config.json`（运行时 `~/home/java/gameserver/conf/`），
+  文档 `docs/bot_player_skill.md`，桥接 `scripts/bot/dsh_bridge.py` + `start_bridge.sh`。
+- 机器人是**内存虚拟玩家**（uid 9xxxxxxx），没有 netty 连接、没有 Mongo user：
+  后台在线数靠 `MinuteTask` 往 `ONLINE_NUM` 叠加，世界发言靠 `MessageCache.addWordMsg`，
+  msg 必须是 `"0|正文"`（客户端按 `<type>|` 解析，纯文本会让主界面 string.format 崩）。
+- 英雄公告复用 `sendSysChatMessage(lists, Global.LUCKY_LUCK, heroId, ...)`（文案 key
+  `lamp_lottery_content` = 语言 id 25010009，参数走 chatparms）。
+- 回话链路：`ChatLogic` 世界(1)/跨服(16) 两处 `onWorldChat` → BotTask(15s) 判
+  `lastHumanMsgId > lastBotMsgId` → 近 72h 上下文 POST 桥接 → 洗成 ≤40 字符口语 → 发回原频道。
+- 🔴 **DSH headless 的 provider 坑**：默认 `provider=workbuddy` 从命令行调用恒定 400
+  「请求被拦截」；必须 `provider=workbuddy-ai` + `WORKBUDDY_AUTH_FILE=/nonexistent`（屏蔽 CN 变体），
+  用 `--patch` 叠加模型（不改 profile），10~15s 出话。根因见 TD `deepseek_harness.py`。
+- GM 调试：`bot status|on|off|reload|say|announce|fake|reply`；`bot fake <名> <文本>` 可在
+  没有客户端时验证整条 AI 回复链路。本机 GM 端口 7916（线上只监听 127.0.0.1，要开隧道）。

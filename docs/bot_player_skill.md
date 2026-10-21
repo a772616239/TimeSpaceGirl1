@@ -2,9 +2,12 @@
 
 > 更新时间：2026-10-21
 > 关联：`server_ops_runbook.md`（线上热补丁口径）、`scripts/bot/dsh_bridge.py`（DSH 桥接）、
-> `scripts/bot/start_bridge.sh`（启停）、`TimeSpaceServer/Server_x1tag1.2.2/server_game/conf/bot_config.json`（配置）
+> `scripts/bot/start_bridge.sh`（桥接启停）、`scripts/bot/bot_console.py` + `console.html`（可视化后台）、
+> `scripts/bot/testserver.sh`（测试服隧道+控制台）、
+> `TimeSpaceServer/Server_x1tag1.2.2/server_game/conf/bot_config.json`（配置）
 > 一句话：**服务端内存里养 1~2 个虚拟玩家，撑起后台在线数、世界频道人气和英雄公告；
-> 世界频道出现玩家发言时，把近 3 天上下文丢给本机 DSH，回一句 40 字符以内的真人味儿短句。**
+> 世界频道出现玩家发言时，把近 3 天上下文丢给本机 DSH，回一句 40 字符以内的真人味儿短句。
+> 有一个网页控制台能看实时流水线、指标和事件，并直接点按钮操作。**
 
 ---
 
@@ -215,7 +218,91 @@ DSH_TIMEOUT=60 python3 scripts/bot/dsh_bridge.py --once "say hi"   # 单次直�
 
 ---
 
-## 9. 上线（129.226.213.65）注意事项
+## 9. 可视化控制台（推荐日常用它，别啃日志）
+
+```bash
+scripts/bot/start_console.sh start     # 起服务
+open http://127.0.0.1:18766/           # 看板
+scripts/bot/start_console.sh status    # 探活：serverId/在线/机器人数/聊天条数/bridge/gm
+```
+
+页面四块，2 秒轮询一次：
+
+| 区域 | 看什么 |
+|---|---|
+| 顶栏 | serverId、在线数（`真实 + 虚拟`，hover 看拆分）、DSH 成功/失败、provider/model、总开关、快照新鲜度（>60s 变黄） |
+| 左列 | 机器人卡片：在线点、uid/等级/VIP/国旗、人设、`说一句` / `公告` 按钮 |
+| 中列 | 世界频道实时流：`BOT`/`玩家` 标签、等级国旗、**字符数**（一眼看出有没有超 40） |
+| 右列 | 回复流水线（世界/跨服两条：玩家最后一句 → 待回复/思考中/已回复 → 机器人 mid）、指标（AI 回复数/兜底率/平均·最大耗时/喊话/公告）、DSH 耗时曲线、事件流 |
+| 底栏 | `模拟玩家发言`（等价 `bot fake`）、`机器人说话`、`英雄公告`、`强制回复`、`重载配置` |
+
+数据来源（都是只读，不改游戏服状态）：
+
+```
+Redis  serverId:BOT_STATUS      ← 游戏服 BotTask 每 15s 写的快照（开关/在线/指标/事件，TTL 300s）
+Redis  serverId:CHAT_QUEUE:world ← 世界频道消息（protobuf，控制台自己解，不依赖 proto 工具）
+HTTP   127.0.0.1:18765/health    ← 桥接的 provider/model/排队/成功失败
+GM     thrift 7916               ← 只有「操作按钮」才走这条
+```
+
+- 依赖只有 `thrift`（走 GM 用）；`start_console.sh` 会自动挑
+  `~/.workbuddy-ai/binaries/python/envs/default` 这个带 thrift 的隔离环境，找不到就退回 `python3`。
+  没 thrift 时看板照常能看，只有按钮会报错。
+- Redis 走裸 RESP、protobuf 手写 varint 解码 —— **不需要装 redis-py / protobuf**，拷到测试服也能直接跑。
+- 事件流 40 条环形缓冲，类型：`回复/喊话/说话/公告/玩家/开关/手动`；回复事件带 `source`（dsh/fallback）和耗时。
+
+---
+
+## 10. 测试服（129.226.213.65）部署流程
+
+测试服的 **7916(GM) / 6379(Redis) 只监听 127.0.0.1**，而 DSH 必须跑在本机 Mac 上。
+所以是「三条隧道 + 本地控制台」的结构：
+
+```
+本机 17916 ──正向──▶ 测试服 127.0.0.1:7916   GM 命令
+本机 16379 ──正向──▶ 测试服 127.0.0.1:6379   在线数/聊天队列/BOT_STATUS
+测试服 18765 ◀─反向── 本机 127.0.0.1:18765   游戏服回连 DSH 桥接（已实测通）
+```
+
+```bash
+# ① 本机起桥接（游戏服侧只是 HTTP 客户端，桥接挂了会走本地语料兜底）
+scripts/bot/start_bridge.sh start
+
+# ② 三条隧道
+scripts/bot/testserver.sh up
+scripts/bot/testserver.sh status      # 三条都 up + redis PING + 桥接健康
+
+# ③ 部署 jar（本地编译 → 上传 → 远端备份 → 重启）
+#    ⚠️ 重启会踢线，先 ssh gs 'ss -tn state established "( sport = :16081 )" | wc -l' 看在线上人数
+$JAVA_HOME/bin/javac -encoding UTF-8 -source 8 -target 8 -nowarn \
+  -cp "$HOME/home/java/gameserver/gameSrv-1.0.0.jar:$HOME/home/java/gameserver/lib/*" \
+  -d /tmp/bot_patch/classes com/ljsd/jieling/bot/*.java com/ljsd/jieling/kefu/Cmd_bot.java \
+  com/ljsd/jieling/chat/logic/ChatLogic.java com/ljsd/jieling/thread/ThreadManager.java \
+  com/ljsd/jieling/thread/task/MinuteTask.java
+#    ↑ 在 server_game/serverlogic/src/main/java 下执行；再把 /tmp/bot_patch/classes 里的 class
+#      用 `zip -u` 打进远端的 gameSrv-1.0.0.jar（先 cp 一份 .bak-bot-<日期>）
+
+# ④ 配置
+scp TimeSpaceServer/Server_x1tag1.2.2/server_game/conf/bot_config.json gs:/home/java/gameserver/conf/
+
+# ⑤ 控制台（自动带上隧道端口）
+scripts/bot/testserver.sh console
+open http://127.0.0.1:18766/
+```
+
+验证顺序（控制台里点，或 `scripts/gm_client.py --port 17916`）：
+
+1. `bot status` → 日志出现 `[bot] status enabled=... virtualOnline=1/2`
+2. 控制台底栏发一句「模拟玩家发言」→ 右列流水线 8~25s 后转「思考中」→ 再 ~15s 变「已回复」
+3. 中列能看到 `玩家` 那条 + 紧接着 `BOT` 的回复，字符数 ≤40
+4. `bot announce` → 世界/系统频道出现 `Congratulations! Nova has obtained the ...`
+5. `redis-cli -p 16379 get ONLINE_NUM:10001` → 至少 1（虚拟在线）
+
+**回滚**：`cp gameSrv-1.0.0.jar.bak-bot-<日期> gameSrv-1.0.0.jar` + 重启；配置里 `enabled:false` 也能一键哑火（`bot reload` 即可，不用重启）。
+
+---
+
+## 11. 上线（129.226.213.65）注意事项
 
 1. 线上只有 **127.0.0.1:7916** 的 GM 端口，验证要开隧道：`ssh -N -L 17916:127.0.0.1:7916 gs`。
 2. 热补丁沿用 runbook：`zip -u` 就地替换 class，**不要整包重打**；重启会踢线，先确认在线人数。

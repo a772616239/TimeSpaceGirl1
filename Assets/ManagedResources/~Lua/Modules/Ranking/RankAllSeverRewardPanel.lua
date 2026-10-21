@@ -220,8 +220,27 @@ function this.OnRecived(root,tipid)
     local go=Util.GetGameObject(root, "rewardList").gameObject
     go:SetActive(false)
     getedreward:SetActive(true)
-    table.insert(this.myRanksRewardDate,tipid)
+    -- 写回 RankingManager 的权威列表：面板自己的 myRanksRewardDate 在 UpdateMain 里会被重置，
+    -- 只写本地表等于没写（以前就是这个原因导致领完又变“可领取”）。
+    RankingManager.AddRewardedId(tipid)
+    if not this.IsInRewardedList(tipid) then
+        table.insert(this.myRanksRewardDate,tipid)
+    end
     RedpotManager.CheckRedPointStatus(RedPointType.RankReward)
+end
+
+--我是否在该宝箱的上榜名单内（服务端只放行榜上前 5 名，未上榜的请求会被拒）
+function this.IsMyRanked(_id)
+    local lis = this.ranksTopDate and this.ranksTopDate[_id]
+    if not lis or not PlayerManager.uid then
+        return false
+    end
+    for _, info in pairs(lis) do
+        if info.uid == PlayerManager.uid then
+            return true
+        end
+    end
+    return false
 end
 
 --传入特效层级
@@ -230,8 +249,11 @@ local sortingOrder = 1
 function this.getRewardList(root,data)
     local go=Util.GetGameObject(root, "rewardList").gameObject   
     local getedreward=Util.GetGameObject(root, "Received").gameObject  
+    local hasTaken = this.IsInRewardedList(data.tipid)
+    --可领取 = 没领过 + 不是“虚位以待”行 + 我在该宝箱的上榜名单内
+    local canClaim = (not hasTaken) and (not data.isLast) and this.IsMyRanked(data.tipid)
      
-    if this.IsInRewardedList(data.tipid) then
+    if hasTaken then
         getedreward:SetActive(true)
         go:SetActive(false)
     else
@@ -242,7 +264,7 @@ function this.getRewardList(root,data)
     for i = 1, 4 do
         if this.RewardItemListGo[go] ==nil then
             this.RewardItemListGo[go]= {}
-            this.effectList[go]={}
+            this.effectList[go]= {}
         end
         if  this.RewardItemListGo[go][i] == nil then
             this.RewardItemListGo[go][i] = SubUIManager.Open(SubUIConfig.ItemView, go.transform)     
@@ -262,9 +284,14 @@ function this.getRewardList(root,data)
         this.RewardItemListGo[go][i].gameObject:SetActive(true)        
         local btn=Util.GetGameObject(this.RewardItemListGo[go][i].gameObject,"item/frame")
         local grid=go.transform.parent
-        if not data.isLast then
+        -- 滚动列表的 ItemView 是复用的：每次都要显式重置可点状态与灰色，
+        -- 否则会把上一行（甚至“虚位以待”行）的监听带过来，点一下反而领到别的宝箱。
+        local btnCom = btn:GetComponent("Button")
+        if btnCom then btnCom.interactable = canClaim end
+        Util.SetGray(btn, not canClaim)
+        this.effectList[go][i].gameObject:SetActive(canClaim)
+        if canClaim then
            this.RegisterButtonGetReward( btn,data.tipid,grid)            
-           this.effectList[go][i].gameObject:SetActive(true) 
         end
     end
     go:GetComponent("HorizontalLayoutGroup").enabled=true
@@ -324,6 +351,11 @@ function this.RegisterButtonGetReward(go,id,grid)
                 if msg.drop  then
                     UIManager.OpenPanel(UIName.RewardItemPopup, msg.drop, 1)                       
                     this.OnRecived(grid,id)
+                end
+                -- 服务端回包带的是该玩家的全量已领记录，以它为准刷新本地列表，
+                -- 否则紧接着的 UpdateMain 会拿旧列表把宝箱渲染回“可领取”。
+                if msg.rewardRecords and #msg.rewardRecords > 0 then
+                    RankingManager.SetRewardedList(msg.rewardRecords)
                 end
                 -- LogError("msg get id ".. id)
                 this.UpdateMain()            

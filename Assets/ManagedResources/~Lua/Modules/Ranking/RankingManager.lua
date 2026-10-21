@@ -958,6 +958,20 @@ function this.IsInRewardedList(_id)
     return false
 end
 
+-- 领奖成功后回写本地“已领取”列表。
+-- 取值来源：RankingTakeRewardResponse.rewardRecords（服务端返回的是该玩家全量记录）。
+-- 以前 TakeReward 的回包没回写这里，面板 UpdateMain 又重新从这份陈旧列表取，导致刚领完的宝箱
+-- 立刻又显示成“可领取”、宝箱红点也不灭。
+function this.SetRewardedList(list)
+    this.RankingRewardedList = list or {}
+end
+
+function this.AddRewardedId(_id)
+    if not this.IsInRewardedList(_id) then
+        table.insert(this.RankingRewardedList,_id)
+    end
+end
+
 --排行红点 1-4 排行类型存在
 function this.RefreshRankingRewardRedPoint()
     for i=1,4 do

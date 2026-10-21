@@ -57,6 +57,7 @@
 │   ├── TS-Art-Restyle.groovy           美术资源换节日风格（生图 + 归位 + 验收）
 │   ├── TS-Art-Translate.groovy         战令横幅中文美术字 → 英文版（擦字 + 补底板 + 排字）
 │   ├── TS-Art-BottomFade.groovy        底部紫色虚化（纯像素工序，不调 AI）
+│   ├── TS-Art-Frame.groovy             套外框（卡框/紫框，纯像素工序，不调 AI）
 │   ├── TS-Server-Health.groovy         生产服巡检（定时）
 │   ├── TS-Server-Ops.groovy            服务端/区服运维动作
 │   ├── TS-Server-Release.groovy        服务端代码发包正式服
@@ -147,6 +148,7 @@
 | **TS-Art-Restyle** | **美术资源换节日风格**（登录底板 → 圣诞版等）：生图交给 provider → 去水印 → 等比归位（绝不拉伸）→ 出不透明版 + 沿用原 alpha 的浮层版 → 像素级验收 → 可选写回 | `ASSET=` `THEME=christmas` `PROVIDER=chatgpt_web` `CDP_PORT=` `GEN_IMAGE=` `COMPOSITION=lock` `POSE=` `FRAME=auto` `WATERMARK=auto` `WRITE_BACK=True` `BACKUP_ROOT=` | — | **禁止** |
 | **TS-Art-Translate** | **战令横幅中文美术字 → 英文版**：圈污染区擦字 → 逐行中位色 + 六边形纹理补底板 → 按已上线英文图层级排白字 → 六项像素验收 → 写回 `ArtFont_en` 并补 `.meta`。缺哪张补哪张 | `MODE=batch` `ASSET=` `FORCE=False` `WRITE=True` | — | **禁止** |
 | **TS-Art-BottomFade** | **底部紫色虚化**（确定性像素工序，**不调 AI**）：末 N px 渐进高斯模糊 + 过渡到紫色 + 末行 alpha 收到 0，让横幅溶进紫色面板而不是一条硬切 | `ASSET=` `PX=130` `RIM=violet` `WRITE_BACK=True` `BACKUP_ROOT=` `COMPRESS=auto` `COMPRESS_MAX_DIFF=6` `FORCE=False` | — | **禁止** |
+| **TS-Art-Frame** | **套外框**（确定性像素工序，**不调 AI**）：亮边 + 墨带 + 菱形网纹 + 45° 切角，画面等比缩进框内、画布尺寸不变。紫框 = `RIM=violet`；像素级验收 11 条 → 可选写回 | `ASSET=` `STYLE=card` `RIM=violet` `RATIO=0.022` `HAIRLINE=False` `WRITE_BACK=True` `BACKUP_ROOT=` `COMPRESS=auto` `COMPRESS_MAX_DIFF=8` `FORCE=False` | — | **禁止** |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |
 | **TS-Server-Ops** | 服务端/区服运维动作统一入口 | `ACTION=health` `CONFIRM=` `REASON=` | — | 允许 |
 | **TS-Server-Release** | **服务端代码发包正式服**：切 release 分支 → JDK8 编译 → 与线上逐条目 CRC 比对 → 审批 → 备份 → 注入差异类 → 重启 → 上线自检 → **协议连通自检** → 回写发布记录 → 发布看板 → **异步触发 TS-Server-Health** | `ACTION=release` `SOURCE_BRANCH=x1-tag-1.2.2` `RELEASE_BRANCH=` `DEPLOY=False` `CONFIRM=` `AUTO_APPROVE=False` `ONLY_CLASSES=` `EXCLUDE_CLASSES=` `RESTART=gameserver` `PROTO_CHECK=True` `PROTO_LOGIN=False` `PROTO_OPERATOR=` `HEALTH_AFTER=True` `ALLOW_DIRTY=False` `PUSH_BRANCH=True` `ROLLBACK_DIR=` `NOTES=` `SEND_MAIL=False` | — | **禁止** |
@@ -708,8 +710,54 @@ $B .jenkins/lib/local_deploy.sh rollback ~/home/java/gameserver/backup/gameSrv-2
 紫色太重就减 `PX`，不要减覆盖率——覆盖率写在 `restyle_pipeline._bottom_fade_rgb` 里，
 模糊 0.92 / 染色 0.80 是分开的权重：只染色不模糊会像「压了一层紫滤镜」，一眼能看出是加了特效。
 
-## 4. 「各环节可视化」到底指什么（四件产物）
+### 3.10 套外框（`TS-Art-Frame`，2026-10-21 新增）
 
+**要解决的问题**：图的内容已经定了（甚至是手改过的），只需要给它加/换一道**游戏自己的**边框语言 ——
+道具槽 `tongyong_daojukuang_01~07`、英雄卡 `yingxiongkuang_01~06`、对话框 `yindao_duihuakuang_02`
+用的都是「暗带 + 亮边」。紫框 = 亮边选 `violet`（`206,158,246`），跟紫色面板同色系。
+
+**为什么单独做一个 job、而不复用 `TS-Art-Restyle` 的 `FRAME=card`**：
+框原本只是换风格链路的一个可选后处理，必须跟着生图走 —— 要烧一次额度，而且**出来的是另一张图**。
+「内容已定稿、只加框」这个需求拿到的应该是「原图 + 框」，走生图是错的。
+所以把画框拆成独立工序：同一份绘制代码（`restyle_pipeline.frame_card`），输入输出只有像素。
+
+| # | 环节 | 干什么 | 判红 / 判黄 |
+|---|---|---|---|
+| ① | 参数与上下文 | 打印资源/样式/亮边/带宽/写回口径（`evidence/context.txt`） | 永不判红 |
+| ② | 套框 + 像素验收 | 画框 → 11 条断言 | 断言不符 ⇒ **红**；已套过框还重跑 ⇒ **黄**（`rc=3`） |
+| ③ | 写回资源 | `--publish-only` 只写回不重画，原图先入背包（`.meta` 不动） | 写回失败 ⇒ **红** |
+| ④ | 证据归档 | 对比图/成品/`frame.json` 收进 `evidence/`，并核对 `_manifest.jsonl` 台账 | 永不判红 |
+
+11 条断言（`frame_draw.py check`，card 样式）：
+
+| # | 断言 | 阈值 |
+|---|---|---|
+| 1 | 尺寸未变 | 完全相等 |
+| 2 | 色彩模式未变 | `RGB`→`RGB`（不许偷偷变 `RGBA`） |
+| 3 | 外沿 1px 暗描边 | 均值亮度 < 40 |
+| 4 | 框宽合理 | 16 ≤ bw ≤ 短边/8 |
+| 5 | **亮边存在且够亮** | rim 圈均值 ≥ 110 |
+| 6 | 亮边与暗描边有对比 | 差 ≥ 70 |
+| 7 | 四角为硬切角 | 切角区均值 < 90（角上是墨带不是画面） |
+| 8 | 内框暗槽存在 | `(6,4,10)`，均值 < 30 |
+| 9 | 内框里是画面 | 与暗槽最大通道差 > 12 |
+| 10 | 框带含网纹（非纯色） | 相邻像素差 > 0.2 |
+| 11 | **内框内容 = 原图等比缩进** | 中心区平均通道差 < 6 |
+
+🔴 **第 5 条是这套框能不能用的分水岭**：墨带 `(18,16,24)` 跟面板底 `(17,17,25)` 亮度几乎一样，
+深色底上「只有墨带没有亮边」等于没画框。所以亮边不是装饰，是轮廓。
+
+🔴 **画法是「画面缩进框内」（cover 到内框，缩 ~0.96）**，不是把框盖在画面上 ——
+贴边的艺术字（如登录底板的 `8-DAY`）才不会被框咬掉字角。代价是内容会轻微重排。
+
+🔴 **幂等守卫**：已套框的图外沿是「暗描边 + 亮边」，再套一次画面会再缩一圈、框带叠框带，
+而每一步都算成功 ⇒ 工具默认拒绝并返 `rc=3`，要叠必须 `FORCE=true`；换框请先 `restore`。
+
+**参数怎么调**：`RATIO` 是带宽比例（`0.022` 与换风格链路的 card 口径一致，1080x568 → 16px；
+想更明显用 `0.028~0.032`），`RIM` 是亮边色板，`HAIRLINE=true` 会在带内侧再加一道细线
+（默认关：亮边 + 内细线挤在窄带里会变成相框式双线）。
+
+## 4. 「各环节可视化」到底指什么（四件产物）
 
 用户原话是「**要求各环节可视化**」。落地成四件东西，每件都验证过：
 

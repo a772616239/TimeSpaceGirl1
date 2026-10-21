@@ -95,6 +95,7 @@ rect.anchoredPosition = Vector2.New(pos.x - kSlideFrom, pos.y)
 | 面板 `OnShow` | ✅ | 玩家主动打开 |
 | 点页签 / 切页（`ChangeTab` 回调） | ✅ | 玩家主动换屏 |
 | 领奖后 `RefreshAllTaskBtn` 重建列表 | ❌ | 数据回调刷新，重播会闪一下 |
+| 战斗结算 / 扫荡 / 5 点刷新（`DailyCarbonPanel`） | ❌ | 同上，玩家没换屏 |
 | 滚动（`SetItemIndex`） | ❌ | 列表自己重写位置，播了会卡顿 |
 
 做法：模块级 `this.suppressTaskAnim` 标记，刷新路径里置 true 包一层，`SwitchView` 里判：
@@ -208,6 +209,10 @@ for i = 0, box.childCount - 1 do ...
    `Alive` 一写就报 `attempt to call upvalue 'type' (a table value)`。表名不要用 `type`。
 9. **`GetTabList()` 可能是空实例**。`TabBox:Init(tabBox, tabBoxData)` 第二次传 nil 时 `Init` 提前 return，
    但 `this.TabCtrl` 已经被换成了新实例 ⇒ `GetTabList()` 恒为空、照它拿列表会静默不播。**TabBox 一律读 `box` 子节点。**
+10. **`Util.GetGameObject` 是按名字深度优先找第一个同名节点**（C# `FindChild`：先 `root.Find(name)`，
+    再递归所有子节点），不是"只找直接子节点"。所以子节点重名就会拿错 —— `DailyCarbonPanel` 的卡里
+    `GoBtn/sweep` 和 `Tip/sweep` 同名，若把 `"sweep"` 写进 `kSlideNodes`，第二张卡的 `Tip/sweep` 就会被当成
+    `GoBtn/sweep` 一起移走。**`kSlideNodes` 里的名字必须在整棵子树里唯一。**
 
 ---
 
@@ -218,6 +223,12 @@ for i = 0, box.childCount - 1 do ...
 ```bash
 cd LuaEncoder/luajit_mac/64
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_battlepass_cardslide.lua
+```
+
+第二个落地有独立一份，改名字/节点即可（`DailyCarbonPanel`，一屏多卡、含未激活子节点跳过）：
+
+```bash
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_dailycarbon_cardslide.lua
 ```
 
 必测的 8 条：
@@ -250,6 +261,17 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 |---|---|---|---|
 | `TreasureStorePopup`（参考） | `grid/item1..3` | 左 → 右 | -200/-150/-100 / 0.05~0.10s |
 | `BattlePassPanel_Mission` | 任务卡 `itempre`（一屏 1 张） | **右 → 左**（按要求反向） | +260 / 0.22s |
+| `DailyCarbonPanel` | 副本卡 `Pre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | +260 / 0.22s，错开 0.05 |
+
+`DailyCarbonPanel` 是这套配方的**第二个落地**，也是第一个"一屏多卡"的场景，可以直接对照看：
+
+- 6 个可视子节点 = `Bg` / `Title` / `Reward` / `GoBtn` / `Consume` / `Tip`（`Tip` 与 `Consume`、`GoBtn` 按
+  "未解锁 / 可挑战 / 可扫荡"三态互斥显隐，所以每条 tween 都要先判 `activeSelf`）。
+- 播放点在 `SetScroll` 里 `SetData` 之后 —— 一处覆盖 `OnShow`（`TabBox:Init_SetTabAndBox` 末尾会回调
+  `ChangeTabCallBack`）与换页签两条路径，**不放**进每张卡的 `SetData`（滚动会逐张触发）。
+- 数据刷新（战斗结算 / 一键扫荡 / 5 点刷新）也走 `SetScroll`，所以包了个
+  `RefreshScrollSilently()`：置 `suppressCardAnim` → `pcall(SetScroll)` → **复位标记**。
+  用 `pcall` 只为保证复位 —— 标记卡在 `true` 会让后面所有入场动画永久失效。
 
 ---
 
@@ -258,3 +280,6 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 - 2026-10-21 首版。从 `ui_anim_reproduce_skill.md` 的「第四次复用」抽出成独立配方：
   第一版误把曲线落在 TabBox 的 13 个小页签上（曲线对、对象错），返工到任务卡后才定型；
   方向按要求改为从右侧滑入。
+- 2026-10-21 第二个落地：`DailyCarbonPanel`（副本卡，一屏多卡、错开真正生效）。
+  新增 §5 的数据刷新一行、§7 第 10 条（`Util.GetGameObject` 按名字 DFS，重名会拿错节点）、
+  §9 的落地说明与 `RefreshScrollSilently` 写法（`pcall` 只为复位标记）。

@@ -287,12 +287,10 @@ function ItemView:NoGetRewardShow(_reward, effectLayer, isShowAddImage)
 
     local itemSId = tonumber(_reward[1])
     local itemNum = tonumber(_reward[2]) or 0
-    local isShowPrecious = _reward[3] or 0
     local itemDataConFig = ConfigManager.GetConfigData(ConfigName.ItemConfig, itemSId)
 
     self.name.text = GetLanguageStrById(itemDataConFig.Name)
     self.EffectOrginScale = self.scale
-    Log("ItemView:NoGetRewardShow itemSId:"..tostring(itemSId).." ItemType:"..tostring(itemDataConFig.ItemType).." isShowPrecious:"..tostring(isShowPrecious))
 
     if itemDataConFig.ItemType == ItemType.NoType then
         self.num.text = PrintWanNum(itemNum)

@@ -43,11 +43,36 @@
   等满 timeout 判 rc=75）。TS-Resource-Build 已按此修过。
 - `aab_release.sh` 的工程根取 `${PROJ:-脚本所在工程上一级}`，**别写死开发目录**：
   Jenkins 在 `TimeSpaceGirl1-build` 里调它，写死会去构建开发目录（GUI Unity 占用必拦）。
+- **克隆玩家数据（机器人账号）两个必踩坑**：① Bson `Date` 是原生对象、没有 `_bsontype`，
+  递归改写不先拦会变 `{}` → `getUser` 抛 `No mapping metadata found for java.util.Date`；
+  ② 游戏实例 id 是 `uid+类型+时间戳` 字符串（英雄 `10000002010017798801320000`），
+  只改 map **key** 不改字符串**值** → 编队 `heroId` 还是旧前缀，`getHero()` 查不到 →
+  面板「有头像等级、编队 0 人、战力 0」。key 和值必须用同一条前缀替换规则。
+  验证用 GM `bot team <uid>`（复刻 16650 协议路径，执行前会踢内存缓存）。
+- **本地自测服和测试服是两套环境，只改一边等于没改**：本地 `~/home/java/gameserver`
+  （launchd `com.ts.localserver.gameserver`，本机 Mongo 27017 是 **4.0 / wire version 7**，
+  mongosh 和 pymongo 新版都连不上，灌数据走 `mongodump → scp → mongorestore`；
+  jar 也是另一份构建，用 `scripts/bot/patch_local.sh` 编译打回，别拿测试服补丁 jar 覆盖）。
+  用户经常在本地服（Unity 编辑器）上验证，报的 bug 可能只存在于本地。
 - **Lua 里「按 id 查表」的函数会被喂已翻译文本**：`GetLanguageStrById(x)` 的入参在项目里
   经常是「查过一次的结果再查一次」（如 `GetLanguageStrById(this.getType())`），
   `tonumber` 失败后 `languageID` 为 nil。任何以入参为键的**缓存/去重表**都要先挡 nil 键，
   否则 `_cache[nil] = 1` 直接 `table index is nil`（2026-10-21 真机 Fatal，70807e4b1 修）。
   现口径：非数字串原样返回，不查表不记日志。
+
+## 美术多语言贴片（scripts/image/loading_plate_overlay.py）
+
+- 铭牌贴片 = 中文底图上覆盖「角色名 + 红条标签 + 台词」的小 PNG，运行时按 anchor 叠回去。
+  贴片 **bbox 必须由实际墨迹反推**（`build_lines` → `layer_ink_quad` → `plate_box`），
+  不能由 `name_box` / 红条几何推：大字斜排 15° + 纵向拉伸后左上角会跑到 name_box 的
+  左外侧 `h/2·sinθ`、上外侧 `w·sinθ + h/2·cosθ`，几何框框不住 → 字母顶被切成一条直线
+  （2026-10-22 修，05 的 BRUTUS 曾缺顶部 46px）。
+- 大字另受 `NAME_HEADROOM=92` 硬约束（名字区上沿 = `name_box` 顶 - 92），越界就降字号。
+- 🔴 **贴片 bbox 必须与语言无关**：`LoadingPlateGeom.lua` 一张图只存一组 anchor
+  （`LoadingPanel.ApplyLangPlate` 按图号取，没有按语言分表），所以 bbox 对 `LANGS`
+  全部语言取并集、小字擦除框按最长译名推。加新语言后要**九张全部重 publish**。
+- `geom.json` 的 `ink_clip_px` = 墨迹被画板削掉的像素，`verify` 卡它必须为 0。
+- 改完贴片 ≠ 进包：还要重打 LoginPanelAtlas 所在 AssetBundle。
 
 ## 服务端虚拟玩家（机器人）
 

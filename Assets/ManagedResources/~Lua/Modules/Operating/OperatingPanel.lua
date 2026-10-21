@@ -16,6 +16,7 @@ local LifeMember = require("Modules/Operating/LifeMember")--终身会员
 local SuperLiftMember = require("Modules/Operating/SuperLiftMember")--超级终身会员
 local WeekCard = require("Modules/Operating/WeekCard")--豪华周卡
 local WarOrder = require("Modules/Operating/WarOrder")--战令
+local ItemPopIn = require("Modules/Common/ItemPopIn")--列表项逐格入场（页面级批量接入）
 
 --显示类型  type 面板类型 body 显示页签索引
 local ShowType = {
@@ -205,6 +206,8 @@ function OperatingPanel:BindEvent()
         Util.AddClick(self.operateTabs[i], function()
             curIndex = i
             this:OnTabChanged()
+            --切页签：新页是长列表就逐格入场（数据回调刷新走 RefreshActivity，不播）
+            this:PlayContentPopIn()
         end)
     end
     -- 红点绑定不要放在这里：BindEvent 只在面板首次创建时执行一次，
@@ -245,6 +248,8 @@ function OperatingPanel:OnShow()
     this:PlayTabFlipIn()
     -- 内容区从上往下落位（与翻入同时起，和参考一致）
     this:PlayPageDropIn()
+    -- 首次打开就停在这类页签时也要播：列表项逐格放大缩小（排在 OnTabChanged 之后）
+    this:PlayContentPopIn()
 end
 
 function OperatingPanel:OnSortingOrderChange()
@@ -268,13 +273,38 @@ function OperatingPanel:OnClose()
     -- 翻到一半被关掉：必须把临时禁用的按钮 Animator 恢复、内容区落位复位，
     -- 否则那颗页签以后没按下反馈、下次打开从半截位置起。
     this:StopOpenAnims()
+    -- 列表项半截缩放也要复位
+    this:StopContentPopIn()
     this:ClearRedPoint()
 end
 
 function OperatingPanel:OnDestroy()
     this:StopOpenAnims()
+    this:StopContentPopIn()
     SubUIManager.Close(self.HeadFrameView)
     SubUIManager.Close(self.UpView)
+end
+
+--==================== 内容页入场：长列表逐格放大缩小 ====================
+-- 列表页只有 3 个（周/月礼包、成长礼金、战令），其余是固定版面；通用工具自己扫页面里的
+-- 列表，扫不到就 no-op ⇒ 这里不用维护名单。首次打开正好停在这类页签也会播。
+function this:GetContentPage()
+    local contentIndex = curIndex and TabToContent[curIndex]
+    return contentIndex and self.operatingContents[contentIndex]
+end
+
+function this:PlayContentPopIn()
+    local page = this:GetContentPage()
+    if page then
+        ItemPopIn.PlayPage(page)
+    end
+end
+
+--一个内容页会被多个页签共用（周/月礼包、5 个战令），关闭时全停
+function this:StopContentPopIn()
+    for i = 1, #self.operatingContents do
+        ItemPopIn.StopPage(self.operatingContents[i])
+    end
 end
 
 --切换面板

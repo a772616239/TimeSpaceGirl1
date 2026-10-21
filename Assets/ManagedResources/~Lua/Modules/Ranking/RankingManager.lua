@@ -924,6 +924,26 @@ function this.IsShowType(_rankType)
 end
 
 local myRankingReward=ConfigManager.GetConfig(ConfigName.RankingRewardConfig)
+
+--我是否在该宝箱的上榜名单里（服务端只放行榜上前 5 名，未上榜的请求会被拒）
+--🔴 这是「能不能领」的唯一口径：宝箱红点、入口红点、面板可领状态必须全部走这里。
+--   以前红点只看「该类型下还有没领的宝箱」，不看「我在不在榜上」，
+--   于是没上榜的玩家宝箱红点常亮，点进去 RankAllSeverRewardPanel 却整屏灰、无可领 —— 就是这条不一致。
+function this.IsMyUidInTopList(_id)
+    local lis = this.RankingTopInfo and this.RankingTopInfo[_id]
+    local myUid = PlayerManager.uid
+    if lis == nil or myUid == nil then
+        return false
+    end
+    for _, info in pairs(lis) do
+        -- uid 可能是 number 也可能是 string（pb 的 uint64 口径），两边都归一化比一次
+        if info.uid == myUid or tostring(info.uid) == tostring(myUid) then
+            return true
+        end
+    end
+    return false
+end
+
 --宝箱红点
 function this.IsRankingTopRed(_rankType)
     local typeId=0
@@ -938,7 +958,10 @@ function this.IsRankingTopRed(_rankType)
     end
 
     for id,lis in pairs(this.RankingTopInfo) do
-        if myRankingReward[id].Type==typeId and not this.IsInRewardedList(id) then
+        local cfg = myRankingReward[id]
+        -- 未领 + 我在榜上 才是可领；只满足前一条会亮出「点进去啥也没有」的假红点
+        if cfg ~= nil and cfg.Type==typeId and not this.IsInRewardedList(id)
+            and this.IsMyUidInTopList(id) then
             -- LogError(" is reward" ..typeId .. " rewardlen" ..#this.RankingRewardedList)
             return true
         end
@@ -973,12 +996,11 @@ function this.AddRewardedId(_id)
 end
 
 --排行红点 1-4 排行类型存在
+--同样只认「未领 + 我在榜上」，否则主界面入口会一直亮着一个点不进去也领不到的假红点
 function this.RefreshRankingRewardRedPoint()
-    for i=1,4 do
-        for id,lis in pairs(this.RankingTopInfo) do
-            if not this.IsInRewardedList(id) then
-                return true
-            end
+    for id,lis in pairs(this.RankingTopInfo) do
+        if not this.IsInRewardedList(id) and this.IsMyUidInTopList(id) then
+            return true
         end
     end
     return false

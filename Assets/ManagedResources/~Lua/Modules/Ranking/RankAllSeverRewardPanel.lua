@@ -230,17 +230,9 @@ function this.OnRecived(root,tipid)
 end
 
 --我是否在该宝箱的上榜名单内（服务端只放行榜上前 5 名，未上榜的请求会被拒）
+--统一走 RankingManager 的口径，保证「宝箱红点亮不亮」和「这里能不能点」永远一致
 function this.IsMyRanked(_id)
-    local lis = this.ranksTopDate and this.ranksTopDate[_id]
-    if not lis or not PlayerManager.uid then
-        return false
-    end
-    for _, info in pairs(lis) do
-        if info.uid == PlayerManager.uid then
-            return true
-        end
-    end
-    return false
+    return RankingManager.IsMyUidInTopList(_id)
 end
 
 --传入特效层级

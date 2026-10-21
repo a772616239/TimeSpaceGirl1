@@ -251,5 +251,54 @@ ItemPopIn.PlayPage(page8)
 Check(countTweenOn(items8[1]) == 1, "同一时刻只有 1 条存活 tween，实际 " .. countTweenOn(items8[1]))
 Check(Near(items8[1].localScale.x, 0.82), "重播起点仍是 0.82（不是 0.82²）")
 
+-- ---------------- case 9: 列表是异步建的（自动重试） ----------------
+-- 真机形态：Expert_UpLv / BoxPool 的 OnShow 要等数据回调才造 item，而面板切页签是同步
+-- 调 PlayPage 的 ⇒ 第一次扫必然 0 个。这里用可控的 Timer 替身验证「隔几帧再扫」这条兜底。
+print("== case9 列表异步建：PlayPage 自动重试 ==")
+tweens = {}
+errors = {}
+local pending = {}
+Timer = {
+    New = function(fn, dur)
+        local t = { fn = fn, dur = dur, stopped = false }
+        function t:Start() pending[#pending + 1] = self end
+        function t:Stop() self.stopped = true end
+        return t
+    end,
+}
+
+local AsyncPage = {}
+AsyncPage.__index = AsyncPage
+function AsyncPage:GetPopInSource()
+    return self.src
+end
+
+local ap = setmetatable({ src = {} }, AsyncPage)
+ap.class = AsyncPage
+Check(ItemPopIn.PlayPage(ap) == 1, "绑定了 1 个列表（只是这一轮还没有 item）")
+Check(liveTweens() == 0, "还没有 item ⇒ 一个都不播")
+Check(#pending == 1, "排了一次重试，实际 " .. #pending)
+
+-- 数据回调来了，item 建好
+ap.src = { newItem("d1"), newItem("d2") }
+pending[1].fn()
+Check(liveTweens() == 2, "重试扫到就播 2 项，实际 " .. liveTweens())
+Check(Near(ap.src[1].localScale.x, 0.82), "重试播的项同样从 0.82 起")
+Check(#pending == 1, "播上了就别再排重试，实际 " .. #pending)
+ItemPopIn.StopPage(ap)
+
+-- 关掉面板：待跑的重试必须作废（否则在隐藏页上白弹一次）
+local ap2 = setmetatable({ src = {} }, AsyncPage)
+ap2.class = AsyncPage
+local before = #pending
+ItemPopIn.PlayPage(ap2)
+local timer2 = pending[before + 1]
+Check(timer2 ~= nil, "又排了一次重试")
+ItemPopIn.StopPage(ap2)
+Check(timer2.stopped == true, "StopPage 停掉了待跑的重试")
+ap2.src = { newItem("z1") }
+timer2.fn()   -- 就算定时器已经被同帧触发
+Check(liveTweens() == 0, "作废的重试不再播（上一页已 StopPage 复位）")
+
 print(failed == 0 and "ALL OK" or ("FAILED: " .. failed))
 if failed > 0 then os.exit(1) end

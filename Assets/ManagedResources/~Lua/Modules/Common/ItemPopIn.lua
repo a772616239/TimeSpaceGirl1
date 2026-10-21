@@ -211,7 +211,7 @@ function this:Play(only)
     end
     local count = #targets
     if count <= 0 then
-        return
+        return 0
     end
 
     local cfg = self.cfg
@@ -268,6 +268,7 @@ function this:Play(only)
         LogError("ItemPopIn: 入场动画失败 " .. tostring(err))
         self:Stop()
     end
+    return count
 end
 
 --============================== 页面级批量接入 ==============================
@@ -275,9 +276,14 @@ end
 --   ① 扫页面表里的 ScrollCycleView（字段名随意，scrollView / ScrollView / noviceScrollView 都认）；
 --      quick_class 的 `local this = Class` 写法把字段写在类表上，实例通过 __index 取，
 --      所以实例表、page.class、metatable.__index 三处都要扫；
---   ② 页面实现 GetPopInSource() 返回容器（手工克隆、不是 ScrollCycleView 的长列表）。
+--   ② 页面实现 GetPopInSource() 返回容器 / 数组 / ScrollCycleView（手工克隆、不是 ScrollCycleView 的列表）。
 -- 都没有就什么都不做 ⇒ 面板可以对每个页签无脑调用，不用维护「哪些页签有列表」的名单。
+--
+-- ⚠️ 列表有可能是异步填的：Expert_UpLv / BoxPool 的 OnShow 要等数据回调才造 item，
+--    而面板切页签是同步调 PlayPage 的 ⇒ 这一轮扫到 0 个就按 kRetryDelays 再扫几轮。
+--    有列表就播、一直没有就静默收工（没列表的页签最多白扫 3 次，代价可以忽略）。
 local pagePops = setmetatable({}, { __mode = "k" })
+local kRetryDelays = { 0.1, 0.25, 0.5 }
 
 -- ScrollCycleView 的特征是 SetData + ForeachItemGO。用 duck typing 而不是 require，
 -- 免得 Common 反向依赖 View。
@@ -328,36 +334,76 @@ local function CollectGetters(page)
     return getters
 end
 
+local function PlayAll(pops)
+    local n = 0
+    for i = 1, #pops do
+        n = n + pops[i]:Play()
+    end
+    return n
+end
+
 --- 播放页面里所有长列表，返回接上的列表个数（0 = 这一页没有列表，正常）。
+--- 这一轮扫到 0 个 item 时会按 kRetryDelays 自动重试，所以异步建列表的页也能播上。
 --- cfg 只在第一次调用时生效：之后复用第一次建的那批 popIn。
 function ItemPopIn.PlayPage(page, cfg)
     if type(page) ~= "table" then
         return 0
     end
-    local pops = pagePops[page]
-    if not pops then
-        pops = {}
+    local entry = pagePops[page]
+    if not entry then
+        entry = { pops = {}, gen = 0 }
         local getters = CollectGetters(page)
         for i = 1, #getters do
-            pops[i] = ItemPopIn.New(getters[i], cfg)
+            entry.pops[i] = ItemPopIn.New(getters[i], cfg)
         end
-        pagePops[page] = pops
+        pagePops[page] = entry
     end
-    for i = 1, #pops do
-        pops[i]:Play()
+    -- 每次调用都是一「轮」：重播会让上一轮还没跑的重试作废（否则切页后又弹一次旧的）
+    entry.gen = entry.gen + 1
+    local gen = entry.gen
+    if entry.timer then
+        entry.timer:Stop()
+        entry.timer = nil
     end
-    return #pops
+    local played = 0
+    local function attempt(step)
+        if entry.gen ~= gen then
+            return
+        end
+        played = PlayAll(entry.pops)
+        if played > 0 then
+            return
+        end
+        local wait = kRetryDelays[step]
+        if not wait or type(Timer) ~= "table" or type(Timer.New) ~= "function" then
+            return
+        end
+        local timer = Timer.New(function()
+            entry.timer = nil
+            attempt(step + 1)
+        end, wait)
+        entry.timer = timer
+        timer:Start()
+    end
+    attempt(1)
+    return #entry.pops
 end
 
 --- 回收页面里所有长列表（Kill + 复位）。切页 / 关闭 / 销毁都要走这里。
 --- 🔴 漏调 = 那一页的 item 永久停在半截缩放上。
 function ItemPopIn.StopPage(page)
-    local pops = type(page) == "table" and pagePops[page]
-    if not pops then
+    local entry = type(page) == "table" and pagePops[page]
+    if not entry then
         return
     end
-    for i = 1, #pops do
-        pops[i]:Stop()
+    -- 作废还没跑的重试：关掉面板后不能在隐藏页上再弹一次
+    entry.gen = entry.gen + 1
+    if entry.timer then
+        entry.timer:Stop()
+        entry.timer = nil
+    end
+    for i = 1, #entry.pops do
+        entry.pops[i]:Stop()
     end
 end
 

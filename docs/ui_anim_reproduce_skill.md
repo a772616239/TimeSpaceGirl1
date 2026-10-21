@@ -3,6 +3,8 @@
 > 适用：TimeSpaceGirl1（Unity 6000.6.5f1）。场景是「看到一个已有的动画效果还不错，要在另一个面板复刻」。
 > 本文是**流程**：怎么读、按什么顺序做、每步怎么自证。
 > 配方数字、11 个坑的逐条展开、五个面板的落地记录在 `ui_panel_float_anim_skill.md`（下称「配方文档」）。
+> 「列表项逐格放大缩小」（Coin Master 式）已抽成公共模块 `Modules/Common/ItemPopIn.lua`，
+> 配方、几何约束（峰值上限）与八个坑见 `ui_item_pop_in_skill.md`。
 > 更新时间 2026-10-20。来源：`ExpertPanel` 复刻 `SevenDayCarnivalPanelV2` 的开启动画（成功），以及
 > 同一面板先做错方向又回滚的那一轮（失败，但教训都在第 8 节）。
 

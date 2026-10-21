@@ -1,0 +1,180 @@
+# 列表项入场：逐格「放大缩小」（Coin Master 式）
+
+> 适用：TimeSpaceGirl1（Unity 6000.6.5f1）。礼包墙、奖励档位、任务列表这类
+> 「ScrollCycleView + 卡片」的入场——卡片按版面顺序一张接一张弹一下。
+> 唯一实现：`Assets/ManagedResources/~Lua/Modules/Common/ItemPopIn.lua`。
+> 已接入：`ValuePackPanel`（礼包墙）、`GrowthManual_RewardPreview`、`GrowthManual_TaskPreview`。
+> 更新时间 2026-10-21。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
+
+---
+
+## 0. 一句话总则
+
+**一个公共模块 + 三处接线，不许复制第二份。** 配方（缩放/时长/错开）只写在
+`ItemPopIn.defaultCfg` 里；面板只负责「什么时候播、什么时候停」。
+复制一份到新面板 = 下次调手感要改 N 处，且必然漂移（本项目已经吃过这种亏）。
+
+---
+
+## 1. 配方（缺省值）
+
+| 项 | 值 | 说明 |
+|---|---|---|
+| `from` | 0.82 | 起始缩放。弹跳感主要来自这个落差，而不是峰值 |
+| `peak` | 1.02 | 峰值，**受几何约束**（见第 4 节），不是手感参数 |
+| `riseDuration` | 0.14s | 放大段，`OutQuad`（快起慢收，冲峰值） |
+| `fallDuration` | 0.12s | 回落段，`InOutQuad`（两端切线为 0，落位不顿） |
+| `step` | 0.055s | 相邻项错开 |
+| `maxSpan` | 0.55s | 整体跨度上限，项多时自动压缩 step |
+
+单张时间线：`t=delay` 起跳 → `+0.14s` 到峰值 → `+0.12s` 落回基准。5 张时总跨度 0.22+0.26 ≈ 0.50s。
+
+- `step` 取 0.055：参考七日狂欢 clip 的页签节奏是「0.167s/格、错开 0.033s」，
+  卡片比页签体量大一倍，节奏也放慢一倍，否则像抽搐。
+- `maxSpan` 必须有：列表 20 项时按 0.055 会飘到 1.1s，玩家早滑走了还在弹。
+  压缩后末项仍落在 0.55s 内（`step = maxSpan / (count-1)`）。
+
+---
+
+## 2. 三处接线（照抄清单）
+
+| # | 位置 | 代码 |
+|---|---|---|
+| ① | `InitComponent`（ScrollView 建好之后） | `this.popIn = ItemPopIn.New(function() return this.ScrollView end)` |
+| ② | 列表数据灌完之后 | `this.popIn:Play()` |
+| ③ | `OnClose` + `OnDestroy` | `this.popIn:Stop()` |
+
+- ①传**函数**而不是实例：面板/子模块的 `ScrollView` 可能晚于本对象创建、也可能销毁重建。
+- ②**必须在 `SetData` 之后**：`ForeachItemGO` 只认得已克隆出来的 item；提前调一格都不会动。
+- ③🔴 **漏 `Stop` = 那一项永久停在 0.82 / 1.02 上**，下次进面板看起来像卡图。
+  `Play` 内部也会先 `Stop`，所以重播不会叠加。
+
+---
+
+## 3. 什么时候播、什么时候不播（本次三个面板）
+
+| 面板 | 播的时机 | 不播的时机 |
+|---|---|---|
+| `ValuePackPanel` | `OnShow`（`SetDataList()` 之后） | 购买后 `SetDataList` 刷新——它不经过 `OnShow`，所以天然不重播 |
+| `GrowthManual_RewardPreview` | `refresh(isTop, isAni)` 里 `isAni=true` | 领取奖励 / 余额变化等事件回调（`refresh(false,false)`） |
+| `GrowthManual_TaskPreview` | 同上；切日/周/月 toggle 也是 `refresh(true,true)` | 同上 |
+
+**TabBox 点击为什么自动就有动画**：`GrowthManualPanel.SwitchView` 里本来就会调
+`contentScripts[index].view:OnShow(this)`，而两个子模块的 `OnShow` 都走 `refresh(true,true)`
+⇒ 切页 = 重新灌列表 = 重新弹一轮，不需要在面板侧加任何代码。
+
+🔴 判据只有一个：**「玩家主动换了一屏内容」才播；「数据回来了」不播**。
+把 `Play` 挂到 `SetData` 或事件回调上，会让每次领奖、每次金币变动都重整列弹一遍。
+
+> 首开时会连播两次：`OnOpen` 调了一次 `view:OnShow`，`OnShow → TabCtrl:Init` 的回调又调一次。
+> 两次在同一帧里（`OnOpen`/`OnShow` 由 `UIManager.OpenPanel` 同步调用），中间没有渲染间隙，
+> 所以视觉上只有一次。**跨帧连播才需要去抖**，这里不需要。
+
+---
+
+## 4. 峰值上限怎么算（先量几何，再定手感）
+
+`peak` 不是纯手感参数。卡片围绕自身中心缩放，峰值时左右各外扩：
+
+```
+每侧外扩 = (item宽 × peak - 视口宽) / 2
+```
+
+再确认**链路上有没有 Mask**——有 Mask 就随便 overshoot，没有就是直接画到屏幕边上。
+
+| 面板 | item 宽 | 视口宽 | 每侧余量 | peak=1.04 时 | 结论 |
+|---|---|---|---|---|---|
+| `ValuePackPanel` | 1062 | 1080 | 9px | 越界 12.2px/侧 | 峰值只能 1.02（严格不越界是 1.016） |
+
+`ValuePackPanel` 的实测取证（别靠猜，打开 prefab 看组件列表）：
+
+- `Bg`：`anchorMin(0,0)-anchorMax(1,1)`、`sizeDelta(0,0)`、纯色 Image ⇒ **铺满全屏**，画布宽即 1080。
+- `Bg/scroll`：**只有** `RectTransform + CanvasRenderer`，没有 Image/Mask。
+- `ScrollCycleView` 根：Image（材质+颜色）+ 一个自定义脚本，**没有 Mask**。
+- `ScrollCycleView/grid`：挂的是 **`GridLayoutGroup`（`m_Enabled: 0`，禁用）**。
+  🔴 它有 `m_Padding/m_CellSize/m_Spacing` 字段，容易被误读成 `RectMask2D`（后者序列化也有 `m_Padding`）——
+  判断依据是 `m_Script` 的 fileID 和有没有 `m_CellSize`，不是看有没有 `m_Padding`。
+
+⇒ 结论：这套列表**全程无裁剪**，峰值必须按上面的公式卡死；item 越窄的面板（如 GrowthManual 的档位行）
+允许把 `peak` 提到 1.04~1.06，用 `ItemPopIn.New(getter, { peak = 1.05 })` 覆盖即可。
+
+---
+
+## 5. 八个坑（都在这套代码里踩过或躲过）
+
+1. **Animator 抢缩放**：目标节点若挂 CommonButton 的 Animator（Normal 态是 1.1→1 的 pop），
+   Animator 在 Update 之后求值，会把 DOTween 的缩放每帧盖回去——现象是「代码跑完了但没动」。
+   本次的卡片根节点只有 `RectTransform + CanvasRenderer + Image`，没有 Animator，所以安全；
+   换到别的节点前先 `GetComponent("Animator")` 看一眼，有就 `anim.enabled = false`（并在 Stop/OnComplete 恢复）。
+2. **未激活节点不参与求值**：滚出可视区的 item 是 `SetActive(false)` 的，不跳过就会白占错开时间
+   （表现为「前几张先弹、后几张要等半秒才弹」）。
+3. **循环列表复用**：`ScrollCycleView` 回收 item，切页时是同一个 GO 重新绑定数据。
+   每次都从基准缩放重新算，**不能累乘**（0.82² = 0.67，连点两次就缩成小图）。
+4. **`Kill(false)` 不会回调 `OnComplete`**：回落段是建在放大段的 `OnComplete` 里的，
+   中途 Stop 后不会补建——这是刻意的；但也意味着**别把复位以外的逻辑放进 `OnComplete`**。
+5. **`Ease` 枚举取不到就被 pcall 吞掉**：tolua 的枚举是运行期注册的，统一走 `SetEaseSafe`，
+   取不到就不设，绝不让整段动画因为一个枚举名失败。
+6. **异常必须兜底**：`Play` 外层 `pcall`，失败就 `LogError` + `Stop()` 复位，
+   绝不能把 item 留在半截缩放上（这类问题在真机上只能靠玩家截图发现）。
+7. **`ForeachItemGO` 的顺序 = 版面顺序**，前提是 `fixedCount = 1`（单列）。多列时
+   `index = j + (i-1)*fixedCount` 是按行优先填的，错开方向会变成「先竖后横」，需要自己按位置重排。
+8. **同一 key 的 item 复用 `ItemList` 缓存**：`ValuePackPanel` 用 `this.ItemList[go]` 存内层 ItemView，
+   本模块只动 item 根节点的 `localScale`，不碰内层，两者互不影响——换面板时别把两者混在一起改。
+
+---
+
+## 6. 自证（离线 → Editor → 真机）
+
+**离线（不依赖 Unity，秒级）**
+
+```bash
+cd LuaEncoder/luajit_mac/64
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_itempopin.lua
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_valuepack_openanim.lua
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_growthmanual_openanim.lua
+```
+
+| 用例 | 覆盖 |
+|---|---|
+| `test_itempopin.lua` | 公共模块 9 组：逐格时序 / 回落段 / 跳过隐藏 / 压缩错开 / Stop 复位 / 重播不叠加 / `itemGoScale≠1` 基准 / 异常兜底 / 自定义配方 |
+| `test_valuepack_openanim.lua` | 礼包墙：OnShow 顺序、跳过隐藏卡、购买刷新不重播、生命周期、`Play` 只有 1 处调用 |
+| `test_growthmanual_openanim.lua` | 两个列表页：OnShow 播、`isAni=false` 不播、切页重播、OnClose/OnDestroy 回收、面板 `SwitchView` 仍走 `view:OnShow` |
+
+三个用例都被 Jenkins `TS-Test-Lua` 自动发现（`tests/tests.json` 的 `tests_dir + pattern`），不用改配置。
+
+**Editor**：打开面板看是否逐格；点 TabBox 切页看是否重播；**动画播到一半关面板再打开**（验证 Stop 复位）；
+买一次礼包看是否整墙重播（应该不重播）。
+
+**真机**：`scripts/lua-bytes-sync.sh` 已把源码同步成 `LuaBytes/*_64.bytes`，
+但 LuaBytes 是打进 Lua AB 的 ⇒ 要么重打客户端资源（`TS-Client-Resources` / `TS-Resource-Build`），
+要么走热更，否则真机还是旧行为。Editor 读 `~Lua/*.lua`，不受影响。
+
+---
+
+## 7. 接入新面板的最小 diff（复制这段改路径）
+
+```lua
+local ItemPopIn = require("Modules/Common/ItemPopIn")
+
+function XxxView:InitComponent(go)
+    this.ScrollView = SubUIManager.Open(SubUIConfig.ScrollCycleView, ...)
+    this.popIn = ItemPopIn.New(function() return this.ScrollView end)
+end
+
+function XxxView:OnShow()
+    this:RefreshList()          -- 内部会 ScrollView:SetData
+    this.popIn:Play()           -- 🔴 必须在 SetData 之后
+end
+
+function XxxView:OnClose()   this.popIn:Stop() end
+function XxxView:OnDestroy() this.popIn:Stop() end
+```
+
+---
+
+## 8. 变更记录
+
+- **2026-10-21** `c337ea8e7`：`ValuePackPanel` 首版（动画逻辑内联在面板里，`0.82→1.02→1`、错开 0.055s）。
+- **2026-10-21**（本次）：抽出 `Modules/Common/ItemPopIn.lua`（每实例独立状态 + 可覆盖配方 + 异常兜底），
+  `ValuePackPanel` 改为薄封装；`GrowthManual_RewardPreview` / `GrowthManual_TaskPreview` 接入，
+  打开与 TabBox 切页都播；新增 3 个离线用例。

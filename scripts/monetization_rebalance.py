@@ -13,6 +13,17 @@
   lux328  豪华基金 328 元：LuxuryFund Type=79 的 17 天 16#2080 → 16#2540
           0.7184 → 0.8268 抽/元，与 128 元档 0.8267 持平
 
+R14 加的两项（同样是 --only 单选）：
+
+  cap     削峰。R10/R13 只做「补到地板」，远高于曲线的礼包一件没动，
+          30 元档 56 个条目横跨 0.2212~0.9242（4.2 倍）。
+          cap 按「本档中位 +20%」削高，再按「同族/同产品线 小额档最多
+          比大额档高 15%」做单调削平 —— 两刀都是一次算完再落表，
+          避免重复跑出递减式误伤。**只从 BaseReward/RewardShow 里扣券和钻石**。
+  cat     招财猫（LuckyCatConfig 901–904）满次数 22,704 钻换 37,990 钻 = 1.67x，
+          是一台钻石印钞机，会把任何付费钻石放大 1.67 倍。
+          改成「保底返本 1.00x + 上限 1.12x」（期望 1.06x），充值门槛不动。
+
 不变的东西（自检逐条守）：
   · `Price` 一律不动 —— 计费点按商品 id 绑定，改价会让渠道侧金额与配置不符。
   · 钻石产出不动（fund 项除外，那是它的本体）—— 钻石是全局通货。
@@ -62,9 +73,10 @@ F_REWARD = "ActivityRewardConfig"
 F_RECHARGE = "RechargeCommodityConfig"
 F_STORE = "StoreConfig"
 F_FUND = "LuxuryFund"
+F_CAT = "LuckyCatConfig"
 
 # 各表的数据起始行（与导表工具的约定一致：Recharge 是 6，其余是 8）
-ROW_START = {F_RECHARGE: 6, F_REWARD: 8, F_STORE: 8, F_FUND: 8}
+ROW_START = {F_RECHARGE: 6, F_REWARD: 8, F_STORE: 8, F_FUND: 8, F_CAT: 8}
 
 # ─────────────────────────── fund ───────────────────────────
 # 成长基金：SKU id -> 活动 Id（OnSaleRule 的 `3#N` 就是活动号，verify 会核对）
@@ -97,6 +109,32 @@ LUX_DAY_NEW = 2540
 LUX_SKU = 79
 LUX_SKU_SHOW = "16#38640"
 
+# ─────────────────────────── cap（削峰）───────────────────────────
+# 同价档内允许比中位高 20%（audit 的收敛建议就是 ±20%）。
+CAP_TOL = 0.20
+# 同族（ShowType 页签）/同产品线（Name）内，小额档允许比大额档高 15% ——
+# 这一档溢价是「新手带」的既有设计，超过 15% 就变成"买小包更划算"。
+MONO_TOL = 0.15
+# 小于 0.08 抽（≈18 钻）的调整不做：券是 1 张、钻石按 10 取整，
+# 再细的刀只会给 xlsx 刷无意义的 diff。
+MIN_DROP_PULL = 0.08
+# 地板守卫：任何一刀都不许把 SKU 削到「本档中位 -20%」以下。
+FLOOR_TOL = 0.20
+# 单调削平同时按两个口径算：页签（st=ShowType）+ 产品线（line=Name）。
+CAP_GROUP_KEYS = ("st", "line")
+# 削峰覆盖的 Type：5 = 直购礼包（507 个可售），10 = 钻石/资源大包（3 个，ShowType 5）。
+# Type=10 那三个（12/98/648 元）跟礼包带不是一条曲线，而是贴着直充走的钻石包，
+# 但它们自己内部 98 元 0.1475 → 648 元 0.0640（-57%）也是倒挂，一起收。
+# Type=3 直充 / 78,79 基金 / 8,9 战令 的价值不在 SKU 行里，不能这么削，故排除。
+CAP_TYPES = (5, 10)
+
+# ─────────────────────────── cat（招财猫）───────────────────────────
+CAT_ACTS = (901, 902, 903, 904)
+CAT_DOWN = 1.00       # 保底返本
+CAT_UP = 1.12         # 上限 +12%
+# ShowMax 是「最高可得」的展示值，原来是 8888/21888 这种虚标（真实上限才 18,510）。
+# 直接等于上限，避免界面上写一个永远拿不到的数。
+
 
 # ─────────────────────────── 通用 ───────────────────────────
 
@@ -123,6 +161,22 @@ def iter_data(ws, start):
 
 def pairs_dict(text):
     return {k: (n or 0) for k, n in parse_pairs(text)}
+
+
+def sub_items(s, delta):
+    """按 id 扣减奖励串；扣到 0 的条目整条删掉（不能留 `19#0`）。"""
+    pairs = parse_pairs(s)
+    pos = {k: i for i, (k, _) in enumerate(pairs)}
+    for k, n in delta.items():
+        if k not in pos:
+            sys.exit("奖励串里没有 %s，扣不动：%r" % (k, s))
+        i = pos[k]
+        left = (pairs[i][1] or 0) - n
+        if left < 0:
+            sys.exit("%s 只有 %s 个，扣不掉 %s：%r" % (k, pairs[i][1], n, s))
+        pairs[i] = (k, left)
+    touched = set(delta)
+    return fmt_pairs([(k, n) for k, n in pairs if not (k in touched and n == 0)])
 
 
 def backup(paths):
@@ -162,14 +216,22 @@ def save_marker(items, bak_dir):
 
 
 def guard(items, force):
-    """乘法项重复落表 = 重复加息。已经有记录就必须 --force。"""
+    """只有**乘法项**重复落表会重复加息（pack ×1.21 连跑两次 = ×1.21²）。
+
+    其余项（fund/store/lux328/cap/cat）每次都是按当前值重算的绝对量或收敛量，
+    重跑不会叠加；只有它们才需要 --force 才能重做。
+    """
     done = load_marker()
-    hit = [it for it in items if it in done]
-    if hit and not force:
+    risky = [it for it in items if it in done and it in {"pack"}]
+    if risky and not force:
         sys.exit("❌ %s 已经落过表了（%s）。\n"
-                 "   本脚本的 pack 项是乘法，再跑一次会再乘 1.21。\n"
+                 "   pack 是乘法项，再跑一次会再乘一次 1.21。\n"
                  "   确认要重做请先 --revert <备份目录> 再 --apply --force。"
-                 % (",".join(hit), ", ".join(done[h]["applied_at"] for h in hit)))
+                 % (",".join(risky), ", ".join(done[h]["applied_at"] for h in risky)))
+    again = [it for it in items if it in done and it not in {"pack"}]
+    if again:
+        print("   （%s 之前落过表；本项按当前值重算，重复执行幂等）"
+              % ", ".join(again))
 
 
 class Checker:
@@ -448,6 +510,352 @@ def verify_pack(plans_before):
     return ck
 
 
+# ─────────────────────────── cap ───────────────────────────
+# 基准取「实测中位」而不是 TARGET_CURVE：R13 之后各档中位已被「补到地板」
+# 顶高了 2–17%（30 元档中位 0.2545 vs 曲线×1.21 的 0.2178），用曲线当基准
+# 会把半个档都判成超限，削错人。玩家看到的"同价差 4 倍"是同价横向比的，
+# 所以基准就该是本档中位。
+
+def _iter_cap_rows(ws, idx, billing):
+    """削峰口径的 SKU：Type ∈ CAP_TYPES、有计费点、未 999 关停、有价格。"""
+    for r, v in iter_data(ws, ROW_START[F_RECHARGE]):
+        sid = v[idx["Id"]]
+        if sid is None or v[idx["Type"]] not in CAP_TYPES:
+            continue
+        if not billing.get(sid, False):
+            continue
+        if str(v[idx["OnSaleRule"]] or "").replace(" ", "").startswith("1#999#999"):
+            continue
+        if (v[idx["Price"]] or 0) <= 0:
+            continue
+        yield r, v, sid
+
+
+def _live_pack_rows():
+    """可售礼包（有计费点、未 999 关停、有价格）的抽等值快照。"""
+    billing = _billing_map()
+    wb, ws = load(F_RECHARGE)
+    idx = header_index(ws)
+    rows = []
+    for r, v, sid in _iter_cap_rows(ws, idx, billing):
+        if sid in PACK_EXCLUDE:      # 战令：价值大头在任务轨道，不参与削
+            continue
+        rewards = pairs_dict(v[idx["BaseReward"]])
+        for k, n in pairs_dict(v[idx["ExtraReward"]]).items():
+            rewards[k] = rewards.get(k, 0) + n
+        price = v[idx["Price"]]
+        pull = pull_equiv(rewards)
+        rows.append({
+            "row": r, "id": sid, "price": price, "pull": pull,
+            "rate": pull / price if price else 0.0, "type": v[idx["Type"]],
+            "st": v[idx["ShowType"]], "line": str(v[idx["Name"]] or ""),
+            "limit": v[idx["Limit"]], "rewards": rewards,
+            "tickets": sum(rewards.get(k, 0) for k in TICKETS),
+            "dia": rewards.get(DIA, 0) or 0,
+            "base": v[idx["BaseReward"]] or "", "show": v[idx["RewardShow"]] or "",
+        })
+    wb.close()
+    return rows
+
+
+def _tier_center(rows):
+    """价格档中位，只统计 Type=5 礼包。
+
+    Type=10 那三个钻石包（12/98/648 元）走的是直充那条 0.05 左右的线，
+    混进来会把 98 元档的下界拉到 0.15、648 元档拉到 0.064，
+    "同价离散"直接变成 6 倍 —— 那是两条不同的经济，不是同一个货架。
+    """
+    center = {}
+    for p in sorted({x["price"] for x in rows}):
+        mem = [x["rate"] for x in rows
+               if x["price"] == p and x["pull"] > 0 and x.get("type", PACK_TYPE) == PACK_TYPE]
+        if mem:
+            center[p] = statistics.median(mem)
+    return center
+
+
+def _removal_plan(x, tgt_rate, cap_rate, floor_rate):
+    """把「削到 tgt_rate」折成 {道具: 扣减数}，返回 (delta, pull_after)。
+
+    券的粒度是 1 张，在 6 元档上就是 16.7% 一档 —— 截断取整经常会「想削 0.69 抽
+    却一张也削不动」，结果 SKU 还杵在 +20% 以上。所以：
+      · 先按「不削过头」取整数张券；
+      · 若这样仍高于 cap，而多削 1 张不会破地板，就多削那 1 张。
+    宁可在档内偏下一点，也不留一个破档的离群件。
+    """
+    price = x["price"]
+    want = x["pull"] - tgt_rate * price
+    cap_pull, floor_pull = cap_rate * price, floor_rate * price
+    order = sorted([k for k in TICKETS if x["rewards"].get(k)], key=lambda k: -x["rewards"][k])
+    n_avail = sum(x["rewards"][k] for k in order)
+    t = min(int(want + 1e-9), n_avail)
+    if (x["pull"] - t > cap_pull + 1e-9 and t < n_avail
+            and x["pull"] - (t + 1) >= floor_pull):
+        t += 1
+    delta, left = {}, t
+    for k in order:
+        n = min(left, x["rewards"][k])
+        if n > 0:
+            delta[k] = n
+            left -= n
+    rest = want - t
+    # 多削过一张（rest<0）时不再动钻石，避免双重超额
+    if rest > 0.005 and x["rewards"].get(DIA):
+        dia = min(int(round(rest * DIA_PER_PULL / 10.0) * 10), x["rewards"][DIA])
+        if dia > 0:
+            delta[DIA] = dia
+    after = x["pull"] - sum(n for k, n in delta.items() if k in TICKETS) \
+        - delta.get(DIA, 0) / float(DIA_PER_PULL)
+    return delta, after
+
+
+def _rewards_after(rewards, delta):
+    out = {}
+    for k, n in rewards.items():
+        left = n - delta.get(k, 0)
+        if left:
+            out[k] = left
+    return out
+
+
+def plan_cap():
+    """迭代到稳定：每轮按「当前（已扣过的）值」重新取中位、重算目标，再累加扣减。
+
+    为什么要迭代：削峰会把某些件削到中位附近，档中位本身会小幅移动，
+    那一轮算达标、下一轮又冒出几个 +21% 的。单轮方案在落表后还能剩 9 个
+    "待削"，而这条路每轮只看**累计扣减后的真实值**，天然收敛。
+
+    每轮两刀：
+      档内削峰  rate ≤ 本档中位 × (1+CAP_TOL)
+      单调削平  同页签 / 同产品线里，小额档 rate ≤ 大额档中位 × (1+MONO_TOL)
+                （地板守卫：不削到本档中位 × (1-FLOOR_TOL) 以下）
+    """
+    rows = _live_pack_rows()
+    acc = {x["id"]: {} for x in rows}
+    hit_band, hit_mono = set(), set()
+    skipped = []
+    center = _tier_center(rows)
+
+    for _ in range(6):
+        cur = []
+        for x in rows:
+            r = dict(x)
+            r["rewards"] = _rewards_after(x["rewards"], acc[x["id"]])
+            r["pull"] = pull_equiv(r["rewards"])
+            r["rate"] = r["pull"] / x["price"] if x["price"] else 0.0
+            cur.append(r)
+        center = _tier_center(cur)
+        tgt = {r["id"]: r["rate"] for r in cur}
+        for r in cur:
+            if r["pull"] <= 0 or r["type"] != PACK_TYPE:
+                continue          # 档内削峰只针对礼包带（Type=10 走单调那一刀）
+            cap = center[r["price"]] * (1 + CAP_TOL)
+            if tgt[r["id"]] > cap + 1e-9:
+                tgt[r["id"]] = cap
+                hit_band.add(r["id"])
+
+        for _ in range(6):
+            moved = 0
+            for key in CAP_GROUP_KEYS:
+                grp = collections.defaultdict(lambda: collections.defaultdict(list))
+                for r in cur:
+                    if r["pull"] > 0:
+                        grp[r[key]][r["price"]].append(r)
+                for g in grp.values():
+                    ps = sorted(g)
+                    if len(ps) < 2:
+                        continue
+                    med = {p: statistics.median([tgt[r["id"]] for r in g[p]]) for p in ps}
+                    for a, b in zip(ps, ps[1:]):
+                        # 地板只在「这档本来就在地板之上」时设限。
+                        # Type=10 那三个钻石包整条线都在礼包带地板以下（贴着直充走），
+                        # 拿礼包带的地板去卡它，就永远削不动内部 −57% 的倒挂。
+                        floor_a = center[a] * (1 - FLOOR_TOL)
+                        lim = med[b] * (1 + MONO_TOL)
+                        if med[a] >= floor_a:
+                            lim = max(lim, floor_a)
+                        if med[a] <= lim + 1e-9:
+                            continue
+                        for r in g[a]:
+                            if tgt[r["id"]] > lim + 1e-9:
+                                tgt[r["id"]] = lim
+                                hit_mono.add(r["id"])
+                                moved += 1
+            if not moved:
+                break
+
+        rounds = 0
+        for r in cur:
+            if r["pull"] <= 0:
+                continue
+            want = r["pull"] - tgt[r["id"]] * r["price"]
+            if want < MIN_DROP_PULL:      # 粒度不足，动了也是噪音
+                continue
+            floor_r = center[r["price"]] * (1 - FLOOR_TOL)
+            if r["rate"] < floor_r:       # 本来就在地板以下（钻石包线），不设限
+                floor_r = 0.0
+            delta, _ = _removal_plan(r, tgt[r["id"]],
+                                     center[r["price"]] * (1 + CAP_TOL), floor_r)
+            if not delta:
+                continue
+            for k, n in delta.items():
+                acc[r["id"]][k] = acc[r["id"]].get(k, 0) + n
+            rounds += 1
+        if not rounds:
+            break
+
+    cuts = []
+    for x in rows:
+        delta = {k: n for k, n in acc[x["id"]].items() if n > 0}
+        if not delta:
+            continue
+        after = x["pull"] - sum(n for k, n in delta.items() if k in TICKETS) \
+            - delta.get(DIA, 0) / float(DIA_PER_PULL)
+        cuts.append(dict(x, delta=delta,
+                         dt=sum(n for k, n in delta.items() if k in TICKETS),
+                         dd=delta.get(DIA, 0), pull_after=after,
+                         rate_after=after / x["price"],
+                         band=x["id"] in hit_band, mono=x["id"] in hit_mono))
+    return cuts, {"center": center, "rows": rows, "skipped": skipped,
+                  "band": len(hit_band), "mono": len(hit_mono)}
+
+
+def apply_cap(cuts):
+    wb, ws = load(F_RECHARGE)
+    idx = header_index(ws)
+    c_base, c_show = idx["BaseReward"], idx["RewardShow"]
+    for c in cuts:
+        base = ws.cell(c["row"], c_base + 1).value or ""
+        ws.cell(c["row"], c_base + 1).value = sub_items(base, c["delta"])
+        show = ws.cell(c["row"], c_show + 1).value or ""
+        if str(show).strip():
+            have = pairs_dict(show)
+            delta = {k: n for k, n in c["delta"].items() if k in have}
+            if delta:
+                ws.cell(c["row"], c_show + 1).value = sub_items(show, delta)
+    wb.save(path_of(F_RECHARGE))
+    wb.close()
+
+
+def verify_cap(cuts, skipped=None):
+    ck = Checker()
+    wb, ws = load(F_RECHARGE)
+    idx = header_index(ws)
+    billing = _billing_map()
+    cur, zero, parallel = {}, [], []
+    for r, v, sid in _iter_cap_rows(ws, idx, billing):
+        if sid in PACK_EXCLUDE:
+            continue
+        base_raw = v[idx["BaseReward"]] or ""
+        show_raw = v[idx["RewardShow"]] or ""
+        rewards = pairs_dict(base_raw)
+        for k, n in pairs_dict(v[idx["ExtraReward"]]).items():
+            rewards[k] = rewards.get(k, 0) + n
+        pull = pull_equiv(rewards)
+        price = v[idx["Price"]]
+        cur[sid] = {"row": r, "price": price, "pull": pull,
+                    "rate": pull / price if price else 0.0, "type": v[idx["Type"]],
+                    "rewards": rewards, "base": base_raw, "show": show_raw,
+                    "tickets": sum(rewards.get(k, 0) for k in TICKETS)}
+        for raw in (base_raw, show_raw):
+            for k, n in parse_pairs(raw):
+                if n == 0 and k in TICKETS:
+                    zero.append((sid, raw))
+        show_t = sum(pairs_dict(show_raw).get(k, 0) for k in TICKETS) if str(show_raw).strip() else None
+        if show_t is not None and show_t != cur[sid]["tickets"]:
+            parallel.append((sid, show_t, cur[sid]["tickets"]))
+    wb.close()
+
+    ck.add("可售礼包数量与计划一致", len(cur) >= len(cuts), "%d" % len(cur))
+    ck.add("奖励串里没有 0 数量条目（`19#0`）", not zero, str(zero[:4]))
+    ck.add("RewardShow 券数与 BaseReward 一致", not parallel, str(parallel[:4]))
+
+    # 用**当前**数据重算中位：削峰不动中位（削的都是峰），基准应当稳定
+    rows_now = [{"price": x["price"], "rate": x["rate"], "pull": x["pull"],
+                 "type": x["type"]} for x in cur.values()]
+    center_now = _tier_center(rows_now)
+
+    # 粒度豁免：券最小 1 张，6 元档上就是 16.7% 的台阶 —— 券只够/钻石不够的包
+    # 物理上削不到 +20% 以内，plan 阶段已记进 skipped，这里不重复报警。
+    skipped = set(skipped or ())
+    over = [(sid, round(c["rate"], 4), round(center_now.get(c["price"], 0) * (1 + CAP_TOL), 4))
+            for sid, c in cur.items()
+            if c["pull"] > 0 and c["type"] == PACK_TYPE and c["price"] in center_now
+            and sid not in skipped
+            and c["rate"] > center_now[c["price"]] * (1 + CAP_TOL) + 0.02]
+    ck.add("没有 SKU 仍高于本档中位 +%.0f%%（留 2%% 取整余量，粒度受限 %d 个）"
+           % (CAP_TOL * 100, len(skipped)), not over, str(over[:5]))
+
+    # 地板只看「我们削下去的」：本来就低于地板的低价离群件（12 元档 0.1742 那种）
+    # 不是这一刀造成的，不该由这条自检背锅。
+    floor_bad = []
+    for c in cuts:
+        n = cur.get(c["id"])
+        if n is None or n["pull"] <= 0 or n["type"] != PACK_TYPE:
+            continue          # Type=10 走直充线，量级不同，不适用礼包带地板
+        floor = center_now.get(n["price"], 0) * (1 - FLOOR_TOL)
+        if n["rate"] < floor - 1e-9 < c["rate"]:
+            floor_bad.append((c["id"], round(c["rate"], 4), round(n["rate"], 4), round(floor, 4)))
+    ck.add("没有 SKU 被削到本档中位 -%.0f%% 以下" % (FLOOR_TOL * 100),
+           not floor_bad, str(floor_bad[:5]))
+
+    # 逐 SKU 比对：只准券/钻石减少，其他道具构成必须一字不差
+    drift, price_bad, grow = [], [], []
+    for c in cuts:
+        n = cur.get(c["id"])
+        if n is None:
+            drift.append((c["id"], "missing"))
+            continue
+        if n["price"] != c["price"]:
+            price_bad.append((c["id"], c["price"], n["price"]))
+        if n["pull"] > c["pull"] + 1e-9:
+            grow.append((c["id"], round(c["pull"], 2), round(n["pull"], 2)))
+        old = pairs_dict(c["base"])
+        new = pairs_dict(n["base"])
+        for k in set(old) | set(new):
+            if k in TICKETS or k == DIA:
+                continue
+            if old.get(k, 0) != new.get(k, 0):
+                drift.append((c["id"], k, old.get(k, 0), new.get(k, 0)))
+    if cuts:
+        ck.add("被削的 SKU 一个都没变贵", not grow, str(grow[:5]))
+        ck.add("价格零漂移", not price_bad, str(price_bad[:5]))
+        ck.add("非券非钻道具零漂移", not drift, str(drift[:6]))
+    return ck
+
+
+def print_cap_report(cuts, meta):
+    rows, center = meta["rows"], meta["center"]
+    cmap = {c["id"]: c["rate_after"] for c in cuts}
+    print("   基准=本档中位；档内上限 中位+%.0f%%，同族小额档上限 大额档中位+%.0f%%"
+          % (CAP_TOL * 100, MONO_TOL * 100))
+    print("   命中：档内削峰 %d 个 / 单调削平 %d 个 / 实际落刀 %d 个（微调跳过 %d 个）"
+          % (meta["band"], meta["mono"], len(cuts), len(meta["skipped"])))
+    if not cuts:
+        print("   全部达标，无需改动。")
+        return
+    print("   合计削掉：券 %d 张、钻石 %d"
+          % (sum(c["dt"] for c in cuts), sum(c["dd"] for c in cuts)))
+    print("   %-6s %-5s %-17s %-17s %s" % ("价格", "件数", "改前区间", "改后区间", "跨度"))
+    for p in sorted(center):
+        mem = [x for x in rows if x["price"] == p and x["pull"] > 0
+               and x.get("type", PACK_TYPE) == PACK_TYPE]
+        if len(mem) < 2:
+            continue
+        before = [x["rate"] for x in mem]
+        after = [cmap.get(x["id"], x["rate"]) for x in mem]
+        print("   %-6s %-5d %.4f~%.4f    %.4f~%.4f    %.2fx → %.2fx"
+              % (p, len(mem), min(before), max(before), min(after), max(after),
+                 max(before) / min(before), max(after) / min(after)))
+    print("   削幅最大的 8 个：")
+    for c in sorted(cuts, key=lambda c: c["rate_after"] / c["rate"])[:8]:
+        print("     id=%-6s %-4s元 %.4f → %.4f (-%.0f%%)  券-%-2d 钻-%-5d %s%s st=%-4s %s"
+              % (c["id"], c["price"], c["rate"], c["rate_after"],
+                 (1 - c["rate_after"] / c["rate"]) * 100, c["dt"], c["dd"],
+                 "档内 " if c["band"] else "", "单调 " if c["mono"] else "",
+                 c["st"], c["line"]))
+
+
 # ─────────────────────────── store ───────────────────────────
 
 def _ticket_target(n):
@@ -673,6 +1081,143 @@ def verify_lux():
     return ck
 
 
+# ─────────────────────────── cat（招财猫）───────────────────────────
+# 现状：8 轮共消耗 22,704 钻，保底下限返 30,298、上限返 37,990 ——
+# 服务端是 `MathUtils.random(ValueDown, ValueUp)` 均匀取，期望 34,144 = **1.50x**。
+# 也就是说玩家拿任何一笔充值买的钻石来摇一次，出门就多 50%，
+# 所有 0.2~0.35 抽/元的定价全被这一个活动放大 1.5 倍，前面的阶梯全白做。
+#
+# 改成「保底返本、上限 +12%」：它是充值门槛解锁的福利（RmbValue 6~198 元），
+# 该给点彩头，但不该是印钞机。期望 1.06x，相当于给付费玩家的 6% 钻石返利。
+
+def plan_cat():
+    # 必须读**缓存值**：本表 C24:C39 是 `=C16+1` 这类公式，
+    # 直接 load_workbook（不带 data_only）拿到的是公式字符串 '=C16+1'，
+    # ActivityId 一比对就全落空，903/904 两个活动会被静默跳过。
+    wb = openpyxl.load_workbook(path_of(F_CAT), data_only=True)
+    ws = wb[F_CAT] if F_CAT in wb.sheetnames else wb.worksheets[0]
+    idx = header_index(ws)
+    plans = []
+    for r, v in iter_data(ws, ROW_START[F_CAT]):
+        act = v[idx["ActivityId"]]
+        if act not in CAT_ACTS:
+            continue
+        cons = v[idx["ConsumeValue"]] or 0
+        if cons <= 0:
+            continue
+        plans.append({
+            "row": r, "act": act, "id": v[idx["Id"]], "time": v[idx["LuckyTime"]],
+            "lucky_type": v[idx["LuckyType"]], "consume": cons,
+            "old_up": v[idx["ValueUp"]], "old_down": v[idx["ValueDown"]],
+            "old_show": v[idx["ShowMax"]],
+            "new_up": int(round(cons * CAT_UP)),
+            "new_down": int(round(cons * CAT_DOWN)),
+            "rmb": v[idx["RmbValue"]],
+        })
+    wb.close()
+    if not plans:
+        sys.exit("LuckyCatConfig 里没找到活动 %s 的行" % (CAT_ACTS,))
+    return plans
+
+
+def apply_cat(plans):
+    """直接改 xlsx 里的 sheet XML，不用 openpyxl 整体另存。
+
+    openpyxl 保存时会把公式单元格的**缓存值**丢掉（只留 <f>），
+    之后任何 `data_only=True` 的读取（导表工具、audit 脚本）都会得到 None，
+    结果是 903/904 两个活动的 16 行凭空少掉一个字段。逐单元格改 <v> 没这问题。
+    """
+    import re
+    import zipfile
+    p = path_of(F_CAT)
+    zin = zipfile.ZipFile(p)
+    names = zin.namelist()
+    xml = zin.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    for pl in plans:
+        for col, val in (("G", pl["new_up"]), ("H", pl["new_down"]), ("J", pl["new_up"])):
+            ref = "%s%d" % (col, pl["row"])
+            pat = re.compile(r'(<c r="%s"[^>]*>)(.*?)(</c>)' % ref, re.S)
+            m = pat.search(xml)
+            if not m:
+                sys.exit("sheet XML 里找不到单元格 %s（表结构变了？）" % ref)
+            if "<f" in m.group(2):
+                sys.exit("单元格 %s 是公式，拒绝覆盖：%r" % (ref, m.group(2)))
+            xml = (xml[:m.start()] + m.group(1) + ("<v>%d</v>" % val)
+                   + m.group(3) + xml[m.end():])
+    tmp = p + ".tmp"
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+        for n in names:
+            data = xml.encode("utf-8") if n == "xl/worksheets/sheet1.xml" else zin.read(n)
+            zout.writestr(n, data)
+    zin.close()
+    os.replace(tmp, p)
+
+
+def verify_cat(plans_before):
+    ck = Checker()
+    before = {(p["act"], p["id"]): p for p in plans_before}
+    wb = openpyxl.load_workbook(path_of(F_CAT), data_only=True)
+    ws = wb[F_CAT] if F_CAT in wb.sheetnames else wb.worksheets[0]
+    idx = header_index(ws)
+    bad_val, bad_cons, bad_act, seen = [], [], [], set()
+    for r, v in iter_data(ws, ROW_START[F_CAT]):
+        act = v[idx["ActivityId"]]
+        key = (act, v[idx["Id"]])
+        if key not in before:
+            continue
+        seen.add(key)
+        p = before[key]
+        cons = v[idx["ConsumeValue"]] or 0
+        up, down = v[idx["ValueUp"]] or 0, v[idx["ValueDown"]] or 0
+        show = v[idx["ShowMax"]] or 0
+        if (up != int(round(cons * CAT_UP)) or down != int(round(cons * CAT_DOWN))
+                or down > up or show != up):
+            bad_val.append((key, cons, down, up, show))
+        if cons != p["consume"]:
+            bad_cons.append((key, p["consume"], cons))
+        if act != p["act"]:
+            bad_act.append((key, p["act"], act))
+    wb.close()
+    ck.add("每轮 ValueUp/ValueDown/ShowMax 与消耗对齐（下限 ≤ 上限 = 展示值）",
+           not bad_val, str(bad_val[:4]))
+    ck.add("消耗（ConsumeValue）零漂移", not bad_cons, str(bad_cons[:4]))
+    ck.add("ActivityId 仍读得到（公式缓存未被抹掉）", not bad_act, str(bad_act[:4]))
+    ck.add("落表行数与计划一致", len(seen) == len(before),
+           "%d / %d" % (len(seen), len(before)))
+    return ck
+
+
+def print_cat_report(plans):
+    by = collections.defaultdict(lambda: {"c": 0, "up": 0, "down": 0,
+                                          "old_up": 0, "old_down": 0})
+    for p in plans:
+        s = by[p["act"]]
+        s["c"] += p["consume"]
+        s["up"] += p["new_up"]
+        s["down"] += p["new_down"]
+        s["old_up"] += p["old_up"] or 0
+        s["old_down"] += p["old_down"] or 0
+    print("   %-6s %-8s %-9s %-18s %-12s %s"
+          % ("活动", "轮数", "满次消耗", "改前 下限/上限", "改前期望", "改后 下限/上限 → 期望"))
+    for act in sorted(by):
+        s = by[act]
+        n = len([p for p in plans if p["act"] == act])
+        old_exp = (s["old_down"] + s["old_up"]) / 2.0
+        new_exp = (s["down"] + s["up"]) / 2.0
+        print("   %-6s %-8d %-9d %-18s %-12s %s"
+              % (act, n, s["c"],
+                 "%d/%d = %.2fx" % (s["old_down"], s["old_up"], s["old_up"] / s["c"]),
+                 "%d (%.2fx)" % (old_exp, old_exp / s["c"]),
+                 "%d/%d = %.2fx → 期望 %d (%.2fx)"
+                 % (s["down"], s["up"], s["up"] / s["c"], new_exp, new_exp / s["c"])))
+    print("   单轮明细（活动 %s）：" % plans[0]["act"])
+    for p in [x for x in plans if x["act"] == plans[0]["act"]]:
+        print("     第 %d 轮 消耗 %-6d 原 %-6s → 新 %d/%d（充 %s 元解锁）"
+              % (p["time"], p["consume"],
+                 "%d~%d" % (p["old_down"], p["old_up"]),
+                 p["new_down"], p["new_up"], p["rmb"]))
+
+
 # ─────────────────────────── 报告 ───────────────────────────
 
 def print_pack_report(plans, skipped):
@@ -726,8 +1271,8 @@ def main():
     ap.add_argument("--force", action="store_true",
                     help="强制执行已经落过表的项（会叠加乘数，慎用）")
     ap.add_argument("--verify-only", action="store_true")
-    ap.add_argument("--only", default="fund,pack,store,lux328",
-                    help="逗号分隔：fund,pack,store,lux328")
+    ap.add_argument("--only", default="fund,pack,store,lux328,cap,cat",
+                    help="逗号分隔：fund,pack,store,lux328,cap,cat")
     ap.add_argument("--revert", metavar="DIR")
     ap.add_argument("--list-backups", action="store_true")
     args = ap.parse_args()
@@ -750,12 +1295,12 @@ def main():
         return 0
 
     items = [x.strip() for x in args.only.split(",") if x.strip()]
-    unknown = set(items) - {"fund", "pack", "store", "lux328"}
+    unknown = set(items) - {"fund", "pack", "store", "lux328", "cap", "cat"}
     if unknown:
         sys.exit("未知选项：%s" % unknown)
 
     print("=" * 62)
-    print("R13 结构性定价修复  items=%s  mode=%s"
+    print("R13/R14 结构性定价修复  items=%s  mode=%s"
           % (",".join(items),
              "verify" if args.verify_only else ("apply" if args.apply else "dry-run")))
     print("=" * 62)
@@ -854,6 +1399,48 @@ def main():
             ok &= c.ok
         elif args.verify_only:
             c = verify_lux()
+            ok &= c.dump()
+
+    # ── cap ───────────────────────────────────────────────
+    if "cap" in items:
+        cuts, meta = plan_cap()
+        print("\n[cap] 削峰：档内收敛 + 同族单调")
+        print_cap_report(cuts, meta)
+        if args.apply and cuts:
+            bak = backup([path_of(F_RECHARGE)])
+            print("   备份 → %s" % bak)
+            apply_cap(cuts)
+            c = verify_cap(cuts, meta["skipped"])
+            if not c.dump():
+                _restore(bak)
+                sys.exit("❌ cap 自检失败，已自动回滚")
+            save_marker(["cap"], bak)
+            ok &= c.ok
+        elif args.verify_only:
+            # 削完之后再跑一次 plan 应该是空的；再核一遍硬约束
+            c = verify_cap([], meta["skipped"])
+            ok &= c.dump()
+            print("   （verify-only：再跑一次规划应无落刀）%s"
+                  % ("✅" if not cuts else "✗ 仍有 %d 个待削" % len(cuts)))
+
+    # ── cat ───────────────────────────────────────────────
+    if "cat" in items:
+        cat_plans = plan_cat()
+        print("\n[cat] 招财猫：保底返本 + 上限 +%.0f%%（现 1.33~1.67x → 1.00~%.2fx）"
+              % ((CAT_UP - 1) * 100, CAT_UP))
+        print_cat_report(cat_plans)
+        if args.apply:
+            bak = backup([path_of(F_CAT)])
+            print("   备份 → %s" % bak)
+            apply_cat(cat_plans)
+            c = verify_cat(cat_plans)
+            if not c.dump():
+                _restore(bak)
+                sys.exit("❌ cat 自检失败，已自动回滚")
+            save_marker(["cat"], bak)
+            ok &= c.ok
+        elif args.verify_only:
+            c = verify_cat(cat_plans)
             ok &= c.dump()
 
     if not args.apply and not args.verify_only:

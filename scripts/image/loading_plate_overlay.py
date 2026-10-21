@@ -37,6 +37,17 @@
 3. **排字**：标签用 Arial Bold 白字（红底），台词用深棕字 + 1px 浅米描边（亮底），
    按实测倾角跟随斜排；超宽自动降字号（`fit_font`）。
 
+🔴 **贴片 bbox 由「实际墨迹」反推，不由版面几何推**。斜排 15° + 纵向拉伸之后，大字
+   的左上角会跑到 `name_box` 的左外侧（h/2·sinθ）和上外侧（w·sinθ + h/2·cosθ）——
+   按 `name_box` / 红条几何算出来的贴片会把这两块裁掉，表现就是预览里字母顶一道
+   齐刷刷的直线（05 的 BRUTUS 曾切掉顶部 46px、左边 16px，03 切 26px、07 切 41px）。
+   现在的口径：
+   - 贴片 = 红条 ∪ 台词带 ∪ `name_box` ∪ `small_box` ∪ 擦除区 ∪ 三条线的墨迹，再外扩
+     `PLATE_PAD`，并夹在 684×2048 内；
+   - 大字另外受 `NAME_HEADROOM`（名字区上沿 = `name_box` 顶 - 92）约束，超出就降字号，
+     保证英文大字不会顶到画板上沿；
+   - `geom.json` 里的 `ink_clip_px` = 墨迹被画板边界削掉的像素，`verify` 会卡它必须为 0。
+
 🔴 中文名不翻、也不覆盖：九张图里中文名旁边本来就挂着英文名（Caesar / GuanYu /
    Mozart …），盖掉中文名反而丢了设计层级。贴片只碰红条与台词两行。
 
@@ -105,11 +116,16 @@ NAME_FONT_CANDIDATES = [
 ]
 
 FEATHER = 10          # 贴片 alpha 羽化宽度
+# 译文可能存在的语言。贴片 bbox 要对**这几种取并集**：`LoadingPlateGeom.lua` 一张图
+# 只存一组 anchor，运行时按图号取（见 LoadingPanel.ApplyLangPlate），没有按语言分表 ——
+# 贴片 bbox 一旦随译文长度变，换语言就整体错位/被裁。
+LANGS = ("en", "jp", "kr")
 BAR_PAD = 6           # 红条内擦字范围外扩（把描边/发光一起吞掉）
 BAND_TOP_INSET = 7    # 台词带的上沿往红条里吃的像素数：中文台词的句号比带子上沿还高
 NAME_BLEED = 17       # 大字擦除外扩：白描边 ≈8px + 青/品红错位 ≈6px + 抗锯齿
-NAME_HEADROOM = 92    # 贴片往上多留的高度：斜排+拉伸后的英文字会高出 name_box 很多
+NAME_HEADROOM = 92    # 名字区上沿到 name_box 顶边的余量：斜排大字越宽抬得越高，这条是硬上限
 NAME_LIFT = 14        # 英文大字整体上移，躲开斜条右端（斜条右端比左端高 100+px）
+PLATE_PAD = 6         # 贴片边界相对「几何区 ∪ 墨迹」再外扩的像素，别让字贴着裁切线
 
 # 实测版面（cn2-X1_loading_04_zh，684×2048）。红条是平行四边形：
 #   上边线 y = top_y_at_x_left + slope*(x - x_left)，高恒为 bar_h。
@@ -302,6 +318,22 @@ def line_layer(text: str, font, fill=(255, 255, 255, 255), stroke=2,
            stroke_width=stroke, stroke_fill=stroke_fill)
     bb = layer.split()[3].getbbox() or (0, 0, lw, lh)
     return layer, bb, ((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2)
+
+
+def layer_ink_quad(lay: Image.Image, anchor, ang: float, target) -> np.ndarray:
+    """图层**墨迹**四角经「绕 anchor 旋转 + 平移」后在底图坐标系里的位置。
+
+    用来反推贴片 bbox。🔴 必须用墨迹 bbox（alpha 外接框），不能用图层尺寸：
+       图层四周有 stroke+14 的透明留白，按图层算会把贴片撑大 30~40px，
+       而按几何（name_box / 红条）算又会把斜排溢出的那截字裁掉 —— 两头都不对。
+    """
+    bb = lay.split()[3].getbbox() or (0, 0, lay.width, lay.height)
+    corners = np.array([[bb[0], bb[1]], [bb[2], bb[1]],
+                        [bb[2], bb[3]], [bb[0], bb[3]]], np.float32)
+    M = cv2.getRotationMatrix2D(anchor, ang, 1.0)
+    M[0, 2] += target[0] - anchor[0]
+    M[1, 2] += target[1] - anchor[1]
+    return cv2.transform(corners[None], M)[0]
 
 
 def paste_rotated(dst: Image.Image, lay: Image.Image, anchor, ang: float, target) -> Image.Image:
@@ -588,6 +620,117 @@ def multiscale_fill(img: np.ndarray, mask: np.ndarray, levels: int = 5) -> np.nd
 
 
 # --------------------------------------------------------------------------- #
+# 排版（只排字，不碰底图）
+# --------------------------------------------------------------------------- #
+def build_lines(asset: str, lang: str, layout: dict, W: int, H: int,
+                q_fill=(255, 255, 255), q_stroke=(0, 0, 0)):
+    """按版面排三条线（大字 / 标签 / 台词），返回 [(图层, 锚点, 角度, 底图落点)]。
+
+    只排字、不碰底图像素：同一份结果既用来画贴片，也用来反推贴片 bbox（见 `plate_box`）。
+    颜色不影响墨迹外接框，所以量 bbox 时用默认色即可。
+
+    🔴 落点一律是**底图坐标**（不是贴片坐标）：贴片 bbox 要靠墨迹反推，而墨迹位置又
+       跟贴片原点无关 —— 先定落点、再定画布，顺序反过来就会自己咬自己。
+    """
+    entry = load_map().get(asset, {})
+    tag = entry.get(f"tag_{lang}") or ""
+    quote = entry.get(f"quote_{lang}") or ""
+    name = entry.get(f"name_{lang}") or ""
+    tilt = float(np.degrees(np.arctan(-layout["slope"])))
+    items = []
+
+    # 3z) 大号角色名：Impact 超粗压缩体 + 故障风错位
+    if name:
+        nb = [int(v) for v in layout["name_box"]]
+        # 🔴 宽度上限按**画板右边界**算，不按 small_box 算：小号英文名先被擦掉，那块横向
+        #    空间是空的；按 small_box 算会让 9 张的英文宽度从 245 到 415 不等、字号差一倍
+        #    （GUANYU 挤成小字、BRUTUS 撑成大字）。改成「高 145 + 不越出画板」双约束，
+        #    九张的英文字高就统一了。
+        max_w = name_max_w(layout, W)
+        # 整行上移 NAME_LIFT：红条是斜的，右端抬得比左端高 100+px，英文比中文宽之后
+        # 右端会顶到条上；上移一点点就能让整行稳稳落在条上方的空白带里。
+        tgt = (nb[0], (nb[1] + nb[3]) / 2 - NAME_LIFT)
+        ang = tilt if layout.get("name_angle") is None else float(layout["name_angle"])
+        # 🔴 缩到「旋转后真的不越出**名字区**」为止。fit_font 只管**没旋转**的墨迹
+        #    宽高，斜排 15° 之后整行右端会再抬高 w·sinθ，宽一个字母就多抬 10+px ——
+        #    05 的 BRUTUS 就这么顶出画板上沿 8px，03/07 顶出 26/41px。
+        #    NAME_HEADROOM 就是这条硬上限（名字区上沿 = name_box 顶 - 92），
+        #    以前只在算贴片 bbox 时用过、没约束字本身，所以字照样往外长。
+        top_limit = nb[1] - NAME_HEADROOM
+        start = 230
+        while True:
+            font = fit_font(name, max_w, 145, start=start, loader=load_name_font)
+            lay, anchor = name_layer(name, font, layout)
+            q = layer_ink_quad(lay, anchor, ang, tgt)
+            over = max(top_limit - q[:, 1].min(),
+                       -q[:, 0].min(), q[:, 0].max() - (W - 1),
+                       -q[:, 1].min(), q[:, 1].max() - (H - 1))
+            if over <= 0 or font.size <= 24:
+                break
+            start = max(24, font.size - max(1, int(round(over))))
+        items.append((lay, anchor, ang, tgt))
+
+    # 3a) 定位标签：贴着红条左端进一点，垂直居中于条带
+    if tag:
+        tx = layout["x_left"] + 12
+        font = fit_font(tag, int(layout["x_right"] - tx - 12),
+                        int(layout["bar_h"] * 0.62), start=int(layout["bar_h"] * 0.52))
+        lay, bb, ink_c = line_layer(tag, font, stroke=0, stroke_fill=(112, 16, 8, 255))
+        # 左中点对齐：标签左端钉在条带左端的中心线上
+        items.append((lay, (bb[0], ink_c[1]), tilt,
+                      (tx, top_y(layout, tx) + layout["bar_h"] / 2)))
+
+    # 3b) 台词：红条下边线往下 quote_h 的带子，左端对齐
+    if quote:
+        qx_left = layout["quote_x_left"] + 10
+        font = fit_font(quote, int(layout["quote_x_right"] - qx_left - 8),
+                        int(layout["quote_h"] * 0.72), start=int(layout["quote_h"] * 0.56))
+        # 描边只给 1px：描边过粗会把 20px 的字芯整个包住、看起来变成白字。
+        lay, bb, ink_c = line_layer(quote, font, fill=tuple(q_fill) + (255,), stroke=1,
+                                    stroke_fill=tuple(q_stroke) + (255,))
+        # 左中点对齐（见 paste_rotated 注释）：台词左端钉在带子左端的中心线上
+        items.append((lay, (bb[0], ink_c[1]), tilt,
+                      (qx_left, bot_y(layout, qx_left) + layout["quote_h"] / 2)))
+    return items
+
+
+def plate_box(asset: str, layout: dict, W: int, H: int, changed: np.ndarray | None = None):
+    """贴片 bbox（底图像素）＝ 红条 ∪ 台词带 ∪ 擦除区 ∪ **所有语言**的墨迹，再外扩 PLATE_PAD。
+
+    🔴 必须对 `LANGS` 全部取并集，不能只按当前语言算：`LoadingPlateGeom.lua` 一张图
+       只存一组 anchor，运行时按图号取（LoadingPanel.ApplyLangPlate），没有按语言分表。
+       bbox 跟着译文长度变，换语言就整体错位或被裁。所以小字擦除框也按「最长译名」
+       推（见 render），保证擦除区同样与语言无关。
+
+    🔴 墨迹要按**旋转后**的四边形算（`layer_ink_quad`）：斜排 15° + 纵向拉伸后，
+       大字的左上角会跑到 name_box 的左外侧（h/2·sinθ）和上外侧（w·sinθ + h/2·cosθ）。
+       按几何推的贴片会把这两块裁掉 —— 实测 05 的 BRUTUS 顶部被切 46px、左边 16px
+       （字母顶是一道齐刷刷的直线），03 切 26px、07 切 41px。
+    """
+    pb, pq = poly_bar(layout), poly_quote(layout)
+    pts = [pb, pq]
+    for key in ("name_box", "small_box"):
+        b = layout.get(key)
+        if b:
+            bx0, by0, bx1, by1 = [float(v) for v in b]
+            pts.append(np.array([[bx0, by0], [bx1, by0], [bx1, by1], [bx0, by1]], np.float32))
+    if changed is not None:
+        ys_c, xs_c = np.nonzero(changed)     # grow_mask 可能长出 name_box 30px
+        if ys_c.size:
+            pts.append(np.array([[xs_c.min(), ys_c.min()], [xs_c.max() + 1, ys_c.min()],
+                                 [xs_c.max() + 1, ys_c.max() + 1], [xs_c.min(), ys_c.max() + 1]],
+                                np.float32))
+    for lang in LANGS:
+        for lay, anchor, ang, tgt in build_lines(asset, lang, layout, W, H):
+            pts.append(layer_ink_quad(lay, anchor, ang, tgt))
+    allp = np.vstack(pts)
+    return (max(0, int(np.floor(allp[:, 0].min())) - PLATE_PAD),
+            max(0, int(np.floor(allp[:, 1].min())) - PLATE_PAD),
+            min(W, int(np.ceil(allp[:, 0].max())) + PLATE_PAD),
+            min(H, int(np.ceil(allp[:, 1].max())) + PLATE_PAD))
+
+
+# --------------------------------------------------------------------------- #
 # 主流程
 # --------------------------------------------------------------------------- #
 def render(asset: str, lang: str, layout: dict) -> dict:
@@ -602,10 +745,14 @@ def render(asset: str, lang: str, layout: dict) -> dict:
     quote = entry.get(f"quote_{lang}") or ""
     name = entry.get(f"name_{lang}") or ""
 
-    # 小字的擦除框跟着大字推（见 derive_small_box），不依赖 layout 里手写的值
-    if name and not layout.get("small_box"):
+    # 小字的擦除框跟着大字推（见 derive_small_box），不依赖 layout 里手写的值。
+    # 🔴 按**所有语言里最长的译名**推：擦除框一变，贴片 bbox 就跟着变，而 anchor 是
+    #    一张图一组（不按语言分表），所以这块必须与语言无关。
+    names = [entry.get(f"name_{l}") or "" for l in LANGS]
+    longest = max(names, key=len) if any(names) else ""
+    if longest and not layout.get("small_box"):
         layout = dict(layout)
-        layout["small_box"] = derive_small_box(layout, name, W)
+        layout["small_box"] = derive_small_box(layout, longest, W)
 
     pb, pq = poly_bar(layout), poly_quote(layout)
 
@@ -661,83 +808,27 @@ def render(asset: str, lang: str, layout: dict) -> dict:
     else:
         q_fill, q_stroke = (252, 250, 246), (24, 14, 20)      # 暗底：白字深描边
 
-    # --- 3) 贴片画布：先放干净背景，再叠译文 ------------------------------- #
-    # 上边界要多留 NAME_HEADROOM：斜排 + 纵向拉伸后的英文字会高出 name_box 不少，
-    # 贴片 bbox 卡在 name_box 上的话字顶会被裁掉（实测「GUANYU」上半截直接没了）。
-    nb = [int(v) for v in layout["name_box"]]
-    top = nb[1] - NAME_HEADROOM
-    right = max(nb[2], nb[0] + name_max_w(layout, W) + 14)
-    corners = [[nb[0], top], [right, top], [right, nb[3]], [nb[0], nb[3]]]
-    sb = layout.get("small_box")
-    if sb:
-        corners += [[sb[0], sb[1]], [sb[2], sb[1]], [sb[2], sb[3]], [sb[0], sb[3]]]
-    pts = np.vstack([pb, pq, np.array(corners, dtype=np.float32)])
-    x0 = max(0, int(np.floor(pts[:, 0].min())) - 2)
-    y0 = max(0, int(np.floor(pts[:, 1].min())) - 2)
-    x1 = min(W, int(np.ceil(pts[:, 0].max())) + 2)
-    y1 = min(H, int(np.ceil(pts[:, 1].max())) + 2)
+    # --- 3) 排版：先在**底图坐标**里算三条线的落点，拿到各自的墨迹范围 ----- #
+    ink_items = build_lines(asset, lang, layout, W, H, q_fill, q_stroke)
+
+    # --- 4) 贴片画布 = 几何区 ∪ 擦除区 ∪ 三条线的墨迹（全语言并集）-------- #
+    x0, y0, x1, y1 = plate_box(asset, layout, W, H, changed)
     pw, ph = x1 - x0, y1 - y0
+
+    # 墨迹被**画板**边界（不是贴片边界）削掉多少：>0 说明这行字本身超出了 684×2048
+    # 的画板，贴片再大也救不回来，只能改字号或缩短文案。写进 geom 供 verify 卡。
+    ink_clip = 0
+    for lay, anchor, ang, tgt in ink_items:
+        q = layer_ink_quad(lay, anchor, ang, tgt)
+        ink_clip = max(ink_clip,
+                       int(max(0, -q[:, 0].min())), int(max(0, q[:, 0].max() - (W - 1))),
+                       int(max(0, -q[:, 1].min())), int(max(0, q[:, 1].max() - (H - 1))))
 
     plate = Image.fromarray(cv2.cvtColor(clean[y0:y1, x0:x1], cv2.COLOR_BGR2RGB)).convert("RGBA")
     ink = Image.new("RGBA", plate.size, (0, 0, 0, 0))     # 译文单独一层，最后取 alpha
-    tilt = float(np.degrees(np.arctan(-layout["slope"])))
-
-    # 3z) 大号角色名：Impact 超粗压缩体 + 故障风错位
-    #     左端对齐原中文大字的左边界、宽度吃到小号英文名的右边界 —— 小字已经被擦掉，
-    #     这块横向空间空着，正好让英文大字用满，不必挤在中文字符框里。
-    if name:
-        nb = [int(v) for v in layout["name_box"]]
-        left = nb[0]
-        # 🔴 宽度上限按**画板右边界**算，不按 small_box 算：小号英文名先被擦掉，那块横向
-        #    空间是空的；按 small_box 算会让 9 张的英文宽度从 245 到 415 不等、字号差一倍
-        #    （GUANYU 挤成小字、BRUTUS 撑成大字）。改成「高 100 + 不越出画板」双约束，
-        #    九张的英文字高就统一了。
-        max_w = name_max_w(layout, W)
-        font = fit_font(name, max_w, 145, start=230, loader=load_name_font)
-        lay, anchor = name_layer(name, font, layout)
-        ang = tilt if layout.get("name_angle") is None else float(layout["name_angle"])
-
-        # 绕锚点旋转 + 把锚点搬到目标点，一次仿射完成 —— 不用 rotate(expand=True)：
-        # expand 会按外接矩形放大画布，之后任何基于 bbox 的对齐都会被「空白边」带偏
-        # （实测整体下沉 17~30px，英文底边压到红条上）。PIL 的 AFFINE 系数是
-        # 「输出坐标 → 输入坐标」的反向映射，所以传逆矩阵。
-        # 整行再上移 NAME_LIFT：红条是斜的，右端抬得比左端高 100+px，英文比中文宽之后
-        # 右端会顶到条上；上移一点点就能让整行稳稳落在条上方的空白带里。
-        tgt = (left - x0, (nb[1] + nb[3]) / 2 - y0 - NAME_LIFT)
-        M = cv2.getRotationMatrix2D(anchor, ang, 1.0)
-        M[0, 2] += tgt[0] - anchor[0]
-        M[1, 2] += tgt[1] - anchor[1]
-        Mi = cv2.invertAffineTransform(M)
-        warped = lay.transform(plate.size, Image.AFFINE,
-                               (Mi[0, 0], Mi[0, 1], Mi[0, 2],
-                                Mi[1, 0], Mi[1, 1], Mi[1, 2]),
-                               resample=Image.BICUBIC)
-        ink = Image.alpha_composite(ink, warped)
-
-    # 3a) 定位标签：贴着红条左端进一点，垂直居中于条带
-    if tag:
-        inset = 12
-        tx = layout["x_left"] + inset
-        max_w = int(layout["x_right"] - tx - 12)
-        font = fit_font(tag, max_w, int(layout["bar_h"] * 0.62), start=int(layout["bar_h"] * 0.52))
-        lay, bb, ink_c = line_layer(tag, font, stroke=0,
-                                    stroke_fill=(112, 16, 8, 255))
-        # 左中点对齐：标签左端钉在条带左端的中心线上（target 一律是贴片内坐标，要减 x0/y0）
-        ink = paste_rotated(ink, lay, (bb[0], ink_c[1]), tilt,
-                            (tx - x0, top_y(layout, tx) + layout["bar_h"] / 2 - y0))
-
-    # 3b) 台词：红条下边线往下 quote_h 的带子，左端对齐
-    if quote:
-        qx_left = layout["quote_x_left"] + 10
-        max_w = int(layout["quote_x_right"] - qx_left - 8)
-        font = fit_font(quote, max_w, int(layout["quote_h"] * 0.72),
-                        start=int(layout["quote_h"] * 0.56))
-        # 描边只给 1px：描边过粗会把 20px 的字芯整个包住、看起来变成白字。
-        lay, bb, ink_c = line_layer(quote, font, fill=q_fill + (255,), stroke=1,
-                                    stroke_fill=q_stroke + (255,))
-        # 左中点对齐（见 paste_rotated 注释）：台词左端钉在带子左端的中心线上
-        ink = paste_rotated(ink, lay, (bb[0], ink_c[1]), tilt,
-                            (qx_left - x0, bot_y(layout, qx_left) + layout["quote_h"] / 2 - y0))
+    # 落点从底图坐标换算成贴片坐标再画（同一个仿射：绕锚点旋转 + 平移到落点）
+    for lay, anchor, ang, tgt in ink_items:
+        ink = paste_rotated(ink, lay, anchor, ang, (tgt[0] - x0, tgt[1] - y0))
 
     plate = Image.alpha_composite(plate, ink)
     text_a = np.array(ink.split()[3])
@@ -777,6 +868,8 @@ def render(asset: str, lang: str, layout: dict) -> dict:
         "plate_bbox": [x0, y0, pw, ph],
         "anchor_min": [round(x0 / W, 6), round(1 - y1 / H, 6)],
         "anchor_max": [round(x1 / W, 6), round(1 - y0 / H, 6)],
+        # 墨迹被画板边界削掉的像素数（0 = 三条线都完整落在 684×2048 内）
+        "ink_clip_px": ink_clip,
         "layout": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in layout.items()},
     }
     with open(os.path.join(out_dir, "geom.json"), "w", encoding="utf-8") as f:
@@ -799,7 +892,8 @@ LUA_GEOM = os.path.join(ROOT, "Assets/ManagedResources/~Lua/Modules/Message/Load
 
 LUA_GEOM_TPL = """-- 由 scripts/image/loading_plate_overlay.py publish 自动生成，勿手改。
 -- 铭牌贴片在底图中的归一化锚点（anchorMin / anchorMax），运行时挂到 LoadBg/pic 的子节点上。
--- 贴片尺寸与语言无关（bbox 由版面几何决定，不含文字），所以一张图只需一组。
+-- 一张图只存一组：bbox = 版面几何 ∪ **所有语言**译文的墨迹并集（见 plate_box），
+-- 所以每种语言的贴片尺寸完全一致，运行时不用按语言分表。
 return {{
 {body}}}
 """
@@ -989,9 +1083,14 @@ def verify(asset: str, lang: str) -> int:
     checks = [
         ("底图尺寸与登记一致", (W, H) == (sw, sh)),
         ("贴片宽高与 bbox 一致", plate.size == (bw, bh)),
-        ("贴片占底图 < 15% 面积", (bw * bh) / (W * H) < 0.15),
+        # 贴片现在由「几何 ∪ 墨迹」反推，斜排大字会把上沿撑高（05/07 顶到 y=0），
+        # 面积上限从 15% 放到 25%：这条只是防呆（别退化成整图覆盖），不是设计约束。
+        ("贴片占底图 < 25% 面积", (bw * bh) / (W * H) < 0.25),
         ("贴片体积 < 底图 30%", os.path.getsize(pp) < os.path.getsize(src) * 0.30),
         ("anchor 落在底图内", 0 <= geom["anchor_min"][0] < geom["anchor_max"][0] <= 1),
+        # 🔴 最重要的一条：三条线的墨迹必须完整落在画板内。>0 说明字被裁了，
+        #    表现就是预览里字母顶/尾齐刷刷一条直线（05 的 BRUTUS 曾切掉 46px）。
+        ("文字未越出画板（未被裁切）", geom.get("ink_clip_px", 0) == 0),
         ("alpha 有透明区（能叠）", al.min() == 0),
         ("alpha 有不透明主体", al.max() == 255),
         ("不透明像素占比 < 70%", (al > 200).mean() < 0.7),   # 不透明区 = 擦除框+条+带，03 实测 60.6%

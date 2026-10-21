@@ -194,3 +194,13 @@ curl -s "http://127.0.0.1:8081/tk/getServerList?openId=7e65e2241bd6bd2bef8fbed63
 - 换表流程：备份 `~/home/java/gameserver/table-backup-<ts>/{conf,assets_*}*.txt` → 覆盖
   `gameserver/conf/server/` **和** `gameserver/assets/conf/server/` 两处 → 重启 → 查 `run-gs.log`
   有无 `clazz = [class config.SXxx]` / `NumberFormatException`（有 = 表格式不对，别等玩家报错）。
+- 全自动链路（2026-10-22 实测，R14+R15 付费表）：触发 Jenkins `TS-Resource-Build`
+  （`EXPORT_TABLES=true SYNC_BYTES=true REBUILD_AB=true SERVER_ENV=测试服`，逐字段传参）→
+  从 build clone 拷 `Config lua + _64.bytes + 服务端 txt` 回开发目录 → txt 覆盖测试服两处 →
+  `restart gs` → 启动分段查 `STableManager`/`initActivity` 无错。🔴 **客户端仓跟踪
+  `TimeSpaceServer/skzc/` 全部 406 张表**，服务端仓另有一份 `server_game/conf/server/`，两边都要提交；
+  build clone 里的 skzc 导表产物会被后续构建清掉，导完立刻拷走。
+- 🔴 启动后见 `AbstractActivity 奖励配置不存在<活动id>` ≠ 新表坏了：那是按 GlobalActivity 活动 id 查
+  `ActivityRewardConfig` 查不到（`AbstractActivity.java:203/274`），记 error 后优雅 return，玩家无感。
+  根因是 GlobalActivity 有 2021 年死行（有壳没奖励）——报错 id 集合随「哪份 GlobalActivity 在内存里」
+  变化，重启前后 id 不同不代表刚部署的表有问题；判据看 STableManager 加载分段是否干净。

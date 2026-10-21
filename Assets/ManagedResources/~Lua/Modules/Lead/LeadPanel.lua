@@ -44,6 +44,16 @@ function LeadPanel:InitComponent()
     this.privilegeRedpoint = Util.GetGameObject(this.privilege, "redpoint")--普通研发红点
     this.btnUpLvRedpoint = Util.GetGameObject(this.btnUpLv, "redpoint")--升级红点
 
+    --红点在 prefab 里的兄弟顺序排在 icon 前面（Research/normal 是 Image,slider,redpoint,icon；
+    --privilege 是 Image,slider,lock,redpoint,icon）⇒ 就算 SetActive(true) 也会被 icon 盖住，
+    --表现成「外面入口亮，进来这块看不到红点」。这里把红点提到同级最后，不动 prefab。
+    if this.normalRedpoint and not IsNull(this.normalRedpoint) then
+        this.normalRedpoint.transform:SetAsLastSibling()
+    end
+    if this.privilegeRedpoint and not IsNull(this.privilegeRedpoint) then
+        this.privilegeRedpoint.transform:SetAsLastSibling()
+    end
+
     --立绘
     this.manLive = Util.GetGameObject(this.gameObject, "live/spine/Nanzhu")
     this.womanLive = Util.GetGameObject(this.gameObject, "live/spine/Lvzhu")

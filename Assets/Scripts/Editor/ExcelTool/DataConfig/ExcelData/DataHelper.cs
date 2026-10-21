@@ -239,7 +239,14 @@ namespace GameEditor.Core.DataConfig
             {
                 return defaultVal;
             }
-            string result = "nil";
+            // 🔴 2026-10-21 修：服务端 txt 的空值必须写 "null"，不是 "nil"。
+            // 服务端的 StringUtil.parseFiledInt/parseFiledInt2/parseFiledInt3
+            // （gamecommon/util/StringUtil.java:20-56）只把 "null"/空串/" " 当作"无值"，
+            // 其余直接 Integer.parseInt ⇒ 写 "nil" 会让 mut,int#... 列抛
+            // NumberFormatException，整张表加载失败（实测 RechargeCommodityConfig
+            // 830 行 PlayerLevel/826 行 FirstMultiple 全是 nil，服务端起来就崩）。
+            // 客户端 Lua 走的是另一个方法 GetClientValByDefault（空串），不受影响。
+            string result = "null";
             switch(dataFieldType)
             {
                 case DataFieldType.Int:

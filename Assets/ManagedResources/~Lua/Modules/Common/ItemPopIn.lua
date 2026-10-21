@@ -39,7 +39,8 @@
 ---   step               相邻 item 的间隔，maxSpan 是整体跨度上限（item 多时自动压缩 step）
 ---   centerPivot        缺省 true：item 的 pivot 不在中心时临时挪到中心再缩放（否则会「往右下长」，
 ---                      看着像没对齐）。置 false 表示保持模板原来的 pivot 当缩放原点。
----                      除了 localScale，这是本模块唯一会动的属性，且 Stop 时一定还原。
+---                      除了 localScale，这是本模块唯一会动的属性：**动画一结束就还原**
+---                      （不是等 Stop 才还原，见 Settle 上面的注释）。
 local ItemPopIn = {}
 local this = ItemPopIn
 
@@ -123,14 +124,36 @@ local function CenterPivotOf(tf)
     if not okSet then
         return nil
     end
+    local dx = (kCenter - pivot.x) * w
+    local dy = (kCenter - pivot.y) * h
+    -- 还原用「相对减」而不是写回记录下来的老位置：
+    -- 🔴 动画期间列表可能被滚动/回收，item 已经换到别的格子（anchoredPosition 由 ScrollCycleView
+    --    加过偏移）。写回老位置会把它拽回上一个格子；相对减只撤掉我们自己加的那 ½ 尺寸。
     return function()
         if not Alive(tf) then
             return
         end
         pcall(function()
+            local cur = tf.anchoredPosition
             tf.pivot = pivot
-            tf.anchoredPosition = pos
+            tf.anchoredPosition = Vector2.New(cur.x - dx, cur.y - dy)
         end)
+    end
+end
+
+-- 一格的收尾：缩放回基准 + 立刻把 pivot 还原（不是等 Stop）。
+-- 🔴 为什么不能留到 Stop：pivot 是「模板属性」，别的系统会按模板 pivot 算位置 ——
+--    ScrollCycleView 的 SetData 直接写 anchoredPosition = (0.5-i)*itemHeight，是**绝对值**。
+--    居中着的 item 被它重写，位置就少了那 ½ 尺寸补偿 ⇒ 整排往右下跳半个卡宽。
+--    限定珍藏（ExpertPanel 页签 25）买完礼包会走 OnShowData → SetData，现象就是「买一下卡片全跑偏」。
+--    动画结束 scale 已经回 1，此时还原 pivot 视觉上没有任何变化，是最安全的时机。
+local function Settle(item)
+    if Alive(item.tf) then
+        item.tf.localScale = item.base
+    end
+    if item.restorePivot then
+        item.restorePivot()
+        item.restorePivot = nil -- 还原过就从 item 上摘掉，Stop 再来一次会重复减补偿
     end
 end
 
@@ -170,14 +193,8 @@ function this:Stop()
         self.tweens[i] = nil
     end
     for i = #self.items, 1, -1 do
-        local item = self.items[i]
-        if Alive(item.tf) then
-            item.tf.localScale = item.base
-        end
-        -- 偏心 pivot 挪过就要挪回去，否则下次进面板位置会累计偏移
-        if item.restorePivot then
-            item.restorePivot()
-        end
+        -- 打断在半截时同样走 Settle：缩放先回基准，再撤 pivot 补偿，不会留下半截状态
+        Settle(self.items[i])
         self.items[i] = nil
     end
 end
@@ -263,7 +280,9 @@ end
 
 -- phases 模式：按关键帧逐段播，每段在 OnComplete 里建下一段。
 -- 中途被 Kill 时 OnComplete 不回调 ⇒ 链自然断掉，不会在已关闭的面板上补建 tween。
-local function RunPhases(o, tf, base, phases, startDelay)
+local function RunPhases(o, item, phases, startDelay)
+    local tf = item.tf
+    local base = item.base
     local function run(i)
         local p = phases[i]
         if not p then
@@ -282,7 +301,7 @@ local function RunPhases(o, tf, base, phases, startDelay)
             if i < #phases then
                 run(i + 1)
             else
-                tf.localScale = base -- 收尾吸附，别把浮点残差留在 item 上
+                Settle(item) -- 收尾吸附 + 撤 pivot 补偿，别把浮点残差和偏心留在 item 上
             end
         end)
     end
@@ -316,12 +335,13 @@ function this:Play(only)
         for i = 1, count do
             local tf = targets[i]
             local base = tf.localScale
-            -- pivot 不在中心的 item 临时挪到中心，保证「居中放大缩小」（Stop 会还原）
+            -- pivot 不在中心的 item 临时挪到中心，保证「居中放大缩小」（动画结束/打断时都会还原）
             local restorePivot = nil
             if cfg.centerPivot ~= false then
                 restorePivot = CenterPivotOf(tf)
             end
-            self.items[#self.items + 1] = { tf = tf, base = base, restorePivot = restorePivot }
+            local item = { tf = tf, base = base, restorePivot = restorePivot }
+            self.items[#self.items + 1] = item
             tf.localScale = base * cfg.from
 
             if duang then
@@ -331,13 +351,11 @@ function this:Play(only)
                 SetEaseSafe(tween, cfg.ease)
                 self.tweens[#self.tweens + 1] = tween
                 tween:OnComplete(function()
-                    if Alive(tf) then
-                        tf.localScale = base
-                    end
+                    Settle(item)
                 end)
             elseif phases then
                 -- 多段关键帧：起始位由 cfg.from 给定，之后每段的目标/时长/缓动都来自 phases
-                RunPhases(self, tf, base, phases, cfg.delay + order * step)
+                RunPhases(self, item, phases, cfg.delay + order * step)
             else
                 local rise = tf:DOScale(base * cfg.peak, cfg.riseDuration)
                 rise:SetDelay(cfg.delay + order * step)
@@ -352,9 +370,7 @@ function this:Play(only)
                     SetEaseSafe(fall, "InOutQuad")
                     self.tweens[#self.tweens + 1] = fall
                     fall:OnComplete(function()
-                        if Alive(tf) then
-                            tf.localScale = base
-                        end
+                        Settle(item)
                     end)
                 end)
             end

@@ -363,6 +363,54 @@ p:Stop()
 Check(Near(offc.pivot.x, 0) and Near(offc.pivot.y, 1), "Stop 后 pivot 还原成 (0,1)")
 Check(Near(offc.anchoredPosition.x, 5) and Near(offc.anchoredPosition.y, -10), "Stop 后位置还原（不累计偏移）")
 Check(Near(offc.localScale.x, 1), "Stop 后缩放还原")
+
+-- case14b：动画**正常播完**就要还原 pivot，不能等 Stop。
+-- ScrollCycleView 的 SetData 会按模板 pivot 用绝对值重写 anchoredPosition，
+-- 居中着的 item 被重写就少了 ½ 尺寸补偿 ⇒ 整排跳半个卡宽（限定珍藏页签 25 踩过）。
+tweens = {}
+p = ItemPopIn.New(function() return { offc } end)
+p:Play()
+Check(Near(offc.pivot.x, 0.5), "播放中 pivot 在中心")
+tweens[1]:Complete()   -- 放大段
+tweens[2]:Complete()   -- 回落段
+Check(Near(offc.pivot.x, 0) and Near(offc.pivot.y, 1), "播完就有还原 pivot（不等 Stop）")
+Check(Near(offc.anchoredPosition.x, 5) and Near(offc.anchoredPosition.y, -10),
+    ("播完位置也回到原处，实际 (%s, %s)"):format(offc.anchoredPosition.x, offc.anchoredPosition.y))
+p:Stop()
+Check(Near(offc.anchoredPosition.x, 5) and Near(offc.anchoredPosition.y, -10),
+    "已经还原过的不再重复减补偿（否则会越 Stop 越偏）")
+
+-- case14c：动画期间被滚动过，还原要「相对撤」，不能写回开播时的老位置
+-- （ScrollCycleView 换格是 anchoredPosition 加偏移，写回老位置会把它拽回上一格）
+tweens = {}
+offc.pivot = { x = 0, y = 1 }
+offc.anchoredPosition = { x = 5, y = -10 }
+p = ItemPopIn.New(function() return { offc } end)
+p:Play()
+offc.anchoredPosition = { x = offc.anchoredPosition.x, y = offc.anchoredPosition.y - 270 } -- 滚动换到下一格
+tweens[1]:Complete()
+tweens[2]:Complete()
+Check(Near(offc.pivot.y, 1), "滚动后播完同样还原 pivot")
+Check(Near(offc.anchoredPosition.y, -10 - 270),
+    ("滚动量要保住，实际 y = %s（应为 -280）"):format(offc.anchoredPosition.y))
+p:Stop()
+Check(Near(offc.anchoredPosition.y, -10 - 270), "Stop 不再动已经还原过的位置")
+
+-- case14d：滚动换格后再重播（Play 会先 Stop），不能把 item 拽回上一格
+-- ScrollCycleView 复用 item：同一个 GO 会换到别的数据下标，位置由 SetData 用绝对值重写。
+tweens = {}
+offc.pivot = { x = 0, y = 1 }
+offc.anchoredPosition = { x = 5, y = -10 }
+p = ItemPopIn.New(function() return { offc } end)
+p:Play()
+tweens[1]:Complete()
+tweens[2]:Complete()                                     -- 播完：pivot 已还原
+offc.anchoredPosition = { x = 0, y = -415 }              -- 换到第 2 格（SetData 写的绝对值）
+p:Play()                                                 -- 重播 → 内部先 Stop
+Check(Near(offc.pivot.x, 0.5) and Near(offc.pivot.y, 0.5), "重播时重新居中")
+Check(Near(offc.anchoredPosition.x, 0 + 0.5 * 871) and Near(offc.anchoredPosition.y, -415 - 0.5 * 265),
+    ("Stop 只撤自己的补偿、按当前格算，实际 (%s, %s)"):format(offc.anchoredPosition.x, offc.anchoredPosition.y))
+p:Stop()
 -- 中心 pivot 不该被动过
 tweens = {}
 local centered = newItem("centered")
@@ -372,6 +420,8 @@ Check(Near(centered.anchoredPosition.x, 0) and Near(centered.anchoredPosition.y,
 p:Stop()
 -- cfg.centerPivot = false 时保持模板原点
 tweens = {}
+offc.pivot = { x = 0, y = 1 }
+offc.anchoredPosition = { x = 5, y = -10 }
 p = ItemPopIn.New(function() return { offc } end, { centerPivot = false })
 p:Play()
 Check(Near(offc.pivot.x, 0) and Near(offc.pivot.y, 1), "centerPivot=false 时不改 pivot")

@@ -31,20 +31,26 @@ this.mainList = {}
 --   ② 只播一次入场、不做常驻循环 —— 地图里 HUD 一直动会干扰走格子；
 --   ③ 这些容器里装着按钮，按钮自带 CommonButton 的 Animator（Normal 是单帧写 localScale=1），
 --      Animator 在 Update 之后求值 ⇒ 给这种节点写 scale 每帧会被盖回去，所以「自带 Animator 的只写位置」。
-local kHudDuration  = 0.26   -- 单组时长
 local kHudStep      = 0.05   -- 相邻组的错开
-local kHudFromScale = 0.94   -- 起始缩放（只给没有 Animator 的纯容器）
--- { 节点名, 方向, 位移量 }，表顺序 = 播放顺序（可见的才占一格延迟）
+-- 按「体量」分三档而不是一刀切：大块 HUD（信息条 / 技能盘）慢一点、起幅大一点才压得住；
+-- 小按钮快、起幅小。统一 0.26 会让整排看着像同一块布被拽进来，反而更假。
+-- dur=单组时长，from=起始缩放（只作用于没有自带 Animator 的纯容器）
+local kHudWeight = {
+    big   = { dur = 0.30, from = 0.90 },
+    mid   = { dur = 0.26, from = 0.94 },
+    small = { dur = 0.22, from = 0.96 },
+}
+-- { 节点名, 方向, 位移量, 体量 }，表顺序 = 播放顺序（可见的才占一格延迟）
 local kHudGroups = {
-    { "leftUp",       "up",    64 },  -- 关卡名 / 进度（贴顶）
-    { "endLessTitle", "up",    56 },  -- 无尽副本标题（只有无尽模式才激活）
-    { "rightUp",      "right", 96 },  -- 返回 / 背包 / 队伍
-    { "leftCenter",   "left",  88 },  -- 排行 / 奖励
-    { "helpBtn",      "right", 88 },
-    { "rightDown",    "right", 96 },  -- 技能 / 道具
-    { "centerDown",   "down",  88 },  -- 时间 / buff / 返回
-    { "btnJump",      "down",  56 },  -- 跳过战斗
-    { "btnAutoJian",  "down",  56 },  -- 自动拾取
+    { "leftUp",       "up",    64, "big"   },  -- 关卡名 / 进度（贴顶）
+    { "endLessTitle", "up",    56, "big"   },  -- 无尽副本标题（只有无尽模式才激活）
+    { "rightUp",      "right", 96, "big"   },  -- 返回 / 背包 / 队伍
+    { "leftCenter",   "left",  88, "big"   },  -- 排行 / 奖励
+    { "helpBtn",      "right", 88, "small" },
+    { "rightDown",    "right", 96, "big"   },  -- 技能 / 道具
+    { "centerDown",   "down",  88, "big"   },  -- 时间 / buff / 返回
+    { "btnJump",      "down",  56, "small" },  -- 跳过战斗
+    { "btnAutoJian",  "down",  56, "small" },  -- 自动拾取
 }
 local hudAnimItems = {}   -- { rect=, tf=, x=, y=, sx=, sy=, sz=, tween=, scaleTween= }
 
@@ -107,7 +113,8 @@ function this.StopHudSlideIn()
     end
 end
 
--- 进图 / 换层：可见的 HUD 容器按表顺序从各自那条边滑回原位（一次性，总跨度约 0.66s）。
+-- 进图 / 换层：可见的 HUD 容器按表顺序从各自那条边滑回原位（一次性，8 组收在 0.65s，
+-- 落在 SetRoleShow 那 1s 镜头缩放之内）。体量分档：大件 0.30s / 小按钮 0.22s，错开 0.05s。
 -- 未激活的容器直接跳过（数量随副本类型变：无尽标题、战斗类按钮都是按类型 SetActive）。
 function this.PlayHudSlideIn()
     this.StopHudSlideIn()
@@ -131,11 +138,12 @@ function this.PlayHudSlideIn()
                     else
                         dy = -cfg[3]
                     end
+                    local weight = kHudWeight[cfg[4]] or kHudWeight.mid
                     local delay = order * kHudStep
                     local item = { rect = rect, tf = tf, x = pos.x, y = pos.y,
                                    sx = scale.x, sy = scale.y, sz = scale.z }
                     rect.anchoredPosition = Vector2.New(pos.x + dx, pos.y + dy)
-                    local tween = rect:DOAnchorPos(Vector2.New(pos.x, pos.y), kHudDuration)
+                    local tween = rect:DOAnchorPos(Vector2.New(pos.x, pos.y), weight.dur)
                     tween:SetDelay(delay)
                     SetEaseSafe(tween, "OutCubic")
                     tween:OnComplete(function()
@@ -145,9 +153,9 @@ function this.PlayHudSlideIn()
                     end)
                     item.tween = tween
                     if not HudHasOwnAnimator(go) then
-                        tf.localScale = Vector3.New(scale.x * kHudFromScale,
-                                                    scale.y * kHudFromScale, scale.z)
-                        local scaleTween = tf:DOScale(Vector3.New(scale.x, scale.y, scale.z), kHudDuration)
+                        tf.localScale = Vector3.New(scale.x * weight.from,
+                                                    scale.y * weight.from, scale.z)
+                        local scaleTween = tf:DOScale(Vector3.New(scale.x, scale.y, scale.z), weight.dur)
                         scaleTween:SetDelay(delay)
                         SetEaseSafe(scaleTween, "OutCubic")
                         scaleTween:OnComplete(function()

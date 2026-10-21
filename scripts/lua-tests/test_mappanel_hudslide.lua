@@ -78,6 +78,12 @@ local offsets = { leftUp = { 0, 64 }, rightUp = { 96, 0 }, leftCenter = { -88, 0
                   helpBtn = { 88, 0 }, rightDown = { 96, 0 }, centerDown = { 0, -88 },
                   btnJump = { 0, -56 }, btnAutoJian = { 0, -56 } }
 local animated = { helpBtn = true, btnJump = true, btnAutoJian = true }
+-- 体量分档（与 MapPanel.lua 的 kHudWeight 对齐）：大件慢/起幅大，小按钮快/起幅小
+local weight = { leftUp = "big", endLessTitle = "big", rightUp = "big", leftCenter = "big",
+                 rightDown = "big", centerDown = "big",
+                 helpBtn = "small", btnJump = "small", btnAutoJian = "small" }
+local W = { big = { dur = 0.30, from = 0.90 }, mid = { dur = 0.26, from = 0.94 },
+            small = { dur = 0.22, from = 0.96 } }
 
 local root = { name = "MapPanel" }
 root.transform = root
@@ -153,7 +159,9 @@ for _, name in ipairs(visibleNames) do
     if animated[name] then
         assert(n.localScale.x == 1, ("%s 自带 Animator，不该写 scale"):format(name))
     else
-        assert(math.abs(n.localScale.x - 0.94) < 1e-6, ("%s 起始缩放应为 0.94，实际 %s"):format(name, n.localScale.x))
+        local want = W[weight[name]].from
+        assert(math.abs(n.localScale.x - want) < 1e-6,
+            ("%s（%s）起始缩放应为 %s，实际 %s"):format(name, weight[name], want, n.localScale.x))
     end
 end
 assert(nodes.endLessTitle.anchoredPosition.y == -50, "未激活容器不该被移动")
@@ -168,16 +176,21 @@ for _, t in ipairs(tweens) do
     if t.kind == "pos" then posTweens[#posTweens + 1] = t end
 end
 assert(#posTweens == #visibleNames, ("位置 tween 数 %d != %d"):format(#posTweens, #visibleNames))
+local lastEnd = 0
 for i, t in ipairs(posTweens) do
+    local name = visibleNames[i]
+    local wantDur = W[weight[name]].dur
     local want = (i - 1) * 0.05
     assert(math.abs(t.delay - want) < 1e-6, ("第 %d 组延迟 %s != %s"):format(i, t.delay, want))
-    assert(t.dur == 0.26, "单组时长应为 0.26")
+    assert(t.dur == wantDur, ("%s 时长应为 %s，实际 %s"):format(name, wantDur, t.dur))
     assert(t.ease == Ease.OutCubic, "ease 应为 OutCubic")
-    assert(t.tf.name == visibleNames[i], ("第 %d 组应绑 %s，实际 %s"):format(i, visibleNames[i], t.tf.name))
+    assert(t.tf.name == name, ("第 %d 组应绑 %s，实际 %s"):format(i, name, t.tf.name))
+    lastEnd = math.max(lastEnd, t.delay + t.dur)
 end
+assert(lastEnd < 1.0, ("整批必须收在 1s 镜头缩放内，实际 %.2fs"):format(lastEnd))
 assert(#tweens == #visibleNames + 5, ("tween 总数 %d != 位置 %d + 缩放 %d"):format(#tweens, #visibleNames, 5))
-print(("  延迟 0 / %.2f / ... / %.2f，末组收在 %.2fs"):format(posTweens[2].delay, posTweens[#posTweens].delay,
-    posTweens[#posTweens].delay + 0.26))
+print(("  延迟 0 / %.2f / ... / %.2f，大件 %.2fs 小按钮 %.2fs，末组收在 %.2fs"):format(
+    posTweens[2].delay, posTweens[#posTweens].delay, W.big.dur, W.small.dur, lastEnd))
 
 -- ---------------- case 3: 完成后精确回基准 ----------------
 print("== case3 完成复位 ==")
@@ -210,7 +223,8 @@ tweens = {}
 Panel:PlayHudSlideIn()             -- 第一轮起播（不 Complete，模拟停在中途）
 Panel:PlayHudSlideIn()             -- 面板缓存复用后重播：基准必须仍取自"入场前"的 -190
 assert(nodes.leftUp.anchoredPosition.y == -126, ("重播必须从基准 -190 +64 重起，实际 y=%s"):format(nodes.leftUp.anchoredPosition.y))
-assert(math.abs(nodes.leftUp.localScale.x - 0.94) < 1e-6, "重播的起始缩放应为 0.94")
+assert(math.abs(nodes.leftUp.localScale.x - W.big.from) < 1e-6,
+    ("重播的起始缩放应为 %s（大件）"):format(W.big.from))
 Panel:PlayHudSlideIn()
 local livePos = 0
 for _, t in ipairs(tweens) do if not t.killed and t.kind == "pos" then livePos = livePos + 1 end end

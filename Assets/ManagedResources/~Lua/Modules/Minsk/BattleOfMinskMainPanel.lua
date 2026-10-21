@@ -430,7 +430,9 @@ function BattleOfMinskMainPanel:OnClose()
     end
 
     if this.liveObj and heroConfig[curMonsterIdConFig.Boss] then
-        UnLoadHerolive(heroConfig[curMonsterIdConFig.Boss],this.enemyIcon)
+        -- 必须传 liveObj（LoadHerolive 返回的那个 TestImg/立绘实例），传 enemyIcon 会把父容器塞进 "TestImg" 资源池，
+        -- 下次打开 LoadAsset 弹回容器（无 Image）→ LoadHerolive 取组件直接崩
+        UnLoadHerolive(heroConfig[curMonsterIdConFig.Boss], this.liveObj)
         this.liveObj = nil
     end
 end

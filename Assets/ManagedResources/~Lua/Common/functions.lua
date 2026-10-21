@@ -2326,17 +2326,34 @@ function LoadHerolive(_heroConfig, _objPoint)
             return nil
         end
         local testLive = poolManager:LoadLive(liveName, _objPoint.transform, Vector3.one * _heroConfig.Scale, Vector3.New(_heroConfig.Position[1], _heroConfig.Position[2], 0))
-        local SkeletonGraphic = testLive:GetComponent("SkeletonGraphic")
+        if testLive == nil then
+            -- LoadLive 在 ArtResourcesConfig 缺行 / AB 未登记时返 nil；原来紧接着取 SkeletonGraphic 会直接抛异常
+            LogRed("LoadHerolive: 动态立绘加载失败 liveName=" .. tostring(liveName))
+            return nil
+        end
         return testLive
     else
         --静态加载立绘
         local roleStaticImg = poolManager:LoadAsset("TestImg", PoolManager.AssetType.GameObject) 
+        -- 先判空再动它：池子若被污染，拿回来的可能不是 TestImg 预制体（历史上敌人立绘容器被误回池过）
+        if roleStaticImg == nil or IsNull(roleStaticImg) then
+            LogRed("LoadHerolive: TestImg 加载失败 heroId=" .. tostring(_heroConfig.Id))
+            return nil
+        end
+        local staticImg = roleStaticImg:GetComponent("Image")
+        local bigIconConfig = artResourcesConfig[_heroConfig.BigIcon]
+        if staticImg == nil or bigIconConfig == nil or bigIconConfig.Name == nil then
+            LogRed("LoadHerolive: 静态立绘取不到 Image 或 BigIcon 查表失败 heroId=" .. tostring(_heroConfig.Id)
+                .. " BigIcon=" .. tostring(_heroConfig.BigIcon)
+                .. " hasImage=" .. tostring(staticImg ~= nil))
+            return nil
+        end
         roleStaticImg.transform:SetParent(_objPoint.transform)
         roleStaticImg.transform.localScale = Vector3.one * _heroConfig.Scale
         roleStaticImg.transform.localPosition = Vector3.New(_heroConfig.Position[1], _heroConfig.Position[2], 0)
         roleStaticImg.name = "TestImg"
-        roleStaticImg:GetComponent("Image").sprite = Util.LoadSprite(artResourcesConfig[_heroConfig.BigIcon].Name)
-        roleStaticImg:GetComponent("Image").raycastTarget = false
+        staticImg.sprite = Util.LoadSprite(bigIconConfig.Name)
+        staticImg.raycastTarget = false
         return roleStaticImg
     end
 end

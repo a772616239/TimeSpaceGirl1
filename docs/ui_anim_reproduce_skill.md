@@ -480,6 +480,22 @@ Commits：`b1b4580ed`（撤销错方向）、`2198f87da`（补落位曲线）、
 
 记录见配方文档附录 H。产物：`LuaBytes/Modules_Recharge_MainRechargePanel_64.bytes`（5050 → 8363 B）。
 
+### 第四次复用：`BattlePassPanel_Mission`（同一份 `TabBox`，位移改走子节点）
+
+| 环节 | 这次的判断 |
+|---|---|
+| S0 | 用户指名的参考换成了 `cn2-X1_UI_TreasureStorePopup.anim`（不是七日狂欢）。`dump_clip.py` 读出 10 条（Scale=1 + Float=9，镜像 12 = 3+9）：**配方是「列表项从左侧滑入 + 底板 alpha 0.3647→1，逐格错开」**，和前三轮的 scaleX 翻入不是同一个东西 |
+| S0 | 前 4 条（`Panel` 的 `anchoredPosition.y`/`sizeDelta.y`、`Panel/Bg` 的 `localScale`/`m_Color.a`）是**弹窗本体**的进出场；本页是 BattlePassPanel 的子页，没有对应节点也不该整页位移 ⇒ 只落 6 条「列表项」曲线（偏离已记在此） |
+| S1 | 页签由 `TabBox` 克隆、`box` 挂 `VerticalLayoutGroup` + `ContentSizeFitter`，按 §4.3 的字面结论「布局组占位只能写 scale」就该放弃位移。**这次没放弃，而是换承载节点**：位移写到 tab 的 6 个可视子节点（`select/title/HighText/LockImage/Redpot/Text`），页签根节点一动不动 ⇒ 布局重建抹不到，也就不需要「延迟一帧再播」 |
+| S2 | `select` 是 z 轴 90° 的板：屏幕横向 = **本地 y**，所以它走 `DOAnchorPosY`、起点 `+140`；其余节点走 `DOAnchorPosX`、起点 `-140` |
+| S2 | 只给**激活**的子节点起 tween：未选中的 `select`/`HighText`、没红点的 `Redpot` 保持终值。写它们只会让下次 `SetActive` 打开时从半截起 |
+| S2 | 文件里原有的 `local type = {...}`（领取按钮文案表）把 Lua 的 `type()` 遮住了，`TabAlive` 一写就报 `attempt to call upvalue 'type' (a table value)` ⇒ 改名 `btnStyle`（3 处） |
+| S2 | 🔴 `this.TabCtrl` 在 `InitComponent` 里被覆盖成**第二个空实例**（第二次 `Init(this.tabBox, this.tabBoxData)` 传的 `tabBoxData` 是 nil，`TabBox:Init` 直接 return）⇒ `GetTabList()` 恒为空。MainRechargePanel 那套「靠 `GetTabList()` 拿列表」在这里会静默不播，改为读 `box` 的子节点 |
+| S3 | `scripts/lua-tests/test_battlepass_tabslide.lua`（8 case）：13 格 × 5 激活节点 × 2 通道 = 130 条、末格延迟 0.36、24 格压到 0.4、Stop 全复位、`GetTabList` 为空时照常 |
+| 遗留 | 未改：`OnShow` 里的 `this.TabCtrl:ChangeTab(tabIndex)` 打在那个空实例上 ⇒ no-op，页签高亮恒停在第一个（与本次动画无关，单独提） |
+
+产物：`LuaBytes/Modules_BattlePass_BattlePassPanel_Mission_64.bytes`（14784 → 17254 B）。
+
 ---
 
 ## 10. 交付前自查（可直接贴进 PR）

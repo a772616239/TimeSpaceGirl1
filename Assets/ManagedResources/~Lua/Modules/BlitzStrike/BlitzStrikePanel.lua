@@ -6,21 +6,31 @@ local this = BlitzStrikePanel
 local buildingName = {"cn2-x1_yiwangzhicheng_TB_nandu_01", "cn2-x1_yiwangzhicheng_TB_nandu_02", "cn2-x1_yiwangzhicheng_TB_nandu_03"}
 
 --==================== 未开宝箱入场（从小到大的弹性） ====================
--- 面板打开时，还显示「关闭态箱体」的宝箱按路径顺序逐个弹一下：0.45 → 1，OutElastic 自带过冲回弹。
+-- 面板打开时，还显示「关闭态箱体」的宝箱按路径顺序逐个弹一下：0.55 → 1.06 → 0.975 → 1.012 → 1。
 -- 🔴 配方只写在这里（+ Modules/Common/ItemPopIn 的缺省值），别在面板里复写一套 tween；
 --    配方/坑见 docs/ui_item_pop_in_skill.md。
--- mode = "duang" 只给一条 tween，过冲由缓动自己给（不要设 peak）：
---   箱体图 171×176，没到「大块头 250px」那条线，可以用弹性；再大就得改 phases 关键帧。
+-- 为什么用 phases 而不是 duang（OutElastic）：弹性缓动的抖动周期是按**比例**给的，
+--   0.45 → 1 这么大的落差塞进 0.55s，会在半秒内抖三个来回（≈1.19 / 0.93 / 1.02），观感是「闪一下」，
+--   而且第一下 0.15s 就走完 0.74 的行程 ⇒ 看着像「突然弹出来」而不是「从小长大」。
+--   phases 把每次过冲的**幅度**摊开写：浮起幅度 6%、按回 -2.5%、回弹 +1.2%，全是可控的。
+-- 节奏先长后短（0.30/0.18/0.12/0.10 ≈ 0.7s）：浮起要看清、按回要能察觉、落定要干脆。
+-- 整批再延后 0.12s 起：面板刚出现那一帧（切屏 / 相机移动）不要和动画叠在一起。
 -- 缩放目标是 Bg/box（箱体图那层），不是 Box 根：Box 根 rect 是 261×115，箱体却画在 pivot 上方 61px，
 -- 缩放根节点会「往下长」，看着没居中；Bg/box 的 rect 就是箱体本身，pivot 正好在画面中心
 -- ⇒ centerPivot = false，别让模块再按子节点并集去挪 pivot。
+local kBoxPhases = {
+    { scale = 1.06,  duration = 0.30, ease = "OutCubic" },   -- 浮起（减速上升，冲过 1 一点点）
+    { scale = 0.975, duration = 0.18, ease = "InOutQuad" },  -- 按回（两端切线为 0，落位不顿）
+    { scale = 1.012, duration = 0.12, ease = "InOutQuad" },  -- 弹性微回（这一下才叫「弹」）
+    { scale = 1,     duration = 0.10, ease = "OutQuad" },    -- 落定
+}
 local kBoxPopInCfg = {
-    mode = "duang",
-    from = 0.45,          -- 起点 45%：「从小到大」的落差主要靠这里
-    duangDuration = 0.55, -- 单箱时长；拉到 0.8s 会变成软塌塌的果冻
-    ease = "OutElastic",
-    step = 0.08,          -- 相邻宝箱错开
-    maxSpan = 0.45,       -- 5 个时 0.08*4 = 0.32，不触发压缩
+    mode = "phases",
+    from = 0.55,          -- 起点 55%：「从小到大」的落差主要靠这里（越小越夸张）
+    phases = kBoxPhases,
+    delay = 0.12,         -- 整批延后起播，躲开面板出现那一帧
+    step = 0.09,          -- 相邻宝箱错开
+    maxSpan = 0.5,        -- 5 个时 0.09*4 = 0.36，不触发压缩
     centerPivot = false,
 }
 

@@ -10,7 +10,7 @@
 > 副官挑战 / 副官赠礼）；
 > 固定版面（不是列表）走关键帧模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位，`phases`）、
 > `DefenseTrainingPopup`（5 个关卡节点 `Stage1..5`，`phases`，只在 `OnOpen` 那一轮播）；
-> 地图上的单点元素走 `duang`：`BlitzStrikePanel`（**未开宝箱**从小到大弹一下，数组数据源，
+> 地图上的单点元素走 `phases`：`BlitzStrikePanel`（**未开宝箱**从小到大弹一下，数组数据源，
 > 缩放目标是 `Bg/box` 而不是宝箱根节点，见第 5 节第 15 条）；
 > 地图上的据点走「由中心往外」的 `phases`：`ChallengePanel`（公会战 `map/city1..10`，
 > 数组数据源按 `anchoredPosition` 离中心远近排序 + `centerPivot = false`，见第 8 节末条）。
@@ -63,8 +63,15 @@ local cfg = { mode = "duang", from = 0.6, duangDuration = 0.45, ease = "OutElast
 ```
 
 - `from = 0.5` 比 `surge` 的 0.82 更狠：`duang` 没有中间峰值，落差全靠起点。
-- 过冲幅度由缓动决定（`OutElastic` 约冲过 1 的 5%~10%），**不需要也不该再设 `peak`**。
-  想要「一冲到顶就停」就换 `ease = "OutBack"`（单次过冲，没有回抖）。
+- 过冲幅度由缓动决定，**不需要也不该再设 `peak`**。想要「一冲到顶就停」就换 `ease = "OutBack"`（单次过冲，没有回抖）。
+- 🔴 **`OutElastic` 的过冲幅度和「落差」成正比**（DOTween 的振幅取 `change` 本身），
+  不是固定的 5%~10%：第一个峰约在 `t≈0.15` 处，冲过 1 的量 ≈ `落差 × 0.35`。
+  - `from = 0.82`（落差 0.18）→ 峰值 ≈ 1.06，就是「5%~10%」那个印象；
+  - `from = 0.45`（落差 0.55）→ 峰值 ≈ **1.19**，半秒内还要抖三个来回（1.19 / 0.93 / 1.02）。
+  ⇒ **「起点压得很小」和「用 OutElastic」不能同时要**：前者放大过冲，后者把它抖成闪一下。
+  想要「从小长大 + 有弹性」，用 `phases` 把每次过冲的幅度写死（见 1.2），别靠缓动自己去飙。
+  （`BlitzStrikePanel` 的宝箱就是这么改的：先用 `from 0.45 + OutElastic 0.55s`，观感「弹出来 + 闪」，
+  换成 `0.55 → 1.06 → 0.975 → 1.012 → 1` 后才像「从小长大」。）
 - `delay` 是**整批**延后：第二批比第一批晚 0.26s 起，同一个模块两份实例即可，不用手写 Timer。
 - ⚠️ 大块头（卡面 ≥250px）别用 `OutElastic`：它的抖动周期是按比例给的，0.5~0.55s 内
   抖 3 个来回，观感是「闪一下」；拉到 0.8s 又变成软塌塌的果冻。**大块头改用 `phases`。**
@@ -179,7 +186,7 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 | `AdjutantActivityPanel` | `PageTabCtrl:ChangeTab` 的回调（首开也走这条） | 无独立的事件刷新路径 |
 | `ThousandDrawPanel`（phases） | `Init` 的网络回调末尾（数据到位、卡面填好之后） | 领奖后的整表刷新会重播——那是**新一局**，可以接受 |
 | `DefenseTrainingPopup`（phases，关卡节点） | `OnOpen` 置位 → `OnShow` 末尾消费（`UpdateMain` 之后，status 节点已按状态激活） | 战斗返回（`IsBackOpen` 只走 `OnShow`，不经 `OnOpen`）、点「重置关卡」（回调里直接调 `OnShow`）——都是同屏刷新 |
-| `BlitzStrikePanel`（duang，未开宝箱） | 同上：`OnOpen` 置位 → `OnShow` 里 `UpdateMain` 之后消费 | 战斗返回（只走 `OnShow`）、领奖回调里的 `UpdateMain` 刷新；`difficultyLevel = 0`（弹选难度）那一支也不播 |
+| `BlitzStrikePanel`（phases，未开宝箱） | 同上：`OnOpen` 置位 → `OnShow` 里 `UpdateMain` 之后消费 | 战斗返回（只走 `OnShow`）、领奖回调里的 `UpdateMain` 刷新；`difficultyLevel = 0`（弹选难度）那一支也不播 |
 | `ChallengePanel`（公会战地图据点，phases） | 父面板 `GuildBattlePanel:OnOpen` 调 `RequestCityPopIn()` 置位 → 本模块 `OnShow` 末尾（`ShowCity` 之后）消费 | 点「刷新」（回调里直接调 `OnShow`）、战斗返回（只走 `OnShow`）——都是同屏刷新 |
 | `RankingSingleListPanel` | `OnOpen` 置位 → 首轮榜单数据灌列表时消费（接点在 `CheckIsTop`，见 3.1 节） | 翻页 / 事件回调重灌列表（标记已消费）；空榜（`SetData` 前 return） |
 | 抽中单张卡（phases） | 抽卡回调里 `SetCard` 之后 `PlayCardIn(msg.number)` | —— |
@@ -462,8 +469,10 @@ end
   `rewardPre` 的 pivot 是 `(0,1)`，`DOScale` 绕 pivot 缩放。模块加 `CenterPivotOf`（临时居中 +
   `anchoredPosition` 补偿 ½ 尺寸、`Stop` 还原，`centerPivot = false` 可关），顺带修掉
   ExpertPanel `rewardPre1..10` 同样的偏心；`test_itempopin` 加 case14，扩到 14 组。
-- **2026-10-21**（闪击战未开宝箱）：`BlitzStrikePanel` 接入（数组数据源 + `duang`）：打开面板时
-  只弹**还没领**的宝箱（已领的换成开箱图，不参与），`0.45 → 1`、`OutElastic`、0.55s、相邻错开 0.08。
+- **2026-10-21**（闪击战未开宝箱）：`BlitzStrikePanel` 接入（数组数据源）：打开面板时
+  只弹**还没领**的宝箱（已领的换成开箱图，不参与）。首版是 `duang`（`0.45 → 1`、`OutElastic` 0.55s），
+  **实机观感「不自然、像闪一下」**——过冲随落差放大到 1.19、半秒抖三个来回 ⇒ 改成 `phases`
+  `0.55 → 1.06 → 0.975 → 1.012 → 1`（0.30/0.18/0.12/0.10 ≈ 0.7s）、整批延后 0.12s、相邻错开 0.09。
   放大目标是 `Bg/box`（箱体图那层）而不是 `Box1..5` 根节点——根节点 rect 是 261×115 的挂点带、箱体画在
   pivot 上方 61px，缩放根会「从下面长出来」（见第 5 节第 15 条）。播的时机沿用防守训练那一招
   （`OnOpen` 置位 → `OnShow` 消费）：战斗返回（只走 `OnShow`）与领奖后的 `UpdateMain` 刷新都不重播，

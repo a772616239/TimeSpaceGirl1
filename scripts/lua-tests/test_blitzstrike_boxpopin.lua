@@ -42,7 +42,7 @@ local function v3(x, y, z)
 end
 Vector3 = { one = v3(1, 1, 1), zero = v3(0, 0, 0) }
 Vector2 = { New = function(x, y) return { x = x, y = y } end }
-Ease = { OutElastic = "OutElastic" }
+Ease = { OutElastic = "OutElastic", OutCubic = "OutCubic", InOutQuad = "InOutQuad", OutQuad = "OutQuad" }
 IsNull = function(o) return o == nil end
 local errors = {}
 LogError = function(msg) errors[#errors + 1] = msg end
@@ -248,22 +248,36 @@ Check(boxSkin[1].children["O"].activeSelf == true, "Box1 的已领角标 O 仍�
 Check(boxSkin[2].children["N"].activeSelf == true, "Box2 可领角标 N 亮着")
 
 -- ---------------- case 3: 手感 ----------------
-print("== case3 从小到大的弹性（duang） ==")
+print("== case3 从小到大的弹性（phases） ==")
 resetAll()
 tweens = {}
 local n = Panel.boxPopIn:Play()
 Check(n == 4, "4 个宝箱入队，实际 " .. n)
-Check(#tweens == 4, "duang 单段 ⇒ 每箱 1 条 tween，共 4 条，实际 " .. #tweens)
+Check(#tweens == 4, "每箱先建第一段，共 4 条，实际 " .. #tweens)
 local first = tweens[1]
 Check(first.tf == boxSkin[2], "第一条是 Box2（队列顺序）")
-Check(Near(first.endv.x, 1) and Near(first.dur, 0.55), "0.45 → 1 / 0.55s")
-Check(first.ease == Ease.OutElastic, "OutElastic（弹性过冲自带，不设 peak）")
-Check(Near(boxSkin[2].localScale.x, 0.45), "起点 0.45，实际 " .. boxSkin[2].localScale.x)
-Check(Near(tweens[2].delay, 0.08) and Near(tweens[3].delay, 0.16) and Near(tweens[4].delay, 0.24),
-    "相邻错开 0.08")
+Check(Near(first.endv.x, 1.06) and Near(first.dur, 0.30), "第一段 0.55 → 1.06 / 0.30s")
+Check(first.ease == Ease.OutCubic, "第一段 OutCubic（减速浮起）")
+Check(Near(boxSkin[2].localScale.x, 0.55), "起点 0.55，实际 " .. boxSkin[2].localScale.x)
+Check(Near(first.delay, 0.12), "整批延后 0.12s 起（躲开面板出现那一帧），实际 " .. first.delay)
+Check(Near(tweens[2].delay, 0.21) and Near(tweens[3].delay, 0.30) and Near(tweens[4].delay, 0.39),
+    "相邻错开 0.09")
 Check(Near(boxSkin[1].localScale.x, 1), "已领的 Box1 不动")
+
+-- 四段关键帧链：每段在上一段的 OnComplete 里建
+print("  关键帧链：")
 first:Complete()
-Check(Near(boxSkin[2].localScale.x, 1), "落定回到 1（不留浮点残差）")
+Check(#tweens == 5, "第一段完成后建第二段，实际 " .. #tweens)
+Check(Near(tweens[5].endv.x, 0.975) and Near(tweens[5].dur, 0.18), "第二段 1.06 → 0.975 / 0.18s")
+Check(tweens[5].ease == Ease.InOutQuad, "第二段 InOutQuad（按回）")
+tweens[5]:Complete()
+Check(Near(tweens[6].endv.x, 1.012) and Near(tweens[6].dur, 0.12), "第三段 0.975 → 1.012 / 0.12s")
+tweens[6]:Complete()
+Check(Near(tweens[7].endv.x, 1) and Near(tweens[7].dur, 0.10), "第四段 1.012 → 1 / 0.10s")
+tweens[7]:Complete()
+Check(Near(boxSkin[2].localScale.x, 1), "落定吸附在 1（不留浮点残差）")
+local total = 0.30 + 0.18 + 0.12 + 0.10
+Check(Near(total, 0.70), "单箱 0.70s（旧的 duang 是 0.55s 抖三个来回）")
 
 -- ---------------- case 4: 回收 ----------------
 print("== case4 OnClose / OnDestroy 回收 ==")
@@ -363,7 +377,9 @@ Check(destroy ~= nil and destroy:find("boxPopIn:Stop()", 1, true) ~= nil, "OnDes
 local plays = 0
 for _ in src:gmatch("boxPopIn:Play%(%)") do plays = plays + 1 end
 Check(plays == 1, "Play 全文件只有 1 处调用，实际 " .. plays)
-Check(src:find('mode = "duang"', 1, true) ~= nil, "走 duang（单段弹性）")
+Check(src:find('mode = "phases"', 1, true) ~= nil, "走 phases 关键帧（弹性幅度可控）")
+Check(src:find('ease = "OutElastic"', 1, true) == nil and src:find("duangDuration", 1, true) == nil,
+    "不再用 duang/OutElastic：0.55s 内抖三个来回＝闪一下，已换掉")
 Check(src:find("centerPivot = false", 1, true) ~= nil, "缩放原点保持箱体自身中心（不改 pivot）")
 
 print(failed == 0 and "ALL OK" or ("FAILED: " .. failed))

@@ -137,7 +137,14 @@ function RedPointData:CheckRedPoint(node)
             value = RedPointData:GetServerRed(node)
         -- 判断是否注册了检测方法
         elseif _checkFunc[node] and _checkFunc[node].func then
-            local funcResult = _checkFunc[node].func(node)
+            --单个检测函数抛错不能把整棵树冻在旧值上：CheckRedPointStatus 是逐个节点调用的，
+            --一旦抛出，本次检查就中断 ⇒ 该节点与它所有父节点都停在「上一次的亮」，
+            --表现就是「入口红点一直亮，点进去里面没有任何红点」。这里兜底为不显示并落日志。
+            local callOk, funcResult = pcall(_checkFunc[node].func, node)
+            if not callOk then
+                LogRed("[RedPoint] 检测函数异常 node=" .. tostring(node) .. " : " .. tostring(funcResult))
+                funcResult = false
+            end
             value = funcResult and 1 or 0
             Log("[RedPoint] CheckRedPoint node=" .. tostring(node or "nil") .. " func_result=" .. tostring(funcResult or "nil") .. " value=" .. tostring(value or "nil") .. " oldValue=" .. tostring(RedPointData:GetRedValue(node) or "nil"))
         -- 都没有提示，出错

@@ -112,6 +112,11 @@ end
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）
 function LogisticsMainPanel:OnShow()
     CheckRedPointStatus(RedPointType.General)
+    --神眷者（page4）入口红点由 Lead 的 4 个子红点按位聚合而来，
+    --子红点不重算就只能拿登录时的旧值 ⇒ 入口亮、点进去 LeadPanel 里全是灭的。
+    if AircraftCarrierManager and AircraftCarrierManager.RedPointCheckStatus_CV then
+        AircraftCarrierManager.RedPointCheckStatus_CV()
+    end
     this.HeadFrameView:OnShow()
     this.UpView:OnOpen({ showType = UpViewOpenType.ShowRight, panelType = PanelType.Logistics })
     this.BtView:OnOpen({ sortOrder = self.sortingOrder, panelType = PanelTypeView.Logistics })

@@ -319,13 +319,16 @@ function this.CanUnlockNow(id)
     return ret == true and this.CanUnlockSafe(id)
 end
 
---刷新契约红点
+--刷新契约红点（LogisticsMainPanel/page2 的入口红点）
+--口径必须与 GeneralInfoPanel 页签完全一致：只要有一个契约「现在能升级或能进阶」才亮。
+--以前这里多算了 CanUnlockSafe（可解锁），而页签那边已经不算了 ⇒ 入口亮、点进去 5 个页签全灭，
+--玩家点一次就被骗一次。可解锁只在契约面板未解锁页的 unLockBtn 上提示（CanUnlockNow）。
 function this.RefreshRedPointState()
     if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.GENERAL) then
         return false
     end
     for i = 1, 5 do
-        if this.CanUnlockSafe(i) or this.CanUpgradeOrRank(i) then
+        if this.CanUpgradeOrRank(i) then
             return true
         end
     end

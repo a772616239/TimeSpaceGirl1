@@ -352,7 +352,11 @@ function this.InitRedPointAllRelate()
     RPData:SetParent(RedPointType.Lead_Assembly, RedPointType.Lead)
     RPData:SetParent(RedPointType.Lead_Normal, RedPointType.Lead)
     RPData:SetParent(RedPointType.Lead_Privilege, RedPointType.Lead)
-    RPData:SetParent(RedPointType.Lead_SpeedLvUp, RedPointType.Lead)
+    --研发等级（研究加速等级）红点的唯一落点在被点亮对象上：LeadRAndDPanel 的 btnUpLv/redpoint，
+    --必须先点「普通/特权」进入研发面板才看得到。挂在 Lead 下会把 LogisticsMainPanel/page4 点亮，
+    --而 LeadPanel 里没有任何节点表示它 ⇒ 外面亮、点进去一个红点都没有。
+    --故不再上浮，只保留研发面板内的局部红点（leaf 无父节点，CheckRedPointStatus/BindObject 照常工作）。
+    -- RPData:SetParent(RedPointType.Lead_SpeedLvUp, RedPointType.Lead)
     RPData:SetParent(RedPointType.Lead_UpLv, RedPointType.Lead)
 
     --公会战

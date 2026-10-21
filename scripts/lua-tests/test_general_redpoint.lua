@@ -152,7 +152,24 @@ check("没有可用英雄 → 契约2 解锁按钮红点灭", GeneralManager.Can
 spareHeroes = { { dynamicId = 903, star = 5, property = 2, inFormation = true } }
 check("同系 5 星都在编队 → 契约2 解锁按钮红点灭", GeneralManager.CanUnlockNow(2), false)
 
--- 3) 单条判定抛错不打断整轮刷新
+-- 3) 入口红点（LogisticsMainPanel/page2）= 页签并集，可解锁不再点亮入口
+--    修复前入口用的是 IsCanUnlock or ... ⇒ 入口亮、点进去 5 个页签全灭
+spareHeroes = { { dynamicId = 904, star = 5, property = 2 } }
+setBag({})
+check("只有可解锁、没有材料 → 契约入口红点灭", GeneralManager.RefreshRedPointState(), false)
+setBag({ [17002] = 5, [14] = 49000 })
+check("有材料可升级 → 契约入口红点亮", GeneralManager.RefreshRedPointState(), true)
+setBag({})
+
+-- 4) 神眷者入口红点（page4）只聚合 LeadPanel 里看得到的 4 个红点
+--    研发等级红点（Lead_SpeedLvUp）的唯一落点在研发面板 btnUpLv ⇒ 不能挂到 Lead 名下，
+--    否则 page4 亮、点进 LeadPanel 一个红点都没有
+local rpf = io.open(ROOT .. "/Assets/ManagedResources/~Lua/Modules/Player/RedpotManager.lua", "rb")
+local rpSrc = rpf:read("*a")
+rpf:close()
+check("研发等级红点未挂到 Lead 名下", rpSrc:find("\n%s*RPData:SetParent%(RedPointType%.Lead_SpeedLvUp") == nil, true)
+
+-- 5) 单条判定抛错不打断整轮刷新
 setBag({ [17002] = 5, [14] = 49000 })
 bagThrows = true
 local ok = pcall(function()

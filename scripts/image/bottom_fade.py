@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import datetime
@@ -48,20 +49,58 @@ def log(msg: str) -> None:
     print(f"[fade] {msg}")
 
 
-def looks_faded(im: Image.Image) -> bool:
+def ledger_says_faded(asset: Path, backup_root: str = "") -> bool:
+    """台账精确判定：当前文件字节 == 某次 bottom_fade 的产出（after_sha256）。
+
+    RGB 图没有 alpha 可用，靠像素启发式判「软硬」永远有歧义（见 looks_faded）。
+    但**我们自己虚化过的图**是台账里记着的：publish 那条记录的 after_sha256 就是现在的字节。
+    这才是唯一无歧义的判据，命中就不必再看像素。
+    """
+    mf = rp.backup_root_of(backup_root or None) / "_manifest.jsonl"
+    if not (mf.is_file() and asset.is_file()):
+        return False
+    cur = hashlib.sha256(asset.read_bytes()).hexdigest()
+    for line in mf.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("theme") == "fade" and rec.get("after_sha256") == cur:
+            return True
+    return False
+
+
+def looks_faded(im: Image.Image, asset: Path | None = None, backup_root: str = "") -> bool:
     """判断这张图是不是已经被虚化过一次（幂等守卫）。
 
     🔴 不判的话，重跑一次 job 就在虚化带上**再叠一次**：紫色越叠越重、细节越叠越糊，
        而且每次都不报错 —— 这种「跑第二次就坏」的工序比直接失败更危险。
-       判据用「末行 alpha 已经收到 0」：正常资源底边是硬切（255），虚化过的必然是 0。
-       RGB 资源没有 alpha 可用，退回看末行是否已经明显偏低频（模糊后水平梯度很小）。
+       三层判据，从严到宽：
+       ① RGBA：末行 alpha 已经收到 0（正常资源底边硬切 255，虚化过的必然是 0）——精确；
+       ② 台账命中 after_sha256 —— 精确，覆盖本工具自己的产出（RGB 图也管用）；
+       ③ RGB 像素兜底（宽松）：底部 24 行既没有硬台阶、水平方向也确实低频。
+    ③ 为什么必须「两个条件同时成立」：只判水平梯度会被 1–3px 深色描边骗（描边行整行
+       纯色，梯度天然为 0，growthmanual banner 1080x724 就是这么被误判拦下的：末行
+       std=0、与上一行差 166，而上一行还是实画面）；只判纵向台阶会被「横向灯带/色带」
+       骗。宁可放过不可误杀——误杀是「正常图干不了活」，放过还有 ② 兜着。
     """
     if im.mode == "RGBA":
         al = np.asarray(im.getchannel("A"), dtype=np.float32)
         return bool(al[-1].mean() < 4.0)
+    if asset is not None and ledger_says_faded(asset, backup_root):
+        return True
+    # ③ RGB 像素兜底：底部 24 行既要没有纵向硬台阶，也要横向确实低频。
+    #    阈值刻意定得很紧（4 级 / 1.0）——这条只是「台账没记录时的最后一道」，宁可放过。
     g = np.asarray(im.convert("L"), dtype=np.float32)
-    edge = g[-2:, :]
-    return bool(np.abs(np.diff(edge, axis=1)).mean() < 2.0)
+    band = g[-min(24, g.shape[0]):, :]
+    if band.shape[0] < 3:
+        return False
+    max_jump = float(np.abs(np.diff(band, axis=0)).mean(axis=1).max())
+    hf = float(np.abs(np.diff(band, axis=1)).mean())
+    return bool(max_jump <= 4.0 and hf < 2.0)
 
 
 def apply_fade(im: Image.Image, px: int, rim: str) -> Image.Image:
@@ -170,13 +209,18 @@ def main(argv: list[str] | None = None) -> int:
         log(f"🔴 虚化带 {px}px 超过图高的一半（{im0.height}px）——那是在毁图，不是化边")
         return RC_USAGE
 
-    if not args.publish_only and not args.force and looks_faded(im0):
-        log("🟡 这张图的底边已经是软的（末行 alpha≈0），判定为「已经虚化过」。")
+    if not args.publish_only and not args.force and looks_faded(im0, asset, args.backup_root):
+        log("🟡 这张图已经是「虚化过」的（末行 alpha≈0 / 台账 after_sha256 命中）。")
         log("   再跑一次会在原虚化带上再叠一层：紫色更重、细节更糊，而且不会报错。")
         log("   → 要重做请先 restore 回原图；确实要叠第二层加 --force")
         return RC_NEED_EYE
 
     out_dir = Path(args.out).expanduser() if args.out else OUT_ROOT / asset.stem
+    # 🔴 --out 给相对路径时必须按工程根解析：`Path.relative_to()` 只做纯字符串前缀比较，
+    #    不认 cwd ⇒ 传 `--out _output/xxx` 会在「产已写盘、日志那一行」抛 ValueError，
+    #    看上去像整条工序失败，其实图已经出来了（假红，最容易误导人）。
+    if not out_dir.is_absolute():
+        out_dir = (ROOT / out_dir).resolve()
     suffix = "rgb" if im0.mode == "RGB" else "alpha"
     out_png = out_dir / f"{asset.stem}_fade_{im0.width}x{im0.height}_{suffix}.png"
 

@@ -108,24 +108,32 @@ def parse_version(run_dir: str, apk_name: str) -> str:
 
 
 def parse_commit(run_dir: str) -> tuple[str, str]:
-    """返回 (短 sha, 提交标题)。标题取自打包目录的 git log；取不到就只给 sha。"""
-    sha = ''
-    ctx = read(os.path.join(run_dir, 'context.txt'))
-    m = re.search(r'@\s*([0-9a-f]{7,40})\b', ctx)
-    if m:
-        sha = m.group(1)[:7]
+    """返回 (短 sha, 提交标题)。
+
+    🔴 sha 与标题必须来自**同一个** git log：
+    context.txt 是 ① 阶段写的，那时 ①-1 的 `ci_sync.sh` 还没 fetch/reset，
+    所以它记的是**同步前**的 HEAD；而真正进包的是同步后的代码。
+    两个来源混用会出现「sha 指向旧提交、标题是新提交」这种自相矛盾的邮件（实测 #18）。
+    所以：git log 优先，context.txt 只在 git 取不到时兜底。
+    """
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(run_dir))))
-    subject = ''
+    sha, title = '', ''
     try:
-        r = subprocess.run(['git', '-C', root, 'log', '-1', '--format=%s'],
+        r = subprocess.run(['git', '-C', root, 'log', '-1', '--format=%h%x09%s'],
                            capture_output=True, text=True, timeout=5)
-        if r.returncode == 0:
-            subject = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ''
-            if dwidth(subject) > 60:                          # 邮件主题行别被一条长 commit 撑爆
-                subject = subject[:28] + '…'
+        if r.returncode == 0 and r.stdout.strip():
+            parts = r.stdout.strip().split('\t', 1)
+            sha = parts[0].strip()
+            title = parts[1].strip() if len(parts) > 1 else ''
     except Exception:                                         # noqa: BLE001
         pass
-    return sha, subject
+    if not sha:
+        m = re.search(r'@\s*([0-9a-f]{7,40})\b', read(os.path.join(run_dir, 'context.txt')))
+        if m:
+            sha = m.group(1)[:7]
+    if dwidth(title) > 60:                                    # 别让一条长 commit 撑爆主题行
+        title = title[:28] + '…'
+    return sha, title
 
 
 def parse_stages(run_dir: str) -> list[dict]:

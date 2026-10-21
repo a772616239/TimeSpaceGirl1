@@ -16,18 +16,35 @@
 --- 它会自己到页面里找长列表（ScrollCycleView，字段名随意）；找不到就 no-op，
 --- 所以面板可以对每个页签无脑调用。手工克隆的列表让页面实现 GetPopInSource() 即可。
 ---
+--- 数据源（getScrollView 的返回值，四种都认）：
+---   ① ScrollCycleView（有 ForeachItemGO）——最常用
+---   ② 容器 GameObject / RectTransform——取 active 子节点（手工克隆的列表）
+---   ③ Lua 数组 { go1, go2, ... }——元素可以是 GameObject 或 transform（card1..card3 这种固定的几格）
+---   ④ 无 → no-op
+---
+--- 两种手感（cfg.mode）：
+---   "surge"（缺省）0.82 → 1.02 → 1，两段 + 逐格错开 = 礼包墙那种「逐格放大缩小」
+---   "duang"        0.5 → 1，单段 OutElastic，自带回弹过冲 = 抽卡那种「duang 一下」（不会和别的配方混）
+---
 --- 可调项（New 的第二参，缺省即下面的 defaultCfg）：
+---   mode               "surge" / "duang"
 ---   from/peak          起始与峰值缩放
 ---   riseDuration       放大段时长，fallDuration 缩小回落时长
+---   duangDuration      duang 模式的整体时长，ease 是它的缓动（缺省 OutElastic）
+---   delay              整批延后多久起播（同一页里两批要错开时用，比如卡片先、数字后）
 ---   step               相邻 item 的间隔，maxSpan 是整体跨度上限（item 多时自动压缩 step）
 local ItemPopIn = {}
 local this = ItemPopIn
 
 local defaultCfg = {
+    mode = "surge",
     from = 0.82,
     peak = 1.02,
     riseDuration = 0.14,
     fallDuration = 0.12,
+    duangDuration = 0.5,
+    ease = "OutElastic",
+    delay = 0,
     step = 0.055,
     maxSpan = 0.55,
 }
@@ -90,18 +107,32 @@ end
 
 -- 收集可见 item 的 transform（滚出可视区的 item 是 SetActive(false) 的，跳过，
 -- 否则会白占一轮错开时间）。
--- 数据源两种：
+-- 数据源三种：
 --   ① ScrollCycleView（有 ForeachItemGO）——item 由 SetData 克隆，顺序即版面顺序；
---   ② 容器（手工克隆的长列表，如 ContinuityRechargePage）——取容器下所有 active 子节点，
+--   ② Lua 数组（{ go1, go2, go3 }，元素是 GameObject 或 transform）——固定几格、顺序由调用方定，
+--      典型如千抽的三张卡；不用容器扫，是因为容器下还挂着别的装饰节点；
+--   ③ 容器（手工克隆的长列表，如 ContinuityRechargePage）——取容器下所有 active 子节点，
 --      模板项自己 SetActive(false) 着，天然被跳过。
+--
+-- 🔴 顺序不能改：ScrollCycleView 和数组都是 table，容器是 userdata。先判 table，
+--    别对 userdata 取 [1]（tolua 的 GameObject 不支持下标，直接抛错）。
 function this:_Collect()
     local targets = {}
-    local src = self.getScrollView and self.getScrollView()
+    local getter = self.getScrollView
+    if type(getter) ~= "function" then
+        return targets
+    end
+    -- 取值本身也可能炸：面板已销毁（fake-null）时去 GetGameObject 会抛错
+    local okGet, src = pcall(getter)
+    if not okGet then
+        LogError("ItemPopIn: 取数据源失败 " .. tostring(src))
+        return targets
+    end
     if not Alive(src) then
         return targets
     end
     local ok, err = pcall(function()
-        if src.ForeachItemGO then
+        if type(src) == "table" and src.ForeachItemGO then
             src:ForeachItemGO(function(_, go)
                 if Alive(go) and go.activeSelf then
                     targets[#targets + 1] = go.transform
@@ -109,15 +140,35 @@ function this:_Collect()
             end)
             return
         end
-        local container = src
-        if container.childCount == nil and Alive(src.transform) then
-            container = src.transform
+        -- table 有两种形状：容器替身（有 GetChild）和显式数组；userdata 一定是容器
+        local container
+        if type(src) == "table" then
+            container = type(src.GetChild) == "function" and src or nil
+        else
+            container = src
+            if container.childCount == nil and Alive(src.transform) then
+                container = src.transform
+            end
         end
-        local count = container.childCount or 0
-        for i = 0, count - 1 do
-            local child = container:GetChild(i)
-            if Alive(child) and child.gameObject.activeSelf then
-                targets[#targets + 1] = child
+        if container then
+            local count = container.childCount or 0
+            for i = 0, count - 1 do
+                local child = container:GetChild(i)
+                if Alive(child) and child.gameObject.activeSelf then
+                    targets[#targets + 1] = child
+                end
+            end
+            return
+        end
+        for i = 1, #src do
+            local item = src[i]
+            if Alive(item) then
+                -- GO 有 transform，transform 有 gameObject，两种都收
+                local tf = item.transform or item
+                local go = item.gameObject or item
+                if Alive(go) and go.activeSelf and Alive(tf) then
+                    targets[#targets + 1] = tf
+                end
             end
         end
     end)
@@ -128,10 +179,14 @@ function this:_Collect()
     return targets
 end
 
--- 播放：每格 基准 → from → peak → 基准，相邻错开 step
-function this:Play()
+-- 播放。only 传下标就只弹那一格（抽到牌时「duang 一下」就是这么用的），
+-- 下标对应 _Collect 的收集顺序（ScrollCycleView = 数据下标，数组 = 数组下标）。
+function this:Play(only)
     self:Stop()
     local targets = self:_Collect()
+    if only then
+        targets = targets[only] and { targets[only] } or {}
+    end
     local count = #targets
     if count <= 0 then
         return
@@ -142,6 +197,7 @@ function this:Play()
     if count > 1 and step * (count - 1) > cfg.maxSpan then
         step = cfg.maxSpan / (count - 1)
     end
+    local duang = cfg.mode == "duang"
 
     local order = 0
     local ok, err = pcall(function()
@@ -151,24 +207,37 @@ function this:Play()
             self.items[#self.items + 1] = { tf = tf, base = base }
             tf.localScale = base * cfg.from
 
-            local rise = tf:DOScale(base * cfg.peak, cfg.riseDuration)
-            rise:SetDelay(order * step)
-            SetEaseSafe(rise, "OutQuad")
-            self.tweens[#self.tweens + 1] = rise
-            rise:OnComplete(function()
-                -- 中途被 Kill 时 OnComplete 不回调，回落段也就不会再建
-                if not Alive(tf) then
-                    return
-                end
-                local fall = tf:DOScale(base, cfg.fallDuration)
-                SetEaseSafe(fall, "InOutQuad")
-                self.tweens[#self.tweens + 1] = fall
-                fall:OnComplete(function()
+            if duang then
+                -- 单段 from → 基准 + OutElastic：缓动自己会冲过 1 再抖回来，这就是「duang」
+                local tween = tf:DOScale(base, cfg.duangDuration)
+                tween:SetDelay(cfg.delay + order * step)
+                SetEaseSafe(tween, cfg.ease)
+                self.tweens[#self.tweens + 1] = tween
+                tween:OnComplete(function()
                     if Alive(tf) then
                         tf.localScale = base
                     end
                 end)
-            end)
+            else
+                local rise = tf:DOScale(base * cfg.peak, cfg.riseDuration)
+                rise:SetDelay(cfg.delay + order * step)
+                SetEaseSafe(rise, "OutQuad")
+                self.tweens[#self.tweens + 1] = rise
+                rise:OnComplete(function()
+                    -- 中途被 Kill 时 OnComplete 不回调，回落段也就不会再建
+                    if not Alive(tf) then
+                        return
+                    end
+                    local fall = tf:DOScale(base, cfg.fallDuration)
+                    SetEaseSafe(fall, "InOutQuad")
+                    self.tweens[#self.tweens + 1] = fall
+                    fall:OnComplete(function()
+                        if Alive(tf) then
+                            tf.localScale = base
+                        end
+                    end)
+                end)
+            end
             order = order + 1
         end
     end)

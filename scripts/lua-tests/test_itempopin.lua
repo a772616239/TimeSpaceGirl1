@@ -8,6 +8,9 @@
 --   ⑦ 基准缩放        ScrollCycleView 的 itemGoScale≠1 时按基准缩放算，不写死 1
 --   ⑧ 异常兜底        ForeachItemGO 抛错 / ScrollView 为 nil 都不炸、不留半截
 --   ⑨ 自定义配方      New 的第二参覆盖缺省值
+--   ⑩ 数组数据源      { go1, go2, go3 }（固定几格，如千抽的三张卡）/ 元素也可以是 transform
+--   ⑪ duang 模式      单段 from→基准 + OutElastic，只建 1 条 tween；Play(n) 只弹第 n 格
+--   ⑫ 整批延迟        cfg.delay 让第二批复用同一配方、错开起播（卡片先、数字后）
 --
 -- 用法（与其他 lua-tests 一致）：
 --   cd LuaEncoder/luajit_mac/64
@@ -43,7 +46,7 @@ local function v3(x, y, z)
     return setmetatable({ x = x, y = y, z = z }, v3mt)
 end
 Vector3 = { one = v3(1, 1, 1), zero = v3(0, 0, 0), New = v3 }
-Ease = { Linear = "Linear", InOutQuad = "InOutQuad", OutQuad = "OutQuad" }
+Ease = { Linear = "Linear", InOutQuad = "InOutQuad", OutQuad = "OutQuad", OutElastic = "OutElastic" }
 IsNull = function() return false end
 local errors = {}
 LogError = function(msg) errors[#errors + 1] = msg end
@@ -235,6 +238,81 @@ Check(Near(items[1].localScale.x, 0.9), "起点应为自定义 0.9，实际 " ..
 Check(Near(tweens[1].endv.x, 1.05), "峰值应为自定义 1.05，实际 " .. tweens[1].endv.x)
 Check(Near(tweens[3].delay, 0.2), "间隔应为自定义 0.1（第 3 项 0.2），实际 " .. tweens[3].delay)
 print("  from/peak/step 可覆盖（窄 item 允许更大的峰值）")
+
+-- ---------------- case 10: 数组数据源 ----------------
+print("== case10 数组数据源（固定几格）==")
+tweens = {}
+local cards = { newItem("card1"), newItem("card2"), newItem("card3") }
+p = ItemPopIn.New(function() return cards end)
+p:Play()
+Check(#tweens == 3, "数组源应建 3 条 tween，实际 " .. #tweens)
+Check(tweens[1].tf == cards[1] and tweens[3].tf == cards[3], "数组顺序就是版面顺序")
+Check(Near(cards[1].localScale.x, 0.82), "数组源也按 from 起")
+-- 元素是 Transform（只有 gameObject、没有 transform）也认
+tweens = {}
+local trItems = { newItem("tr1"), newItem("tr2") }
+for _, it in ipairs(trItems) do
+    it.gameObject = it
+    it.transform = nil      -- 模拟 Transform：有 gameObject，没有 transform
+end
+p = ItemPopIn.New(function() return trItems end)
+p:Play()
+Check(#tweens == 2, "Transform 数组也能收集，实际 " .. #tweens)
+-- 隐藏项跳过
+tweens = {}
+local mixedArr = { newItem("v1"), newItem("v2", false), newItem("v3") }
+p = ItemPopIn.New(function() return mixedArr end, { mode = "duang" })
+p:Play()
+Check(#tweens == 2, "数组里隐藏项跳过，实际 " .. #tweens)
+Check(Near(mixedArr[2].localScale.x, 1), "隐藏项不该被动过")
+print("  card1..3 这种显式数组能播；顺序/隐藏项同 ScrollCycleView 语义")
+
+-- ---------------- case 11: duang 模式 ----------------
+print("== case11 duang 模式 ==")
+tweens = {}
+items = {}
+for i = 1, 3 do items[i] = newItem("d" .. i) end
+p = ItemPopIn.New(function() return items end,
+    { mode = "duang", from = 0.5, duangDuration = 0.55, ease = "OutElastic", step = 0.09 })
+p:Play()
+Check(#tweens == 3, "duang 每格只建 1 条 tween（不是两段），实际 " .. #tweens)
+Check(tweens[1].ease == Ease.OutElastic, "duang 的 ease 应为 OutElastic")
+Check(tweens[1].dur == 0.55, "duang 时长应取 duangDuration，实际 " .. tostring(tweens[1].dur))
+Check(Near(tweens[1].endv.x, 1), "duang 终点是基准 1，实际 " .. tweens[1].endv.x)
+Check(Near(items[1].localScale.x, 0.5), "duang 起点 0.5，实际 " .. items[1].localScale.x)
+Check(Near(tweens[3].delay, 0.18), "duang 的错开 0.09（第 3 格 0.18），实际 " .. tweens[3].delay)
+tweens[1]:Complete()
+Check(Near(items[1].localScale.x, 1), "duang 结束落回基准")
+Check(#tweens == 3, "duang 不补建回落段，实际多出 " .. (#tweens - 3))
+-- Play(n) 只弹第 n 格
+tweens = {}
+p:Play(2)
+Check(#tweens == 1, "Play(2) 只弹 1 格，实际 " .. #tweens)
+Check(tweens[1].tf == items[2], "Play(2) 弹的是第 2 格")
+Check(Near(items[1].localScale.x, 1) and Near(items[3].localScale.x, 1), "其余两格不动")
+Check(Near(tweens[1].delay, 0), "单格播放没有错开延迟，实际 " .. tweens[1].delay)
+p:Stop()
+Check(Near(items[2].localScale.x, 1), "Stop 复位到基准")
+print("  单段 0.5→1 + OutElastic；Play(2) 只弹抽到的那一格")
+
+-- ---------------- case 12: 整批延迟 ----------------
+print("== case12 整批延迟 cfg.delay ==")
+tweens = {}
+items = {}
+for i = 1, 4 do items[i] = newItem("n" .. i) end
+p = ItemPopIn.New(function() return items end,
+    { mode = "duang", from = 0.6, delay = 0.26, step = 0.05, maxSpan = 1 })
+p:Play()
+Check(Near(tweens[1].delay, 0.26), "第 1 格延迟应含 delay=0.26，实际 " .. tweens[1].delay)
+Check(Near(tweens[4].delay, 0.26 + 0.15), "第 4 格 0.26+0.15，实际 " .. tweens[4].delay)
+print("  数字格排在卡片之后：同一配方 + delay 即可")
+
+-- 取数据源抛错也不炸
+tweens = {}
+errors = {}
+local pThrow = ItemPopIn.New(function() error("no grid") end)
+pThrow:Play()
+Check(#tweens == 0 and #errors == 1, "取数据源抛错应 LogError 一次且不建 tween")
 
 print(failed == 0 and "ALL OK" or ("FAILED: " .. failed))
 if failed > 0 then os.exit(1) end

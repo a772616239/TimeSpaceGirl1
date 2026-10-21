@@ -100,7 +100,7 @@ end
 --移除事件监听（用于子类重写）
 function this:RemoveListener()
     Game.GlobalEvent:RemoveEvent(GameEvent.FunctionCtrl.OnXuanYuanFunctionChange, this.RefreshPanel)
-    Game.GlobalEvent:AddEvent(GameEvent.FunctionCtrl.NextDayRefresh, this.UpdateCount)
+    Game.GlobalEvent:RemoveEvent(GameEvent.FunctionCtrl.NextDayRefresh, this.UpdateCount)
 end
 function this.UpdateCount()
     this.remainTimesTip.text = XuanYuanMirrorManager.GetTimeTip()

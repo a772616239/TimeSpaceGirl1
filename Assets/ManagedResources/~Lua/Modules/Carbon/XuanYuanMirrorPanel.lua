@@ -76,7 +76,7 @@ end
 --移除事件监听（用于子类重写）
 function this:RemoveListener()
     Game.GlobalEvent:RemoveEvent(GameEvent.FunctionCtrl.OnXuanYuanFunctionChange, this.UpdateCarbonContent,1)
-    Game.GlobalEvent:AddEvent(GameEvent.FunctionCtrl.NextDayRefresh, this.UpdateCount)
+    Game.GlobalEvent:RemoveEvent(GameEvent.FunctionCtrl.NextDayRefresh, this.UpdateCount)
 end
 
 function this:OnOpen()
@@ -101,7 +101,9 @@ function this:GetOpenTime(id)
     local isFunction = false
     local config = ConfigManager.GetConfigData(ConfigName.SpecialConfig,70) 
     if config then       
-        for k,v in ipairs(string.split(GetLanguageStrById(config.Value),"|")) do 
+        -- SpecialConfig[70].Key=xuanyuan_open_time，Value 本身就是 "1#1#6#7|2#2#6#7|..." 规则串，
+        -- 不是 language id，原来套 GetLanguageStrById 必然刷红字
+        for k,v in ipairs(string.split(config.Value,"|")) do 
             isFunction = false
             for n,m in ipairs(string.split(v,"#")) do 
                 if tonumber(n) == 1 and tonumber(m) == id then 

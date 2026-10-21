@@ -109,6 +109,7 @@ end
 function this:RemoveListener()
     Game.GlobalEvent:RemoveEvent(GameEvent.RedPoint.TrainTask, this.RefreshTask)
     Game.GlobalEvent:RemoveEvent(GameEvent.Adventure.OnFastBattleChanged, this.OnShow)
+    Game.GlobalEvent:RemoveEvent(GameEvent.Adventure.UpdateMultiUI, this.OnChangedLang)
 end
 
 --界面打开时调用（用于子类重写）

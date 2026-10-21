@@ -324,6 +324,7 @@ function EndLessMapView:RemoveListener()
     Game.GlobalEvent:RemoveEvent(GameEvent.Map.OnRemoveNotePoint, this.SetNoteShow)
     Game.GlobalEvent:RemoveEvent(GameEvent.Bag.BagGold, this.GetBagEnergy)
     Game.GlobalEvent:RemoveEvent(GameEvent.Map.EnergyFull, EndLessMapManager.EndlessRedCheck)
+    Game.GlobalEvent:RemoveEvent(GameEvent.EndLess.MissonChange,this.RefreshTargetRoote)
     Game.GlobalEvent:RemoveEvent(GameEvent.EndLess.RefreshHeroData,this.OnShow)
     Game.GlobalEvent:RemoveEvent(GameEvent.Bag.BagGold,this.RefreshItemNum)
 end

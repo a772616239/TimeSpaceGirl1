@@ -137,12 +137,22 @@ function InvadeMonsterView:RemoveListener()
     Game.GlobalEvent:RemoveEvent(GameEvent.OnlineGift.GetOnlineRewardSuccess, this.RefreshOnlineRewardShow)
     Game.GlobalEvent:RemoveEvent(GameEvent.OnlineGift.GetOnlineRewardSuccess, this.OnRefreshRedPoint)
     Game.GlobalEvent:RemoveEvent(GameEvent.RedPoint.TrainTask, this.SetTrainTaskState)
+    Game.GlobalEvent:RemoveEvent(GameEvent.Adventure.UpdateMultiUI, this.SetImgNative)
 end
 
 function this.SetImgNative()
-    Log("InvadeMonsterView")
-    this.btnRewardChapterImg = Util.GetGameObject(this.btnRewardChapter, "Image"):GetComponent("Image")
-    this.btnRewardChapterImg:SetNativeSize()
+    -- 面板已销毁仍收到派发时的兜底（fake-null 只能靠 IsNull 判）
+    if this.btnRewardChapter == nil or IsNull(this.btnRewardChapter) then
+        return
+    end
+    local imgNode = Util.GetGameObject(this.btnRewardChapter, "Image")
+    if imgNode == nil then
+        return
+    end
+    this.btnRewardChapterImg = imgNode:GetComponent("Image")
+    if this.btnRewardChapterImg ~= nil then
+        this.btnRewardChapterImg:SetNativeSize()
+    end
 end
 
 --界面打开时调用（用于子类重写）

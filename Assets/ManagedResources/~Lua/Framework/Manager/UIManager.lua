@@ -1004,9 +1004,12 @@ function UIManager.MultiLanguageCheck(gameObject)
                 if string.sub(imgStr, -3) == "_zh" then
                     validCntImg = validCntImg + 1
                     imageArr[i].sprite = Util.LoadSprite(imgStr)
-                    Game.GlobalEvent:DispatchEvent(GameEvent.Adventure.UpdateMultiUI)
                 end
             end
+        end
+        -- 派发必须在循环外：放循环内 = 每张 _zh 图派发一次，配合监听泄漏会被放大成几十倍
+        if validCntImg > 0 then
+            Game.GlobalEvent:DispatchEvent(GameEvent.Adventure.UpdateMultiUI)
         end
     end
 end

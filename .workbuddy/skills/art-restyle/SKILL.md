@@ -55,20 +55,40 @@ $PY scripts/image/restyle_pipeline.py publish --work "$W" --variant alpha --yes 
    🔴 浮层类资源（顶部/底部有透明轮廓）套框必须配 `ALPHA_MODE=keep`：沿用 `source` 掩膜会把框的顶/底边
    整段切掉，只剩左右两条亮线，看着像"框没画完"。
 
-### 1.1 provider 怎么选：额度按账号算，本机 Chrome 用尽就换 SunBrowser
+### 1.1 provider 怎么选：额度按账号算，一个号画完自动换下一个（2026-10-21 起全自动）
 
 - 默认 `PROVIDER=chatgpt_web` 走**本机 Chrome 登录态**（profile `Profile 5`）。
-- 🔴 **本机 Chrome 一旦报「超时仍未拿到图 / 额度用尽 / 页面被关（page has been closed）/
-  `.codex-dialog-overlay` 遮罩挡住发送」——直接换 AdsPower 的 SunBrowser，不要原地重跑烧额度：**
+- 🔴 **额度用尽不再需要人工换号**：`gen_chatgpt_web.py` 里是一条两段式换号链，
+  一个号的图出完了就接下一个接着画。
+
+  | 段 | 做什么 | 起/停 |
+  |---|---|---|
+  | ① | 接入**已经开着**的 SunBrowser（AdsPower 里手动开的号），只连不断 | 不启动也不关闭 |
+  | ② | 调 AdsPower 本地 API **现开一个 profile**（`api/v1/browser/start`） | 本进程起；失败即关，成功默认留着 |
+
+  号怎么排（`pick_profiles`）：`ADSPOWER_PROFILES` 显式指定 > 上次成功的（`_output/art_restyle/provider_state.json`）
+  > 今天没额度空过的 > chatgpt cookie 多的。今天空过的只降权不排除（额度会中途重置）。
 
   ```bash
-  $PY scripts/image/find_browser_cdp.py      # → best port=64757（Chrome/144，端口不在命令行里，只能反查）
-  # Jenkins TS-Art-Restyle 里填 CDP_PORT=64757（= 给 driver 加 --reuse-cdp：只连不断、不关用户窗口）
+  $PY scripts/image/find_browser_cdp.py --profiles        # 看有哪些号可换（cookie 数/是否在跑）
+  $PY scripts/image/find_browser_cdp.py --launch k1hiv2p8 # 手动开一个（一般不用，链路会自己开）
+  $PY scripts/image/find_browser_cdp.py --stop k1hiv2p8   # 收掉自己开的
   ```
 
-  换号 = 在 AdsPower 里开另一个已登录 profile，再反查一次端口。SunBrowser 界面语言可能不是中文，
-  `GEN_ALT` 已覆盖中/英/日/韩/西/法/德/葡。
+- 🔴 **免费版调不了 `user/list`**（`This feature is only available in paid subscriptions`），
+  但 `browser/active|start|stop` 免费可用 ⇒ profile 的 user_id 从本地缓存目录反推：
+  `~/Library/Application Support/adspower_global/cwd_global/source/cache/<user_id>_<hash>/`。
+  这个目录**只有被启动过**的 profile 才有，正好是候选集。挑之前数一遍 chatgpt cookie 条数
+  （只读 sqlite、不解密），=0 的排最后。
+- 🔴 本地 API **按秒限流**，超了不是 429 而是 `200 + {"code":-1,"msg":"Too many request..."}`
+  ⇒ `api_get()` 既限速（1.15s）又按文案重试。别在循环里裸调 curl。
+- 🔴 API 会自相矛盾：`active` 说 `Inactive`、`start` 说 `Profile does not exist`（实测 `kuh8m7e`，
+  缓存目录还在、账号里已无此 profile）。这种 id 记进台账 `note=ads_missing` 排最后，别每次白等一轮启动。
+- 换号链失败（全世界的号都空 / AdsPower 没开 / 预算用完）才把这一步标黄；
+  站点原文与重置时间在 `inbox/gen_web.png.fail.json`，Jenkins 会归档成 `artifacts/provider_fail.json`。
+- `GEN_ALT` 已覆盖中/英/日/韩/西/法/德/葡（SunBrowser 界面语言可能不是中文）。
 - 右下角**自带亮装饰带**的图（千抽底板那条青/白 V 形带）会把水印判据骗过去 ⇒ 传 `WATERMARK=off`。
+
 
 ### 1.2 浮层图（画布上下有透明留白）走 free 构图时的两件事
 
@@ -154,6 +174,26 @@ $PY scripts/image/batch_restyle.py my.json --publish                            
 - **publish 自动登记**：`restyle_pipeline.py publish` 写回成功即调 `table1.record_publish()`——Jenkins 与 batch_restyle 两链路都覆盖，**不需要也不会再忘了手工记录**；登记失败只报警不阻断写回。
 - 批量换新主题（冲浪/普罗旺斯/感恩节/赛博…）从表 1 导出：`table1.py export --theme X` → 直接喂 batch_restyle（defaults 已带紫框口径）。
 - 补录/排查：`table1.py add` / `scan --since "3 days ago"` / `list [--pending]` / `check`。
+
+### 1.7 「底部紫色虚化」= 确定性工序，别走生图（2026-10-21 新增）
+
+用户说「重绘一张吧，底部紫色虚化」时，**别去生成第二张图**：那会换掉构图/人物/文案，
+拿回来的不是「原来那张 + 虚化」。改下沿是纯算法活，工具已经就位：
+
+```bash
+$PY scripts/image/bottom_fade.py --asset Assets/.../xxx.png --px 130 --rim violet [--write-back]
+# Jenkins：TS-Art-BottomFade（ASSET / PX / RIM / WRITE_BACK / COMPRESS）
+```
+
+- 做三件事：末 N px **渐进高斯模糊** → 过渡到紫色 → 末行 alpha 收到 0。
+  🔴 模糊与染色是**两个独立权重**（0.92 / 0.80）：只染色不模糊＝压了一层紫滤镜，一眼假。
+- 六条断言里最硬的一条是「**虚化带以上零改动（通道差 = 0）**」——它证明这是局部工序，
+  没有顺手把整张图重编码一遍。
+- 🔴 **幂等守卫**：已虚化过的图（末行 alpha≈0）再跑会在原带上再叠一层，紫色更重、更糊、不报错。
+  工具默认拒绝（rc=3），要叠第二层显式 `--force`；重做请先 `restore`。
+- 写回走 `restyle_pipeline.backup_and_replace(..., register_table=False)`：进背包、可 restore，
+  但**不往 table1 的 themes_done 塞 `fade`**（那不是计划主题，会污染表），只记 `post_ops`。
+- 像素实现与 `postprocess --bottom-fade` 共用 `_bottom_fade_rgb/_bottom_fade_alpha` 一份代码。
 
 ## 2. 边框三定律
 

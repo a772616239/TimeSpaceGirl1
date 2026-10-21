@@ -7,6 +7,10 @@
     {"name":"THEME","type":"choice","choices":["christmas","newyear","halloween","valentine","summer_surf","provence","thanksgiving","cyber","explore"],"default":"christmas","description":"题材/风格主题（含节日与场景题材：explore=探索寻宝）。风格内容全在 scripts/image/theme_presets.json；新增主题时改完预设要把 key 补进本 job 的 choices 再跑 apply-jobs.sh，否则下拉里选不到"},
     {"name":"PROVIDER","type":"choice","choices":["chatgpt_web","manual"],"default":"chatgpt_web","description":"manual=把出好的图给本 job（GEN_IMAGE 或 inbox）；chatgpt_web=用本机 Chrome 登录态驱动 chatgpt.com 出图"},
     {"name":"CDP_PORT","type":"string","default":"","description":"复用已登录的外部浏览器（AdsPower 的 SunBrowser 等）的调试端口：填了就 --reuse-cdp，不复制本机 Chrome profile（免费额度按账号算，换号就换这里）。端口用 scripts/image/find_browser_cdp.py 反查；留空=用本机 Chrome"},
+    {"name":"ADSPOWER_FALLBACK","type":"boolean","default":true,"description":"额度用尽自动换号（默认开）：先接入已经开着的 SunBrowser，再让 AdsPower 现开一个别的 profile 继续出图；换号失败才会把这一步标黄。关掉它=只用一个号，额度没了就停"},
+    {"name":"ADSPOWER_PROFILES","type":"string","default":"","description":"换号顺序（逗号分隔的 AdsPower user_id，如 k1hiv2p8,k12w7kmd）：排在最前，不受自动排序影响。留空=自动排（上次成功的 → 今天没空的 → chatgpt cookie 多的）。用 scripts/image/find_browser_cdp.py --profiles 看有哪些号"},
+    {"name":"ADSPOWER_MAX_PROFILES","type":"string","default":"3","description":"最多现开几个号（默认 3）。每开一个都要等一次完整出图，贪多只会把 job 拖长"},
+    {"name":"FALLBACK_BUDGET","type":"string","default":"960","description":"整条换号链的总时间预算（秒，默认 960=16 分钟）。用完即停，避免一个号接一个号地试到 job 超时"},
     {"name":"GEN_IMAGE","type":"string","default":"","description":"provider=manual 时显式指定生成图绝对路径。留空 = 取 _output/art_restyle/<资源>/<主题>/inbox 下最新的图"},
     {"name":"PROMPT_OVERRIDE","type":"text","default":"","description":"覆盖预设提示词（留空=用 theme_presets.json 里的）。用于「同一主题但要改某句话」"},
     {"name":"ALPHA_FROM","type":"string","default":"","description":"alpha 参照图。资源被压成 RGB（丢了透明浮层）时用；支持 git:HEAD:<path> 直接从 git 取原版"},
@@ -33,7 +37,8 @@ pipeline {
 
   options {
     timestamps()
-    timeout(time: 40, unit: 'MINUTES')
+    // 出图阶段的换号链预算 960s，加上本机号那一轮，光出图就可能 30 分钟 ⇒ 全局给到 75 分钟
+    timeout(time: 75, unit: 'MINUTES')
     buildDiscarder(logRotator(daysToKeepStr: '30', numToKeepStr: '40'))
   }
 
@@ -143,15 +148,27 @@ if [[ "$PROVIDER" == "chatgpt_web" ]]; then
     CDP_ARGS="--reuse-cdp --port ${CDP_PORT}"
     echo "复用外部浏览器：CDP 端口 ${CDP_PORT}（换号只换这个参数）"
   fi
+  # 换号链：这个号的额度画完了就自动接下一个号接着画（用户 2026-10-21 要求）
+  FB_ARGS=""
+  if [[ "${ADSPOWER_FALLBACK:-true}" == "false" ]]; then
+    FB_ARGS="--no-auto-fallback"
+    echo "换号链：已关闭（ADSPOWER_FALLBACK=false），额度用完即停"
+  else
+    [[ -n "${ADSPOWER_PROFILES:-}" ]] && FB_ARGS="$FB_ARGS --adspower-profiles \"${ADSPOWER_PROFILES}\""
+    FB_ARGS="$FB_ARGS --adspower-max-profiles ${ADSPOWER_MAX_PROFILES:-3} --fallback-budget ${FALLBACK_BUDGET:-960}"
+    echo "换号链：开（先接入已开的 SunBrowser，再让 AdsPower 现开号；最多 ${ADSPOWER_MAX_PROFILES:-3} 个 / 预算 ${FALLBACK_BUDGET:-960}s）"
+    [[ -n "${ADSPOWER_PROFILES:-}" ]] && echo "        指定顺序：${ADSPOWER_PROFILES}"
+  fi
   # 🔴 这个 provider 走本机 Chrome 的登录态，出口封了就是 403/超时。
   #    失败只标黄（--warn-ok），因为「网络不可用」不是这份代码的缺陷。
+  #    timeout 要容得下「本机号 420s + 换号预算」：900 会把换号链腰斩。
   "$BASH" .jenkins/lib/run_stage.sh --name "chatgpt.com 出图" \
-    --group "美术资源链" --slug art-gen-web --timeout 900 --warn-ok \
+    --group "美术资源链" --slug art-gen-web --timeout 2400 --warn-ok \
     -- "$PY" scripts/image/gen_chatgpt_web.py \
          --image "$ART_WDIR/src/source.png" \
          --prompt-file "$TS_RUN_DIR/artifacts/prompt.txt" \
          --out "$ART_WDIR/inbox/gen_web.png" \
-         --crop-height "$ART_CROP" $CDP_ARGS
+         --crop-height "$ART_CROP" $CDP_ARGS $FB_ARGS
   if [[ -f "$ART_WDIR/inbox/gen_web.png" ]]; then
     cp -f "$ART_WDIR/inbox/gen_web.png" "$TS_RUN_DIR/artifacts/gen.png"
     printf '%s\\n' "$ART_WDIR/inbox/gen_web.png" > "$TS_RUN_DIR/generated.path"

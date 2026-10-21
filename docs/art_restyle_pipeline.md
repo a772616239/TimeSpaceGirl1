@@ -253,18 +253,52 @@ Jenkins 上跟网络抖动长得一模一样，人得自己翻控制台才知道
 | 层 | 行为 |
 |---|---|
 | driver | 每轮轮询都扫页面文案（中/英/日/韩）。命中「额度已用完 / 已达到 Free 套餐上限 / 无法调用图像生成工具 / reached your limit / limit will reset」等判据 → **立刻退出 `rc=4`**，并把站点原文 + 重置时间写进 `<out>.fail.json` |
-| `gen_chatgpt_web.py` | 收到 `rc=4` → 调 `find_browser_cdp.py` 反查 AdsPower/SunBrowser 的 CDP 端口（**排除当前端口**，否则换号会连回同一个空额度账号）→ 用 `--reuse-cdp` 接上去重出；最多试 3 个端口 |
+| `gen_chatgpt_web.py` | 收到 `rc=4` → 走**换号链**（下节），一个号的图出完了就接下一个接着画 |
 
+### 换号链：已开着的 → 让 AdsPower 现开一个（2026-10-21 起）
+
+用户的要求很直接：**「一个 SunBrowser 额度用尽的时候，调用 AdsPower 开另一个，继续绘制」**。
+所以换号不再只是「接入已经开着的窗口」，而是自己会去开号：
+
+| 段 | 做什么 | 起/停 |
+|---|---|---|
+| ① | 接入**已经开着**的另一个 SunBrowser（用户在 AdsPower 里手动开的号） | 只连不断，不启动也不关闭 |
+| ② | 调 AdsPower 本地 API `api/v1/browser/start?user_id=…` **现开一个 profile** | 本进程起；失败立刻 `stop` 收掉，成功默认**留着**（下次跑直接走①，不用再等启动） |
+
+- 号怎么排（`pick_profiles`）：`--adspower-profiles` 显式指定 > 上次成功的（台账
+  `_output/art_restyle/provider_state.json`）> 今天没空过的 > chatgpt cookie 多的。
+  「今天空过」只**降权不排除**——额度会中途重置，记录也可能是别的任务留下的。
+- 🔴 **免费版调不了 `user/list`**（`This feature is only available in paid subscriptions`），
+  但 `browser/active|start|stop` 免费可用 ⇒ profile 的 `user_id` 从本地缓存目录反推：
+  `~/Library/Application Support/adspower_global/cwd_global/source/cache/<user_id>_<hash>/`。
+  这个目录**只有被启动过**的 profile 才有，正好是候选集；挑之前数一遍该 profile 的 chatgpt
+  cookie 条数（只读 sqlite、不解密），=0 的排最后，免得拉起一个还得手动登录的空号。
+- 🔴 本地 API **按秒限流**，超了不是 HTTP 429，而是 `200 + {"code":-1,"msg":"Too many request..."}`
+  ⇒ `api_get()` 既限速（1.15s/次）又按文案重试。别在循环里裸调 `curl`。
+- 🔴 API 会自相矛盾：`active` 说 `Inactive`、`start` 说 `Profile does not exist`（实测 `kuh8m7e`，
+  缓存目录还在、账号里已没有这个 profile）。这种 id 记进台账 `note=ads_missing` 排最后。
+- 现开的号如果 `rc=3`（未登录 / 人机验证 / 非空对话）或 `rc=1`（没出图），**不原地折腾**，直接换下一个号；
+  `rc=5`（模型拒画）与账号无关，立刻收工，别把剩下的号也白开一遍。
 - 换号**不搬 cookie**：只换「连哪个浏览器」，登录态留在指纹浏览器里（Chrome 155 的分片 cookie 重建后不认，见红线 14）。
 - `--reuse-cdp` = 只连不断：不启动、不关闭用户手上的窗口；driver 优先复用已开的 chatgpt 标签，不抢 tab。
-- 全部端口都额度用尽，才回落到 `rc=3`，并打印站点原文（含「几点重置」）。
-- 关掉自动换号：`--no-auto-fallback`（只在「就是要验某个账号的额度」时用）。
+- 全部号都空 / AdsPower 没开 / 预算用完，才回落到 `rc=3`，并打印站点原文（含「几点重置」）。
+- 时间护栏：`--fallback-budget`（默认 960s）是整条链的总预算，用完即停；Jenkins 侧出图阶段给了 2400s。
+- 关掉自动换号：`--no-auto-fallback`（Jenkins 里是 `ADSPOWER_FALLBACK=false`，只在「就是要验某个号的额度」时用）。
 - 证据：`_output/.../inbox/gen_web.png.fail.json` 会被 job 复制成
   `artifacts/provider_fail.json`，构建页直接看得到，不用翻日志。
 
 ```bash
+# 看有哪些号可换 / 手动开一个 / 收掉自己开的
+$PY scripts/image/find_browser_cdp.py --profiles
+$PY scripts/image/find_browser_cdp.py --launch k1hiv2p8
+$PY scripts/image/find_browser_cdp.py --stop   k1hiv2p8
+
+# 指定换号顺序（排最前，不受自动排序影响）
+$PY scripts/image/gen_chatgpt_web.py --image ... --prompt-file ... --out ... \
+    --adspower-profiles "k1hiv2p8,k12w7kmd" --adspower-max-profiles 3
+
 # 手工复现/排查
-$PY scripts/image/find_browser_cdp.py --json --all     # 看有哪些已登录浏览器
+$PY scripts/image/find_browser_cdp.py --json --all
 $PY scripts/image/gen_chatgpt_web.py --image ... --prompt-file ... --out ... --reuse-cdp --port 64757
 ```
 

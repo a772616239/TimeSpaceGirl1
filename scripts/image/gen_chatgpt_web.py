@@ -220,12 +220,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--grab-existing", action="store_true",
                     help="不发送，直接取当前 chatgpt 对话里已有的生成图。"
                          "图其实已经画好、只是 driver 没认出来时用它，别再烧一次额度")
-    # 🔴 额度用尽默认自动换号：本机 Chrome 那个号出完了，就接 AdsPower 的 SunBrowser。
+    # 🔴 额度用尽默认自动换号：先接已开着的 SunBrowser，再让 AdsPower 现开一个 profile。
     #    关掉它（--no-auto-fallback）只在「明确要验证某个账号的额度」时用。
     ap.add_argument("--auto-fallback", dest="auto_fallback", action="store_true", default=True,
-                    help="额度用尽时自动改用 AdsPower/SunBrowser 里另一个已登录账号（默认开）")
+                    help="额度用尽时自动换号：已开着的 SunBrowser → AdsPower 现开一个 profile（默认开）")
     ap.add_argument("--no-auto-fallback", dest="auto_fallback", action="store_false",
                     help="额度用尽直接失败，不自动换号")
+    ap.add_argument("--adspower-profiles", default=os.environ.get("ADSPOWER_PROFILES", ""),
+                    help="指定换号顺序（逗号分隔的 AdsPower user_id），排在最前；留空=自动排"
+                         "（上次成功的 → 今天没空的 → chatgpt cookie 多的）")
+    ap.add_argument("--adspower-max-profiles", type=int,
+                    default=int(os.environ.get("ADSPOWER_MAX_PROFILES", "3")),
+                    help="最多现开几个号（默认 3）。每开一个都要等一次完整出图，别贪多")
+    ap.add_argument("--fallback-budget", type=int,
+                    default=int(os.environ.get("FALLBACK_BUDGET", "960")),
+                    help="整条换号链的总时间预算（秒，默认 960=16 分钟）。用完就停，别把 job 拖爆")
+    ap.add_argument("--adspower-stop-when-done", action="store_true",
+                    help="换号成功后也关掉现开的那个号（默认留着：下次跑直接接入，不用再等启动）")
     ap.add_argument("--check-only", action="store_true", help="只做连通性与登录态预检")
     args = ap.parse_args(argv)
 
@@ -274,9 +285,13 @@ def main(argv: list[str] | None = None) -> int:
             return RC_WARN
         if last == RC_QUOTA:
             # 🔴 额度用尽是账号级限制：重试没用，换号才有用。
-            #    「换号」= 接上 AdsPower 里另一个已登录 ChatGPT 的 SunBrowser（只连不断）。
-            if args.auto_fallback and try_sunbrowser(args, image, prompt_file, out, node, pw):
-                return RC_OK
+            #    换号链（见 try_fallback）：① 接入已开着的 SunBrowser → ② 让 AdsPower 现开一个 profile。
+            if args.auto_fallback:
+                rc = try_fallback(args, image, prompt_file, out, node, pw)
+                if rc == RC_OK:
+                    return RC_OK
+                if rc == RC_REFUSED:
+                    return RC_WARN
             detail = read_fail(out)
             log(f"🔴 出图额度已用尽（账号级，重试无效）：{detail.get('message') or '站点未给出原文'}")
             log("   处理：在 AdsPower 里换一个已登录 ChatGPT 的 profile 后重跑，或等额度重置")
@@ -286,33 +301,198 @@ def main(argv: list[str] | None = None) -> int:
     return last
 
 
-def try_sunbrowser(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str) -> bool:
-    """额度用尽时的自动换号：接上 AdsPower 的 SunBrowser（另一个已登录账号）。
+def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str) -> int:
+    """额度用尽后的换号链。这是「一个号画完了就换下一个继续画」的唯一入口。
 
-    🔴 不搬 cookie、不改登录态：只换「连哪个浏览器」。--reuse-cdp 只连不断，
+    ① **已经开着的**另一台 SunBrowser：只连不断，秒级接上（用户手上开着就优先用它）；
+    ② **让 AdsPower 现开一个** profile：本进程负责起，失败自己收（用户 2026-10-21 要求）。
+
+    🔴 不搬 cookie、不改登录态：换的只是「连哪个浏览器」。 --reuse-cdp 只连不断，
        不会关掉用户手上的窗口，driver 也优先复用已开的 chatgpt 标签、不抢 tab。
     🔴 必须排除当前端口：否则「换号」会连回同一个额度已空的账号，白跑一轮。
+    🔴 现开的号在**成功后默认留着**（下次跑直接走①，不用再等启动）；失败即关，
+       免得任务结束时机器上挂着一排浏览器。--adspower-stop-when-done 可改成成功也关。
     """
-    cur = args.port if args.reuse_cdp else None
-    log("↪ 出图额度已用尽，自动查找 SunBrowser（AdsPower 已登录 profile）…")
-    ports = find_sunbrowser_ports(exclude=cur)
-    if not ports:
-        log("⚠ 没找到可用的 SunBrowser（AdsPower 没开 / 该 profile 未开远程调试）")
-        return False
+    fb = _fb()
+    if fb is None:
+        log("⚠ find_browser_cdp.py 不可用，换号链跳过")
+        return RC_QUOTA
+
+    state = load_state()
+    deadline = time.time() + max(0, args.fallback_budget)
+    tried_ports = {args.port} if args.reuse_cdp else set()
+    today = time.strftime("%Y-%m-%d")
+
+    # ── ① 已经开着的 SunBrowser ────────────────────────────────────────────
+    ports = [p for p in find_sunbrowser_ports(exclude=args.port) if p not in tried_ports]
     for p in ports[:3]:
-        log(f"↪ 改用 SunBrowser CDP {p} 重出（换号，不搬 cookie）")
-        args.reuse_cdp = True
-        args.port = p
-        rc = run_once(args, image, prompt_file, out, node, pw)
+        if time.time() > deadline:
+            log("⚠ 换号预算用完，停止继续尝试")
+            return RC_QUOTA
+        tried_ports.add(p)
+        log(f"↪ 换号 ①／②：接入已开着的 SunBrowser CDP {p}（只连不断）")
+        rc = run_on_port(args, p, image, prompt_file, out, node, pw)
         if rc == RC_OK:
             log(f"✅ 换号成功：SunBrowser {p} 已出图")
-            return True
-        if rc == RC_QUOTA:
-            log(f"   SunBrowser {p} 这个号也额度用尽，试下一个")
+            return RC_OK
+        if rc == RC_REFUSED:
+            return rc
+        log(f"   SunBrowser {p} 没成（rc={rc}），继续找下一个号")
+
+    # ── ② 让 AdsPower 现开一个 profile ─────────────────────────────────────
+    if not fb.adspower_alive():
+        log("⚠ AdsPower 本地 API 不可达（客户端没开/端口不对），无法现开新号")
+        return RC_QUOTA
+    cands = pick_profiles(args, fb, state)
+    if not cands:
+        log("⚠ AdsPower 里没有可换的 profile（缓存目录里没有启动过的号）")
+        return RC_QUOTA
+    log(f"↪ 换号 ②／②：AdsPower 里现开一个（候选 {', '.join(c['user_id'] for c in cands[:args.adspower_max_profiles])}）")
+
+    for c in cands[:args.adspower_max_profiles]:
+        if time.time() > deadline:
+            log("⚠ 换号预算用完，停止继续尝试")
+            return RC_QUOTA
+        uid = c["user_id"]
+        status, port = fb.adspower_state(uid)
+        launched = False
+        if status == "missing":
+            log(f"   {uid}：AdsPower 不认这个 id（缓存目录残留），跳过")
             continue
-        log(f"   SunBrowser {p} 失败（rc={rc}），不再试其它端口")
-        return False
-    return False
+        if status == "active" and port:
+            log(f"   {uid}：已经开着（CDP {port}），直接接上")
+        else:
+            log(f"   {uid}：启动 profile …")
+            ok, port, msg = fb.adspower_start(uid)
+            if not ok:
+                if "does not exist" in msg:
+                    # 🔴 API 自相矛盾：active 说 Inactive，start 说「不存在」。
+                    #    实测 kuh8m7e 就是这种（缓存目录在、账号里已经没有这个 profile）——
+                    #    记进台账排最后，别每次都白等一轮启动。
+                    log(f"   {uid}：AdsPower 不认这个 id（缓存目录残留，账号里已无此 profile）")
+                    state.setdefault("profiles", {}).setdefault(uid, {})["note"] = "ads_missing"
+                    save_state(state)
+                else:
+                    log(f"   {uid} 启动失败：{msg}")
+                continue
+            launched = True
+            log(f"   {uid} 已启动（CDP {port}）")
+        if port in tried_ports or not port:
+            log(f"   {uid} 的端口 {port} 已经试过，跳过")
+            if launched:
+                fb.adspower_stop(uid)
+            continue
+        tried_ports.add(port)
+        if not wait_cdp(port, time.time() + 45):
+            log(f"   {uid} 的 CDP {port} 没起来")
+            if launched:
+                fb.adspower_stop(uid)
+            continue
+
+        rc = run_on_port(args, port, image, prompt_file, out, node, pw)
+        if rc == RC_OK:
+            state.setdefault("profiles", {}).setdefault(uid, {})["ok_at"] = today
+            state["last_ok_profile"] = uid
+            state["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            save_state(state)
+            log(f"✅ 换号成功：AdsPower profile {uid}（CDP {port}）")
+            if args.adspower_stop_when_done:
+                log(f"   --adspower-stop-when-done：关闭 {uid}")
+                fb.adspower_stop(uid)
+            return RC_OK
+        if rc == RC_REFUSED:
+            # 提示词被拒与账号无关，换号也不会变：收掉自己开的号，直接退出
+            if launched:
+                fb.adspower_stop(uid)
+            return rc
+        if rc == RC_QUOTA:
+            log(f"   {uid} 这个号也额度用尽 → 记下来，明天之前排在最后")
+            state.setdefault("profiles", {}).setdefault(uid, {})["quota_date"] = today
+            save_state(state)
+        else:
+            # rc=3=未登录/人机验证/非空对话，rc=1=页面没出图。现开的号不折腾，换下一个
+            log(f"   {uid} 不可用（rc={rc}，见上面 driver 日志）→ 换下一个号")
+            state.setdefault("profiles", {}).setdefault(uid, {})["note"] = f"rc={rc} @ {today}"
+            save_state(state)
+        if launched:
+            fb.adspower_stop(uid)
+    return RC_QUOTA
+
+
+def run_on_port(args, port: int, image: Path, prompt_file: Path, out: Path,
+                node: str, pw: str) -> int:
+    """把出图跑在指定 CDP 端口上（外部浏览器：只连不断），跑完把 args 还原。"""
+    saved = (args.port, args.reuse_cdp)
+    args.port, args.reuse_cdp = port, True
+    try:
+        return run_once(args, image, prompt_file, out, node, pw)
+    finally:
+        args.port, args.reuse_cdp = saved
+
+
+def pick_profiles(args, fb, state: dict) -> list[dict]:
+    """候选号排序：用户显式指定的 > 上次成功的 > 没在额度记录上挂掉的 > cookie 多的。
+
+    🔴 「今天额度用尽」只降权不排除：额度中途会重置，且记录可能是另一个任务留下的。
+    """
+    rows = fb.adspower_profiles()
+    if not rows:
+        return []
+    by_id = {r["user_id"]: r for r in rows}
+    explicit = [x.strip() for x in (args.adspower_profiles or "").split(",") if x.strip()]
+    head = [u for u in explicit if u in by_id]
+    last_ok = str(state.get("last_ok_profile") or "").strip()
+    if last_ok in by_id and last_ok not in head:
+        head.append(last_ok)
+    prof = state.get("profiles") or {}
+
+    def rank(uid: str):
+        """越小越先试：AdsPower 不认的 id 最末；今天额度空过的次末；其余按 cookie 数。"""
+        p = prof.get(uid) or {}
+        missing = p.get("note") == "ads_missing"
+        exhausted = bool(p.get("quota_date")) and p.get("quota_date") == time.strftime("%Y-%m-%d")
+        return (missing, exhausted, -by_id[uid]["cookies"])
+
+    rest = [r["user_id"] for r in rows if r["user_id"] not in head]
+    rest.sort(key=rank)
+    out = []
+    for uid in head + rest:
+        # 用户显式点名 = 明确要用的号，不受 cookie 数为 0 的影响；
+        # cookies=-1 是「库读不出来」，别当成没登录（只有真正数到 0 才跳过）
+        if not explicit or uid in explicit or by_id[uid]["cookies"] != 0:
+            out.append(by_id[uid])
+    return out or rows
+
+
+def _fb():
+    """find_browser_cdp 模块（同目录）；导入失败返回 None，换号链降级为「不换」。"""
+    try:
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import find_browser_cdp as fb
+        return fb
+    except Exception as e:                                    # noqa: BLE001
+        log(f"⚠ 导入 find_browser_cdp 失败（{e}）")
+        return None
+
+
+# 换号台账：哪个 profile 上次成功 / 哪个号哪天额度空了。放 _output（已 gitignore）。
+STATE_FILE = Path(__file__).resolve().parents[2] / "_output/art_restyle/provider_state.json"
+
+
+def load_state() -> dict:
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:                                         # noqa: BLE001
+        return {}
+
+
+def save_state(state: dict) -> None:
+    try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:                                    # noqa: BLE001
+        log(f"⚠ 换号台账写不进去（{e}），不影响出图")
 
 
 def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str) -> int:

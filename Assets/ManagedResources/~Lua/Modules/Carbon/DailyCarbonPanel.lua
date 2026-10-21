@@ -85,9 +85,19 @@ local _TabData = { [1] = {default = "cn2-X1_wuzi_jinbi_weixuanzhong",select = "c
 --    直接赋值 item.tran.anchoredPosition（换页、滚动都会），写根节点必被抹回原位。
 -- 🔴 一屏能放 ceil(视口高 / 275 + 1) 张卡 ⇒ 逐格错开生效；但滚动时 item 池复用，
 --    所以只在 SetScroll 之后播一次，不放进每张卡的 SetData 里（滚动会逐张触发）。
-local kCardSlideFrom     = 260      -- 起点位移（px）：卡宽 882 的 ~30%，与 BattlePass 任务卡同档
-local kCardSlideDuration = 0.22     -- 单卡时长
-local kCardSlideStep     = 0.05     -- 相邻卡错开
+-- 节奏分两套：打开面板一套、切页签一套。切页签要更慢更柔 —— 打开是一次性入场，切页签是
+-- 玩家反复触发的操作，位移小一半（同样时间里走的像素少，帧率一抖也看不出来）、时长拉长、
+-- 整批晚 0.04s 起播。
+local kCardSlideFrom     = 260      -- 打开：起点位移（px），卡宽 882 的 ~30%
+local kCardSlideDuration = 0.26     -- 打开：单卡时长
+local kCardSlideStep     = 0.055    -- 打开：相邻卡错开
+local kCardSwitchFrom    = 170      -- 切页签：起点位移（短一些，别一屏全在飞）
+local kCardSwitchDuration= 0.30     -- 切页签：单卡时长（长一些，切换才看得清）
+local kCardSwitchStep    = 0.05     -- 切页签：相邻卡错开
+local kCardSwitchDelay   = 0.05     -- 切页签：整批晚起播。两个作用：
+                                    --  ① 页签高亮板先翻一下，卡片再跟上，切换有层次
+                                    --  ② SetData 那一帧要同步加载图标 / 排文本，这段卡顿
+                                    --     发生在起播之前，动画第一帧就不会顶着它一起抖
 local kCardFadeFrom      = 0.3647   -- 参考 item/Bg 的 alpha 起点
 local kCardFadeNode      = "Bg"     -- 只有它是一整张卡大小的 Image，参考也只淡底板
 
@@ -95,6 +105,8 @@ local kCardFadeNode      = "Bg"     -- 只有它是一整张卡大小的 Image�
 local kCardNodes = { "Bg", "Title", "Reward", "GoBtn", "Consume", "Tip" }
 
 local cardSlideItems = {}   -- { rect, x, y, graphic, color, tween }，rect 与 graphic 二选一
+local cardSlidePlaying = false  -- 这一轮还没播完（连点页签靠它判断，别叠着播）
+local cardSlidePending = 0      -- 还有几条 tween 没完成；减到 0 才算播完
 
 -- tolua 的枚举是运行期注册的：取不到就跳过，异常被 pcall 吃掉会整段静默不播
 local function SetEaseSafe(tween, name)
@@ -124,6 +136,10 @@ end
 -- 回收：Kill 掉所有 tween 并把位置/颜色复位。
 -- 🔴 漏复位 = 副本卡永久停在半截位置或半透明；重播 / 关闭 / 销毁都必须走这里。
 function this.StopCardSlideIn()
+    -- Kill 不会回调 OnComplete ⇒ 播中标记必须在这里自己清，否则一次 Stop 之后
+    -- 后面所有入场都会被「连点保护」当成播中而跳过
+    cardSlidePlaying = false
+    cardSlidePending = 0
     for i = #cardSlideItems, 1, -1 do
         local item = cardSlideItems[i]
         if Alive(item.tween) then
@@ -153,17 +169,39 @@ local function CollectCards()
     return cards
 end
 
--- 起播：每张卡从右侧 260px 向左滑回原位，底板 alpha 0.3647 → 1。
-function this.PlayCardSlideIn()
+-- 起播：每张卡从右侧滑回原位，底板 alpha 0.3647 → 1。
+-- isSwitch=true 走切页签那套（位移更短、时长更长、整批晚 0.05s 起播）。
+function this.PlayCardSlideIn(isSwitch)
+    -- 连点页签：上一轮还没播完就只复位、不再重播 —— 重播等于列表刚重建完又堆一批 tween，
+    -- 连点时最容易卡。复位到终值本身就是「立刻到位」，观感上不比重播差。
+    local interrupted = cardSlidePlaying
     this.StopCardSlideIn()
+    if interrupted then
+        return 0
+    end
     local cards = CollectCards()
     if #cards <= 0 then
         return 0
     end
+    local from, duration, step, baseDelay
+    if isSwitch then
+        from, duration, step, baseDelay = kCardSwitchFrom, kCardSwitchDuration, kCardSwitchStep, kCardSwitchDelay
+    else
+        from, duration, step, baseDelay = kCardSlideFrom, kCardSlideDuration, kCardSlideStep, 0
+    end
+    -- 每完成一条减一，减到 0 才算这一轮播完（Kill 不会回调 OnComplete，见 StopCardSlideIn）
+    local function Done()
+        cardSlidePending = cardSlidePending - 1
+        if cardSlidePending <= 0 then
+            cardSlidePending = 0
+            cardSlidePlaying = false
+        end
+    end
+    cardSlidePlaying = true
     local ok, err = pcall(function()
         for ci = 1, #cards do
             local card = cards[ci]
-            local delay = (ci - 1) * kCardSlideStep
+            local delay = baseDelay + (ci - 1) * step
             -- 位移：卡的 6 个可视子节点一起走
             for i = 1, #kCardNodes do
                 local go = Util.GetGameObject(card, kCardNodes[i])
@@ -172,14 +210,16 @@ function this.PlayCardSlideIn()
                     if Alive(rect) then
                         local pos = rect.anchoredPosition
                         -- 从右侧滑入：起点在右边，向左归位（反向 = 把这里的 + 改回 -）
-                        rect.anchoredPosition = Vector2.New(pos.x + kCardSlideFrom, pos.y)
-                        local tween = rect:DOAnchorPosX(pos.x, kCardSlideDuration)
+                        rect.anchoredPosition = Vector2.New(pos.x + from, pos.y)
+                        local tween = rect:DOAnchorPosX(pos.x, duration)
                         tween:SetDelay(delay)
                         SetEaseSafe(tween, "OutQuad")
+                        cardSlidePending = cardSlidePending + 1
                         tween:OnComplete(function()
                             if Alive(rect) then
                                 rect.anchoredPosition = Vector2.New(pos.x, pos.y)
                             end
+                            Done()
                         end)
                         cardSlideItems[#cardSlideItems + 1] = { rect = rect, x = pos.x, y = pos.y, tween = tween }
                     end
@@ -192,13 +232,15 @@ function this.PlayCardSlideIn()
                 if Alive(image) then
                     local color = image.color
                     image.color = WithAlpha(color, kCardFadeFrom)
-                    local tween = image:DOFade(color.a, kCardSlideDuration)
+                    local tween = image:DOFade(color.a, duration)
                     tween:SetDelay(delay)
                     SetEaseSafe(tween, "OutQuad")
+                    cardSlidePending = cardSlidePending + 1
                     tween:OnComplete(function()
                         if Alive(image) then
                             image.color = color
                         end
+                        Done()
                     end)
                     cardSlideItems[#cardSlideItems + 1] = { graphic = image, color = color, tween = tween }
                 end
@@ -210,6 +252,9 @@ function this.PlayCardSlideIn()
         LogError("DailyCarbonPanel: 副本卡入场失败 " .. tostring(err))
         this.StopCardSlideIn()
         return 0
+    end
+    if cardSlidePending == 0 then
+        cardSlidePlaying = false
     end
     return #cards
 end
@@ -227,9 +272,12 @@ end
 -- 每格挂着 CommonButton 的 Animator（1.1→1 的按下反馈，写全三条轴）⇒ 与翻入抢同一通道，
 -- 播放期间必须临时 enabled=false，否则 DOTween 写完被 Animator 每帧盖回去（现象：代码跑了、页签不动）。
 
-local kTabFlipDuration = 0.167  -- 单格时长（参考值）
-local kTabFlipStep     = 0.033  -- 相邻错开（参考值）
-local kTabFlipMaxSpan  = 0.5    -- 可见格多时压缩错开间隔，整体不超过 0.5s
+-- 参考值 0.167 / 0.033 是「弹窗里一次性入场」的节奏，放在页签上偏快：手一点就翻完了，
+-- 看不出在动。这里放慢 ~25%，末格起播从 0.132 变成 0.18。
+local kTabFlipDuration = 0.21   -- 单格时长
+local kTabFlipStep     = 0.045  -- 相邻错开
+local kTabFlipMaxSpan  = 0.55   -- 可见格多时压缩错开间隔，整体不超过 0.55s
+local kTabSelectDuration = 0.26 -- 切页签的高亮板：比打开时那轮再长一点，切换才看得清
 
 local tabFlipItems   = {}       -- { tween = , tf = , anim = }
 local tabSelectTween = nil      -- 高亮板翻入
@@ -370,7 +418,7 @@ function this:PlayTabSelectFlip(index)
     local tf = go.transform
     tf.localScale = Vector3.New(0, 1, 1)
     tabSelectTf = tf
-    tabSelectTween = tf:DOScale(Vector3.one, kTabFlipDuration)
+    tabSelectTween = tf:DOScale(Vector3.one, kTabSelectDuration)
     SetEaseSafe(tabSelectTween, "OutQuad")
     tabSelectTween:OnComplete(function()
         if Alive(tf) then
@@ -642,11 +690,13 @@ function this.SetScroll(_index)
     Util.SetGray(this.sweepBtn, not this.isOk)
 
     -- 副本卡入场：玩家主动进面板 / 换页签才播（数据刷新走 RefreshScrollSilently）
-    -- suppressOpenAnim 同时管页签高亮板那一侧（PlayTabSelectFlip），一个标记管两处入场
+    -- suppressOpenAnim 同时管页签高亮板那一侧（PlayTabSelectFlip），一个标记管两处入场。
+    -- tabAnimReady 就是「打开时那轮页签翻入已经播过」⇒ false 是首次打开（慢一点没关系，
+    -- 一次性入场），true 才是切页签（要更柔）。
     if this.suppressOpenAnim then
         this.StopCardSlideIn()
     else
-        this.PlayCardSlideIn()
+        this.PlayCardSlideIn(tabAnimReady)
     end
 
     -- this.scrollView:SetIndex(1)

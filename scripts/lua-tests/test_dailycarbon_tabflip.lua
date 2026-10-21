@@ -1,6 +1,6 @@
 -- 离线验证 DailyCarbonPanel 的**页签翻入**（不依赖 Unity）：
 -- 用假 Util / DOTween / 组件表 + **真 TabBox**（真克隆流程）跑真源码，覆盖
---   ① PlayTabFlipIn      按 GetTabList 顺序逐格 scaleX 0→1，0.167s/格、错开 0.033s
+--   ① PlayTabFlipIn      按 GetTabList 顺序逐格 scaleX 0→1，0.21s/格、错开 0.045s
 --   ② Animator 通道      每格 CommonButton 的 Animator 必须临时 enabled=false，完成后恢复
 --   ③ 完成 / Stop 复位   scale 回 1、Animator 恢复、高亮板复位，Kill 后不留存活 tween
 --   ④ 压缩错开           格数多时末格延迟压到 0.5
@@ -217,13 +217,13 @@ for i, go in ipairs(tabs) do
     assert(go.anim.enabled == false, "翻入期间应关掉 CommonButton 的 Animator: " .. i)
 end
 for i, t in ipairs(tweens) do
-    local want = (i - 1) * 0.033
+    local want = (i - 1) * 0.045
     assert(math.abs(t.delay - want) < 1e-6, ("第 %d 个延迟 %s != %s"):format(i, t.delay, want))
-    assert(t.dur == 0.167, "时长应为参考的 0.167")
+    assert(t.dur == 0.21, "单格时长应为放慢后的 0.21")
     assert(t.ease == Ease.OutQuad, "ease 应为 OutQuad")
     assert(t.tf == tabs[i], "tween 应按 GetTabList 顺序绑定")
 end
-print("  5 格，延迟 0 / 0.033 / 0.066 / 0.099 / 0.132，单格 0.167s")
+print("  5 格，延迟 0 / 0.045 / 0.09 / 0.135 / 0.18，单格 0.21s")
 
 -- ---------------- case 2: 完成恢复 ----------------
 print("== case2 完成后恢复 ==")
@@ -241,7 +241,7 @@ Panel:PlayTabSelectFlip(1)
 assert(#tweens == 1, "tabAnimReady 后应创建 1 条高亮 tween，实际 " .. #tweens)
 local sel1 = tabs[1].children.select
 assert(sel1.localScale.x == 0, "高亮板应从 0 起")
-assert(tweens[1].dur == 0.167 and tweens[1].ease == Ease.OutQuad, "时长/ease 与页签同档")
+assert(tweens[1].dur == 0.26 and tweens[1].ease == Ease.OutQuad, "高亮板时长应比页签再长一点（0.26）")
 tweens[1]:Complete()
 assert(sel1.localScale.x == 1, "高亮板应回到 1")
 
@@ -286,7 +286,7 @@ end }
 Panel.PlayTabFlipIn()
 local last = tweens[#tweens]
 assert(#tweens == 24, "应有 24 条，实际 " .. #tweens)
-assert(math.abs(last.delay - 0.5) < 1e-6, ("24 格时末格延迟应压到 0.5，实际 %s"):format(last.delay))
+assert(math.abs(last.delay - 0.55) < 1e-6, ("24 格时末格延迟应压到 0.55，实际 %s"):format(last.delay))
 print(("  24 格：首格 0 / 末格 %.3f / 含单格总时长 %.3f"):format(last.delay, last.delay + last.dur))
 Panel.StopTabFlipIn()
 Panel.TabCtrl = saved

@@ -1,12 +1,14 @@
 -- 离线验证 DailyCarbonPanel 的**副本卡**入场动画（不依赖 Unity）：
 -- 用假 Util / getComponent / DOTween / ScrollCycleView 跑真源码，覆盖
---   ① PlayCardSlideIn   卡的 6 个可视子节点一起从右侧 260px 向左滑回原位 + 底板 Bg 淡入 0.3647
+--   ① PlayCardSlideIn   卡的 6 个可视子节点一起从右侧滑回原位 + 底板 Bg 淡入 0.3647
+--                       （打开：+260 / 0.26s；切页签：+170 / 0.30s / 整批晚 0.05s 起播）
 --   ② 完成恢复          anchoredPosition 与 alpha 精确回到基准值（不是"差不多"）
 --   ③ 中途 StopCardSlideIn Kill 后必须全复位（不能停在半截位置/半透明）
---   ④ 多卡错开          相邻卡 delay = 0.05
+--   ④ 多卡错开          相邻卡 delay = 步长（打开 0.055，切页签 0.05 且整批 +0.05）
 --   ⑤ 跳过未激活        未激活的卡 / 未激活的子节点（Tip|Consume|GoBtn）不参与
 --   ⑥ 空数据 / 无列表   返回 0，不报错
 --   ⑦ 生命周期          OnClose / OnDestroy 都要回收
+--   ⑨ 连点保护          上一轮没播完时只复位、不重播；Stop / 播完之后能再触发
 --   ⑧ 抑制标记          suppressOpenAnim（战斗结算 / 扫荡 / 5 点刷新）时 SetScroll 不播
 --
 -- 用真源码的 SetScroll 验证 ⑧：curData 初始为空表 ⇒ 循环跳过，只剩 SetData + 播放判定。
@@ -204,7 +206,7 @@ assert(math.abs(ns.Bg.graphics.Image.color.a - 0.3647) < 1e-6,
        "底板淡入起点应为参考的 0.3647")
 assert(card1.anchoredPosition.x == 0, "卡根节点不能被动（ScrollCycleView 每次重写它）")
 for _, t in ipairs(tweens) do
-    assert(t.dur == 0.22, "单卡时长应为 0.22")
+    assert(t.dur == 0.26, "打开的单卡时长应为 0.26")
     assert(t.ease == Ease.OutQuad, "ease 应为 OutQuad")
     assert(t.delay == 0, "单卡不该有延迟")
 end
@@ -227,7 +229,7 @@ assertBase(card1, "Stop 后")
 print("  Kill + 位置/颜色全复位")
 
 -- ---------------- case 4: 多卡错开 ----------------
-print("== case4 多卡错开 0.05 ==")
+print("== case4 多卡错开 0.055 ==")
 tweens = {}
 local card2 = buildCard(2, true)
 local card3 = buildCard(3, true)
@@ -240,9 +242,9 @@ local function delayOf(card, node)
         if t.tf == card.children[node] then return t.delay end
     end
 end
-assert(delayOf(card2, "Bg") == 0.05, "第 2 张延迟应为 0.05，实际 " .. tostring(delayOf(card2, "Bg")))
-assert(delayOf(card3, "Bg") == 0.10, "第 3 张延迟应为 0.10，实际 " .. tostring(delayOf(card3, "Bg")))
-print("  3 卡 × 7 条，延迟 0 / 0.05 / 0.10")
+assert(math.abs(delayOf(card2, "Bg") - 0.055) < 1e-6, "第 2 张延迟应为 0.055，实际 " .. tostring(delayOf(card2, "Bg")))
+assert(math.abs(delayOf(card3, "Bg") - 0.11) < 1e-6, "第 3 张延迟应为 0.11，实际 " .. tostring(delayOf(card3, "Bg")))
+print("  3 卡 × 7 条，延迟 0 / 0.055 / 0.11")
 Panel.StopCardSlideIn()
 assertBase(card2, "多卡 Stop 后 card2")
 assertBase(card3, "多卡 Stop 后 card3")
@@ -302,6 +304,44 @@ tweens = {}
 Panel.SetScroll()
 assert(#tweens == 7, "放开后应起 7 条，实际 " .. #tweens)
 print("  抑制时 0 条且已复位，放开后 7 条")
+Panel.StopCardSlideIn()
+
+-- ---------------- case 9: 切页签那一套（位移更短、时长更长、整批晚起播） ----------------
+print("== case9 切页签节奏 ==")
+tweens = {}
+played = Panel.PlayCardSlideIn(true)
+assert(played == 1, "应播 1 张卡，实际 " .. tostring(played))
+assert(#tweens == 7, "仍是 7 条，实际 " .. #tweens)
+local ns9 = nodesOf(card1)
+for _, name in ipairs(CARD_NODES) do
+    local b = ADD[name]
+    assert(ns9[name].anchoredPosition.x == b[1] + 170,
+           ("%s 切页签起点应为 x+170 = %s，实际 %.1f"):format(name, b[1] + 170, ns9[name].anchoredPosition.x))
+end
+for _, t in ipairs(tweens) do
+    assert(t.dur == 0.30, "切页签单卡时长应为 0.30，实际 " .. tostring(t.dur))
+    assert(math.abs(t.delay - 0.05) < 1e-6, "切页签整批应晚 0.05 起播，实际 " .. tostring(t.delay))
+    assert(t.ease == Ease.OutQuad, "ease 仍为 OutQuad")
+end
+print("  x+170 / 0.30s / 延迟 0.05")
+
+-- ---------------- case 10: 连点不叠播 ----------------
+print("== case10 连点页签不叠播 ==")
+local before = #tweens
+assert(Panel.PlayCardSlideIn(true) == 0, "上一轮没播完时不该重播")
+assert(#tweens == before, "不该新建 tween，实际新增 " .. (#tweens - before))
+assertBase(card1, "连点中断后")
+print("  返回 0，直接复位到终值，0 条新 tween")
+
+-- ---------------- case 11: Stop / 自然播完后能再触发 ----------------
+print("== case11 之后还能再触发 ==")
+tweens = {}
+assert(Panel.PlayCardSlideIn(true) == 1, "Stop 之后应能重新播")
+for _, t in ipairs(tweens) do t:Complete() end
+tweens = {}
+assert(Panel.PlayCardSlideIn(true) == 1, "自然播完之后应能重新播")
+assert(#tweens == 7, "应新建 7 条，实际 " .. #tweens)
+print("  Stop 后 / 自然播完后都能重播")
 Panel.StopCardSlideIn()
 
 print("ALL OK")

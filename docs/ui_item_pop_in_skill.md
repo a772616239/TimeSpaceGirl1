@@ -5,7 +5,9 @@
 > 唯一实现：`Assets/ManagedResources/~Lua/Modules/Common/ItemPopIn.lua`。
 > 已接入：`ValuePackPanel`（礼包墙）、`GrowthManual_RewardPreview`、`GrowthManual_TaskPreview`；
 > 页签多的三个面板走「页面级接入」：`ExpertPanel`、`OperatingPanel`、`AdjutantActivityPanel`
-> （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / 成长礼金 / 战令 / 副官挑战 / 副官赠礼）。
+> （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / **成长礼金 page_3** / **终身限购 page_9** / 战令 /
+> 副官挑战 / 副官赠礼）；
+> 固定版面（不是列表）走「duang」模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位）。
 > 更新时间 2026-10-21。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
 
 ---
@@ -36,6 +38,31 @@
 - `maxSpan` 必须有：列表 20 项时按 0.055 会飘到 1.1s，玩家早滑走了还在弹。
   压缩后末项仍落在 0.55s 内（`step = maxSpan / (count-1)`）。
 
+### 1.1 第二种手感：`duang`（弹性回弹）
+
+列表墙要的是「逐格放大缩小」（两段、有明确峰值）；抽卡/开箱要的是「duang 一下」——
+一次冲过头再抖回来。两者别混：
+
+| 项 | `mode = "surge"`（缺省） | `mode = "duang"` |
+|---|---|---|
+| 曲线 | 基准 → `from` → `peak` → 基准（两段 tween） | 基准 → `from` → 基准（**一条** tween） |
+| 缓动 | 放大 `OutQuad` / 回落 `InOutQuad` | `ease`（缺省 `OutElastic`，过冲由缓动自带） |
+| 时长 | `riseDuration` 0.14 + `fallDuration` 0.12 | `duangDuration` 0.5 |
+| 每格 tween 数 | 2 | 1 |
+| 典型 | 礼包墙、奖励档位、任务列表 | 抽卡卡面、数字格、开箱 |
+
+```lua
+-- 千抽：三张卡 duang，剩余抽数排在后面再 duang
+local kCardDuangCfg   = { mode = "duang", from = 0.5, duangDuration = 0.55, ease = "OutElastic", step = 0.09 }
+local kNumberDuangCfg = { mode = "duang", from = 0.6, duangDuration = 0.42, delay = 0.26, step = 0.05 }
+```
+
+- `from = 0.5` 比 `surge` 的 0.82 更狠：`duang` 没有中间峰值，落差全靠起点。
+- 过冲幅度由缓动决定（`OutElastic` 约冲过 1 的 5%~10%），**不需要也不该再设 `peak`**。
+  想要「一冲到顶就停」就换 `ease = "OutBack"`（单次过冲，没有回抖）。
+- `delay` 是**整批**延后：数字格比卡片晚 0.26s 起，同一个模块两份实例即可，不用手写 Timer。
+- 卡面这种大块头别用 `OutElastic` 弹太久（>0.6s 会显得软塌），0.5~0.55s 比较脆。
+
 ---
 
 ## 2. 三处接线（照抄清单）
@@ -45,6 +72,19 @@
 | ① | `InitComponent`（ScrollView 建好之后） | `this.popIn = ItemPopIn.New(function() return this.ScrollView end)` |
 | ② | 列表数据灌完之后 | `this.popIn:Play()` |
 | ③ | `OnClose` + `OnDestroy` | `this.popIn:Stop()` |
+
+数据源（`getScrollView` 的返回值）认四种，都交给 `_Collect` 自己分流：
+
+| 形态 | 场景 | 收集方式 |
+|---|---|---|
+| `ScrollCycleView` | 绝大多数列表 | `ForeachItemGO`，顺序 = 数据下标 |
+| 容器 `GameObject/RectTransform` | 手工 `newObject` 克隆的列表 | 取 active 子节点（模板自己 `SetActive(false)` 天然跳过） |
+| **Lua 数组 `{ go1, go2, ... }`** | 固定几格（千抽的 `card1..3`、终身限购的 `preList`） | 按数组顺序，元素 GO / transform 都收 |
+| 空 / nil | 这页没列表 | no-op |
+
+- 数组形态是给「容器里还挂着别的装饰/模板」的场景用的：**顺序自己定，模板天然不在里面**。
+- `Play(only)` 只弹第 `only` 格（下标 = 收集顺序）：抽中一张牌就 `Play(number)`，
+  别整墙重弹。
 
 - ①传**函数**而不是实例：面板/子模块的 `ScrollView` 可能晚于本对象创建、也可能销毁重建。
 - ②**必须在 `SetData` 之后**：`ForeachItemGO` 只认得已克隆出来的 item；提前调一格都不会动。
@@ -85,6 +125,8 @@
 | `ExpertPanel` | `OnShow`、页签点击（`ActivityRewardShow` 之后） | `RefreshActivity`（活动开关 / 进度 / 5 点刷新 / 支付成功回调） |
 | `OperatingPanel` | `OnShow`、页签点击（`OnTabChanged` 之后） | `RefreshActivity`（月卡 / 活动开关 / 战令解锁） |
 | `AdjutantActivityPanel` | `PageTabCtrl:ChangeTab` 的回调（首开也走这条） | 无独立的事件刷新路径 |
+| `ThousandDrawPanel`（duang） | `Init` 的网络回调末尾（数据到位、卡面填好之后） | 领奖后的整表刷新会重播——那是**新一局**，可以接受 |
+| 抽中单张卡（duang） | 抽卡回调里 `SetCard` 之后 `PlayCardDuang(msg.number)` | —— |
 
 **TabBox 点击为什么自动就有动画**：`GrowthManualPanel.SwitchView` 里本来就会调
 `contentScripts[index].view:OnShow(this)`，而两个子模块的 `OnShow` 都走 `refresh(true,true)`
@@ -145,7 +187,14 @@
    绝不能把 item 留在半截缩放上（这类问题在真机上只能靠玩家截图发现）。
 7. **`ForeachItemGO` 的顺序 = 版面顺序**，前提是 `fixedCount = 1`（单列）。多列时
    `index = j + (i-1)*fixedCount` 是按行优先填的，错开方向会变成「先竖后横」，需要自己按位置重排。
-8. **同一 key 的 item 复用 `ItemList` 缓存**：`ValuePackPanel` 用 `this.ItemList[go]` 存内层 ItemView，
+8. **`DelayCreation` 会把可收集项清零**：`GrowthGiftPage`（OperatingPanel 的 page_3）首开时
+   调了 `DelayCreation(itemList)`，它先把刚 `SetData` 出来的 item 全部 `SetActive(false)`
+   再每 10ms 开一个 ⇒ 面板随后调 `PlayPage` 时**一格都收不到**，表现就是「这页永远没动画」。
+   两条路：删掉它（本项目的做法——逐格放大缩小本身就是逐行冒出来），或等它跑完再播（会叠两套）。
+9. **容器模式会连模板一起弹**：`LifelongLimitBuy`（page_9）的 `rewardPre` 模板就挂在 `grid` 下，
+   按容器扫会把模板算进去、在多出来的那一格上弹一下。这种页面让 `GetPopInSource()`
+   **返回数组**（`preList`），不要返回容器。
+10. **同一 key 的 item 复用 `ItemList` 缓存**：`ValuePackPanel` 用 `this.ItemList[go]` 存内层 ItemView，
    本模块只动 item 根节点的 `localScale`，不碰内层，两者互不影响——换面板时别把两者混在一起改。
 
 ---
@@ -161,18 +210,20 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_v
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_growthmanual_openanim.lua
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_itempopin_page.lua
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_panel_listpopin_wiring.lua
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_thousanddraw_duang.lua
 ```
 
 | 用例 | 覆盖 |
 |---|---|
-| `test_itempopin.lua` | 公共模块 9 组：逐格时序 / 回落段 / 跳过隐藏 / 压缩错开 / Stop 复位 / 重播不叠加 / `itemGoScale≠1` 基准 / 异常兜底 / 自定义配方 |
+| `test_itempopin.lua` | 公共模块 12 组：逐格时序 / 回落段 / 跳过隐藏 / 压缩错开 / Stop 复位 / 重播不叠加 / `itemGoScale≠1` 基准 / 异常兜底 / 自定义配方 / **数组源** / **duang 模式 + `Play(n)`** / **整批 `delay`** |
 | `test_valuepack_openanim.lua` | 礼包墙：OnShow 顺序、跳过隐藏卡、购买刷新不重播、生命周期、`Play` 只有 1 处调用 |
 | `test_growthmanual_openanim.lua` | 两个列表页：OnShow 播、`isAni=false` 不播、切页重播、OnClose/OnDestroy 回收、面板 `SwitchView` 仍走 `view:OnShow` |
 
 | `test_itempopin_page.lua` | 页面级接入 8 组：实例/类表字段扫描、一页两列表、无列表 no-op、`StopPage` 复位、容器模式（`GetPopInSource`）、绑定缓存、重播不叠加 |
-| `test_panel_listpopin_wiring.lua` | 三个面板接线：`OnShow` 有播（首开即列表页也会播）、切页签有播、`RefreshActivity` 不播、`OnClose`/`OnDestroy` 回收、积天豪礼声明 `GetPopInSource` |
+| `test_panel_listpopin_wiring.lua` | 三个面板接线：`OnShow` 有播（首开即列表页也会播）、切页签有播、`RefreshActivity` 不播、`OnClose`/`OnDestroy` 回收、积天豪礼声明 `GetPopInSource`；**成长礼金不再调 `DelayCreation`**、**终身限购返回 `preList` 数组** |
+| `test_thousanddraw_duang.lua` | 千抽：卡/数字数据源与顺序、整版 duang（3+4 条、卡片错开 0.09、数字 0.26 起）、`PlayCardDuang(n)` 只弹一张、`StopDuang` 复位、`OnClose`/`OnDestroy` 回收、数据到位才播 |
 
-五个用例都被 Jenkins `TS-Test-Lua` 自动发现（`tests/tests.json` 的 `tests_dir + pattern`），不用改配置。
+六个用例都被 Jenkins `TS-Test-Lua` 自动发现（`tests/tests.json` 的 `tests_dir + pattern`），不用改配置。
 
 **Editor**：打开面板看是否逐格；点 TabBox 切页看是否重播；**动画播到一半关面板再打开**（验证 Stop 复位）；
 买一次礼包看是否整墙重播（应该不重播）。
@@ -241,7 +292,11 @@ end
 - **2026-10-21**：抽出 `Modules/Common/ItemPopIn.lua`（每实例独立状态 + 可覆盖配方 + 异常兜底），
   `ValuePackPanel` 改为薄封装；`GrowthManual_RewardPreview` / `GrowthManual_TaskPreview` 接入，
   打开与 TabBox 切页都播；新增 3 个离线用例。
-- **2026-10-21**（本次）：新增页面级接入 `ItemPopIn.PlayPage` / `StopPage`（自动扫页面里的长列表，
+- **2026-10-21**：新增页面级接入 `ItemPopIn.PlayPage` / `StopPage`（自动扫页面里的长列表，
   认实例字段 / 类表字段 / `__index`，并支持容器模式 `GetPopInSource`）；`ExpertPanel` /
   `OperatingPanel` / `AdjutantActivityPanel` 三个面板接入，打开与切页签都播、数据事件刷新不播；
   `ContinuityRechargePage`（积天豪礼，手工克隆列表）补 `GetPopInSource`；新增 2 个离线用例。
+- **2026-10-21**（本次）：补上 OperatingPanel 漏掉的两页（page_3 成长礼金去掉 `DelayCreation`、
+  page_9 终身限购返回 `preList` 数组）；新增 `mode = "duang"`（单段 + `OutElastic`）、
+  数组数据源、`Play(only)` 单格播放、`cfg.delay` 整批延后；`ThousandDrawPanel` 三张卡 + 剩余抽数
+  接入 duang；新增 `test_thousanddraw_duang`，`test_itempopin` 扩到 12 组。

@@ -106,7 +106,22 @@
         "christmas": "2026-10-20"
       },
       "status": "active",
-      "note": "紫框；源 RGB ⇒ variant 必须 opaque（红线）"
+      "note": "紫框；源 RGB ⇒ variant 必须 opaque（红线）",
+      "last_publish": {
+        "at": "2026-10-21T17:19:11",
+        "variant": "rgb",
+        "sha256": "f018e67fe1062ff9933bb5414e3d7f195e8df11a58b3ff9618d7e60861c4c0c2",
+        "work": "/Users/wangxufeng/Documents/TimeSpaceGirl1/_output/art_fade/cn2-X1_chengzhangshouce_banner_en"
+      },
+      "updated_at": "2026-10-21",
+      "post_ops": [
+        {
+          "at": "2026-10-21",
+          "op": "fade",
+          "note": "bottom_fade 130px/violet（直调管线，TS-Art-BottomFade 同参）",
+          "sha256": "f018e67fe1062ff9"
+        }
+      ]
     },
     {
       "asset": "Assets/ManagedResources/ArtFont_en/OperatingPanelAtlas/cn2-X1_jijin_diban_en.png",
@@ -406,6 +421,70 @@
         "variant": "scene_pack",
         "sha256": "a449e79aa94ef359e9cb0a4cc8f684bbc3539e207d2d257a1c13e795cc97fdcb",
         "work": "/Users/wangxufeng/Documents/TimeSpaceGirl1/_output/scene/Map1"
+      },
+      "updated_at": "2026-10-21"
+    },
+    {
+      "asset": "Assets/ManagedResources/ArtFont_en/SevenDayCarnivalPanelV2Atlas/cn2-X1_qiri_biaoti_en.png",
+      "kind": "unknown",
+      "size": [
+        1080,
+        568
+      ],
+      "mode": "RGB",
+      "added_at": "2026-10-21",
+      "added_by": "record_touch",
+      "themes_done": {},
+      "status": "active",
+      "note": "record_touch 自动建档",
+      "last_publish": {
+        "at": "2026-10-21T17:24:20",
+        "variant": "rgb",
+        "sha256": "a82de8886d7225fa7b4e16a8b9b42a61fb6744684393cd71a18df1be9cd21aa1",
+        "work": "/Users/wangxufeng/Documents/TimeSpaceGirl1/_output/art_frame/cn2-X1_qiri_biaoti_en"
+      },
+      "updated_at": "2026-10-21",
+      "post_ops": [
+        {
+          "at": "2026-10-21",
+          "op": "violet_frame",
+          "note": "参考 Jenkins 换风格管线 frame_card(rim=violet, band=0.022) 套紫框",
+          "sha256": "94d18e286a534831"
+        },
+        {
+          "at": "2026-10-21",
+          "op": "fade",
+          "note": "TS-Art-BottomFade #3",
+          "sha256": "f8162d515a62e88b"
+        },
+        {
+          "at": "2026-10-21",
+          "op": "frame_card_violet_22",
+          "note": "TS-Art-Frame #1",
+          "sha256": "a82de8886d7225fa"
+        }
+      ]
+    },
+    {
+      "asset": "Assets/ManagedResources/ArtFont_en/CompoundHeroPanelAtlas/cn2-X1_julebu_duihuanshangdiantu_en.png",
+      "kind": "unknown",
+      "size": [
+        1080,
+        400
+      ],
+      "mode": "RGB",
+      "added_at": "2026-10-21",
+      "added_by": "publish",
+      "themes_done": {
+        "christmas": "2026-10-21"
+      },
+      "status": "active",
+      "note": "publish 钩子自动建档（publish）",
+      "last_publish": {
+        "at": "2026-10-21T18:27:09",
+        "variant": "opaque",
+        "sha256": "02432fbb12340aff1dbb4dc652cee0dfc344d3c85a5bb918d5bffe7b96303959",
+        "work": "/Users/wangxufeng/Documents/TimeSpaceGirl1/_output/art_restyle/cn2-X1_julebu_duihuanshangdiantu_en/christmas"
       },
       "updated_at": "2026-10-21"
     }

@@ -1,0 +1,260 @@
+# 列表项入场：从一侧「滑入 + 淡入」
+
+> 来源：`Assets/Art/UIAni/cn2-X1_UI_TreasureStorePopup.anim`（`dump_clip.py` 反解）
+> 落地：`Modules/BattlePass/BattlePassPanel_Mission.lua`（任务卡，反向从右侧滑入）
+> 姊妹文档：`ui_item_pop_in_skill.md`（逐格放大缩小）、`ui_anim_reproduce_skill.md`（复刻 `.anim` 的方法论）
+
+---
+
+## 0. 一句话总则
+
+**列表项/卡片从屏幕一侧滑回原位，同时底板 alpha 从 0.3647 淡到 1。**
+所有位移一律写在 **item 的可视子节点**上，绝不写 item 根节点 —— 根节点的 `anchoredPosition`
+在两种情况下会被系统重写：父级 `LayoutGroup` 重建、或列表组件自己算位置（`ScrollCycleView`）。
+写子节点一次都不会被覆盖，因此也不需要「延迟一帧再播」这种补丁。
+
+---
+
+## 1. 参考 clip 的实际内容
+
+`dump_clip.py` 文件头：`m_EditorCurves` 12 条 = `m_PositionCurves/ScaleCurves/EulerCurves` 3 条（空壳）
++ `m_FloatCurves` 9 条。**能用的只有 `m_FloatCurves` 里这 9 条**，总长 0.3667s。
+
+| 路径 | 属性 | 起 → 止 | 时间 | 归类 |
+|---|---|---|---|---|
+| `Panel` | `m_AnchoredPosition.y` | -125 → 0 | 0 → 0.3667 | 弹窗本体 |
+| `Panel` | `m_SizeDelta.y` | -250 → 0 | 0 → 0.3667 | 弹窗本体（底边钉死） |
+| `Panel/Bg` | `m_LocalScale` | 1.1 → 1 | 0 → 0.3667 | 弹窗本体（回弹） |
+| `Panel/Bg` | `m_Color.a` | 0.7765 → 1 | 0 → 0.3667 | 弹窗本体 |
+| `grid/item1` | `m_AnchoredPosition.x` | -200 → 0 | 0 → 0.05 | **列表项** |
+| `grid/item2` | `m_AnchoredPosition.x` | -150 → 0 | 0.05 → 0.1667 | **列表项** |
+| `grid/item3` | `m_AnchoredPosition.x` | -100 → 0 | 0.1833 → 0.2833 | **列表项** |
+| `grid/item1/Bg` | `m_Color.a` | 0.3647 → 1 | 0 → 0.2833 | **列表项底板** |
+| `grid/item2/Bg` | `m_Color.a` | 0.3647 → 1 | 0.1333 → 0.25 | **列表项底板** |
+| `grid/item3/Bg` | `m_Color.a` | 0.3647 → 1 | 0.2333 → 0.3333 | **列表项底板** |
+
+三条读出来的规律：
+
+1. **位移与淡入是两个独立通道**，淡入比位移长（0 → 0.2833 vs 0 → 0.05），所以视觉上「先到位、底色再追上」。
+2. **逐格错开 ~0.05s**（item1 结束于 0.05，item2 起于 0.05），不是等间隔的整段均分。
+3. **位移起点与格子宽度成比例**：item1 -200 / item2 -150 / item3 -100，宽 203 ⇒ 98% / 74% / 49%。
+   越靠右的格子起点越近，读起来像「整排从左边涌进来」而不是「每格各自平移」。
+
+前 4 条是弹窗本体的进出场。**如果目标面板是某个大面板的子页，这 4 条不要照搬** ——
+子页没有独立底板，整页位移会和父面板的打开动画打架。
+
+---
+
+## 2. 配方（缺省值，改这两个数就够）
+
+| 项 | 缺省 | 说明 |
+|---|---|---|
+| `kSlideFrom` | 260px | 起点位移。**按承载节点宽度换算**：参考是 203 宽的 73%~98%，取中间偏上 |
+| `kSlideDuration` | 0.22s | 单卡时长。参考单格 0.05~0.12s 偏快，卡片大、要多给一点 |
+| `kSlideStep` | 0.05s | 相邻 item 错开；一屏只有 1 张时不起作用 |
+| `kFadeFrom` | 0.3647 | 底板 alpha 起点，直接抄参考 |
+| `kFadeNode` | `"bg"` | 淡入节点：只有整卡大小的那张底板 Image，参考也只淡底板 |
+
+位移量换算：`目标宽 × 0.30` 起步。太小学不出来（870 宽的卡给 140px 只有 16%，肉眼几乎看不出），
+太大又会被 ScrollRect 的 viewport 裁掉一截。
+
+---
+
+## 3. 方向（一行切换）
+
+```lua
+-- 从右侧滑入（起点在右，向左归位）
+rect.anchoredPosition = Vector2.New(pos.x + kSlideFrom, pos.y)
+-- 从左侧滑入（参考 clip 的原方向）
+rect.anchoredPosition = Vector2.New(pos.x - kSlideFrom, pos.y)
+```
+
+`y` 一律不动。竖向列表不要改成上下滑 —— 会和滚动方向混淆，用户会读成「列表在跳」。
+
+---
+
+## 4. 承载节点怎么选（这张表决定要不要动这个面板）
+
+| 容器 | 谁在重写 item 根位置 | 位移写哪 |
+|---|---|---|
+| `VerticalLayoutGroup` / `HorizontalLayoutGroup` | 布局重建（`SetActive`、`SetData`、改数据都会触发） | item 的子节点 |
+| `ScrollCycleView` | `SetData` 与 `SetItemIndex` 里 **直接赋值** `item.tran.anchoredPosition` | item 的子节点 |
+| `TabBox` 的 `box` | 布局组 + `TabBox:Init` 的 `Util.ClearChild` | tab 的子节点 |
+| 手工 `newObjToParent` 的固定几格 | 无人重写 | 根节点或子节点都行，建议统一写子节点 |
+
+⚠️ `ScrollCycleView` 这一条容易误判：它不是布局组，位置是**自己算的**
+（`dragType==1` 时 `item.tran.anchoredPosition = Vector2.New(itemWidth*(j-1), (0.5-i)*itemHeight)`）。
+所以「没有布局组 ⇒ 可以写根节点」是错的。
+
+---
+
+## 5. 什么时候播、什么时候不播
+
+| 时机 | 播 | 理由 |
+|---|---|---|
+| 面板 `OnShow` | ✅ | 玩家主动打开 |
+| 点页签 / 切页（`ChangeTab` 回调） | ✅ | 玩家主动换屏 |
+| 领奖后 `RefreshAllTaskBtn` 重建列表 | ❌ | 数据回调刷新，重播会闪一下 |
+| 滚动（`SetItemIndex`） | ❌ | 列表自己重写位置，播了会卡顿 |
+
+做法：模块级 `this.suppressTaskAnim` 标记，刷新路径里置 true 包一层，`SwitchView` 里判：
+
+```lua
+if this.suppressTaskAnim then
+    this.StopSlideIn()      -- 🔴 抑制时也要 Stop，否则上一轮的 tween 会继续跑
+else
+    this.PlaySlideIn()
+end
+```
+
+---
+
+## 6. 代码骨架（复制改路径即可）
+
+```lua
+local kSlideFrom, kSlideDuration, kSlideStep, kFadeFrom = 260, 0.22, 0.05, 0.3647
+local kSlideNodes = { "bg", "title", "reward", "mission", "Slider", "receiveOrGo" }  -- 卡的**可视子节点**
+local slideItems = {}
+
+function this.StopSlideIn()
+    for i = #slideItems, 1, -1 do
+        local it = slideItems[i]
+        if Alive(it.tween) then it.tween:Kill(false) end
+        if it.rect and it.x and Alive(it.rect) then
+            it.rect.anchoredPosition = Vector2.New(it.x, it.y)     -- 🔴 必须复位
+        end
+        if it.graphic and it.color and Alive(it.graphic) then
+            it.graphic.color = it.color
+        end
+        slideItems[i] = nil
+    end
+end
+
+function this.PlaySlideIn()
+    this.StopSlideIn()                       -- 🔴 重播先复位，否则从半截起
+    local cards = CollectCards()             -- 列表组件给可见 item
+    if #cards <= 0 then return 0 end
+    local ok, err = pcall(function()
+        for ci = 1, #cards do
+            local card, delay = cards[ci], (ci - 1) * kSlideStep
+            for _, name in ipairs(kSlideNodes) do
+                local go = Util.GetGameObject(card, name)
+                if Alive(go) and go.activeSelf then
+                    local rect = go:GetComponent("RectTransform")
+                    if Alive(rect) then
+                        local pos = rect.anchoredPosition
+                        rect.anchoredPosition = Vector2.New(pos.x + kSlideFrom, pos.y)
+                        local t = rect:DOAnchorPosX(pos.x, kSlideDuration)
+                        t:SetDelay(delay)
+                        SetEaseSafe(t, "OutQuad")             -- 🔴 见下面的枚举坑
+                        t:OnComplete(function()
+                            if Alive(rect) then rect.anchoredPosition = Vector2.New(pos.x, pos.y) end
+                        end)
+                        slideItems[#slideItems + 1] = { rect = rect, x = pos.x, y = pos.y, tween = t }
+                    end
+                end
+            end
+            -- 底板淡入
+            local bg = Util.GetGameObject(card, "bg")
+            if Alive(bg) then
+                local img = bg:GetComponent("Image")
+                if Alive(img) then
+                    local color = img.color
+                    img.color = WithAlpha(color, kFadeFrom)
+                    local t = img:DOFade(color.a, kSlideDuration)
+                    t:SetDelay(delay); SetEaseSafe(t, "OutQuad")
+                    t:OnComplete(function() if Alive(img) then img.color = color end end)
+                    slideItems[#slideItems + 1] = { graphic = img, color = color, tween = t }
+                end
+            end
+        end
+    end)
+    if not ok then
+        LogError("SlideIn: 入场失败 " .. tostring(err))
+        this.StopSlideIn()
+        return 0
+    end
+    return #cards
+end
+```
+
+`CollectCards` 两种取法（看容器是谁）：
+
+```lua
+-- ScrollCycleView：只给可见项，顺序即列表顺序
+sv:ForeachItemGO(function(_, go)
+    if Alive(go) and go.activeSelf then cards[#cards + 1] = go end
+end)
+-- TabBox：读 box 的子节点（不要用 GetTabList()，见 §7）
+local box = Util.GetGameObject(this.tabBox, "box").transform
+for i = 0, box.childCount - 1 do ...
+```
+
+---
+
+## 7. 九个坑（都在这套代码里踩过）
+
+1. **写 item 根节点 ⇒ 被抹回**。这是本配方的第一号坑，两种触发源（布局组 / 列表自己算位置）。写子节点根治。
+2. **`ScrollCycleView` 不是布局组也不能写根**。见 §4。
+3. **一屏只有 1 张卡时「逐格错开」无意义**。`Open` 传 `fixedCount=1 / itemCount=1` 时，item 池就 1 个、反复复用，
+   `kStep` 设多少都看不出差别；别以为错开没生效是 bug。
+4. **重播必须先 Stop**。item 池复用，上一轮的终值就是这一轮的基准；不复位会从半截位置开始，且基准会逐轮漂移。
+5. **`Stop` 必须连 alpha 一起复位**。只复位位置 = 卡片永久半透明（0.3647 的底色在白色列表上非常显眼）。
+6. **`Alive` 判定要用 `IsNull`**。tolua 的 fake-null：`Destroy` 之后既不是 `nil`、直接取字段还会抛错。
+   `type(obj) == "userdata"` 才走 `IsNull`，纯 table（离线 harness 的替身）直接返回 true。
+7. **`Ease` 枚举是运行期注册的**。`tween:SetEase(Ease.OutQuad)` 在某些启动顺序下 `Ease` 还是 nil，
+   整段被 `pcall` 吃掉 ⇒ 静默不播。一律走 `SetEaseSafe`：取不到就跳过（用 DOTween 默认缓动）。
+8. **`local type = {...}` 会遮住 `type()`**。`BattlePassPanel_Mission.lua` 里就有一张叫 `type` 的按钮样式表，
+   `Alive` 一写就报 `attempt to call upvalue 'type' (a table value)`。表名不要用 `type`。
+9. **`GetTabList()` 可能是空实例**。`TabBox:Init(tabBox, tabBoxData)` 第二次传 nil 时 `Init` 提前 return，
+   但 `this.TabCtrl` 已经被换成了新实例 ⇒ `GetTabList()` 恒为空、照它拿列表会静默不播。**TabBox 一律读 `box` 子节点。**
+
+---
+
+## 8. 自证（离线 harness，不用等打包）
+
+`scripts/lua-tests/test_battlepass_cardslide.lua`（8 case，可直接改路径复用）：
+
+```bash
+cd LuaEncoder/luajit_mac/64
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_battlepass_cardslide.lua
+```
+
+必测的 8 条：
+
+| # | 断言 |
+|---|---|
+| 1 | 起点：每个子节点 `x == 基准 + 260`，`y` 不动；底板 `alpha == 0.3647`；item 根不动 |
+| 2 | 完成：位置与 alpha **精确**回到基准（`==` 而不是约等于） |
+| 3 | 中途 `Stop`：存活 tween 为 0，位置/颜色全复位 |
+| 4 | 多卡：相邻 `delay` 差 0.05 |
+| 5 | 未激活 item 不参与（不白占一轮、不动它） |
+| 6 | 空列表 / 无列表组件：返回 0，不抛错 |
+| 7 | `OnClose` / `OnDestroy` 都回收（DestroyPanel 不走 OnClose，面板还会被 openedList 复用） |
+| 8 | 抑制标记：`suppressTaskAnim = true` 时 0 条 tween，放开后正常 |
+
+⚠️ 离线 harness 只能证明**逻辑**对。`DOAnchorPosX` / `DOFade` 在 tolua 的绑定要另外确认：
+
+```bash
+grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
+```
+
+`DOAnchorPosX` 在 `UnityEngine_RectTransformWrap`、`DOFade` 在 Graphic 系、`DOScale` 在 `UnityEngine_TransformWrap`
+—— 都有绑定才敢用。
+
+---
+
+## 9. 已落地
+
+| 面板 | 对象 | 方向 | 起点 / 时长 |
+|---|---|---|---|
+| `TreasureStorePopup`（参考） | `grid/item1..3` | 左 → 右 | -200/-150/-100 / 0.05~0.10s |
+| `BattlePassPanel_Mission` | 任务卡 `itempre`（一屏 1 张） | **右 → 左**（按要求反向） | +260 / 0.22s |
+
+---
+
+## 10. 变更记录
+
+- 2026-10-21 首版。从 `ui_anim_reproduce_skill.md` 的「第四次复用」抽出成独立配方：
+  第一版误把曲线落在 TabBox 的 13 个小页签上（曲线对、对象错），返工到任务卡后才定型；
+  方向按要求改为从右侧滑入。

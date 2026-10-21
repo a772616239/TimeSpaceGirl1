@@ -515,6 +515,10 @@ Commits：`b1b4580ed`（撤销错方向）、`2198f87da`（补落位曲线）、
 产物：`LuaBytes/Modules_BattlePass_BattlePassPanel_Mission_64.bytes`（14784 → 17254 → 17078 B，
 用例 `scripts/lua-tests/test_battlepass_cardslide.lua`，8 case）。
 
+> 这一套（从一侧滑入 + 底板淡入）已抽成独立配方：**`ui_item_slide_in_skill.md`** ——
+> 含参考曲线表、位移承载节点选择表（布局组 / `ScrollCycleView` / `TabBox`）、方向一行切换、
+> 9 个坑、8 case 自证。复刻同类动画直接照那份走，本节的 S0~S3 只记录「这次怎么判断的」。
+
 ---
 
 ## 10. 交付前自查（可直接贴进 PR）

@@ -20,6 +20,7 @@
 | **把 UI 底板改成节日版（出图 → 去水印 → 验收 → 替换原图，Jenkins 一条链）** | **`art_restyle_pipeline.md`** |
 | 给面板加"弹入 + 呼吸"浮空动画（配方数字 / 11 个坑） | `ui_panel_float_anim_skill.md` |
 | **列表卡片逐格「放大缩小」入场（礼包墙 / 奖励档位 / 任务列表，含切页重播）** | **`ui_item_pop_in_skill.md`** |
+| **列表卡片从一侧「滑入 + 淡入」（参考 TreasureStore clip，含方向切换与位移承载节点）** | **`ui_item_slide_in_skill.md`** |
 | 起服 / 开区服 / 改线上 / 每日巡检 | **`server_ops_runbook.md`** |
 | **查某个玩家是不是开挂（判定）** | **`cheat_detection_skill.md`** |
 | **玩家作弊 / 数据异常 / 封号处置（动作）** | **`gm_abuse_incident_playbook.md`** |

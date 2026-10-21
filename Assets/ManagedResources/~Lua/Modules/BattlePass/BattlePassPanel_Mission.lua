@@ -8,7 +8,8 @@ local typeIndex = {
     [1] = 0,
     [2] = 2,
 }
-local type = {
+-- 🔴 别叫 type：这个局部名会遮住 Lua 的 type()，本文件后面任何 type(obj) 都会变成"调用一张表"
+local btnStyle = {
     [0] = {color = Color.New(255/255,174/255,53/255,1),text = string.format("<color=#53360A>%s</color>",GetLanguageStrById(10023))},
     [1] = {color = Color.New(255/255,209/255,43/255,1),text = string.format("<color=#544307>%s</color>",GetLanguageStrById(10022))},
     [2] = {color = Color.New(255/255,209/255,43/255,1),text = string.format("<color=#FFFFFFFF>%s</color>",GetLanguageStrById(10350))},
@@ -30,6 +31,185 @@ local _TabData = {
 }
 this.pross = 0
 local tabIndex = 1
+
+--============================== 选项卡入场（左滑入 + 淡入）==============================
+-- 参考 Assets/Art/UIAni/cn2-X1_UI_TreasureStorePopup.anim（dump_clip.py 反解：Scale=1 + Float=9，
+-- m_EditorCurves 镜像 12 条 = 3 + 9，全部读完）。分镜（总长 0.3667s，m_LoopTime=1）：
+--   Panel                 m_AnchoredPosition.y   -125 → 0        0 → 0.3667s  ← 弹窗本体上移
+--   Panel                 m_SizeDelta.y          -250 → 0        0 → 0.3667s  ← 弹窗本体现高（底边钉死）
+--   Panel/Bg              m_LocalScale           1.1 → 1         0 → 0.3667s  ← 背景板回弹
+--   Panel/Bg              m_Color.a              0.7765 → 1      0 → 0.3667s
+--   grid/item1            m_AnchoredPosition.x   -200 → 0        0 → 0.05s     ← 单格最快
+--   grid/item2            m_AnchoredPosition.x   -150 → 0        0.05 → 0.1667s
+--   grid/item3            m_AnchoredPosition.x   -100 → 0        0.1833 → 0.2833s
+--   grid/item1/Bg         m_Color.a              0.3647 → 1      0 → 0.2833s   ← 淡入比位移长
+--   grid/item2/Bg         m_Color.a              0.3647 → 1      0.1333 → 0.25s
+--   grid/item3/Bg         m_Color.a              0.3647 → 1      0.2333 → 0.3333s
+-- 迁移到本页 13 个选项卡：位移方向保持不变（从左侧滑入，被 TabBox 的 RectMask2D 裁出边），
+-- 淡入起点取参考的 0.3647，逐格错开 0.03s（参考两格之间 2 帧 @60）。
+-- 参考前 4 条是「弹窗本体」的进出场（Panel/Bg 是带 sprite 的底板，不是全屏遮罩），本页是
+-- BattlePassPanel 里的一个子页，没有对应节点、也不该整页位移 ⇒ 只复刻 6 条「列表项」曲线。
+--
+-- 🔴 位移写在 tab 的**子节点**上，不写 tab 根节点：
+--   TabBox 把页签克隆进 box，box 挂 VerticalLayoutGroup + ContentSizeFitter ⇒ 布局组只接管
+--   页签根节点的 anchoredPosition（每次布局重建都写回），而 tab 的子节点无人管。
+--   写根节点会在重建那一帧被抹回原位（切一次页签就建一次布局），写子节点一次都不会被覆盖，
+--   也因此不需要"延迟一帧再播"。
+--   select 是 90° 旋转的板（本地 +y 才是屏幕 -x），所以它单独走 y 轴。
+local kTabSlideFrom     = 140      -- 起点位移（px）。参考 200/150/100 = 203 宽的 73%/55%/37%，取 ~69%
+local kTabSlideDuration = 0.16     -- 单格时长（参考单格 0.05~0.12s；13 格取 0.16 才连成一片）
+local kTabSlideStep     = 0.03     -- 相邻错开（参考 2 帧 @60 = 0.033s）
+local kTabSlideMaxSpan  = 0.4      -- 页签多时压缩错开，整体跨度不超过这个值
+local kTabFadeFrom      = 0.3647   -- 参考 item/Bg 的 alpha 起点
+
+-- tab 模板（prefab 实测：203×171，anchor 左上）的 6 个可视子节点
+local kTabNodes = {
+    { path = "select",         comp = "Image", axis = "y" },  -- 高亮板，z 轴 90° ⇒ 屏幕横向 = 本地 y
+    { path = "title",          comp = "Image", axis = "x" },  -- 页签主图
+    { path = "title/HighText", comp = "Text",  axis = "x" },  -- 选中态文字
+    { path = "LockImage",      comp = "Image", axis = "x" },
+    { path = "Redpot",         comp = "Image", axis = "x" },
+    { path = "Text",           comp = "Text",  axis = "x" },
+}
+
+local tabSlideItems = {}   -- { rect, x, y, graphic, color, posTween, fadeTween }
+
+-- tolua 的枚举/结构体都是运行期注册的：取不到就跳过，异常被 pcall 吃掉会整段静默不播
+local function SetEaseSafe(tween, name)
+    local enum = _G.Ease
+    local value = enum and enum[name]
+    if value ~= nil then
+        tween:SetEase(value)
+    end
+    return tween
+end
+
+-- UnityEngine.Object 在 lua 侧是 userdata：Destroy 之后既不是 nil 也不能取字段
+local function TabAlive(obj)
+    if obj == nil then
+        return false
+    end
+    if type(obj) == "userdata" then
+        return not IsNull(obj)
+    end
+    return true
+end
+
+local function WithAlpha(color, a)
+    return Color.New(color.r, color.g, color.b, a)
+end
+
+-- 回收：Kill 掉所有 tween 并把位置/颜色复位。
+-- 🔴 漏复位 = 选项卡永久停在半截位置或半透明；重播 / OnClose / OnDestroy 都必须走这里。
+function this.StopTabSlideIn()
+    for i = #tabSlideItems, 1, -1 do
+        local item = tabSlideItems[i]
+        if TabAlive(item.posTween) then
+            item.posTween:Kill(false)
+        end
+        if TabAlive(item.fadeTween) then
+            item.fadeTween:Kill(false)
+        end
+        if TabAlive(item.rect) then
+            item.rect.anchoredPosition = Vector2.New(item.x, item.y)
+        end
+        if TabAlive(item.graphic) then
+            item.graphic.color = item.color
+        end
+        tabSlideItems[i] = nil
+    end
+end
+
+-- 打开本页：13 个选项卡逐格从左侧滑入并淡入。
+-- 页签由 TabBox.Init 一次性克隆（13 个固定，整局不重建）⇒ 每次 OnShow 重播都从起点起。
+function this.PlayTabSlideIn()
+    this.StopTabSlideIn()
+    -- 🔴 不能用 this.TabCtrl:GetTabList()：InitComponent 第 84 行把 this.TabCtrl 换成了第二个
+    -- 空实例（第二次 Init 传的 this.tabBoxData 是 nil，TabBox:Init 直接 return），那个实例的
+    -- TabList 是类表上的空表 ⇒ GetTabList() 恒为空、动画静默不播。直接走 box 的子节点。
+    local box = this.tabBox and Util.GetGameObject(this.tabBox, "box")
+    if not TabAlive(box) then
+        return 0
+    end
+    local boxTf = box.transform
+    local total = boxTf.childCount or 0
+    if total <= 0 then
+        return 0
+    end
+    local step = kTabSlideStep
+    if total > 1 and step * (total - 1) > kTabSlideMaxSpan then
+        step = kTabSlideMaxSpan / (total - 1)
+    end
+
+    local order = 0
+    local ok, err = pcall(function()
+        for i = 0, total - 1 do
+            local tabTf = boxTf:GetChild(i)
+            if TabAlive(tabTf) and tabTf.gameObject.activeSelf then
+                local tabGo = tabTf.gameObject
+                local delay = order * step
+                for j = 1, #kTabNodes do
+                    local cfg = kTabNodes[j]
+                    local go = Util.GetGameObject(tabGo, cfg.path)
+                    -- 未激活的子节点（未选中的 select / HighText、无红点的 Redpot）不参与：
+                    -- 它们被 SetActive 打开时本来就是终值，写它们只会让下一次打开从半截起
+                    if TabAlive(go) and go.activeSelf then
+                        local rect = go:GetComponent("RectTransform")
+                        local graphic = go:GetComponent(cfg.comp)
+                        if TabAlive(rect) and TabAlive(graphic) then
+                            local pos = rect.anchoredPosition
+                            local baseColor = graphic.color
+                            -- 起点：屏幕左侧 kTabSlideFrom 之外
+                            if cfg.axis == "y" then
+                                rect.anchoredPosition = Vector2.New(pos.x, pos.y + kTabSlideFrom)
+                            else
+                                rect.anchoredPosition = Vector2.New(pos.x - kTabSlideFrom, pos.y)
+                            end
+                            graphic.color = WithAlpha(baseColor, kTabFadeFrom)
+
+                            local posTween
+                            if cfg.axis == "y" then
+                                posTween = rect:DOAnchorPosY(pos.y, kTabSlideDuration)
+                            else
+                                posTween = rect:DOAnchorPosX(pos.x, kTabSlideDuration)
+                            end
+                            posTween:SetDelay(delay)
+                            SetEaseSafe(posTween, "OutQuad")
+                            posTween:OnComplete(function()
+                                if TabAlive(rect) then
+                                    rect.anchoredPosition = Vector2.New(pos.x, pos.y)
+                                end
+                            end)
+
+                            local fadeTween = graphic:DOFade(baseColor.a, kTabSlideDuration)
+                            fadeTween:SetDelay(delay)
+                            SetEaseSafe(fadeTween, "OutQuad")
+                            fadeTween:OnComplete(function()
+                                if TabAlive(graphic) then
+                                    graphic.color = baseColor
+                                end
+                            end)
+
+                            tabSlideItems[#tabSlideItems + 1] = {
+                                rect = rect, x = pos.x, y = pos.y,
+                                graphic = graphic, color = baseColor,
+                                posTween = posTween, fadeTween = fadeTween,
+                            }
+                        end
+                    end
+                end
+                order = order + 1
+            end
+        end
+    end)
+    if not ok then
+        -- DOTween 侧任何异常都不能把选项卡留在半截位置/半透明
+        LogError("BattlePassPanel_Mission: 选项卡入场失败 " .. tostring(err))
+        this.StopTabSlideIn()
+        return 0
+    end
+    return order
+end
 
 function this:InitComponent(gameObject)
     this.panel = Util.GetGameObject(gameObject, "BattlePassPanel_Mission")
@@ -174,6 +354,9 @@ function this:OnShow(panel,_sortingOrder)
     this.RefreshAllTaskBtn()
     this.TabCtrl:ChangeTab(tabIndex)
 
+    -- 选项卡逐格滑入 + 淡入（页签只建一次、节点常驻 ⇒ 每次进本页重播）
+    this.PlayTabSlideIn()
+
     this:OnSortingOrderChange(sortingOrder)
 
     this.RefreshTaskAllReceiveState()
@@ -287,8 +470,8 @@ function this.SetScrollData(pre,data)
     this.SetActive(missionText.gameObject,value.ShowProgress == 1)
     --领取或者前往按钮
     local receiveOrGoBtn = Util.GetGameObject(receiveOrGo, "Button")
-    Util.GetGameObject(receiveOrGoBtn, "Text"):GetComponent("Text").text = type[state].text
-    receiveOrGoBtn:GetComponent("Image").color = type[state].color
+    Util.GetGameObject(receiveOrGoBtn, "Text"):GetComponent("Text").text = btnStyle[state].text
+    receiveOrGoBtn:GetComponent("Image").color = btnStyle[state].color
 
     this.SetActive(Util.GetGameObject(receiveOrGo, "Button").gameObject,state ~= 2)
     this.SetActive(Util.GetGameObject(receiveOrGo, "received").gameObject,state == 2)
@@ -538,11 +721,14 @@ function this.SortData(allData)
     return allData
 end
 function this:OnClose()
+    this.StopTabSlideIn()
 end
 
 function this:OnDestroy()
     preview1 = nil
     preview2 = nil
+    -- DestroyPanel 不走 OnClose，面板还会被 openedList 缓存复用 ⇒ 两处都要收
+    this.StopTabSlideIn()
 end
 
 --刷新任务全部领取按钮状态

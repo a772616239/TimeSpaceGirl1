@@ -480,7 +480,7 @@ Commits：`b1b4580ed`（撤销错方向）、`2198f87da`（补落位曲线）、
 
 记录见配方文档附录 H。产物：`LuaBytes/Modules_Recharge_MainRechargePanel_64.bytes`（5050 → 8363 B）。
 
-### 第四次复用：`BattlePassPanel_Mission`（同一份 `TabBox`，位移改走子节点）
+### 第四次复用：`BattlePassPanel_Mission`（作用对象返工：页签 → 任务卡）
 
 | 环节 | 这次的判断 |
 |---|---|
@@ -494,7 +494,26 @@ Commits：`b1b4580ed`（撤销错方向）、`2198f87da`（补落位曲线）、
 | S3 | `scripts/lua-tests/test_battlepass_tabslide.lua`（8 case）：13 格 × 5 激活节点 × 2 通道 = 130 条、末格延迟 0.36、24 格压到 0.4、Stop 全复位、`GetTabList` 为空时照常 |
 | 遗留 | 未改：`OnShow` 里的 `this.TabCtrl:ChangeTab(tabIndex)` 打在那个空实例上 ⇒ no-op，页签高亮恒停在第一个（与本次动画无关，单独提） |
 
-产物：`LuaBytes/Modules_BattlePass_BattlePassPanel_Mission_64.bytes`（14784 → 17254 B）。
+**S4 返工（作用对象搞错）**：上面那一版把曲线落在了 **TabBox 的 13 个小页签**上，用户要的是
+**右侧任务列表的大任务卡**（`itempre` → `item1..itemN`）。曲线读对了、对象选错了 —— 教训是
+「列表项」必须先问清是哪一张列表，`dump_clip.py` 只给节点名（`grid/item1`），给不出业务语义。
+
+改成任务卡后的三处关键差异：
+
+| 点 | tab 版 | 任务卡版 |
+|---|---|---|
+| 承载节点 | `box` 的子节点（13 个，遍历 `childCount`） | `ScrollCycleView:ForeachItemGO` 给的可见 item |
+| 位移量 | 140px（页签宽 203 的 ~69%） | 260px（卡宽 870 的 ~30%） |
+| 播放时机 | 只 `OnShow`（页签常驻、整局只建一次） | `SwitchView` 里 `SetData` 之后；`RefreshAllTaskBtn` 用 `suppressTaskAnim` 抑制，只在玩家主动换屏播 |
+
+🔴 **卡片的位移必须写子节点**：`ScrollCycleView:SetData` / `SetItemIndex` 每次都直接重写
+`item.tran.anchoredPosition`（换页、滚动都会），写 item 根必被抹回 —— 和 tab 版踩的是同一个坑，
+但触发源不同（那边是 `VerticalLayoutGroup`，这边是列表自己算位置）。
+🔴 **一屏只有 1 张卡**：本列表 `Open` 传的是 `fixedCount=1 / itemCount=1`，item 池反复复用 ⇒
+每次 `SetData` 都要 `Stop` 复位后在终值上重播，"逐格错开"在这里实际不起作用（`kCardSlideStep` 保留给以后多列）。
+
+产物：`LuaBytes/Modules_BattlePass_BattlePassPanel_Mission_64.bytes`（14784 → 17254 → 17078 B，
+用例 `scripts/lua-tests/test_battlepass_cardslide.lua`，8 case）。
 
 ---
 

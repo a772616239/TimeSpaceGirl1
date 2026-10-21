@@ -113,18 +113,23 @@
 >   ⑦ 的三重校验只针对 AAB —— 不单独校，就是「发出去的装机包没人验过」。
 > - ⚠️ APK 用 upload key，与 Play 的 app signing key 不同 ⇒ **侧载前必须先卸载 Play 版**。
 
-| **TS-Android-TestPackage** | 出测试 APK（universal，upload key 签名） | `SERVER_ENV=测试服` `BUMP_VERSION=False` `EXPECT_PROFILE=minimal` | — | **禁止** |
+| **TS-Android-TestPackage** | 出测试 APK（universal，upload key 签名）**+ 出完发结果邮件** | `SERVER_ENV=现网-129.226.213.65` `BUMP_VERSION=False` `EXPECT_PROFILE=minimal` `SEND_MAIL=True` `MAIL_TO=` | **`0 3 * * *`（每天 03:00 夜间包）** | **禁止** |
 
 > **`TS-Android-TestPackage` 的产物就是 APK 本体**（2026-10-17 修正）：构建页「Build Artifacts」
 > 里直接挂着 `artifacts/<版本>_vc<N>_<HHmmss>.apk`，点一下就下载，不用去磁盘上翻 `apks/`。
 > 构建描述也会写成 `✅ 9 个环节全部通过 · APK 1.2.51_vc74_215144.apk · 965M`。
-> - 另有**固定下载地址** `http://localhost:8080/userContent/TS-TestPackage-latest.apk`，
->   永远指向最新一次的 APK（`userContent/` 下的软链，构建时自动重建）。适合存书签 / 发给自己。
+> - **稳定下载地址**（推荐收藏 / 发人）：
+>   `http://127.0.0.1:8080/job/TS-Android-TestPackage/lastSuccessfulBuild/artifact/artifacts/`
+>   —— Jenkins 原生 permalink，永远指向最近一次**成功**的包，不随构建号变化，随 `buildDiscarder` 一起过期（不会留死链）。
+>   ⚠️ 文档曾写「`userContent/TS-TestPackage-latest.apk` 软链」——**那是错的**，Jenkins 不对软链提供下载（2026-10-17 实测 404），已改 permalink。
+>   ⚠️ 本机 Jenkins 只监听 `127.0.0.1`，所以这个地址**只有这台 Mac 打得开**；手机/别人要包得走邮件里的「本机路径」或另开上传。
 > - 🔴 以前只归档 `evidence/**`，APK 本体只留一行**相对路径文本** ⇒ 构建页一个安装包都下不到，
 >   且那条相对路径离开工程目录就指不到文件。这是「生成物应该是 apk」这个诉求的真正堵点。
 > - 归档用 `cp -c`（APFS clone，写时复制）：965MB 瞬间就位、不额外占盘；跨卷时自动退化成硬链接或真复制。
 > - 产物**只留最近 3 份 / 14 天**（META `artifactKeep` / `artifactDays`）。不设限则 30 次 × 965MB ≈ 29GB。
 > - 本次没产出 APK 时，post 段会**清空** `workspace/artifacts/`：宁可不给下载，也不把上一次的旧包当本次产物挂上去。
+> - **夜间包（2026-10-21 新增）**：每天 03:00 定时跑，`SERVER_ENV` 默认改成 **现网（柯测试服 129.226.213.65）**，
+>   出完/失败都发一封结果邮件（版本号 + 下载地址 + 失败环节）。细节见 **3.11**。
 
 | **TS-Android-SmokeTest** | **已打包 APK 的装机冒烟**：定位包 → 环境体检 → 起/连设备 → 装包启动 → 等 N 秒断言 → 截图 + logcat 归档 | `APK=` `TARGET=auto` `SERIAL=` `AVD_NAME=ts-smoke-api33` `SYSTEM_IMAGE=system-images;android-33;google_apis;x86_64` `SMOKE_SECONDS=30` `BOOT_TIMEOUT=300` `REVERSE_PORTS=8081:8081,16081:16081` `PACKAGE=` `ACTIVITY=` `UNINSTALL_FIRST=False` `KEEP_DEVICE=False` `ALLOW_NO_DEVICE=True` | — | **禁止** |
 
@@ -756,6 +761,54 @@ $B .jenkins/lib/local_deploy.sh rollback ~/home/java/gameserver/backup/gameSrv-2
 **参数怎么调**：`RATIO` 是带宽比例（`0.022` 与换风格链路的 card 口径一致，1080x568 → 16px；
 想更明显用 `0.028~0.032`），`RIM` 是亮边色板，`HAIRLINE=true` 会在带内侧再加一道细线
 （默认关：亮边 + 内细线挤在窄带里会变成相框式双线）。
+
+### 3.11 夜间测试包（`0 3 * * *` + 结果邮件，2026-10-21 新增）
+
+**诉求原话**：「Jenkins 半夜 3 点直接打包测试包、不传 Play，直接拉最新 git 代码，传完发通用邮件告诉我版本 url。」
+落地成三件事，全部挂在**已有的** `TS-Android-TestPackage` 上，没有新建 job —— 因为「出测试包」
+这条链路（同步 → 预检 → Unity → 包内四重校验 → 收成产物）本来就是它，复制一份只会多一份要维护的漂移。
+
+| 诉求 | 落在哪 | 关键实现 |
+|---|---|---|
+| 每天 03:00 自动跑 | job META 的 `"cron": "0 3 * * *"` | `render_job.py` 渲染成 `TimerTrigger`，`apply-jobs.sh` 推上去即生效（不用重启 Jenkins） |
+| 拉最新 git 代码 | 已有 ①-1「代码同步」 | `ci_sync.sh`：`fetch` → 脏工作区 `stash` 快照 → `reset --hard origin/release` → 镜像 `.secrets/keystore/TimeSpaceServer`。**定时构建不会跳这一步**，因为它不是「可选参数」而是链路第一段 |
+| 不传 Play | 本来就只到「收成构建产物」为止 | 全链没有一个上传动作（`play_upload.py` 只在 `TS-Android-Release` 里） |
+| 邮件 + 版本 url | post 段 → `.jenkins/lib/notify_package.py` | 投递复用共享库 `notify.py` 的 `send()`（多候选授权码 / 465→587 / 失败分类重试，**不写第二份 SMTP**） |
+
+**为什么邮件放 `post { always }` 而不是一个 stage**：夜间包**失败时更**需要这封信
+（「没出包，因为 ③ 红了」），而 stage 在失败后会被 skip，只有 `post.always` 一定跑得到。
+
+**邮件长什么样**（主题就能回答「有没有包 / 什么版本 / 连哪个服」）：
+
+```
+主题：✅【夜间测试包】TS-Android-TestPackage #17 · 1.2.51 (79) · 现网-129.226.213.65
+      或 🔴【夜间测试包】… #18 · 出包未完成（无可用包） · 现网-129.226.213.65
+
+结果: SUCCESS    版本: 1.2.51 (79)    连服: 现网-129.226.213.65
+代码: release @ 3f2a1b9 · fix(client): …
+包  : 1.2.51_vc79_030512.apk · 461M · md5 e682b0f3
+下载: http://127.0.0.1:8080/job/…/17/artifact/artifacts/1.2.51_vc79_030512.apk
+稳定地址: http://127.0.0.1:8080/job/…/lastSuccessfulBuild/artifact/artifacts/（可收藏）
+本机路径: /Users/wangxufeng/Documents/TimeSpaceGirl1-build/apks/…
+环节（11 个）: 全部通过          ← 有问题时逐条列出 🔴/⚠️ 环节 + 说明原文
+```
+
+**几个必须知道的坑（都已踩过 / 已挡住）**
+
+- **`SERVER_ENV` 默认值从「测试服」改成了「现网-129.226.213.65」**。原因：测试服口径是
+  `127.0.0.1:8081`，凌晨没人起本机测试服、也没人 `adb reverse`，包出来装上必然连不上；
+  现网（柯测试服）装真机就能连。手动要连本机测试服，选参数即可。
+- **choice 参数的默认值 ≠ `choices[0]` 会静默失效**：`render_job.py` 以前不写 `<defaultValue>`，
+  Jenkins 就取第一个 choice，META 里的 `"default"` 被无声忽略（本次实测：页面默认值仍是「测试服」）。
+  已给共享库补上 `<defaultValue>`（只在 default 确实在 choices 里时才写，写错值 Jenkins 会加载失败）。
+- **发信失败不改球色**：`notify_package.py` 用 `sh(returnStatus: true)` 调用，rc≠0 只打一行
+  `⚠️ 结果邮件没发出去`。包已经出好了，一个红球会让人以为包不能用。
+- **收件人**：`MAIL_TO` 留空 = 共享库默认（`notify.py` 的 `NOTIFY_TO`，当前 `772616239@qq.com`）。
+  口令来自 `jenkins-shared/.secrets/mail.env` 或工程 `.secrets/health.env`（本次用的是后者，日志会写明来源）。
+- **想先看正文不发信**：`TS_MAIL_DRYRUN=1`（job 环境或临时改一行），或直接手动跑
+  `.jenkins/lib/notify_package.py --run-dir <取证目录> --dry-run`。
+- **定时与手动是同一条链**：手动跑也会发信（`SEND_MAIL` 默认 true），不想收就取消勾选；
+  邮件里「触发」一行会写清是定时还是手动。
 
 ## 4. 「各环节可视化」到底指什么（四件产物）
 

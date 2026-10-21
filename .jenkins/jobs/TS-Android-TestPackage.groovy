@@ -1,14 +1,17 @@
 /**@META
 {
-  "description": "出测试用 APK（universal，upload key 签名）：环境预检 → **按 SERVER_ENV 注入连服地址** → Unity batchmode → 包内四重校验（服务器环境/出包口径/16KB/交付）→ **把 APK 本体收成构建产物（构建页可直接下载安装）**。专为「我要拿个包装到手机上测」设计，不做任何上传。侧载前必须先卸载 Play 版（签名不同）。",
+  "description": "出测试用 APK（universal，upload key 签名）：环境预检 → **按 SERVER_ENV 注入连服地址** → Unity batchmode → 包内四重校验（服务器环境/出包口径/16KB/交付）→ **把 APK 本体收成构建产物（构建页可直接下载安装）** → **发一封结果邮件（版本号 + 下载地址）**。**每天 03:00 自动跑一次夜间包**，代码同步环节无条件拉到 origin/release 最新。专为「我要拿个包装到手机上测」设计，不做任何上传（不传 Play）。侧载前必须先卸载 Play 版（签名不同）。",
+  "cron": "0 3 * * *",
   "concurrent": false,
   "keep": [30, 30],
   "artifactKeep": 3,
   "artifactDays": 14,
   "params": [
-    {"name":"SERVER_ENV","type":"choice","choices":["测试服","正式服","现网-129.226.213.65"],"default":"测试服","description":"🔴 这个包连哪个服务器（地址表 scripts/build_envs.json：测试服=本机 127.0.0.1:8081 / 正式服=103.151.173.99 / 现网=历史包用的 129.226.213.65）。构建前注入 Assets/Resources/version.txt，EXIT 时（含失败）自动还原；打包后解包核验，不符则本环节失败。⚠️ 测试服包连 127.0.0.1，真机必须先 adb reverse tcp:8081 tcp:8081 与 tcp:16081 tcp:16081（构建日志会提示）"},
+    {"name":"SERVER_ENV","type":"choice","choices":["测试服","正式服","现网-129.226.213.65"],"default":"现网-129.226.213.65","description":"🔴 这个包连哪个服务器（地址表 scripts/build_envs.json：测试服=本机 127.0.0.1:8081 / 正式服=103.151.173.99 / 现网=历史包用的 129.226.213.65）。**默认现网=柯测试服**：夜里出的包早上直接装真机就能连，不用人守着起本机测试服。构建前注入 Assets/Resources/version.txt，EXIT 时（含失败）自动还原；打包后解包核验，不符则本环节失败。⚠️ 选「测试服」时包连 127.0.0.1，真机必须先 adb reverse tcp:8081 tcp:8081 与 tcp:16081 tcp:16081（构建日志会提示）"},
     {"name":"BUMP_VERSION","type":"bool","default":false,"description":"是否把 versionCode +1。测试包一般不用，保持与线上同号便于对照"},
-    {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","dev","full"],"default":"minimal","description":"核验口径。CLI/CLIBuilder 固定 minimal（只关 GM）"}
+    {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","dev","full"],"default":"minimal","description":"核验口径。CLI/CLIBuilder 固定 minimal（只关 GM）"},
+    {"name":"SEND_MAIL","type":"bool","default":true,"description":"出完（或失败）发一封结果邮件：版本号 / 连服 / 下载地址（稳定地址 + 本次构建地址）/ 失败环节。夜间定时靠它把结果送到手上；手动跑不想收信就取消勾选"},
+    {"name":"MAIL_TO","type":"string","default":"","description":"收件人（逗号分隔）。留空 = 共享库默认收件人（jenkins-shared/lib/notify.py 的 NOTIFY_TO，当前是 772616239@qq.com）"}
   ]
 }
 META*/
@@ -28,6 +31,8 @@ pipeline {
     PY    = '/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python'
     BASH  = '/usr/local/bin/bash'
     UNITY = '/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity'
+    // 发信器在共享库里（多候选授权码 / 465→587 / 失败分类重试只有这一份实现）
+    SHARED = '/Users/wangxufeng/Documents/jenkins-shared'
   }
 
   stages {
@@ -41,6 +46,7 @@ pipeline {
           env.TS_PROFILE    = params.EXPECT_PROFILE
           env.TS_SERVER_ENV = params.SERVER_ENV
           env.TS_BUMP       = params.BUMP_VERSION.toString()
+          env.TS_MAIL_TO    = params.MAIL_TO.trim()
           env.TS_BUILD_START= (System.currentTimeMillis() / 1000L).toString()
         }
         sh(script: '''#!/usr/local/bin/bash
@@ -54,6 +60,8 @@ mkdir -p "$TS_RUN_DIR/logs"
   echo "口径：$TS_PROFILE（CLIBuilder 固定 minimal）提版本号：$TS_BUMP"
   echo "出包环境：$TS_SERVER_ENV（连哪个服，见 scripts/build_envs.json）"
   echo "用途：出测试 APK（侧载前须先卸载 Play 版 —— 签名不同）"
+  echo "定时：每天 03:00（cron 0 3 * * *）；本链路上传动作一律没有，不传 Play"
+  echo "邮件：${TS_MAIL_TO:-共享库默认收件人}（SEND_MAIL 关掉则不发）"
   echo "取证：$TS_RUN_DIR"
 } | tee "$TS_RUN_DIR/context.txt"
 ''')
@@ -310,6 +318,48 @@ cd "$PROJ" 2>/dev/null || true
         //    数量由 META 的 artifactKeep=3 兜住（LogRotator.artifactNumToKeep），
         //    否则 30 次构建 × 965MB ≈ 29GB 只为存测试包。
         archiveArtifacts allowEmptyArchive: true, artifacts: 'artifacts/*.apk,evidence/**', fingerprint: false
+
+        // ⑥ 结果邮件 —— 故意放 post 而不是 stage：
+        //    夜间包**失败时更**需要这封信（「没出包，因为 ③ 红了」），而 stage 在失败后会被 skip，
+        //    只有 post.always 一定能跑到。主题/正文全部由 .jenkins/lib/notify_package.py
+        //    从取证目录读事实拼出来（版本 / 连服 / 下载地址 / 失败环节），job 里不写措辞。
+        if (params.SEND_MAIL) {
+          script {
+            // 定时还是手动：拿不到 cause 就按手动算，绝不能因为取 cause 失败而丢掉这封信
+            def trig = '手动'
+            try {
+              if (currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause')) {
+                trig = '定时'
+              }
+            } catch (ignored) { }
+            env.TS_MAIL_RESULT  = currentBuild.currentResult
+            env.TS_MAIL_TRIGGER = trig
+            env.TS_MAIL_ENV     = params.SERVER_ENV
+
+            def rc = sh(returnStatus: true, script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ" 2>/dev/null || true
+TO_ARGS=()
+[[ -n "${TS_MAIL_TO:-}" ]] && TO_ARGS=(--to "$TS_MAIL_TO")
+DRY_ARGS=()
+# 想先看正文不投递：TS_MAIL_DRYRUN=1（写进 job 环境或临时改一行都行）
+[[ "${TS_MAIL_DRYRUN:-0}" == "1" ]] && DRY_ARGS=(--dry-run)
+BR="$(git -C "$PROJ" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+[[ "$BR" == "HEAD" ]] && BR="release（detached）"
+"$PY" .jenkins/lib/notify_package.py \
+  --run-dir "$TS_RUN_DIR" --job "$JOB_NAME" --build "$BUILD_NUMBER" \
+  --url "$BUILD_URL" --result "$TS_MAIL_RESULT" --env "$TS_MAIL_ENV" \
+  --trigger "$TS_MAIL_TRIGGER" --branch "$BR" \
+  "${TO_ARGS[@]}" "${DRY_ARGS[@]}"
+''')
+            // 发信失败不改球色：包已经出好了，红球会让人以为包不能用
+            if (rc != 0) {
+              echo "⚠️ 结果邮件没发出去（rc=${rc}）—— 包本身不受影响，原因见上一段输出"
+            }
+          }
+        } else {
+          echo "SEND_MAIL=false ⇒ 本次不发结果邮件"
+        }
       }
     }
   }

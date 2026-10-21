@@ -104,6 +104,7 @@ grep "\[bot\]" $HOME/home/java/logs/gameserver.log | tail
 | `bot announce [heroId]` | 触发一次英雄公告（不填随机挑 5 星） |
 | `bot fake <名字> <文本>` | **造一条玩家发言**，没有客户端也能验证 AI 回话链路。uid 走 `fakeSenderUid`（默认 99990001），**不占用任何真实玩家身份** |
 | `bot reply` | 跳过等待立刻回一次 |
+| `bot team <uid>` | 复刻客户端个人面板的服务端路径，打印 `name/level/vip/head/force/heroes/...`，用来查「面板空白」 |
 
 ```bash
 PY=/Users/wangxufeng/.workbuddy-ai/binaries/python/envs/default/bin/python   # 需要 thrift 包
@@ -180,7 +181,7 @@ TS_REDIS_PORT=16379 TS_SERVER_ID=10001 python3 scripts/bot/clean_fake_chat.py
 个人面板全空。要让面板有等级、战力、英雄、道具，必须往 `user` 集合里放一份真实玩家数据。
 
 `scripts/bot/clone_bot_user.js` 做这件事：整份文档复制，把「指向自己的引用」全改掉
-（`rootId`、`roleUid`、`_id`，以及 `<uid><type><timestamp>` 形式的合成 map key），
+（`rootId`、`roleUid`、`_id`，`<uid><type><timestamp>` 形式的合成 map key，**以及同样形式的字符串值**），
 再换掉 `nickName` / `openId`。
 
 ```bash
@@ -190,17 +191,34 @@ ssh gs 'cd /tmp && mongosh "mongodb://<user>:<pwd>@127.0.0.1:27017/m5_x1_game_10
 # CLONE_DRY=1 只打印不落库；CLONE_FORCE=1 覆盖已存在的文档
 ```
 
-🔴 **最大的坑：`Date` 字段**。递归改写时如果把 `Date` 当普通对象遍历，会被 `for...in` 变成空文档 `{}`，
+🔴 **坑 1：`Date` 字段**。递归改写时如果把 `Date` 当普通对象遍历，会被 `for...in` 变成空文档 `{}`，
 写回后服务端 `getUser` 直接抛 `MappingException: No mapping metadata found for java.util.Date`，
 整个玩家读不出来（日志只有一行 `2-UserManager::getUser null exception<uid>`，不带堆栈时完全看不出原因）。
 所以改写函数里 **`o instanceof Date` 必须最先返回**，再判断 `_bsontype`。
 
-验证（GM 端口）：
+🔴 **坑 2：只改 map key、不改字符串值 → 面板「有头像有等级，编队 0 人、战力 0」**。
+游戏里所有实例 id 都是 `uid + 类型 + 时间戳` 拼出来的字符串
+（英雄 `10000002010017798801320000` = uid `10000002` + `010` + `017798801320000`）。
+第一版只把 `heroManager.heroMap` 的**键**改成了 `90000001…`，而编队
+`teamPosManager.teamPosForHero["1"].listTeamPosHeroInfo[].heroId` 是**值**，仍是 `10000002…`；
+服务端 `getUserTeamOneInfo` 里 `user.getHeroManager().getHero(heroId)` 查不到 → 编队英雄全部被跳过。
+现象：`name/level/vip/head` 都对，`force=0 heroes=0`。
+修法：字符串值只要**以模板 uid 开头**就替换前缀，和 map key 用同一条规则。
+
+验证（GM 端口，`bot team` 复刻客户端个人面板的服务端路径
+`GET_PLAYER_ONE_TEAM_INFO(16650) → PlayerLogic.getOneTeamInfo(uid, FORMATION_NORMAL=1, 0)`）：
 
 ```bash
 gm_client.py --port 17916 'oneuserinfo 90000001'
 # 服务端日志应出现：cmd____uid 90000001_____level:50 nick:Nova
+
+gm_client.py --port 17916 'bot team 90000001'
+# 正常应出现（force/heroes 不能是 0）：
+# [bot] team uid=90000001 name=Nova level=50 vip=1 head=71041 frame=80000 force=115517 heroes=5 support=2 country=ad
 ```
+
+`bot team <uid>` 会**先 `UserManager.removeUser(uid)` 踢掉内存缓存**再读 Mongo，
+所以改完库直接执行就能看到新数据，不用重启服务器。
 
 配置里的 `level` / `vip` / `head` **必须和 `playerManager` 里的一致**，
 否则聊天条显示 lv62、点开面板 lv50，一眼假。

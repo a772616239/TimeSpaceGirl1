@@ -8,8 +8,15 @@
 // 做法：整份文档复制，把「指向自己的引用」全部改掉：
 //   1. 值等于模板 uid 的字段（rootId / roleUid / _id …）
 //   2. 以模板 uid 开头的 map key（合成主键，形如 <uid><type><timestamp>）
-//   3. playerManager.nickName / openId 换成本机器人的
+//   3. 以模板 uid 开头的**字符串值**（同样是合成主键，见下方说明）
+//   4. playerManager.nickName / openId 换成本机器人的
 // 其余数据（英雄、道具、关卡、活动进度）原样保留，面板才有内容。
+//
+// 🔴 第 3 条是 2026-10-21 补的坑：游戏里所有实例 id 都是「uid + 类型 + 时间戳」拼出来的
+// 字符串（英雄 10000002010017798801320000 = uid 10000002 + 010 + 017798801320000）。
+// 只改 map key 不改字符串值，就会出现：heroManager.heroMap 的键已经是 90000001…，
+// 而编队 teamPosManager.teamPosForHero[1].listTeamPosHeroInfo[].heroId 还是 10000002…，
+// 服务端 getUserTeamOneInfo 里 getHero(heroId) 查不到 → 面板「等级/头像有、编队 0 人、战力 0」。
 //
 // 安全：user 集合只有 _id 和 level 两个索引，没有 openId 唯一索引；_id 用 9xxxxxxx 段，
 // 与现有 10000001~10000251 不冲突。脚本只插入新文档，不修改模板玩家。
@@ -50,7 +57,12 @@ function rewrite(o, oldUid, newUid) {
     return out;
   }
   if (o === oldUid) return newUid;
-  if (typeof o === "string" && o === oldStr) return newStr;
+  if (typeof o === "string") {
+    // 字符串值里的合成主键：heroId / equipId / mailId … 都以 uid 开头。
+    // 必须和 map key 用同一条规则，否则「键改了值没改」→ 查不到英雄。
+    if (o === oldStr) return newStr;
+    if (o.indexOf(oldStr) === 0) return newStr + o.slice(oldStr.length);
+  }
   return o;
 }
 

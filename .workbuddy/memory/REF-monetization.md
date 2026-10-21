@@ -1,7 +1,8 @@
 # 付费经济（定价 / 礼包 / 抽卡）红线
 
 > 工具：`scripts/monetization_sim.py`（估值+需求模型）·`monetization_retune.py`（R1–R6）·
-> `monetization_firstpay.py`（R7–R9 首充/星级礼）·`monetization_ladder.py`（R10 价值带）。
+> `monetization_firstpay.py`（R7–R9 首充/星级礼）·`monetization_ladder.py`（R10 价值带 / R11 星级梯度）·
+> `monetization_monthcard.py`（R11 月卡月限）。
 
 ## 🔴 标尺：用「抽等值」，不要用「钻/元」
 - 本作钻石在**直充 10 钻/元**、在**月卡 300 钻/元**、基金 ~103 钻/元 —— 同一通货差 30 倍。
@@ -26,13 +27,37 @@
 - 礼包 `BaseReward` 存量就有 10 项的包，奖励栅格**是动态的**（追加 1 项安全）。
   与首充不同 —— 首充 `DayRewardItem.lua: kRewardCount = 2` 是**固定 2 格**，加第 3 项会崩。
 
-## 关键锚点数值（2026-10-21 R10 之后）
+## 关键锚点数值（2026-10-21 R11 之后）
 - 直充 id=1..6（Type=3）：6 元 60 钻 → 648 元 8424 钻，10 → 13 钻/元（**阶梯很窄，故意不扩**）。
-- 月卡 12 元 = 3600 钻（30 天 × 120）= **1.364 抽/元**；豪华月卡 98 元 = 10800 钻 = 0.501。
+- 月卡 id=9：12 元 = 300（立得）+ 120×30（`MonthcardConfig.BaseReward` 手动领）= **3900 钻 = 1.477 抽/元（25x 直充）**。
+  R10 文档的 1.364 只算了 3600，漏了立得 300。豪华月卡 id=11：980 + 360×30 = 11780 钻 = 0.546；
+  月卡 30 元变体 id=10：750 + 3600 = 0.659 —— **月卡家族自己越贵越不值**（待处理）。
   `MonthcardConfig.Price` 是**激活所需的累计充值门槛**，不是商品价。
+- 🔴 **月卡"白送"通道**：全表 830 个 SKU 的 `AccumulativeRecharge=1`，
+  `BuyGoodsLogic` 486 行「月累计充值额从 <12 跨到 ≥12 就 `putMonthCard()`」
+  ⇒ **买两张 6 元包 = 送一张月卡**，不需要买月卡 SKU。到期时 `getMonthCard()` 把
+  `monthSaveAmt` 归零 ⇒ 每 30 天可白拿一次。这条配置改不动（改 `AccumulativeRecharge`
+  会连带 `saveAmt`/`maxSingleR`/`changeActivity`），只能动服务端或 `MonthcardConfig.Price`。
+- 月卡限购的正确落点（配置层）：`Time=8`（自然月刷新）+ `DailyUpdate=30` + `Limit=1`
+  + `LimitShow=1`。依据 `AbstractWelfareBag.refresh()` 的 `timeType==8` 分支与
+  `PerpetualWelfareBag` 构造器；`DailyUpdate>0` 才会进 `refreshItemInfo`。
 - 基金 LuxuryFund：Type 78=13200 钻、79=35360、7801/7802=6600、7901/7902=13600（30 天）。
 - 战令 `BattlePassConfig.BuyId = 72001`（198 元，单档，无 30–68 元入门档）。
 - 首充活动 = `GlobalActivity Id=5`（Type=5 RechargeTotal），`ActivityRewardConfig ActivityId=5`。
+
+## 🔴 星级成长礼的星级从哪来
+- `PackPush.ConditionId` 的 `4#N`（条件类型 4 = 妖灵师星级），`Packs` 列 `#` 分割 SKU。
+  只覆盖 15 个 SKU；`30702/30802/30902` 这类"低价兄弟包"没被登记 ⇒ 靠 **Name 组内继承**
+  （`34010110..34010119` = 4..13 星）。漏了兜底就只认出 15/49。
+- 4 星（Name=34010110）是基准，目标 = 基础档 + 0.006×(星-4)；同价相邻星级至少差 0.004 抽/元。
+- 阶梯校验/规划必须按**星级组**比（低星组最高 vs 高星组最低）：按 SKU 逐个扫会把同价同星的
+  多个变体依次顶高、低星反超（128 档踩过）。
+
+## 🔴 礼包袋 limit 不会跟配置走
+- `AbstractWelfareBag` 落库后 `limit` 只来自建袋那一刻；`refreshUnitWF` 只重置 `buyTimes`。
+  `AbstractRechargeHandler.rechargeIsInBag()` 命中就不重建 ⇒ **改配置对老玩家无效**。
+- 自愈点：`BuyGoodsLogic.refreshUnitWF` 对齐 `Otype=1`（永久礼包）。**不能对齐 `Otype=4`**
+  （推送礼包 limit 会被活动 `bag.setLimit(bag.getLimit()+num)` 动态抬高）。
 
 ## 反面清单（已踩）
 - 只补"钻/元"不看限购 ⇒ 得出"复制粘贴越多收入越高"或"大额不用管"的错误结论。

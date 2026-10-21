@@ -251,12 +251,16 @@ def main(argv: list[str] | None = None) -> int:
 
     ok, detail = probe_any(args.proxy or None)
     if not ok:
-        log(f"⚠ chatgpt.com 不可达（{detail}）")
-        log("  这不是 cookie 问题：出口到 OpenAI 被封。换节点通了再跑，或改用 provider=manual")
-        return RC_WARN
-    log(f"连通性 OK：{detail}")
+        # 🔴 这个探测是「本机直连」打的，而 SunBrowser / AdsPower 里的号**自带代理**：
+        #    本机出口被封时直连必然 403/超时，浏览器里却照常出图（2026-10-21 实测：
+        #    直连 403，CDP 56540 三分钟前刚出过两张）。所以它是提示，不是闸门。
+        log(f"⚠ 本机直连 chatgpt.com 不通（{detail}）")
+        log("  这只说明本机出口被封，不代表出不了图：浏览器通道自带代理，接着试。")
+        log("  若浏览器也失败，driver 会给出它自己的判定（未登录/额度/拒画）。")
+    else:
+        log(f"连通性 OK：{detail}")
     if args.check_only:
-        return RC_OK
+        return RC_OK if ok else RC_WARN
 
     node, pw = find_node(), find_playwright_core()
     if not node or not pw:

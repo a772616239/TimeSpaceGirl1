@@ -97,6 +97,11 @@ MOOD: {decor_sentence}; the upper banner background becomes {banner}. Rich gloss
 # 文案段的默认句（lock/free 用；design 有自己的版本，见 COMPOSITIONS）
 DEFAULT_TEXT_LINE = ("TEXT: keep every glyph complete, sharp and readable; restyle the material only - "
                      "{text_style}.")
+# 源图没有字时用这一句（--no-text）。默认那句是「保持已有文字」，模型会顺水推舟自己编一句贴上去。
+TEXT_FREE_LINE = ("TEXT: this artwork carries NO text at all - draw NO lettering, numerals, captions, "
+                  "banner headlines, labels, signage, logos, signatures or watermarks anywhere. Any "
+                  "ribbon, banner or plate that would normally carry a word stays BLANK. Do not invent a "
+                  "greeting, a title or a price tag.")
 DEFAULT_BODY_LABEL = "EMPTY BODY"
 # prepare 打印用的人话（一眼看出这档放开了什么）
 COMPOSITION_LABELS = {
@@ -140,7 +145,16 @@ COMPOSITIONS = {
         "heading": "LAYOUT_LOCK (must not change):",
         "style_scope": "Only the palette, materials, outfit and set dressing change - the composition "
                        "and the rendering technique do not.",
-        "character": "keep the same pose, position, scale and silhouette; change the outfit into {outfit}.",
+        "character": ("keep the same pose, position, scale and silhouette; recolour the SAME garments "
+                      "into {outfit} - keep their cut, hem, neckline, fastenings, layering and how much "
+                      "skin they cover identical to the input, and only change colour, material and the "
+                      "existing trim. GARMENT INTEGRITY: never tear, slit, unzip or open a garment wider, "
+                      "never replace it with a different piece, never add a long coat or a second layer on "
+                      "top, and every fur / ribbon / trim must follow a real garment edge instead of "
+                      "floating across bare skin. BODY INTEGRITY: the body stays one connected whole - "
+                      "never turn trousers into a skirt, shorts or a bare thigh, never invent bare skin "
+                      "where the input is clothed, and keep the hips, pelvis and legs attached exactly as "
+                      "in the input, with no limb floating free of the torso."),
     },
     "free": {
         "verb": "Restyle",
@@ -157,8 +171,16 @@ COMPOSITIONS = {
                       "SAME character identity (same face design, same hair color and style, same eye "
                       "color, same art style and rendering quality) so it reads as the same heroine, "
                       "only much more attractive; both hands anatomically correct and fully inside the "
-                      "frame, resting on or gripping a prop rather than splayed empty; "
-                      "restyle the outfit into {outfit}."),
+                      # 🔴 「空手必崩」的教训不能写成「只许握着东西」——用户会要「张开手打招呼」。
+                      #    这里只要求手「在做事」，能不能空手张开交给 pose 描述决定。
+                      "frame - unless the pose above asks for an open hand, prefer a hand that is doing "
+                      "something (resting on, leaning on or gripping something) over a stiff splayed "
+                      "empty fan of fingers; "
+                      "restyle the outfit into {outfit} by recolouring the SAME garments - keep their cut, "
+                      "layering and coverage, never tear, slit, unzip or open them wider, and every trim "
+                      "must follow a real garment edge. BODY INTEGRITY: never turn trousers into a skirt "
+                      "or shorts, never invent bare skin where the input is clothed, and keep the hips, "
+                      "pelvis and legs attached to the torso - no limb floating free."),
     },
     "design": {
         # 动词换掉：design 是「重新设计」，不是「换风格」。写 Restyle 模型会老老实实沿用原版面。
@@ -178,8 +200,14 @@ COMPOSITIONS = {
                       "never covers the text or the reserved UI areas. Keep the SAME character identity "
                       "(same face design, same hair color and style, same eye color, same age) so she reads "
                       "as the same heroine; both hands anatomically correct and fully inside the frame - "
-                      "prefer a hand resting on or gripping a prop over an empty splayed hand; "
-                      "restyle the outfit into {outfit}{pose_hint}."),
+                      "unless the pose above asks for an open hand, prefer a hand resting on or gripping "
+                      "something over an empty splayed fan of fingers; "
+                      "design the outfit as {outfit} - every garment must read as one coherent, intact "
+                      "piece of clothing with a believable cut, hem and fastening: no torn, split, "
+                      "half-off or unzipped fabric, and every trim must follow a real garment edge; her "
+                      "body must stay one connected whole - hips, pelvis and legs attached, no bare limb "
+                      "floating apart from the torso"
+                      "{pose_hint}."),
         # 没字的图不许凭空造字；有字的图逐字保留（两种资源都在跑，不能二选一写死）
         "text_line": ("TEXT: invent NO lettering, numerals, labels, signage, logos, signatures or "
                       "watermarks. If the input image already contains text, keep it verbatim, complete, "
@@ -238,7 +266,7 @@ def pose_for(composition: str, theme: dict, pose=None) -> str:
 
 
 def build_prompt(name: str, layout: list[str] | None = None, composition: str | None = None,
-                 pose_hint: str = "", outfit_override: str = "") -> str:
+                 pose_hint: str = "", outfit_override: str = "", no_text: bool = False) -> str:
     """把「主题字段 + 构图规则」拼成完整 prompt。
 
     主题只描述风格（配色 / 服装 / 空区 / 装饰），文案一律由 layout 锁死，
@@ -278,7 +306,10 @@ def build_prompt(name: str, layout: list[str] | None = None, composition: str | 
         layout="\n".join(f"{i}) {ln}" if not ln[:2].strip().rstrip(")").isdigit() else ln
                        for i, ln in enumerate(lines, 1)),
         text_style=theme["text_style"],
-        text_line=comp.get("text_line", DEFAULT_TEXT_LINE).format(text_style=theme["text_style"]),
+        # 🔴 源图本来没有字（横幅底板、纯插画）时，默认那句「保持每个glyph完整可读」会被模型
+        #    理解成「这图有色字」⇒ 自己编一句「圣诞快乐」贴上去。--no-text 换成禁造字口径。
+        text_line=(TEXT_FREE_LINE if no_text
+                   else comp.get("text_line", DEFAULT_TEXT_LINE).format(text_style=theme["text_style"])),
         body_label=comp.get("body_label", DEFAULT_BODY_LABEL),
         character=comp["character"].format(
             # 🔴 服装按图覆盖：主题里的 outfit 是「这个题材通常穿什么」，
@@ -397,7 +428,8 @@ def cmd_prepare(args) -> int:
     layout = read_layout(args.layout, work)
     composition = getattr(args, "composition", None) or load_presets().get("composition_default", "lock")
     pose_hint = pose_for(composition, theme, getattr(args, "pose", None))
-    prompt = build_prompt(args.theme, layout, composition, pose_hint, getattr(args, "outfit", "") or "")
+    prompt = build_prompt(args.theme, layout, composition, pose_hint, getattr(args, "outfit", "") or "",
+                          no_text=bool(getattr(args, "no_text", False)))
     (work / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
 
     state = {
@@ -422,6 +454,7 @@ def cmd_prepare(args) -> int:
         "prompt_file": str(work / "prompt.txt"),
         "prompt_layout": "custom" if layout else "default",
         "composition": composition,
+        "no_text": bool(getattr(args, "no_text", False)),
         "pose_hint": pose_hint.replace(". Ideal pose: ", "") or None,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "stages": [],
@@ -470,7 +503,8 @@ def cmd_prompt(args) -> int:
           f"input_fidelity={theme.get('input_fidelity')} composition={composition}")
     if composition == "free":
         print(f"# pose={'随机候选' if getattr(args, 'pose', None) is None else args.pose}")
-    print(build_prompt(args.theme, layout, composition, pose_hint, getattr(args, "outfit", "") or ""))
+    print(build_prompt(args.theme, layout, composition, pose_hint, getattr(args, "outfit", "") or "",
+                       no_text=bool(getattr(args, "no_text", False))))
     return RC_OK
 
 
@@ -1635,6 +1669,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--outfit", default=None,
                    help="覆盖主题预设里的服装句（只改「穿什么」，不动主题的配色/装饰）。"
                         "角色剪裁/露肤度是设计的一部分时用，别让主题的默认大衣把构图改掉")
+    p.add_argument("--no-text", dest="no_text", action="store_true",
+                   help="源图本来没有字：换成「一个字母都不许画」的文案口径")
     p.set_defaults(func=cmd_prompt, key=None)
 
     p = sub.add_parser("prepare", help="校验源资源并建立工作目录")
@@ -1656,6 +1692,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--outfit", default=None,
                    help="覆盖主题预设里的服装句（只改「穿什么」，配色/装饰仍走主题）。"
                         "角色剪裁/露肤度属于设计的一部分时用，避免主题默认大衣把人裹住")
+    p.add_argument("--no-text", dest="no_text", action="store_true",
+                   help="源图本来没有字：用「一个字母都不许画」的口径替换文案锁（默认口径是"
+                        "「保持已有文字完整」，模型会据此自己编标题贴上去）")
     p.set_defaults(func=cmd_prepare)
 
     p = sub.add_parser("postprocess", help="去水印 + 尺寸归位 + 出双版本 + 对比图")

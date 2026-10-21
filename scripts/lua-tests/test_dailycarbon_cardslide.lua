@@ -7,7 +7,7 @@
 --   ⑤ 跳过未激活        未激活的卡 / 未激活的子节点（Tip|Consume|GoBtn）不参与
 --   ⑥ 空数据 / 无列表   返回 0，不报错
 --   ⑦ 生命周期          OnClose / OnDestroy 都要回收
---   ⑧ 抑制标记          suppressCardAnim（战斗结算 / 扫荡 / 5 点刷新）时 SetScroll 不播
+--   ⑧ 抑制标记          suppressOpenAnim（战斗结算 / 扫荡 / 5 点刷新）时 SetScroll 不播
 --
 -- 用真源码的 SetScroll 验证 ⑧：curData 初始为空表 ⇒ 循环跳过，只剩 SetData + 播放判定。
 --
@@ -288,16 +288,16 @@ Panel.scrollView = newListView({ card1 })
 print("  两处都回收")
 
 -- ---------------- case 8: 数据刷新不播 ----------------
-print("== case8 suppressCardAnim 时 SetScroll 不播 ==")
+print("== case8 suppressOpenAnim 时 SetScroll 不播 ==")
 tweens = {}
 Panel.SetScroll()
 assert(#tweens == 7, "正常 SetScroll 应起 7 条，实际 " .. #tweens)
 Panel.StopCardSlideIn()
-Panel.suppressCardAnim = true
+Panel.suppressOpenAnim = true
 Panel.SetScroll()
 assert(liveTweens() == 0, "抑制时不该有存活 tween，实际 " .. liveTweens())
 assertBase(card1, "抑制后")
-Panel.suppressCardAnim = false
+Panel.suppressOpenAnim = false
 tweens = {}
 Panel.SetScroll()
 assert(#tweens == 7, "放开后应起 7 条，实际 " .. #tweens)

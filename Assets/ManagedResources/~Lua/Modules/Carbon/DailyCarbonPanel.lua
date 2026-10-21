@@ -214,6 +214,183 @@ function this.PlayCardSlideIn()
     return #cards
 end
 
+--============================== 页签翻入（scaleX 0→1 逐格）==============================
+-- 照 docs/ui_anim_reproduce_skill.md（ExpertPanel / OperatingPanel / MainRechargePanel 三次复用的
+-- scaleX 翻入配方）。参考七日狂欢 cn2-X1_UI_SevenDayCarnivalPanelV2.anim：
+--   7 条 m_LocalScale.x 0→1（0.167s/格，相邻错开 0.033s，整体 ≤0.5s）
+--   2 条 bg 的 m_FloatCurves（sizeDelta.y 110→0、anchoredPosition.y 55→0）是「内容区落位」，
+--   本面板不落位（Scroll 与 TabBox 是并列的整块，落位移会让卡片列表跟着抖），
+--   所以只复刻页签那一条通道 + 高亮板单翻。
+--
+-- 页签由 TabBox 在 OnShow 里克隆（_TabData 5 个），box 挂 VerticalLayoutGroup
+-- （spacing 87.98）⇒ 位置归布局组，只写 scale。
+-- 每格挂着 CommonButton 的 Animator（1.1→1 的按下反馈，写全三条轴）⇒ 与翻入抢同一通道，
+-- 播放期间必须临时 enabled=false，否则 DOTween 写完被 Animator 每帧盖回去（现象：代码跑了、页签不动）。
+
+local kTabFlipDuration = 0.167  -- 单格时长（参考值）
+local kTabFlipStep     = 0.033  -- 相邻错开（参考值）
+local kTabFlipMaxSpan  = 0.5    -- 可见格多时压缩错开间隔，整体不超过 0.5s
+
+local tabFlipItems   = {}       -- { tween = , tf = , anim = }
+local tabSelectTween = nil      -- 高亮板翻入
+local tabSelectTf    = nil      -- 上面那条 tween 绑的节点（Kill 后要复位，否则永久停在半截）
+-- Init_SetTabAndBox 末尾会回调一次 OnTabChange（默认页），那次是初始化不是切页；
+-- 动画起过之前的回调也不该抢通道 ⇒ 只有 PlayTabFlipIn 跑完才翻高亮板。
+local tabAnimReady = false
+
+-- 回收所有翻入 tween，并把临时关掉的按钮 Animator 恢复。
+-- 🔴 漏恢复 = 那颗页签从此没有按下反馈；重播 / 关闭 / 销毁都必须走这里。
+function this.StopTabFlipIn()
+    tabAnimReady = false
+    for i = #tabFlipItems, 1, -1 do
+        local item = tabFlipItems[i]
+        if Alive(item.tween) then
+            item.tween:Kill(false)
+        end
+        if Alive(item.tf) then
+            item.tf.localScale = Vector3.one
+        end
+        if Alive(item.anim) then
+            item.anim.enabled = true
+        end
+        tabFlipItems[i] = nil
+    end
+    if Alive(tabSelectTween) then
+        tabSelectTween:Kill(false)
+    end
+    tabSelectTween = nil
+    -- 🔴 高亮板是「先置 0 再长回 1」，Kill 时必须自己复位，否则切页途中关面板会把
+    -- 那块板永久留在半截缩放上。
+    if Alive(tabSelectTf) then
+        tabSelectTf.localScale = Vector3.one
+    end
+    tabSelectTf = nil
+end
+
+-- 打开面板：可见页签逐格 scaleX 0→1。
+-- 页签由 TabBox 按 box 的子节点顺序克隆（VerticalLayoutGroup 排版），
+-- GetTabList() 的下标就是版面顺序，不需要再按 sibling 取。
+-- 🔴 这里能放心用 GetTabList()：本面板走 Init_SetTabAndBox（tab / box 都显式传了），
+--    TabList 有值；BattlePassPanel_Mission 那次是 Init 传 nil 提前 return、TabCtrl 被换成空实例
+--    ⇒ 那边只能读 box 子节点。
+function this.PlayTabFlipIn()
+    this.StopTabFlipIn()
+    local list = this.TabCtrl and this.TabCtrl:GetTabList()
+    if type(list) ~= "table" then
+        return 0
+    end
+    local visible = 0
+    for i = 1, #list do
+        local go = list[i]
+        if Alive(go) and go.activeSelf then
+            visible = visible + 1
+        end
+    end
+    if visible <= 0 then
+        return 0
+    end
+    -- 可见格数不定 ⇒ 压缩错开而不是压缩单格时长（单格不变，观感才一致）
+    local step = kTabFlipStep
+    if visible > 1 and step * (visible - 1) > kTabFlipMaxSpan then
+        step = kTabFlipMaxSpan / (visible - 1)
+    end
+
+    local order = 0
+    local started = {}   -- 出错回滚用：{ tf, anim }
+    local ok, err = pcall(function()
+        for i = 1, #list do
+            local go = list[i]
+            -- 未激活的页签不参与动画（TabBox 会把模板 tab 藏起来，克隆体都是激活的）
+            if Alive(go) and go.activeSelf then
+                local tf = go.transform
+                local anim = go:GetComponent("Animator")
+                if Alive(anim) then
+                    anim.enabled = false
+                end
+                started[#started + 1] = { tf = tf, anim = anim }
+                tf.localScale = Vector3.New(0, 1, 1)
+                local tween = tf:DOScale(Vector3.one, kTabFlipDuration)
+                tween:SetDelay(order * step)
+                SetEaseSafe(tween, "OutQuad")
+                tween:OnComplete(function()
+                    if Alive(tf) then
+                        tf.localScale = Vector3.one
+                    end
+                    if Alive(anim) then
+                        anim.enabled = true
+                    end
+                end)
+                tabFlipItems[#tabFlipItems + 1] = { tween = tween, tf = tf, anim = anim }
+                order = order + 1
+            end
+        end
+    end)
+    if not ok then
+        -- DOTween 侧任何异常都不能把页签留在 scale 0 / Animator 禁用态
+        LogError("DailyCarbonPanel: 页签翻入失败 " .. tostring(err))
+        for i = 1, #started do
+            local item = started[i]
+            if Alive(item.tf) then
+                item.tf.localScale = Vector3.one
+            end
+            if Alive(item.anim) then
+                item.anim.enabled = true
+            end
+        end
+        tabFlipItems = {}
+    end
+    tabAnimReady = true
+    return order
+end
+
+-- 切换页签：高亮板翻一次。select 是纯 Image（没有 Animator），不会和 CommonButton 抢缩放通道。
+-- 定义用冒号：调用方是 this:PlayTabSelectFlip(index)，点式定义会让 index 吃到 self。
+function this:PlayTabSelectFlip(index)
+    if not tabAnimReady then
+        return
+    end
+    -- 数据刷新（战斗结算 / 扫荡 / 5 点刷新）也会走 OnTabChange，那时不该翻高亮板
+    if this.suppressOpenAnim then
+        return
+    end
+    local list = this.TabCtrl and this.TabCtrl:GetTabList()
+    local tabGo = list and list[index]
+    if not Alive(tabGo) then
+        return
+    end
+    local go = Util.GetGameObject(tabGo, "select")
+    -- 未选中 / 已锁定的页签没有高亮板（TabAdapter 里 SetActive 关掉了）：
+    -- 对隐藏节点起 tween 看不见，还会让下次打开时从半截起
+    if not Alive(go) or not go.activeSelf then
+        return
+    end
+    if Alive(tabSelectTween) then
+        tabSelectTween:Kill(false)
+    end
+    local tf = go.transform
+    tf.localScale = Vector3.New(0, 1, 1)
+    tabSelectTf = tf
+    tabSelectTween = tf:DOScale(Vector3.one, kTabFlipDuration)
+    SetEaseSafe(tabSelectTween, "OutQuad")
+    tabSelectTween:OnComplete(function()
+        if Alive(tf) then
+            tf.localScale = Vector3.one
+        end
+    end)
+end
+
+-- 数据刷新（领奖弹窗关闭 / 战斗结算 / 一键扫荡 / 5 点刷新）统一走这里：
+-- 抑制两处入场动画（卡片滑入 + 页签高亮板翻入），只有玩家自己换页签才播。
+-- pcall 只为保证标记一定复位 —— 卡在 true 会让之后所有入场动画永久失效。
+local function RefreshTabSilently(index)
+    this.suppressOpenAnim = true
+    local ok, err = pcall(this.OnTabChange, index)
+    this.suppressOpenAnim = false
+    if not ok then
+        LogError("DailyCarbonPanel: 刷新页签失败 " .. tostring(err))
+    end
+end
+
 function DailyCarbonPanel:InitComponent()
     this.panel = Util.GetGameObject(this.gameObject,"Panel")
 
@@ -301,7 +478,7 @@ function DailyCarbonPanel:BindEvent()
                                     -- if freeTime > 0 then
                                         PrivilegeManager.RefreshPrivilegeUsedTimes(data.PrivilegeId[2],freeTime)
                                     -- end
-                                    this.OnTabChange(carbonIndex)
+                                    RefreshTabSilently(carbonIndex)
                                 end)
                             end)
                         end)
@@ -318,7 +495,7 @@ function DailyCarbonPanel:BindEvent()
                     if freeTime > 0 then
                         PrivilegeManager.RefreshPrivilegeUsedTimes(data.PrivilegeId[2],freeTime)
                     end
-                    this.OnTabChange(carbonIndex)
+                    RefreshTabSilently(carbonIndex)
                 end)
             end)
         else
@@ -358,6 +535,9 @@ function DailyCarbonPanel:OnShow()
     this.TabCtrl:SetTabIsLockCheck(this.TabIsLockCheck)
     this.TabCtrl:SetChangeTabCallBack(this.OnTabChange)
     this.TabCtrl:Init_SetTabAndBox(this.tabBox, _TabData, carbonIndex, Util.GetGameObject(this.tabBox, "tab"), Util.GetGameObject(this.tabBox, "box"))
+    -- 页签逐格翻入：TabBox 每次 OnShow 都会 ClearChild 重克隆，节点是新的 ⇒ 每次进面板都播一遍。
+    -- 放在 Init 之后：Init 里那次 OnTabChange 是初始化（tabAnimReady 还是 false，不翻高亮板）。
+    this:PlayTabFlipIn()
     -- 音效
     SoundManager.PlayMusic(SoundConfig.BGM_Carbon)
 end
@@ -372,11 +552,13 @@ end
 
 function DailyCarbonPanel:OnClose()
     this.StopCardSlideIn()
+    this.StopTabFlipIn()
 end
 
 function DailyCarbonPanel:OnDestroy()
     -- DestroyPanel 不走 OnClose，面板还会被 openedList 缓存复用 ⇒ 两处都要收
     this.StopCardSlideIn()
+    this.StopTabFlipIn()
     itemList = {}
     this.scrollView = nil
     SubUIManager.Close(this.HeadFrameView)
@@ -385,12 +567,7 @@ end
 
 function this.FiveRefresh()
     -- 5 点刷新是服务端数据回调，不是玩家换屏 ⇒ 重建列表不播入场
-    this.suppressCardAnim = true
-    local ok, err = pcall(this.OnTabChange, 1)
-    this.suppressCardAnim = false
-    if not ok then
-        LogError("DailyCarbonPanel: 5 点刷新失败 " .. tostring(err))
-    end
+    RefreshTabSilently(1)
     DailyCarbonPanel:RefreshRedPotShow()
 end
 
@@ -410,6 +587,8 @@ function this.OnTabChange(i)
     this.SetTimeTip()
     this.SetScroll(i)
     DailyCarbonPanel:RefreshRedPotShow()
+    -- 切页签：新选中的高亮板翻一次（内部按 tabAnimReady / suppressOpenAnim 过滤）
+    this:PlayTabSelectFlip(i)
 end
 
 --设置滚动条
@@ -463,7 +642,8 @@ function this.SetScroll(_index)
     Util.SetGray(this.sweepBtn, not this.isOk)
 
     -- 副本卡入场：玩家主动进面板 / 换页签才播（数据刷新走 RefreshScrollSilently）
-    if this.suppressCardAnim then
+    -- suppressOpenAnim 同时管页签高亮板那一侧（PlayTabSelectFlip），一个标记管两处入场
+    if this.suppressOpenAnim then
         this.StopCardSlideIn()
     else
         this.PlayCardSlideIn()
@@ -473,12 +653,12 @@ function this.SetScroll(_index)
     -- DelayCreation(itemList)
 end
 
--- 数据刷新（战斗结算 / 一键扫荡 / 5 点刷新）重建列表时不播入场：卡片闪一下很显眼。
+-- 数据刷新（战斗结算 / 一键扫荡 / 5 点刷新）重建列表时不播入场（卡片滑入 + 高亮板翻入）：闪一下很显眼。
 -- pcall 只是为了保证标记一定被复位 —— 否则一次异常会让后面所有入场动画永久失效。
 local function RefreshScrollSilently()
-    this.suppressCardAnim = true
+    this.suppressOpenAnim = true
     local ok, err = pcall(this.SetScroll)
-    this.suppressCardAnim = false
+    this.suppressOpenAnim = false
     if not ok then
         LogError("DailyCarbonPanel: 刷新副本列表失败 " .. tostring(err))
     end

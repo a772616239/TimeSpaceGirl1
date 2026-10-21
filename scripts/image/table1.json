@@ -1,0 +1,234 @@
+{
+  "_comment": "表1：换皮大图台账（非标题类）。记录每张改过的大图已换/欠哪些主题；批量换风格用 `table1.py export --theme X` 导出 batch_restyle 清单。publish 写回成功会由钩子自动登记（restyle_pipeline.cmd_publish → table1.record_publish）。维护命令见 scripts/image/table1.py 模块头注释。",
+  "planned_themes": [
+    "christmas",
+    "summer_surf",
+    "provence",
+    "halloween",
+    "thanksgiving",
+    "cyber"
+  ],
+  "defaults": {
+    "provider": "chatgpt_web",
+    "gen": {
+      "reuse_cdp": true
+    },
+    "variant": "auto",
+    "publish": false,
+    "postprocess": {
+      "frame": "card",
+      "frame_rim": "violet"
+    }
+  },
+  "items": [
+    {
+      "asset": "Assets/ManagedResources/Atlas/ThousandDrawAtlas/cn2-X1_qianchou_diban.png",
+      "kind": "diban",
+      "size": [1080, 1604],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "紫框(violet card)定稿；TS-Art-Restyle #7 写回"
+    },
+    {
+      "asset": "Assets/ManagedResources/ArtFont_en/EightDayGiftPanelAtlas/cn2-X1_baridenglu_diban_en.png",
+      "kind": "diban",
+      "size": [1080, 1644],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "free 构图 + 紫亮边定稿；沿用源 alpha 足迹"
+    },
+    {
+      "asset": "Assets/ManagedResources/Atlas/PatFacePanelAtlas/cn2-X1_pailian_shengxing.png",
+      "kind": "panel",
+      "size": [1080, 1660],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "free 构图重设计姿势+背景；换皮时允许放开构图"
+    },
+    {
+      "asset": "Assets/ManagedResources/ArtFont_zh/VaulePackPanelAtlas/cn2-X1_chaozhilibao_banner_zh.png",
+      "kind": "banner",
+      "size": [1080, 700],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "紫框(violet card)；zh 版，同系列多语言注意 glob"
+    },
+    {
+      "asset": "Assets/ManagedResources/ArtFont_en/GrowthManualPanelAtlas/cn2-X1_chengzhangshouce_banner_en.png",
+      "kind": "banner",
+      "size": [1080, 724],
+      "mode": "RGB",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "紫框；源 RGB ⇒ variant 必须 opaque（红线）"
+    },
+    {
+      "asset": "Assets/ManagedResources/ArtFont_en/OperatingPanelAtlas/cn2-X1_jijin_diban_en.png",
+      "kind": "diban",
+      "size": [856, 2048],
+      "mode": "RGB",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "圣诞版为会话外直接替换（fe2f6feae），未走紫框口径；待统一紫框重出"
+    },
+    {
+      "asset": "Assets/ManagedResources/ArtFont_en/OperatingPanelAtlas/cn2-X1_chaozhijj_diban_en.png",
+      "kind": "diban",
+      "size": [856, 2048],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "圣诞版为紫框定稿前的早期版（116b13adc），无统一紫框；待补框重出"
+    },
+    {
+      "asset": "Assets/ManagedResources/Atlas/DailyCarbonPanelAtlas/cn2-X1_wuzi_banner01.png",
+      "kind": "banner",
+      "size": [988, 466],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "圣诞版为会话外替换，未走紫框口径"
+    },
+    {
+      "asset": "Assets/ManagedResources/Atlas/DailyCarbonPanelAtlas/cn2-X1_wuzi_banner03.png",
+      "kind": "banner",
+      "size": [988, 466],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "圣诞版为会话外替换，未走紫框口径"
+    },
+    {
+      "asset": "Assets/ManagedResources/Atlas/DailyCarbonPanelAtlas/cn2-X1_wuzi_banner04.png",
+      "kind": "banner",
+      "size": [988, 466],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "圣诞版为会话外替换，未走紫框口径"
+    },
+    {
+      "asset": "Assets/ManagedResources/Atlas/DailyCarbonPanelAtlas/cn2-X1_wuzi_banner05.png",
+      "kind": "banner",
+      "size": [988, 466],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "圣诞版为会话外替换，未走紫框口径"
+    },
+    {
+      "asset": "Assets/ManagedResources/Atlas/MissionDailyPanelAtlas/cn2-X1_richang_banner_01.png",
+      "kind": "banner",
+      "size": [764, 336],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-20" },
+      "status": "active",
+      "note": "已含圣诞元素（会话外替换）"
+    },
+    {
+      "asset": "Assets/ManagedResources/Atlas/QuickPurchasePanelAltas/cn2-X1_dianjin_diban.png",
+      "kind": "diban",
+      "size": [983, 1310],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": {},
+      "status": "active",
+      "note": "待换皮；底部大面积留空是 UI 文案区，出图要保住"
+    },
+    {
+      "asset": "Assets/ManagedResources/ArtFont_en/MainRechargePanelAtlas/cn2-X1_chongzhi_banner_en.png",
+      "kind": "banner",
+      "size": [988, 364],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": { "christmas": "2026-10-21" },
+      "status": "active",
+      "note": "圣诞版 dd47aaac0（会话外重绘，未走紫框口径）；含英文文案区"
+    },
+    {
+      "asset": "Assets/ManagedResources/Atlas/FindTreasureMainPanelAtlas/cn2-X1_xunluo_peitu.png",
+      "kind": "peitu",
+      "size": [988, 434],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": {},
+      "status": "active",
+      "note": "待换皮"
+    },
+    {
+      "asset": "Assets/ManagedResources/Atlas/MapPanelAtlas/cn2-X1_shikongzhanchang_shangdianpeitu.png",
+      "kind": "peitu",
+      "size": [988, 434],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": {},
+      "status": "active",
+      "note": "待换皮"
+    },
+    {
+      "asset": "Assets/ManagedResources/ArtFont_en/EightDayGiftPanelAtlas/cn2-X1_meiridenglu_diban_en.png",
+      "kind": "diban",
+      "size": [1016, 1548],
+      "mode": "P",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": {},
+      "status": "active",
+      "note": "待换皮；P 模式（调色板）——写回前先确认 variant 口径，别把模式改了"
+    },
+    {
+      "asset": "Assets/ManagedResources/ArtFont_en/AdjutantActivityPanelAtlas/cn2-X1_xianquhuodong_shenshengyishi01_en.png",
+      "kind": "banner",
+      "size": [890, 1318],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "seed-scan-3day",
+      "themes_done": {},
+      "status": "active",
+      "note": "竖版活动大图，含英文文案（Begin Sacred Ritual…），构图需保留文案区"
+    }
+  ],
+  "excluded": [
+    { "asset": "Assets/ManagedResources/ArtFont_en/SevenDayCarnivalPanelV2Atlas/cn2-X1_qiri_biaoti_en.png", "why": "标题类（biaoti）" },
+    { "asset": "Assets/ManagedResources/ArtFont_en/cn2-X1_zhutihuodong_liutianmowang_en.png", "why": "标题文字图（Six-Day Demon King 立体字）" },
+    { "asset": "Assets/ManagedResources/ArtFont_en/OperatingPanelAtlas/cn2-X1_zhanling_mota_bg_en.png", "why": "纯渐变底+文字（BATTLE PASS 解锁底），非大图" },
+    { "asset": "Assets/ManagedResources/ArtFont_en/OperatingPanelAtlas/cn2-X1_zhanling_miwu_bg_en.png", "why": "同上" },
+    { "asset": "Assets/ManagedResources/ArtFont_en/OperatingPanelAtlas/cn2-X1_zhanling_yiduan_bg_en.png", "why": "同上" },
+    { "asset": "Assets/ManagedResources/ArtFont_en/AdjutantActivityPanelAtlas/cn2-X1_xianquhuodong_*（benqixianqu/duihuanxianqu/huoqudaoju/yiduihuan/xianqulibao/shenyutiaozhan 及 tab/*）", "why": "ArtFont 文字按钮/页签" },
+    { "asset": "Assets/ManagedResources/ArtFont_en/EightDayGiftPanelAtlas/cn2-X1_baridenglu_lingqu_en.png", "why": "12KB 小按钮，非大图" },
+    { "asset": "Assets/LuaFramework/GameIcon/cn2-icon.png / cn2-static_image.png", "why": "图标/闪屏" },
+    { "asset": "CV_En_Full/**", "why": "语音切图，非 UI 资源" }
+  ]
+}

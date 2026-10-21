@@ -1437,6 +1437,14 @@ def cmd_publish(args) -> int:
         "work": str(work),
     }
     mf = append_manifest(root, record)
+    # 🔴 表1 登记：每次写回成功自动进台账（Jenkins 与 batch_restyle 都走本子命令 ⇒ 两链路都覆盖）。
+    #    登记失败绝不影响写回结果（资源已安全落位），只大声报警让人来补。
+    try:
+        import table1
+        reg = table1.record_publish(record, note_prefix="publish")
+        log("publish", f"表1 已登记：{reg}")
+    except Exception as e:  # noqa: BLE001
+        log("publish", f"⚠ 表1 登记失败（写回本身已成功，需手工补记）：{type(e).__name__}: {e}")
     state["published"] = record
     write_state(work, state)
 

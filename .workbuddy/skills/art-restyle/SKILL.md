@@ -118,6 +118,13 @@ $PY scripts/image/batch_restyle.py my.json --publish                            
 - 汇总落在 `_output/art_restyle/_batch/<时间戳>/summary.md`，逐组日志在 `logs/<slug>__<theme>.<step>.log`。
 - 主题设计意图、每类图该配什么参数、新主题接入步骤：**`docs/art_restyle_themes.md`**。
 
+### 1.5 表1：换皮大图台账（用户 2026-10-21 要求，替换完必须记录在案）
+
+- 表文件 `scripts/image/table1.json`，工具 `scripts/image/table1.py`。所有改过的大图（非标题类）都在表里，记 `kind` / `themes_done` / 欠哪些主题。
+- **publish 自动登记**：`restyle_pipeline.py publish` 写回成功即调 `table1.record_publish()`——Jenkins 与 batch_restyle 两链路都覆盖，**不需要也不会再忘了手工记录**；登记失败只报警不阻断写回。
+- 批量换新主题（冲浪/普罗旺斯/感恩节/赛博…）从表 1 导出：`table1.py export --theme X` → 直接喂 batch_restyle（defaults 已带紫框口径）。
+- 补录/排查：`table1.py add` / `scan --since "3 days ago"` / `list [--pending]` / `check`。
+
 ## 2. 边框三定律
 
 ### 2.1 语言必须是游戏自己的，不是相框

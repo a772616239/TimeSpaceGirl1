@@ -227,7 +227,26 @@ $PY scripts/image/batch_restyle.py my.json --no-publish --fail-fast             
 }
 ```
 
-### 6.3 排期与额度纪律（重要）
+### 6.3 表1：换皮大图台账（批量清单的源头）
+
+`scripts/image/table1.json` + `scripts/image/table1.py`。所有**改过的大图（非标题类）**都在表 1 有一行，
+记录 `kind`（diban/banner/peitu/panel）、`themes_done`（已换主题→日期）、`status`。
+
+- **自动登记（主路径）**：`restyle_pipeline.py publish` 写回成功即调 `table1.record_publish()`——
+  Jenkins `TS-Art-Restyle` 与 `batch_restyle --publish` 都走这个子命令 ⇒ **每次替换图片自动进表**；
+  登记失败只报警，不影响写回结果。
+- **批量出图**：`table1.py export --theme provence` 一键生成只含「还欠该主题」条目的批量清单
+  （defaults 已带紫框口径），直接喂 `batch_restyle.py`。
+- 手工补录/排查：`add` / `scan --since "3 days ago"`（从 git 历史找候选，自动滤标题/文字/图标/CV）、
+  `list [--pending]`、`check`。
+
+```bash
+$PY scripts/image/table1.py list                     # 全量台账
+$PY scripts/image/table1.py export --theme provence  # 导出批量清单 _output/art_restyle/_batch/table1_provence.json
+$PY scripts/image/batch_restyle.py _output/art_restyle/_batch/table1_provence.json --dry-run
+```
+
+### 6.4 排期与额度纪律（重要）
 
 - **出图是单浏览器串行的**：不要开两个批处理抢同一个 CDP 端口；一批跑完再换主题。
 - **每组一次出图 = 一份额度**。`N 资产 × M 主题` 就是 N×M 次。先 `--dry-run` 数清组数。

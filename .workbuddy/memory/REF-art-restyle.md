@@ -28,6 +28,12 @@
   `assets` 支持 glob ⇒ **同套 UI 的 zh/en/jp 必须一起换**（只换一份＝花脸）。出图单浏览器串行，别抢同一 CDP 端口；
   N 资产 × M 主题 = N×M 份额度；gen rc=3（额度/登录）停整批，去 AdsPower 换 profile + `find_browser_cdp.py` 反查端口。
   `variant=auto`：源 RGB→opaque、RGBA→alpha。汇总 `_output/art_restyle/_batch/<戳>/summary.md`。
+- 🔴 **表1 台账（用户 2026-10-21 明确：每次替换完图片必须记录在案）**：`scripts/image/table1.json`（数据）+
+  `table1.py`（`list/add/scan/export/check`）。`cmd_publish` 写回成功自动调 `record_publish()`——Jenkins 与
+  batch_restyle 两链路都覆盖，登记失败只报警不阻断写回；测试用 `TSG_TABLE1` 指临时表，别污染真表。
+  批量换新主题从表导出：`table1.py export --theme provence` → 喂 batch_restyle（defaults 自带紫框口径）。
+  近 3 天非标题大图 18 条已种子化（12 条已 christmas、6 条待换）；排除规律集中在
+  `EXCLUDE_NAME_PARTS`/`EXCLUDE_PATH_PARTS`（标题 biaoti/文字按钮/页签/图标/CV/_png_backup）。
 - 主题参数配方（按图的形态，不按主题选）：整幅不透明底板＝keep+violet 框；浮层＝keep（**不能 source**，否则框上下边被切）；
   超长条＝`--hero-band 930 --body-mode source`；自带亮带/渐隐/空文案板＝`--frame none --watermark off` + `refit_band.py`。
   深底主题（cyber）与低饱和主题（provence）紫框会糊 ⇒ `FRAME_RIM=ivory`。

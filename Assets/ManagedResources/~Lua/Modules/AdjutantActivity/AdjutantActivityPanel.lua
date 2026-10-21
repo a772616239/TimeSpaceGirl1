@@ -3,6 +3,7 @@ AdjutantActivityPanel = Inherit(BasePanel)
 local this = AdjutantActivityPanel
 local _CurPageIndex = 1
 local TabBox = require("Modules/Common/TabBox")
+local ItemPopIn = require("Modules/Common/ItemPopIn")--列表项逐格入场（页面级批量接入）
 local tabs = {
     [1] = {
         default = "cn2-X1_xianquhuodong_yeqian_01",
@@ -91,6 +92,9 @@ function this.OnPageTabChange(index)
         this.prefabs[i].gameObject:SetActive(i == index)--切换子模块预设显隐
     end
     this.contents[index].view:OnShow(this.sortingOrder, this)
+    --本期内容是长列表就逐格入场（挑战 / 赠礼有列表，其余两页是固定版面 ⇒ 工具自己 no-op）。
+    --首次打开走的也是这条：OnShow → PageTabCtrl:ChangeTab → 本回调。
+    ItemPopIn.PlayPage(this.contents[index].view)
     this.UpView:OnOpen({ showType = UpViewOpenType.ShowRight, panelType =  tabs[index].panelType })
 end
 
@@ -141,6 +145,8 @@ end
 --界面关闭时调用（用于子类重写）
 function AdjutantActivityPanel:OnClose()
     for i = 1, #this.contents do
+        --列表项半截缩放要复位（切页途中 / 动画没播完就关都会留半截）
+        ItemPopIn.StopPage(this.contents[i].view)
         this.contents[i].view:OnClose()
     end
 
@@ -154,6 +160,7 @@ function AdjutantActivityPanel:OnDestroy()
     SubUIManager.Close(this.PlayerHeadFrameView)
     SubUIManager.Close(this.UpView)
     for i = 1, #this.contents do
+        ItemPopIn.StopPage(this.contents[i].view)
         this.contents[i].view:OnDestroy()
     end
 end

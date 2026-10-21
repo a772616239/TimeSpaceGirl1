@@ -104,6 +104,8 @@ function AircraftCarrierManager.LeadUpLv(func)
         end
         --升级成功即扣掉材料：背包同步存在时序差，回调后重算一次（背包推送到达时还会再算一次）
         CheckRedPointStatus(RedPointType.Lead_UpLv)
+        --升级会解锁基因栏位，装配红点跟着重算
+        AircraftCarrierManager.RefreshAssemblyRedPoint()
     end)
 end
 
@@ -375,6 +377,16 @@ function AircraftCarrierManager.UpdateSkillData(sPlane)
         this.allSkillData[sPlane.id] = this.CreatSkill()
     end
     this.CopyValue(this.allSkillData[sPlane.id], sPlane)
+    --基因数量变了，「可装配」的判定就得重算，否则装配红点会停在旧状态
+    AircraftCarrierManager.RefreshAssemblyRedPoint()
+end
+
+-- 装配红点重算（获得/消耗基因、装卸之后调用）
+function AircraftCarrierManager.RefreshAssemblyRedPoint()
+    if not this.LeadData then
+        return
+    end
+    CheckRedPointStatus(RedPointType.Lead_Assembly)
 end
 
 function AircraftCarrierManager.CreatSkill()
@@ -397,6 +409,7 @@ function AircraftCarrierManager.DelSkill(skillId)
         return
     end
     this.allSkillData[skillId] = nil
+    AircraftCarrierManager.RefreshAssemblyRedPoint()
 end
 
 -- 获取同类技能数量(不包含自己和已装备)
@@ -519,7 +532,15 @@ end
 
 -- 获取开启槽位最大值
 function AircraftCarrierManager.GetOpenSlotMaxCnt()
-    return MotherShipConfig[this.LeadData.lv].UnlockSite
+    if not this.LeadData then
+        return 0
+    end
+    local cfg = MotherShipConfig[this.LeadData.lv]
+    if not cfg then
+        LogError("GetOpenSlotMaxCnt Error, lv=" .. tostring(this.LeadData.lv))
+        return 0
+    end
+    return cfg.UnlockSite or 0
 end
 
 -- 根据槽位个数获取开启阶数
@@ -731,6 +752,8 @@ function AircraftCarrierManager.EquipOrDowmSkill(skillId, func)
                 if func then
                     func()
                 end
+                --装卸后装配红点必须重算，否则槽位/类型占用变了红点还停在旧状态
+                CheckRedPointStatus(RedPointType.Lead_Assembly)
                 Game.GlobalEvent:DispatchEvent(GameEvent.Lead.RefreshSkill)
                 Game.GlobalEvent:DispatchEvent(GameEvent.Lead.RefreshInfo)
             end)
@@ -757,6 +780,7 @@ function AircraftCarrierManager.EquipOrDowmSkill(skillId, func)
                 if func then
                     func()
                 end
+                CheckRedPointStatus(RedPointType.Lead_Assembly)
                 Game.GlobalEvent:DispatchEvent(GameEvent.Lead.RefreshSkill)
                 Game.GlobalEvent:DispatchEvent(GameEvent.Lead.RefreshInfo)
             end)
@@ -905,6 +929,7 @@ function AircraftCarrierManager.RedPointCheckStatus_CV()
     CheckRedPointStatus(RedPointType.Lead_Normal)
     CheckRedPointStatus(RedPointType.Lead_Privilege)
     CheckRedPointStatus(RedPointType.Lead_Assembly)
+    CheckRedPointStatus(RedPointType.Lead_SpeedLvUp)
 end
 
 -- 获取特权是否解锁
@@ -996,6 +1021,8 @@ function AircraftCarrierManager.CheckRedPointForSpeed()
 end
 
 --检测是否有技能可以装配
+--注意：装配的规则是「有空槽 + 同类型不能重复装」（与服务端 SAME_TYPE_MOTHER_SHIP_WEAR 一致），
+--不能只比「拥有数 > 已装数」，否则拥有多个同类型基因时红点会恒亮且永远装不上
 function AircraftCarrierManager.CheckRedPointForSkill()
     if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.AIRCRAFT_CARRIER) then
         return false
@@ -1003,10 +1030,28 @@ function AircraftCarrierManager.CheckRedPointForSkill()
     if not this.LeadData then
         return false
     end
+    local equipList = this.LeadData.skill
     local max = AircraftCarrierManager.GetOpenSlotMaxCnt()
-    local cur = #this.LeadData.skill
-    local data = AircraftCarrierManager.GetAllSkillData(true)
-    return (#data > cur) and (cur < max)
+    if max <= 0 or #equipList >= max then
+        --没有空槽
+        return false
+    end
+    local usedType = {}
+    for i = 1, #equipList do
+        local cfg = MotherShipPlaneConfig[equipList[i].cfgId]
+        if cfg then
+            usedType[cfg.Type] = true
+        end
+    end
+    --只统计「已拥有且未装配」的，且类型没被占用
+    local rest = AircraftCarrierManager.GetAllSkillData(false)
+    for i = 1, #rest do
+        local cfg = MotherShipPlaneConfig[rest[i].cfgId]
+        if cfg and not usedType[cfg.Type] then
+            return true
+        end
+    end
+    return false
 end
 
 return this

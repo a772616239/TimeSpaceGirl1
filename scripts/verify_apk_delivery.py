@@ -16,7 +16,11 @@
   3. 包内 native 库 16KB / NDK —— 复用 verify_aab_native_16kb.py
   4. 🔴 **`libnative-googlesignin.so` 必须存在**且 64 位对齐 >= 16384
      （缺了就等于把 Google 登录摘掉，账号派生链会走注册分支）
-  5. 签名（APK 且本机有 apksigner 时）
+  5. 🔴 **应用图标必须 6 档密度齐全**（ldpi~xxxhdpi）
+     Unity 解析不到图标的 GUID 时**不报错**，静默回退内置默认图标（黑底 + 灰色立方体）
+     且只出一档 mdpi —— 2026-10-21 踩过：release 分支 meta 的 GUID 与
+     ProjectSettings 引用不一致，vc79 起的包桌面全是 Unity 默认图标。
+  6. 签名（APK 且本机有 apksigner 时）
 
 用法：
     verify_apk_delivery.py <apk|aab> [--expect dev|minimal|full] [--no-sidecar]
@@ -91,6 +95,60 @@ def lib_abi(name):
 def run(cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
     return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
+ICON_DENSITIES = ("ldpi", "mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi")
+
+
+def check_app_icon(art, is_apk, z):
+    """图标体检 → (缺档详情 dict, 关注项 list)。
+
+    Unity 找不到图标纹理（GUID 悬空/资源没进仓）时会**静默**回退内置默认图标，
+    并且只生成 mdpi 一档 ⇒ 桌面看起来"没有图标"。所以判据是密度档数：
+    正常应 ldpi~xxxhdpi 整 6 档，缺档即为阻断项。
+    APK 的资源名被 aapt2 混淆过（res/3z.png），只能用 `aapt2 dump resources` 反查；
+    AAB 内保留原路径，直接扫 zip 即可。
+    """
+    names = ("ic_launcher_background", "ic_launcher_foreground")
+    found = {n: set() for n in names}
+    warns = []
+    has_adaptive = False
+
+    if is_apk:
+        aapt2 = find_tool("aapt2")
+        if not aapt2:
+            return None, ["未找到 aapt2，跳过图标密度体检"]
+        rc, out = run([aapt2, "dump", "resources", art])
+        if rc != 0:
+            return None, ["aapt2 dump resources 失败，跳过图标密度体检"]
+        cur = None
+        for ln in out.splitlines():
+            s = ln.strip()
+            if s.startswith("resource "):
+                cur = next((k for k in names if s.endswith("/" + k)), None)
+                if s.endswith("/app_icon"):
+                    cur = "app_icon"
+            elif cur and s.startswith("("):
+                d = s[1:s.find(")")]
+                if d == "anydpi":
+                    has_adaptive = True
+                elif d in ICON_DENSITIES and cur in found:
+                    found[cur].add(d)
+    else:
+        pat = re.compile(r"res/mipmap-(\w+?)(?:-v\d+)?/(ic_launcher_(?:background|foreground))\.png$")
+        for n in z.namelist():
+            if "mipmap-anydpi" in n:
+                has_adaptive = True
+            m = pat.search(n)
+            if m and m.group(1) in ICON_DENSITIES:
+                found[m.group(2)].add(m.group(1))
+
+    if not has_adaptive:
+        warns.append("没有自适应图标（mipmap-anydpi-v26），Android 8+ 桌面会退回方图")
+    missing = {k: [d for d in ICON_DENSITIES if d not in v] for k, v in found.items()}
+    if not any(found.values()):
+        return {"(全部)": list(ICON_DENSITIES)}, warns
+    return missing, warns
 
 
 def main():
@@ -183,7 +241,24 @@ def main():
                 blocks.append(f"{n} 对齐 {hex(mn)} < 16KB")
             print(f"  [关键库] {flag} {n}  align={hex(mn)}  md5={gs[n]['md5'][:12]}  {gs[n]['size']} B")
 
-    # ---------------- 4. 复用两个既有校验脚本 ---------------- #
+    # ---------------- 4. 应用图标（本次新增的闸门） ---------------- #
+    print("  [图标] 密度档体检")
+    icon_missing, icon_warns = check_app_icon(art, is_apk, z)
+    warns.extend(icon_warns)
+    if icon_missing is None:
+        print("         跳过（工具缺失）")
+    elif any(icon_missing.values()):
+        detail = "；".join(f"{k} 缺 {'/'.join(v)}" for k, v in icon_missing.items() if v)
+        blocks.append(
+            f"应用图标密度不全（{detail}）—— Unity 没解析到图标资源时会静默回退内置默认图标，"
+            "桌面显示为黑底灰色立方体。查 ProjectSettings 的 m_BuildTargetPlatformIcons 引用"
+            "的 GUID 是否真实存在于 *.meta（2026-10-21 vc79 起的坑）"
+        )
+        print(f"         ✗ {detail}")
+    else:
+        print("         ✓ ldpi~xxxhdpi 6 档齐全")
+
+    # ---------------- 5. 复用两个既有校验脚本 ---------------- #
     def delegate(script, extra=()):
         rc, out = run([sys.executable, os.path.join(HERE, script), art, *extra])
         for line in out.rstrip().splitlines():
@@ -201,7 +276,7 @@ def main():
     if nat_rc != 0:
         blocks.append("native 库 16KB 体检未通过")
 
-    # ---------------- 5. 签名（只有 APK 能查） ---------------- #
+    # ---------------- 6. 签名（只有 APK 能查） ---------------- #
     signer = None
     if is_apk:
         apksigner = find_tool("apksigner")
@@ -226,7 +301,7 @@ def main():
         for b in blocks:
             print(f"    - {b}")
     else:
-        print("✓ 可交付：版本号 / 出包开关 / native 库 / Google 登录关键库 全部通过")
+        print("✓ 可交付：版本号 / 出包开关 / native 库 / Google 登录关键库 / 应用图标 全部通过")
     if warns:
         print(f"⚠️ {len(warns)} 个关注项（不阻断）：")
         for w in warns:
@@ -248,6 +323,10 @@ def main():
                 "minAlign": min(i["aligns"]) if i["aligns"] else None,
             } for n, i in sorted(libs.items())},
             "googlesigninPresent": bool(gs64),
+            "appIconDensitiesComplete": (None if icon_missing is None
+                                         else not any(icon_missing.values())),
+            "appIconMissing": (None if icon_missing is None
+                               else {k: v for k, v in icon_missing.items() if v}),
             "signerCertSha256": signer,
             "verdict": "pass" if not blocks else "fail",
             "blockers": blocks,

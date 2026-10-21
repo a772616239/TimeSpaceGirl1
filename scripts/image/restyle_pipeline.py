@@ -156,7 +156,9 @@ COMPOSITIONS = {
                       "the input artwork already shows){pose_hint}; keep the "
                       "SAME character identity (same face design, same hair color and style, same eye "
                       "color, same art style and rendering quality) so it reads as the same heroine, "
-                      "only much more attractive; restyle the outfit into {outfit}."),
+                      "only much more attractive; both hands anatomically correct and fully inside the "
+                      "frame, resting on or gripping a prop rather than splayed empty; "
+                      "restyle the outfit into {outfit}."),
     },
     "design": {
         # 动词换掉：design 是「重新设计」，不是「换风格」。写 Restyle 模型会老老实实沿用原版面。
@@ -175,7 +177,9 @@ COMPOSITIONS = {
                       "fill the scene around her - as long as her face and eyes stay clearly visible and she "
                       "never covers the text or the reserved UI areas. Keep the SAME character identity "
                       "(same face design, same hair color and style, same eye color, same age) so she reads "
-                      "as the same heroine; restyle the outfit into {outfit}{pose_hint}."),
+                      "as the same heroine; both hands anatomically correct and fully inside the frame - "
+                      "prefer a hand resting on or gripping a prop over an empty splayed hand; "
+                      "restyle the outfit into {outfit}{pose_hint}."),
         # 没字的图不许凭空造字；有字的图逐字保留（两种资源都在跑，不能二选一写死）
         "text_line": ("TEXT: invent NO lettering, numerals, labels, signage, logos, signatures or "
                       "watermarks. If the input image already contains text, keep it verbatim, complete, "
@@ -518,12 +522,15 @@ def lint_presets(presets: dict | None = None) -> int:
     for key in ("layout_default", "layout_free", "layout_design"):
         if not presets.get(key):
             err("presets", f"{key} 缺失或为空（对应构图档会退化成无构图锁）")
-    # design 档放开了版面，剩下的全靠这四条硬边界撑着：画风 / 画布与安全边 / 文案 / UI 功能位。
+    # design 档放开了版面，剩下的全靠这几条硬边界撑着：画风 / 画布与安全边 / 手 / 文案 / UI 功能位。
     # 少一条都会画出「好看但进游戏就废」的图，所以按关键词卡住，别靠人记。
+    # 🔴 「手」单列一条：design 放开姿势后，手是第一个崩的部位（手指糊成面条、被画布切掉、
+    #    袖口长出两根手指）——2026-10-21 banner02 首版就是这么废的，只补提示词不够，得进硬边界。
     dm = " ".join(str(x) for x in (presets.get("layout_design") or [])).lower()
     if dm:
         for token, why in ((("art direction", "style", "same artist"), "画风一致性"),
                            (("aspect", "ratio"), "画布比例"),
+                           (("hand", "finger"), "手部结构（design 档最容易崩的部位）"),
                            (("text", "lettering"), "文案/不许造字"),
                            (("ui",), "UI 功能位（空区/覆盖层）")):
             if not any(t in dm for t in token):

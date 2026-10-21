@@ -73,6 +73,11 @@ NEW_LIMIT = 1
 NEW_LIMIT_SHOW = 1
 NEW_DAILY_UPDATE = 30
 
+# 兜底档：万一「月卡面板」依赖旧的 Time 语义（Time=4 走 getStartTime 的等级商店分支），
+# 用 --legacy-time 保留原 Time，只靠 DailyUpdate=30 做滚动 30 天重置
+# （refresh() 的「条件含 4」分支同样会重置 buyTimes，限购照样生效，只是变成滚动而非自然月）。
+LEGACY_TIME = {9: 4, 10: None, 11: None}
+
 TOUCH_COLS = ("Time", "Limit", "LimitShow", "DailyUpdate")
 VALUE_COLS = ("Price", "ContiueDays", "BaseReward", "RewardShow",
               "ExtraReward", "FirstMultiple", "Name", "Type")
@@ -108,8 +113,8 @@ def collect(ws, idx):
     return rows
 
 
-def plan(rows):
-    """返回 [(id, 现状 dict, 目标 dict)]。"""
+def plan(rows, legacy_time=False):
+    """返回 [(id, name, 现状 dict, 目标 dict)]。"""
     out = []
     for sid, name in TARGETS.items():
         cur = rows.get(sid)
@@ -117,7 +122,8 @@ def plan(rows):
             sys.exit("配置表里找不到 SKU %s（%s）" % (sid, name))
         if cur.get("Type") not in MONTHCARD_TYPES:
             sys.exit("SKU %s 的 Type=%s，不是月卡类（期望 1/6）" % (sid, cur.get("Type")))
-        want = {"Time": NEW_TIME, "Limit": NEW_LIMIT,
+        want = {"Time": LEGACY_TIME[sid] if legacy_time else NEW_TIME,
+                "Limit": NEW_LIMIT,
                 "LimitShow": NEW_LIMIT_SHOW, "DailyUpdate": NEW_DAILY_UPDATE}
         out.append((sid, name, cur, want))
     return out
@@ -154,7 +160,7 @@ def snapshot(rows):
     return {sid: dict(v) for sid, v in rows.items()}
 
 
-def verify(ws, idx, before, mc_md5_before=None, mc_path=None):
+def verify(ws, idx, before, expect_time=NEW_TIME, mc_md5_before=None, mc_path=None):
     msgs, ok = [], True
     rows = collect(ws, idx)
 
@@ -170,11 +176,12 @@ def verify(ws, idx, before, mc_md5_before=None, mc_path=None):
     bad = []
     for sid in TARGETS:
         cur = rows.get(sid, {})
+        want_time = expect_time[sid] if isinstance(expect_time, dict) else expect_time
         if (cur.get("Limit") != NEW_LIMIT or cur.get("LimitShow") != NEW_LIMIT_SHOW
-                or cur.get("DailyUpdate") != NEW_DAILY_UPDATE or cur.get("Time") != NEW_TIME):
+                or cur.get("DailyUpdate") != NEW_DAILY_UPDATE or cur.get("Time") != want_time):
             bad.append((sid, cur.get("Time"), cur.get("Limit"),
                         cur.get("LimitShow"), cur.get("DailyUpdate")))
-    add("月卡三行 = Time 8 / Limit 1 / LimitShow 1 / DailyUpdate 30", not bad, "%s" % bad)
+    add("月卡三行 = Limit 1 / LimitShow 1 / DailyUpdate 30 / Time %s" % (expect_time,), not bad, "%s" % bad)
 
     # S2 价值字段零改动（价格、天数、内容、展示）
     changed = []
@@ -237,6 +244,8 @@ def main():
     ap.add_argument("--verify-only", action="store_true")
     ap.add_argument("--revert", metavar="DIR")
     ap.add_argument("--list-backups", action="store_true")
+    ap.add_argument("--legacy-time", action="store_true",
+                    help="保留原 Time（4/空），只靠 DailyUpdate=30 做滚动 30 天重置（展示异常时的兜底）")
     args = ap.parse_args()
 
     if args.list_backups:
@@ -261,7 +270,7 @@ def main():
     ws = wb.worksheets[0]
     idx = header_index(ws)
     rows = collect(ws, idx)
-    plans = plan(rows)
+    plans = plan(rows, args.legacy_time)
     print_report(rows, plans)
 
     mc_path = os.path.join(BASE, F_MONTHCARD + ".xlsx")
@@ -269,7 +278,8 @@ def main():
     mc_md5 = hashlib.md5(open(mc_path, "rb").read()).hexdigest() if os.path.exists(mc_path) else None
 
     if args.verify_only:
-        ok, msgs = verify(ws, idx, snapshot(rows), mc_md5, mc_path)
+        ok, msgs = verify(ws, idx, snapshot(rows),
+                          LEGACY_TIME if args.legacy_time else NEW_TIME, mc_md5, mc_path)
         print("\n".join(msgs))
         return 0 if ok else 1
 
@@ -291,7 +301,8 @@ def main():
     wb2, _ = load(F_RECHARGE)
     ws2 = wb2.worksheets[0]
     idx2 = header_index(ws2)
-    ok, msgs = verify(ws2, idx2, snap, mc_md5, mc_path)
+    ok, msgs = verify(ws2, idx2, snap,
+                      LEGACY_TIME if args.legacy_time else NEW_TIME, mc_md5, mc_path)
     print("\n自检：")
     print("\n".join(msgs))
     if not ok:

@@ -50,7 +50,7 @@ case "${1:-start}" in
     ;;
   status)
     if running; then echo "pid=$(cat "$PID_FILE") python=$PY"; else echo "not running"; fi
-    curl -s -m 4 "http://127.0.0.1:$PORT/api/snapshot" \
+    curl -s --noproxy '*' -m 4 "http://127.0.0.1:$PORT/api/snapshot" \
       | python3 -c "import sys,json;d=json.load(sys.stdin);s=d.get('status') or {};print('server',d.get('serverId'),'online',d.get('onlineNum'),'bots',len(s.get('bots') or []),'chats',len(d.get('chats') or []),'bridge',bool(d.get('bridge')),'gm',d.get('gm',{}).get('ok'))" 2>/dev/null \
       || echo "(no response)"
     ;;

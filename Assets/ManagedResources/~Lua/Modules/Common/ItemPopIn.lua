@@ -4,11 +4,17 @@
 --- 数据源统一是 ScrollCycleView：它的 item 由 SetData 克隆并排在 grid 下，ForeachItemGO
 --- 按数据下标给出 1..dataCount，顺序即版面顺序。
 ---
---- 用法（三步）：
+--- 用法 A（单列表，三步）：
 ---   local ItemPopIn = require("Modules/Common/ItemPopIn")
 ---   this.popIn = ItemPopIn.New(function() return this.ScrollView end)  -- InitComponent
 ---   this.popIn:Play()   -- 打开面板 / 切页（必须在 SetData 之后）
 ---   this.popIn:Stop()   -- OnClose / OnDestroy（🔴 不调 = item 永久停在半截缩放）
+---
+--- 用法 B（页面级，一行接入；页签多的面板用这个）：
+---   ItemPopIn.PlayPage(内容页对象)   -- 打开 / 切页时（列表重建之后）
+---   ItemPopIn.StopPage(内容页对象)   -- 切页 / 关闭 / 销毁时
+--- 它会自己到页面里找长列表（ScrollCycleView，字段名随意）；找不到就 no-op，
+--- 所以面板可以对每个页签无脑调用。手工克隆的列表让页面实现 GetPopInSource() 即可。
 ---
 --- 可调项（New 的第二参，缺省即下面的 defaultCfg）：
 ---   from/peak          起始与峰值缩放
@@ -83,19 +89,37 @@ function this:Stop()
 end
 
 -- 收集可见 item 的 transform（滚出可视区的 item 是 SetActive(false) 的，跳过，
--- 否则会白占一轮错开时间）
+-- 否则会白占一轮错开时间）。
+-- 数据源两种：
+--   ① ScrollCycleView（有 ForeachItemGO）——item 由 SetData 克隆，顺序即版面顺序；
+--   ② 容器（手工克隆的长列表，如 ContinuityRechargePage）——取容器下所有 active 子节点，
+--      模板项自己 SetActive(false) 着，天然被跳过。
 function this:_Collect()
     local targets = {}
-    local scrollView = self.getScrollView and self.getScrollView()
-    if not Alive(scrollView) or not scrollView.ForeachItemGO then
+    local src = self.getScrollView and self.getScrollView()
+    if not Alive(src) then
         return targets
     end
     local ok, err = pcall(function()
-        scrollView:ForeachItemGO(function(_, go)
-            if Alive(go) and go.activeSelf then
-                targets[#targets + 1] = go.transform
+        if src.ForeachItemGO then
+            src:ForeachItemGO(function(_, go)
+                if Alive(go) and go.activeSelf then
+                    targets[#targets + 1] = go.transform
+                end
+            end)
+            return
+        end
+        local container = src
+        if container.childCount == nil and Alive(src.transform) then
+            container = src.transform
+        end
+        local count = container.childCount or 0
+        for i = 0, count - 1 do
+            local child = container:GetChild(i)
+            if Alive(child) and child.gameObject.activeSelf then
+                targets[#targets + 1] = child
             end
-        end)
+        end
     end)
     if not ok then
         LogError("ItemPopIn: 遍历列表项失败 " .. tostring(err))
@@ -152,6 +176,97 @@ function this:Play()
         -- DOTween 侧任何异常都不能把 item 留在半截缩放上
         LogError("ItemPopIn: 入场动画失败 " .. tostring(err))
         self:Stop()
+    end
+end
+
+--============================== 页面级批量接入 ==============================
+-- 面板只关心「什么时候播」，找列表交给这里：
+--   ① 扫页面表里的 ScrollCycleView（字段名随意，scrollView / ScrollView / noviceScrollView 都认）；
+--      quick_class 的 `local this = Class` 写法把字段写在类表上，实例通过 __index 取，
+--      所以实例表、page.class、metatable.__index 三处都要扫；
+--   ② 页面实现 GetPopInSource() 返回容器（手工克隆、不是 ScrollCycleView 的长列表）。
+-- 都没有就什么都不做 ⇒ 面板可以对每个页签无脑调用，不用维护「哪些页签有列表」的名单。
+local pagePops = setmetatable({}, { __mode = "k" })
+
+-- ScrollCycleView 的特征是 SetData + ForeachItemGO。用 duck typing 而不是 require，
+-- 免得 Common 反向依赖 View。
+local function IsListView(v)
+    return type(v) == "table" and type(v.SetData) == "function" and type(v.ForeachItemGO) == "function"
+end
+
+local function ScanForList(tbl, out, scanned, added)
+    if type(tbl) ~= "table" or scanned[tbl] then
+        return
+    end
+    scanned[tbl] = true
+    for _, v in pairs(tbl) do
+        if IsListView(v) and not added[v] then
+            added[v] = true
+            out[#out + 1] = v
+        end
+    end
+end
+
+local function CollectGetters(page)
+    local out, scanned, added = {}, {}, {}
+    ScanForList(page, out, scanned, added)
+    local cls = page.class
+    if type(cls) == "table" then
+        ScanForList(cls, out, scanned, added)
+    end
+    local mt = getmetatable(page)
+    if type(mt) == "table" then
+        ScanForList(mt.__index, out, scanned, added)
+    end
+    if type(page.GetPopInSource) == "function" then
+        out[#out + 1] = function()
+            return page:GetPopInSource()
+        end
+    end
+    local getters = {}
+    for i = 1, #out do
+        local src = out[i]
+        if type(src) == "function" then
+            getters[i] = src
+        else
+            getters[i] = function()
+                return src
+            end
+        end
+    end
+    return getters
+end
+
+--- 播放页面里所有长列表，返回接上的列表个数（0 = 这一页没有列表，正常）。
+--- cfg 只在第一次调用时生效：之后复用第一次建的那批 popIn。
+function ItemPopIn.PlayPage(page, cfg)
+    if type(page) ~= "table" then
+        return 0
+    end
+    local pops = pagePops[page]
+    if not pops then
+        pops = {}
+        local getters = CollectGetters(page)
+        for i = 1, #getters do
+            pops[i] = ItemPopIn.New(getters[i], cfg)
+        end
+        pagePops[page] = pops
+    end
+    for i = 1, #pops do
+        pops[i]:Play()
+    end
+    return #pops
+end
+
+--- 回收页面里所有长列表（Kill + 复位）。切页 / 关闭 / 销毁都要走这里。
+--- 🔴 漏调 = 那一页的 item 永久停在半截缩放上。
+function ItemPopIn.StopPage(page)
+    local pops = type(page) == "table" and pagePops[page]
+    if not pops then
+        return
+    end
+    for i = 1, #pops do
+        pops[i]:Stop()
     end
 end
 

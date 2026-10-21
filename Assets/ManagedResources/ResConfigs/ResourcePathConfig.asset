@@ -4391,6 +4391,18 @@ MonoBehaviour:
     extension: .png
     resPathIndex: 27
     resAbNameIndex: 22
+  - resName: cn2-X1_baridenglu_diban_en_png
+    extension: .png
+    resPathIndex: 28
+    resAbNameIndex: 22
+  - resName: cn2-X1_baridenglu_lingqu_en_png
+    extension: .png
+    resPathIndex: 28
+    resAbNameIndex: 22
+  - resName: cn2-X1_meiridenglu_diban_en_png
+    extension: .png
+    resPathIndex: 28
+    resAbNameIndex: 22
   - resName: bannerRectTransform
     extension: .preset
     resPathIndex: 29
@@ -5091,11 +5103,19 @@ MonoBehaviour:
     extension: .psd
     resPathIndex: 51
     resAbNameIndex: 45
+  - resName: cn2-X1_zhanling_miwu_bg_en
+    extension: .png
+    resPathIndex: 51
+    resAbNameIndex: 45
   - resName: cn2-X1_zhanling_mota_01_en
     extension: .png
     resPathIndex: 51
     resAbNameIndex: 45
   - resName: cn2-X1_zhanling_mota_02_en
+    extension: .png
+    resPathIndex: 51
+    resAbNameIndex: 45
+  - resName: cn2-X1_zhanling_mota_bg_en
     extension: .png
     resPathIndex: 51
     resAbNameIndex: 45
@@ -5132,7 +5152,7 @@ MonoBehaviour:
     resPathIndex: 51
     resAbNameIndex: 45
   - resName: cn2-X1_zhanling_yiduan_bg_en
-    extension: .psd
+    extension: .png
     resPathIndex: 51
     resAbNameIndex: 45
   - resName: cn2-X1_zhanling_yijiesuo_en
@@ -30075,11 +30095,11 @@ MonoBehaviour:
     extension: .prefab
     resPathIndex: 365
     resAbNameIndex: 1095
-  - resName: leftchat
+  - resName: leftchat_prefab
     extension: .prefab
     resPathIndex: 365
     resAbNameIndex: 1095
-  - resName: rightchat
+  - resName: rightchat_prefab
     extension: .prefab
     resPathIndex: 365
     resAbNameIndex: 1095
@@ -30300,6 +30320,30 @@ MonoBehaviour:
     resPathIndex: 381
     resAbNameIndex: 1111
   - resName: StageMapPanel
+    extension: .prefab
+    resPathIndex: 381
+    resAbNameIndex: 1111
+  - resName: info_left
+    extension: .prefab
+    resPathIndex: 381
+    resAbNameIndex: 1111
+  - resName: info_right
+    extension: .prefab
+    resPathIndex: 381
+    resAbNameIndex: 1111
+  - resName: leftchat
+    extension: .prefab
+    resPathIndex: 381
+    resAbNameIndex: 1111
+  - resName: rightchat
+    extension: .prefab
+    resPathIndex: 381
+    resAbNameIndex: 1111
+  - resName: rrVerticalLayoutGroup
+    extension: .preset
+    resPathIndex: 381
+    resAbNameIndex: 1111
+  - resName: title
     extension: .prefab
     resPathIndex: 381
     resAbNameIndex: 1111
@@ -44439,10 +44483,8 @@ MonoBehaviour:
     - lz4/iconsprite/item.unity3d
   - assetBundleName: lz4/prefabs/ui/chat.unity3d
     dependences:
-    - lz4/artfont_en/title.unity3d
     - lz4/artfont_zh/title.unity3d
     - lz4/atlas/arenamainpanelatlas.unity3d
-    - lz4/atlas/countryrankpanelatlas.unity3d
     - lz4/atlas/fightpointpassmainpanelatlas.unity3d
     - lz4/atlas/goodfriendmainpanelaltals.unity3d
     - lz4/atlas/luckyturntablepanelatlas.unity3d
@@ -44454,6 +44496,7 @@ MonoBehaviour:
     - lz4/font/system_small.unity3d
     - lz4/iconsprite/herohead.unity3d
     - lz4/iconsprite/item.unity3d
+    - lz4/prefabs/ui/fight.unity3d
   - assetBundleName: lz4/prefabs/ui/climbtower.unity3d
     dependences:
     - lz4/artfont_zh/arenamainpanelatlas.unity3d

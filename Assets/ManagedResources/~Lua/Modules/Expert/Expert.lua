@@ -147,13 +147,20 @@ function Expert:WarPowerRewardTabsChangState()
     for i = 1, #expertRewardTabs.mission do
         local conFigData = ConfigManager.GetConfigData(ConfigName.ActivityRewardConfig,expertRewardTabs.mission[i].missionId)
         local value = 0
-        --限时累计活动特殊数值读取处理
+        --限时累计活动特殊数值读取处理（Values 只有一组参数时取不到阈值，置 nil 跳过该档，
+        --否则 Values[2][1] 会抛 attempt to index field '?' (a nil value)）
+        local valueGroup = nil
         if NumExChange[activeIndext] == ActivityTypeDef.AccumulativeRechargeExper then
-            value = conFigData.Values[1][1]
+            valueGroup = type(conFigData.Values) == "table" and conFigData.Values[1] or nil
         else
-            value = conFigData.Values[2][1]
+            valueGroup = type(conFigData.Values) == "table" and conFigData.Values[2] or nil
         end
-        if expertRewardTabs.mission[i].state == 0 then
+        if type(valueGroup) == "table" then
+            value = valueGroup[1]
+        else
+            value = nil
+        end
+        if value ~= nil and expertRewardTabs.mission[i].state == 0 then
             if NumExChange[activeIndext] == ActivityTypeDef.UpStarExper
                 or NumExChange[activeIndext] == ActivityTypeDef.Talisman
                 or NumExChange[activeIndext] == ActivityTypeDef.SoulPrint

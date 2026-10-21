@@ -738,6 +738,19 @@ function this.IsGetAllGrowthReward()
     end
     return isGetAll
 end
+--取活动奖励配置里的达成阈值：Values 正常是 {{参数...},{阈值...}} 两组，
+--组缺失（老号 missionId 失配 / 配表 Id 复用）时返回 nil，调用方必须跳过该档
+local function GetMissionNeedValue(conFigData, groupIndex)
+    if not conFigData or type(conFigData.Values) ~= "table" then
+        return nil
+    end
+    local valueGroup = conFigData.Values[groupIndex]
+    if type(valueGroup) ~= "table" then
+        return nil
+    end
+    return valueGroup[1]
+end
+
 --检测限时活动红点
 function this.ExpterActivityIsShowRedPoint(activeIndex)
     local activeType = 0
@@ -753,12 +766,19 @@ function this.ExpterActivityIsShowRedPoint(activeIndex)
                 if not conFigData then --加老号活动红点保护 无数据的继续
                     break
                 end
-                local value = 0
-                --限时累计活动特殊数值读取处理
+                --限时累计活动特殊数值读取处理（累充取第 1 组，其余取第 2 组）
+                local needGroup = 2
                 if activeType == ActivityTypeDef.AccumulativeRechargeExper then
-                    value = conFigData.Values[1][1]
-                else
-                    value = conFigData.Values[2][1]
+                    needGroup = 1
+                end
+                local value = GetMissionNeedValue(conFigData, needGroup)
+                if value == nil then
+                    --保护：配表只有一组参数时取不到阈值，原来直接 Values[2][1] 会抛
+                    --attempt to index field '?' (a nil value)，把主界面 OnShow 整条链打断
+                    LogRed(string.format("[ActivityGift] 红点阈值缺失 activeType=%s activityId=%s missionId=%s cfgActivityId=%s",
+                            tostring(activeType), tostring(expertRewardTabs.activityId),
+                            tostring(expertRewardTabs.mission[i].missionId), tostring(conFigData.ActivityId)))
+                    break
                 end
                 if expertRewardTabs.mission[i].state == 0 then
                     if activeType == ActivityTypeDef.UpStarExper or activeType == ActivityTypeDef.Talisman
@@ -794,7 +814,8 @@ function this.ExperyUpLvActivityIsShowRedPoint()
     if activeData and activeData.mission then
         for i = 1, #activeData.mission do
             local curConfigData = ConfigManager.TryGetConfigData(ConfigName.ActivityRewardConfig,activeData.mission[i].missionId)
-            if curConfigData and activeData.mission[i].state == 0 and activeData.value >= curConfigData.Values[2][1]  then
+            local needValue = GetMissionNeedValue(curConfigData, 2)
+            if needValue and activeData.mission[i].state == 0 and activeData.value >= needValue  then
                 return true
             end
         end
@@ -818,8 +839,8 @@ function this.WarPowerSortActivityIsShowRedPoint()
     if expertRewardTabs then
         for i = 1, #expertRewardTabs.mission do
             local conFigData = ConfigManager.GetConfigData(ConfigName.ActivityRewardConfig, expertRewardTabs.mission[i].missionId)
-            local value = conFigData.Values[1][1]
-            if expertRewardTabs.mission[i].state == 0 then
+            local value = GetMissionNeedValue(conFigData, 1)
+            if value and expertRewardTabs.mission[i].state == 0 then
                 if expertRewardTabs.value >= value then
                     return true
                 end

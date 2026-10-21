@@ -31,3 +31,15 @@
   `persistentDataPath/Android/version.txt`，已加 `SyncServerConfigFromPackage()` 用包内值纠正。
 - 纯后端表（第 3 行导出类型全 4）导表工具会空跑，需要 `append_reward_items_to_server.py` 手工补。
 - Unity batchmode 下 `Debug.Log` 抓不到，只能自己写文件日志；`Logs/Editor.log` 也不可靠。
+- **包体积翻倍（AAB 822M / APK 855M）的元凶 = Gradle 里的陈旧临时文件**：
+  `Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/assets/Android/` 下会残留
+  2742 个 `.filename.XXXXXX`（每个正式 AB 一个同体积副本），Gradle 增量构建**永不清理**，
+  每次打包全带上。判定：`unzip -l <包> | grep -c 'assets/Android/\.'`，正常应为 0。
+  修法（`aab_release.sh` / `build_apk.sh` 已内置）：打包前 `find -delete` 清
+  **StreamingAssets + `src/main/assets` + `build/intermediates/assets`** 三处。
+  ⚠️ 只清 intermediates 无效，`src/main/assets` 才是真源头。
+- **Jenkins 的 unity 锁不可嵌套**：`resource_build.sh` / `build_apk.sh` 会 exec 自身套
+  `lock.sh --name unity`，job 里就**不能**再在外层套同一把锁（flock 不可重入 ⇒ 自己等自己，
+  等满 timeout 判 rc=75）。TS-Resource-Build 已按此修过。
+- `aab_release.sh` 的工程根取 `${PROJ:-脚本所在工程上一级}`，**别写死开发目录**：
+  Jenkins 在 `TimeSpaceGirl1-build` 里调它，写死会去构建开发目录（GUI Unity 占用必拦）。

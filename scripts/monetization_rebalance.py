@@ -43,7 +43,9 @@ from __future__ import annotations
 
 import argparse
 import collections
+import math
 import os
+import re
 import shutil
 import statistics
 import sys
@@ -74,9 +76,10 @@ F_RECHARGE = "RechargeCommodityConfig"
 F_STORE = "StoreConfig"
 F_FUND = "LuxuryFund"
 F_CAT = "LuckyCatConfig"
+F_ACT = "GlobalActivity"
 
 # 各表的数据起始行（与导表工具的约定一致：Recharge 是 6，其余是 8）
-ROW_START = {F_RECHARGE: 6, F_REWARD: 8, F_STORE: 8, F_FUND: 8, F_CAT: 8}
+ROW_START = {F_RECHARGE: 6, F_REWARD: 8, F_STORE: 8, F_FUND: 8, F_CAT: 8, F_ACT: 8}
 
 # ─────────────────────────── fund ───────────────────────────
 # 成长基金：SKU id -> 活动 Id（OnSaleRule 的 `3#N` 就是活动号，verify 会核对）
@@ -325,21 +328,25 @@ def verify_fund():
            all(abs(x - 1.0) < 1e-6 for x in rates.values()),
            str({k: round(v, 4) for k, v in rates.items()}))
 
-    # SKU 的 OnSaleRule 必须仍然指向同一个活动（防止改错行）
+    # SKU 的 OnSaleRule 必须仍指向同一个活动（防止改错行）；dup 项关停 102-105 是允许的
     wb2, ws2 = load(F_RECHARGE)
     idx2 = header_index(ws2)
-    mismatch = []
+    mismatch, gated_fund = [], []
     for r, v in iter_data(ws2, ROW_START[F_RECHARGE]):
         sid = v[idx2["Id"]]
         if sid not in FUND_SKU_ACT:
             continue
         rule = str(v[idx2["OnSaleRule"]] or "").replace(" ", "")
-        if not rule.startswith("3#%d" % FUND_SKU_ACT[sid]):
+        if rule == DUP_OFF:
+            gated_fund.append(sid)
+        elif not rule.startswith("3#%d" % FUND_SKU_ACT[sid]):
             mismatch.append((sid, rule))
         if v[idx2["Price"]] != FUND_PRICE:
             mismatch.append((sid, "price=%s" % v[idx2["Price"]]))
     wb2.close()
-    ck.add("SKU 101-105 仍指向活动 6/601-604 且价格未动", not mismatch, str(mismatch))
+    ck.add("SKU 101 仍指向活动 6；102-105 要么指向自己的活动、要么已被 dup 关停",
+           not mismatch and 101 not in gated_fund,
+           str(mismatch + [("关停", gated_fund)]))
     return ck
 
 
@@ -553,6 +560,7 @@ def _live_pack_rows():
             "tickets": sum(rewards.get(k, 0) for k in TICKETS),
             "dia": rewards.get(DIA, 0) or 0,
             "base": v[idx["BaseReward"]] or "", "show": v[idx["RewardShow"]] or "",
+            "extra": v[idx["ExtraReward"]] or "",
         })
     wb.close()
     return rows
@@ -1218,6 +1226,436 @@ def print_cat_report(plans):
                  p["new_down"], p["new_up"], p["rmb"]))
 
 
+# ─────────────────────────── dup（同窗口重复条目）───────────────────────────
+# 「同价同内容重复 N 行」不一定是 bug：68 元档有 11 个副本，各挂一章商店活动
+# （3#20005 → 3#21005 → 3#30005 …，窗口一周接一周、互不重叠），那是**轮换上架**。
+# 唯一可靠的判据是「开放窗口」：窗口一模一样的副本，任何时刻都同时可见、
+# 各自 Limit=1 ⇒ 限购语义失效、货架重复占位。窗口互斥的副本保持原样。
+DUP_OFF = "1#999#999"
+
+
+def _gate_act(rule):
+    """OnSaleRule 里的 `3#<activityId>`（其余条件类型不管）。"""
+    m = re.search(r"(?:^|\|)3#(\d+)", str(rule or "").replace(" ", ""))
+    return int(m.group(1)) if m else None
+
+
+def _act_windows():
+    """activityId -> (StartTime, Endtime) 原始字符串；skuId -> activityId 反查。"""
+    wb, ws = load(F_ACT)
+    idx = header_index(ws)
+    win, buy = {}, {}
+    for r, v in iter_data(ws, ROW_START[F_ACT]):
+        aid = v[idx["Id"]]
+        if aid is None:
+            continue
+        win[aid] = (str(v[idx["StartTime"]] or ""), str(v[idx["Endtime"]] or ""))
+        b = str(v[idx["CanBuyRechargeId"]] or "").strip()
+        if b.isdigit():
+            buy[int(b)] = aid
+    wb.close()
+    return win, buy
+
+
+def _all_live_rows():
+    """不分 Type 的可售行（dup 要连基金 type=4 一起看）。"""
+    billing = _billing_map()
+    win, buy = _act_windows()
+    wb, ws = load(F_RECHARGE)
+    idx = header_index(ws)
+    rows = []
+    for r, v in iter_data(ws, ROW_START[F_RECHARGE]):
+        sid = v[idx["Id"]]
+        if sid is None or not billing.get(sid, False):
+            continue
+        rule = str(v[idx["OnSaleRule"]] or "")
+        if rule.replace(" ", "").startswith(DUP_OFF):
+            continue
+        price = v[idx["Price"]] or 0
+        if price <= 0:
+            continue
+        rewards = pairs_dict(v[idx["BaseReward"]])
+        for k, n in pairs_dict(v[idx["ExtraReward"]]).items():
+            rewards[k] = rewards.get(k, 0) + n
+        act = _gate_act(rule) or buy.get(sid)
+        rows.append({
+            "row": r, "id": sid, "price": price, "type": v[idx["Type"]],
+            "st": v[idx["ShowType"]], "limit": v[idx["Limit"]], "rule": rule,
+            "act": act, "win": win.get(act) if act else None,
+            "sig": (v[idx["Type"]], price, v[idx["ShowType"]], v[idx["Limit"]],
+                    tuple(sorted(rewards.items()))),
+        })
+    wb.close()
+    return rows
+
+
+def plan_dup():
+    """同一 (内容, 价格, 页签, 限购, 开放窗口) 的副本只留最 id 小的一行。"""
+    rows = _all_live_rows()
+    groups = collections.defaultdict(list)
+    for x in rows:
+        groups[(x["sig"], x["win"])].append(x)
+    gates, out = [], []
+    for (sig, win), xs in groups.items():
+        if len(xs) < 2:
+            continue
+        xs = sorted(xs, key=lambda x: x["id"])
+        out.append({"keep": xs[0], "drop": xs[1:], "win": win})
+        for x in xs[1:]:
+            gates.append({"row": x["row"], "id": x["id"], "price": x["price"],
+                          "type": x["type"], "st": x["st"], "rule": x["rule"],
+                          "keep": xs[0]["id"]})
+    out.sort(key=lambda g: -len(g["drop"]))
+    return gates, out
+
+
+def apply_dup(gates):
+    wb, ws = load(F_RECHARGE)
+    idx = header_index(ws)
+    col = idx["OnSaleRule"]
+    for g in gates:
+        ws.cell(g["row"], col + 1).value = DUP_OFF
+    wb.save(path_of(F_RECHARGE))
+    wb.close()
+
+
+def verify_dup(gates, groups):
+    ck = Checker()
+    wb, ws = load(F_RECHARGE)
+    idx = header_index(ws)
+    col = idx["OnSaleRule"]
+    want = {g["id"]: g for g in gates}
+    cur = {}
+    for r, v in iter_data(ws, ROW_START[F_RECHARGE]):
+        sid = v[idx["Id"]]
+        if sid in want:
+            cur[sid] = (r, str(v[idx["OnSaleRule"]] or "").replace(" ", ""), v[idx["Price"]])
+    wb.close()
+
+    ck.add("落表行数与计划一致", len(cur) == len(gates), "%d / %d" % (len(cur), len(gates)))
+    bad = [sid for sid, (_r, rule, _p) in cur.items() if rule != DUP_OFF]
+    ck.add("重复行已改为 %s" % DUP_OFF, not bad, str(bad[:5]))
+    drift = [(sid, want[sid]["price"], p) for sid, (_r, _rule, p) in cur.items()
+             if p != want[sid]["price"]]
+    ck.add("价格零漂移", not drift, str(drift[:5]))
+
+    again, _ = plan_dup()
+    ck.add("再跑一次规划应无待关停", not again, "%d 行" % len(again))
+
+    live = _all_live_rows()
+    fund = [x for x in live if x["type"] == 4 and x["price"] == FUND_PRICE]
+    ck.add("成长基金同刻只剩 1 个可买（原 5 个）", len(fund) == 1,
+           str([x["id"] for x in fund]))
+
+    by_group = collections.Counter()
+    sig_of = {x["id"]: (x["sig"], x["win"]) for x in live}
+    for x in live:
+        by_group[sig_of[x["id"]]] += 1
+    ck.add("同窗口同内容最多 1 行在售", max(by_group.values() or [0]) <= 1,
+           "最大 %d" % max(by_group.values() or [0]))
+    print("   货架：%d → %d 行（关停 %d 行）"
+          % (len(live) + len(gates), len(live), len(gates)))
+    return ck
+
+
+def print_dup_report(gates, groups):
+    print("   判据：同 (内容, 价格, 页签, 限购, 开放窗口) ⇒ 任何时刻同时可见")
+    print("   %-5s %-6s %-4s %-22s %s" % ("价格", "副本", "页签", "开放窗口", "保留/关停"))
+    for g in groups:
+        k = g["keep"]
+        win = "无活动绑定" if not g["win"] else "%s~%s" % g["win"]
+        print("   %-5s ×%-5d %-4s %-22s 留 %s / 关 %s"
+              % (k["price"], len(g["drop"]) + 1, k["st"], win[:22], g["keep"]["id"],
+                 ",".join(str(x["id"]) for x in g["drop"])[:46]))
+    print("   合计关停 %d 行，货架无价值损失（重复行内容完全相同）" % len(gates))
+
+
+# ─────────────────────────── mono（族内阶梯单调）───────────────────────────
+# R14 的 cap 只收「同价档内」的离群件。「同族里大额档反而比小额档差」是另一条轴，
+# 上一轮一件没动，还剩 15 处（最深 -13.3%）。
+#
+# 逐个补价补不干净：抬了 12 元就顶到 6 元，抬了 18 元又顶到 30 元，一路连锁抬高整条带
+# （R12 那次估的 A 案要一次性多给 1.03 万钻 = 11% 让利，就是这么来的）。
+#
+# 正确做法是 PAVA（pool adjacent violators）：在「每档中位抽/元」这条阶梯上做
+# **加权最小二乘的保序回归**，权重 = 该档条目数。一次同时算出「抬谁、削谁」：
+#   · 净价值变化接近 0 —— 削下来的正好付了抬上去的，不往经济里灌通胀；
+#   · 移动量最小 —— 只把错位的档掰正，不动整条带的水平。
+# 两个硬约束：每个族的最低价档**只许涨不许削**（新手带是刻意的转化锚）；
+# 单档调整幅度 >15% 就跳过并报告（那不是错位，是两条产品线的形态差异）。
+MONO2_TOL = 0.015          # 收敛判据：跌幅 ≤1.5% 视为已平
+MONO2_MAX_MOVE = 0.35      # 单档最大调整幅度（18 元档这种「谷」需要 +27% 才回到带上）
+MONO2_MIN_PULL = 0.05      # 小于 0.05 抽（11 钻）不动，免得刷无意义 diff
+MONO2_ROUNDS = 5
+
+
+def _pava(vals, wts):
+    """保序回归（非递减）。返回等长拟合值。"""
+    stack = []
+    for v, w in zip(vals, wts):
+        stack.append([v, w, 1])
+        while len(stack) > 1 and stack[-2][0] > stack[-1][0] + 1e-12:
+            v2, w2, c2 = stack.pop()
+            v1, w1, c1 = stack.pop()
+            tw = w1 + w2
+            stack.append([(v1 * w1 + v2 * w2) / tw, tw, c1 + c2])
+    out = []
+    for v, _w, c in stack:
+        out.extend([v] * c)
+    return out
+
+
+def _levels(rows):
+    """ShowType -> [{price, rate(中位), rows}]，价格升序；单档族不参与。"""
+    fam = collections.defaultdict(lambda: collections.defaultdict(list))
+    for x in rows:
+        fam[x["st"]][x["price"]].append(x)
+    out = {}
+    for st, byp in fam.items():
+        lv = []
+        for p in sorted(byp):
+            mem = [x["rate"] for x in byp[p] if x["pull"] > 0]
+            if mem:
+                lv.append({"price": p, "rate": statistics.median(mem), "rows": byp[p]})
+        if len(lv) >= 2:
+            out[st] = lv
+    return out
+
+
+def _level_moves(levels):
+    med = [x["rate"] for x in levels]
+    if all(med[i + 1] >= med[i] * (1 - MONO2_TOL) for i in range(len(med) - 1)):
+        return [], []
+    wts = [len(x["rows"]) for x in levels]
+    fit = [math.exp(v) for v in _pava([math.log(max(m, 1e-9)) for m in med], wts)]
+    fit[0] = max(fit[0], med[0])                 # 最低价档只许涨
+    for i in range(1, len(fit)):
+        fit[i] = max(fit[i], fit[i - 1])
+    moves, skipped = [], []
+    for i, lv in enumerate(levels):
+        if not med[i]:
+            continue
+        chg = fit[i] / med[i] - 1
+        if abs(chg) <= 1e-9:
+            continue
+        if abs(chg) > MONO2_MAX_MOVE:
+            skipped.append({"price": lv["price"], "chg": chg, "rate": med[i]})
+            continue
+        if abs(chg) * lv["price"] < MONO2_MIN_PULL:
+            continue
+        moves.append({"price": lv["price"], "from": med[i], "to": fit[i],
+                      "chg": chg, "rows": lv["rows"]})
+    return moves, skipped
+
+
+def plan_mono():
+    rows = _live_pack_rows()
+    for x in rows:
+        x["pull0"] = x["pull"]
+        x["shift"] = 0.0
+    skipped, trail, filled = [], [], []
+    for _ in range(MONO2_ROUNDS):
+        for x in rows:
+            x["pull"] = x["pull0"] + x["shift"]
+            x["rate"] = x["pull"] / x["price"] if x["price"] else 0.0
+        moved = 0
+        # ① 补谷：R14 的 cap 只削峰，被压到「本档中位 -20%」以下的没人管。
+        # 这些行落在「单价位族」里（PAVA 不覆盖），成了档内的下界，
+        # 会把「同价离散」撑大（18 元 0.1702 vs 0.2813 = 1.65x）。
+        center = _tier_center(rows)
+        for x in rows:
+            if x["type"] != PACK_TYPE or x["price"] not in center:
+                continue
+            floor = center[x["price"]] * (1 - FLOOR_TOL)
+            if x["rate"] >= floor - 1e-9:
+                continue
+            dpull = (floor - x["rate"]) * x["price"]
+            # 取整必须向上：round() 会少给 ≤5 钻，12 元档就是 0.023 抽（0.2%），
+            # 落表后仍然踩在本档中位 −20% 线下方，自检必红。
+            # 同一类问题和 cap 的「券只能整张」一样：粒度决定方向，宁可偏上。
+            dia = int(math.ceil(dpull * DIA_PER_PULL / 10.0 - 1e-9) * 10)
+            # 补谷也不许越过单档幅度上限，否则一个离群件会把整档形态带歪。
+            room = int(math.floor((MONO2_MAX_MOVE * x["pull0"] - x["shift"])
+                                  * DIA_PER_PULL / 10.0) * 10)
+            dia = min(dia, max(room, 0))
+            if dpull < MONO2_MIN_PULL or dia <= 0:
+                continue
+            x["shift"] += dia / float(DIA_PER_PULL)
+            filled.append({"id": x["id"], "price": x["price"], "dia": dia,
+                           "from": x["rate"],
+                           "to": (x["pull0"] + x["shift"]) / float(x["price"])})
+            moved += 1
+        # ② 阶梯
+        for st, levels in sorted(_levels(rows).items()):
+            moves, sk = _level_moves(levels)
+            skipped.extend([dict(s, st=st) for s in sk])
+            for m in moves:
+                dia = int(round(m["chg"] * m["from"] * m["price"]
+                                * DIA_PER_PULL / 10.0) * 10)
+                if dia == 0:
+                    continue
+                for x in m["rows"]:
+                    x["shift"] += dia / float(DIA_PER_PULL)
+                trail.append({"st": st, "price": m["price"], "from": m["from"],
+                              "to": m["to"], "dia": dia, "n": len(m["rows"])})
+                moved += 1
+        if not moved:
+            break
+
+    edits, blocked = [], []
+    for x in rows:
+        dia = int(round(x["shift"] * DIA_PER_PULL / 10.0) * 10)
+        if dia == 0:
+            continue
+        have = pairs_dict(x["base"]).get(DIA, 0) or 0
+        if dia < 0 and have < -dia:
+            blocked.append({"id": x["id"], "price": x["price"],
+                            "need": -dia, "have": have})
+            continue
+        base = add_items(x["base"], {DIA: dia}) if dia > 0 else sub_items(x["base"], {DIA: -dia})
+        show = x["show"]
+        if str(show).strip() and DIA in pairs_dict(show):
+            show = add_items(show, {DIA: dia}) if dia > 0 else sub_items(show, {DIA: -dia})
+        edits.append({"row": x["row"], "id": x["id"], "price": x["price"], "st": x["st"],
+                      "dia": dia, "before": x["pull0"],
+                      "after": x["pull0"] + dia / float(DIA_PER_PULL),
+                      "base": base, "show": show,
+                      "base_old": x["base"], "show_old": x["show"]})
+    return edits, {"trail": trail, "skipped": skipped, "blocked": blocked,
+                   "filled": filled, "rows": rows,
+                   "gated": set(x["id"] for x in rows) - set(e["id"] for e in edits)}
+
+
+def apply_mono(edits):
+    wb, ws = load(F_RECHARGE)
+    idx = header_index(ws)
+    c_base, c_show = idx["BaseReward"], idx["RewardShow"]
+    for e in edits:
+        ws.cell(e["row"], c_base + 1).value = e["base"]
+        if str(e["show_old"]).strip():
+            ws.cell(e["row"], c_show + 1).value = e["show"]
+    wb.save(path_of(F_RECHARGE))
+    wb.close()
+
+
+def verify_mono(edits, meta):
+    ck = Checker()
+    before = {x["id"]: x for x in meta["rows"]}
+    cur = {x["id"]: x for x in _live_pack_rows()}
+
+    ck.add("落表行数与计划一致", len(edits) <= len(cur),
+           "%d / %d（可售 %d）" % (len(edits), len(meta["rows"]), len(cur)))
+    missing = [e["id"] for e in edits if e["id"] not in cur]
+    ck.add("被改的行都还在可售列表里", not missing, str(missing[:5]))
+
+    drift_p = [e["id"] for e in edits
+               if e["id"] in cur and cur[e["id"]]["price"] != e["price"]]
+    ck.add("价格零漂移", not drift_p, str(drift_p[:5]))
+
+    drift, grow = [], []
+    for e in edits:
+        n = cur.get(e["id"])
+        if n is None:
+            continue
+        old = {k: v for k, v in before[e["id"]]["rewards"].items() if k != DIA}
+        new = {k: v for k, v in n["rewards"].items() if k != DIA}
+        if old != new:
+            drift.append((e["id"], sorted(set(old) ^ set(new))[:3]))
+    ck.add("券与其他道具构成零漂移（只动钻石）", not drift, str(drift[:5]))
+
+    zero = []
+    for e in edits:
+        for raw in (e["base"], e["show"]):
+            for k, n in parse_pairs(raw):
+                if n == 0:
+                    zero.append((e["id"], k))
+    ck.add("没有 *0 的残留条目", not zero, str(zero[:5]))
+
+    worst, where = 0.0, ""
+    for st, levels in _levels(list(cur.values())).items():
+        for a, b in zip(levels, levels[1:]):
+            drop = 1 - b["rate"] / a["rate"] if a["rate"] else 0
+            if drop > worst:
+                worst, where = drop, "ST%s %d→%d 元" % (st, a["price"], b["price"])
+    ck.add("同族阶梯无跌幅 >%.1f%% 的倒挂" % (MONO2_TOL * 100), worst <= MONO2_TOL + 1e-9,
+           "最深 %.1f%% %s" % (worst * 100, where))
+
+    center = _tier_center([{"price": x["price"], "rate": x["rate"], "pull": x["pull"],
+                            "type": x["type"]} for x in cur.values()])
+    under = [(sid, round(x["rate"], 4), round(center[x["price"]] * (1 - FLOOR_TOL), 4))
+             for sid, x in cur.items()
+             if x["type"] == PACK_TYPE and x["price"] in center and x["pull"] > 0
+             and x["rate"] < center[x["price"]] * (1 - FLOOR_TOL) - 0.01]
+    ck.add("没有 SKU 仍低于本档中位 -%.0f%%（补谷）" % (FLOOR_TOL * 100),
+           not under, str(under[:5]))
+
+    big = [(e["id"], round(e["after"] / e["before"] - 1, 4)) for e in edits
+           if e["before"] and abs(e["after"] / e["before"] - 1) > MONO2_MAX_MOVE + 1e-6]
+    ck.add("单行调整幅度 ≤%.0f%%" % (MONO2_MAX_MOVE * 100), not big, str(big[:5]))
+
+    low_cut = []
+    for st, levels in _levels(meta["rows"]).items():
+        ids = set(x["id"] for x in levels[0]["rows"])
+        for e in edits:
+            if e["id"] in ids and e["dia"] < 0:
+                low_cut.append((st, levels[0]["price"], e["id"]))
+    ck.add("每个族的最低价档只涨不削", not low_cut, str(low_cut[:5]))
+
+    # 通胀核算的分母必须是「抽等值」而不是钻存量：礼包价值大头是券和道具，
+    # 只拿钻石当分母会把一次 +66 抽的微调算成 4% 通胀（其实是 1.x%）。
+    # 也不能拿「被改的这几行自己」当分母：补谷只碰 6 行、共 18 抽，
+    # +2 抽就成了 +11%，但相对受影响的两个档位（85 抽）只有 +2.4%。
+    tiers = set(e["price"] for e in edits)
+    mass = sum(x["pull"] for x in cur.values()
+               if x["price"] in tiers and x["type"] == PACK_TYPE) or 0
+    net = sum(e["dia"] for e in edits) / float(DIA_PER_PULL)
+    ck.add("净增价值 ≤ 受影响档位存量的 3%（不灌通胀）",
+           net <= max(0.03 * mass, 1.0),
+           "净 %+.1f 抽 / %s 档存量 %.0f 抽（%+.2f%%）"
+           % (net, "/".join(str(p) for p in sorted(tiers)), mass,
+              100.0 * net / mass if mass else 0))
+    return ck
+
+
+def print_mono_report(edits, meta):
+    print("   口径：PAVA 保序回归（权重=条数），最低价档只涨不削，单档上限 ±%.0f%%"
+          % (MONO2_MAX_MOVE * 100))
+    if meta["skipped"]:
+        uniq = {}
+        for s in meta["skipped"]:
+            uniq[(s["st"], s["price"])] = s
+        print("   ⚠ 超幅跳过 %d 档（形态差异，不是错位）：%s"
+              % (len(uniq),
+                 ", ".join("ST%s %s元 %+.0f%%" % (s["st"], s["price"], s["chg"] * 100)
+                           for s in list(uniq.values())[:6])))
+    if meta["blocked"]:
+        print("   ⚠ 钻石不够扣、未执行 %d 行：%s"
+              % (len(meta["blocked"]),
+                 ", ".join("%s 需%d有%d" % (b["id"], b["need"], b["have"])
+                           for b in meta["blocked"][:5])))
+    if not edits:
+        print("   全部达标，无需改动。")
+        return
+    by = collections.defaultdict(lambda: {"n": 0, "dia": 0})
+    for e in edits:
+        k = e["st"]
+        by[k]["n"] += 1
+        by[k]["dia"] += e["dia"]
+    print("   共改 %d 行：净钻石 %+d（抬 %d 行 / 削 %d 行），其中补谷 %d 行"
+          % (len(edits), sum(e["dia"] for e in edits),
+             sum(1 for e in edits if e["dia"] > 0),
+             sum(1 for e in edits if e["dia"] < 0),
+             len(set(f["id"] for f in meta.get("filled") or []))))
+    for st in sorted(by):
+        print("      ST%-4s %3d 行  净 %+6d 钻" % (st, by[st]["n"], by[st]["dia"]))
+    top = sorted(edits, key=lambda e: -abs(e["after"] / e["before"] - 1))[:8]
+    print("   %-6s %-5s %-4s %-9s %-9s %s" % ("id", "价格", "页签", "改前抽", "改后抽", "幅度"))
+    for e in top:
+        print("   %-6s %-5s %-4s %-9.2f %-9.2f %+.1f%%"
+              % (e["id"], e["price"], e["st"], e["before"], e["after"],
+                 (e["after"] / e["before"] - 1) * 100 if e["before"] else 0))
+
+
 # ─────────────────────────── 报告 ───────────────────────────
 
 def print_pack_report(plans, skipped):
@@ -1271,8 +1709,8 @@ def main():
     ap.add_argument("--force", action="store_true",
                     help="强制执行已经落过表的项（会叠加乘数，慎用）")
     ap.add_argument("--verify-only", action="store_true")
-    ap.add_argument("--only", default="fund,pack,store,lux328,cap,cat",
-                    help="逗号分隔：fund,pack,store,lux328,cap,cat")
+    ap.add_argument("--only", default="fund,pack,store,lux328,dup,cap,mono,cat",
+                    help="逗号分隔：fund,pack,store,lux328,dup,cap,mono,cat")
     ap.add_argument("--revert", metavar="DIR")
     ap.add_argument("--list-backups", action="store_true")
     args = ap.parse_args()
@@ -1295,12 +1733,13 @@ def main():
         return 0
 
     items = [x.strip() for x in args.only.split(",") if x.strip()]
-    unknown = set(items) - {"fund", "pack", "store", "lux328", "cap", "cat"}
+    unknown = set(items) - {"fund", "pack", "store", "lux328", "cap", "cat",
+                            "mono", "dup"}
     if unknown:
         sys.exit("未知选项：%s" % unknown)
 
     print("=" * 62)
-    print("R13/R14 结构性定价修复  items=%s  mode=%s"
+    print("R13/R14/R15 结构性定价修复  items=%s  mode=%s"
           % (",".join(items),
              "verify" if args.verify_only else ("apply" if args.apply else "dry-run")))
     print("=" * 62)
@@ -1401,6 +1840,32 @@ def main():
             c = verify_lux()
             ok &= c.dump()
 
+    # ── dup ───────────────────────────────────────────────
+    if "dup" in items:
+        gates, groups = plan_dup()
+        print("\n[dup] 同窗口重复条目关停（限购 1 语义复原）")
+        print_dup_report(gates, groups)
+        if args.apply and gates:
+            bak = backup([path_of(F_RECHARGE)])
+            print("   备份 → %s" % bak)
+            with open(os.path.join(bak, "_dup_rule_originals.json"), "w",
+                      encoding="utf-8") as fh:
+                import json
+                json.dump([{"id": g["id"], "row": g["row"], "rule": g["rule"]}
+                           for g in gates], fh, ensure_ascii=False, indent=2)
+            apply_dup(gates)
+            c = verify_dup(gates, groups)
+            if not c.dump():
+                _restore(bak)
+                sys.exit("❌ dup 自检失败，已自动回滚")
+            save_marker(["dup"], bak)
+            ok &= c.ok
+        elif args.verify_only:
+            c = verify_dup(gates, groups)
+            ok &= c.dump()
+            print("   （verify-only：再跑一次规划应无待关停）%s"
+                  % ("✅" if not gates else "✗ 仍有 %d 行" % len(gates)))
+
     # ── cap ───────────────────────────────────────────────
     if "cap" in items:
         cuts, meta = plan_cap()
@@ -1422,6 +1887,27 @@ def main():
             ok &= c.dump()
             print("   （verify-only：再跑一次规划应无落刀）%s"
                   % ("✅" if not cuts else "✗ 仍有 %d 个待削" % len(cuts)))
+
+    # ── mono ──────────────────────────────────────────────
+    if "mono" in items:
+        edits, meta = plan_mono()
+        print("\n[mono] 同族阶梯单调（PAVA 保序回归，抬低档 / 削高档联动）")
+        print_mono_report(edits, meta)
+        if args.apply and edits:
+            bak = backup([path_of(F_RECHARGE)])
+            print("   备份 → %s" % bak)
+            apply_mono(edits)
+            c = verify_mono(edits, meta)
+            if not c.dump():
+                _restore(bak)
+                sys.exit("❌ mono 自检失败，已自动回滚")
+            save_marker(["mono"], bak)
+            ok &= c.ok
+        elif args.verify_only:
+            c = verify_mono(edits, meta)
+            ok &= c.dump()
+            print("   （verify-only：再跑一次规划应无待掰档）%s"
+                  % ("✅" if not edits else "✗ 仍有 %d 行" % len(edits)))
 
     # ── cat ───────────────────────────────────────────────
     if "cat" in items:

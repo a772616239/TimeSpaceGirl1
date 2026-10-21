@@ -71,6 +71,149 @@ local _TabData = { [1] = {default = "cn2-X1_wuzi_jinbi_weixuanzhong",select = "c
                  [5] = {default = "cn2-X1_wuzi_jiezhi_weixuanzhong",select = "cn2-X1_wuzi_jiezhi_xuanzhong" ,lock = "cn2-X1_wuzi_jiezhi_weixuanzhong", name = GetLanguageStrById(10332),type = FUNCTION_OPEN_TYPE.DAILYCHALLENGE_SOULPRINT }
                 }
 
+--============================== 副本卡入场（右滑入 + 淡入）==============================
+-- 参考 Assets/Art/UIAni/cn2-X1_UI_TreasureStorePopup.anim（dump_clip.py 反解，m_EditorCurves 12 条全读）：
+--   grid/item1..3     m_AnchoredPosition.x   -200 / -150 / -100 → 0   逐格错开
+--   grid/item1..3/Bg  m_Color.a              0.3647 → 1             淡入比位移长
+-- 本页按要求做**反向**：从右侧 +260 向左归位 0。
+-- 前 4 条（Panel 的位移/现高、Panel/Bg 的回弹 + alpha）是弹窗本体进出场，本页是独立面板、
+-- 自身已有打开表现 ⇒ 只复刻列表项那 6 条。
+--
+-- 作用对象是 Scroll 下 Pre 克隆出的**副本卡** item1..itemN（prefab 实测 Pre 882×275）。
+--
+-- 🔴 位移写卡的**直接子节点**，不写卡根节点：ScrollCycleView:SetData / SetItemIndex 每次都
+--    直接赋值 item.tran.anchoredPosition（换页、滚动都会），写根节点必被抹回原位。
+-- 🔴 一屏能放 ceil(视口高 / 275 + 1) 张卡 ⇒ 逐格错开生效；但滚动时 item 池复用，
+--    所以只在 SetScroll 之后播一次，不放进每张卡的 SetData 里（滚动会逐张触发）。
+local kCardSlideFrom     = 260      -- 起点位移（px）：卡宽 882 的 ~30%，与 BattlePass 任务卡同档
+local kCardSlideDuration = 0.22     -- 单卡时长
+local kCardSlideStep     = 0.05     -- 相邻卡错开
+local kCardFadeFrom      = 0.3647   -- 参考 item/Bg 的 alpha 起点
+local kCardFadeNode      = "Bg"     -- 只有它是一整张卡大小的 Image，参考也只淡底板
+
+-- 副本卡的可视子节点（这 6 个一起右移 = 整卡滑入；Tip / Consume / GoBtn 会按状态显隐）
+local kCardNodes = { "Bg", "Title", "Reward", "GoBtn", "Consume", "Tip" }
+
+local cardSlideItems = {}   -- { rect, x, y, graphic, color, tween }，rect 与 graphic 二选一
+
+-- tolua 的枚举是运行期注册的：取不到就跳过，异常被 pcall 吃掉会整段静默不播
+local function SetEaseSafe(tween, name)
+    local enum = _G.Ease
+    local value = enum and enum[name]
+    if value ~= nil then
+        tween:SetEase(value)
+    end
+    return tween
+end
+
+-- UnityEngine.Object 在 lua 侧是 userdata：Destroy 之后既不是 nil 也不能取字段
+local function Alive(obj)
+    if obj == nil then
+        return false
+    end
+    if type(obj) == "userdata" then
+        return not IsNull(obj)
+    end
+    return true
+end
+
+local function WithAlpha(color, a)
+    return Color.New(color.r, color.g, color.b, a)
+end
+
+-- 回收：Kill 掉所有 tween 并把位置/颜色复位。
+-- 🔴 漏复位 = 副本卡永久停在半截位置或半透明；重播 / 关闭 / 销毁都必须走这里。
+function this.StopCardSlideIn()
+    for i = #cardSlideItems, 1, -1 do
+        local item = cardSlideItems[i]
+        if Alive(item.tween) then
+            item.tween:Kill(false)
+        end
+        if item.rect and item.x and Alive(item.rect) then
+            item.rect.anchoredPosition = Vector2.New(item.x, item.y)
+        end
+        if item.graphic and item.color and Alive(item.graphic) then
+            item.graphic.color = item.color
+        end
+        cardSlideItems[i] = nil
+    end
+end
+
+-- 收集当前可见的副本卡（ScrollCycleView 的 item 池，顺序即列表顺序）
+local function CollectCards()
+    local cards = {}
+    local sv = this.scrollView
+    if type(sv) == "table" and type(sv.ForeachItemGO) == "function" then
+        sv:ForeachItemGO(function(_, go)
+            if Alive(go) and go.activeSelf then
+                cards[#cards + 1] = go
+            end
+        end)
+    end
+    return cards
+end
+
+-- 起播：每张卡从右侧 260px 向左滑回原位，底板 alpha 0.3647 → 1。
+function this.PlayCardSlideIn()
+    this.StopCardSlideIn()
+    local cards = CollectCards()
+    if #cards <= 0 then
+        return 0
+    end
+    local ok, err = pcall(function()
+        for ci = 1, #cards do
+            local card = cards[ci]
+            local delay = (ci - 1) * kCardSlideStep
+            -- 位移：卡的 6 个可视子节点一起走
+            for i = 1, #kCardNodes do
+                local go = Util.GetGameObject(card, kCardNodes[i])
+                if Alive(go) and go.activeSelf then
+                    local rect = go:GetComponent("RectTransform")
+                    if Alive(rect) then
+                        local pos = rect.anchoredPosition
+                        -- 从右侧滑入：起点在右边，向左归位（反向 = 把这里的 + 改回 -）
+                        rect.anchoredPosition = Vector2.New(pos.x + kCardSlideFrom, pos.y)
+                        local tween = rect:DOAnchorPosX(pos.x, kCardSlideDuration)
+                        tween:SetDelay(delay)
+                        SetEaseSafe(tween, "OutQuad")
+                        tween:OnComplete(function()
+                            if Alive(rect) then
+                                rect.anchoredPosition = Vector2.New(pos.x, pos.y)
+                            end
+                        end)
+                        cardSlideItems[#cardSlideItems + 1] = { rect = rect, x = pos.x, y = pos.y, tween = tween }
+                    end
+                end
+            end
+            -- 淡入：只淡底板（参考里就是 item/Bg，装饰图跟着底板走但不透明）
+            local bg = Util.GetGameObject(card, kCardFadeNode)
+            if Alive(bg) then
+                local image = bg:GetComponent("Image")
+                if Alive(image) then
+                    local color = image.color
+                    image.color = WithAlpha(color, kCardFadeFrom)
+                    local tween = image:DOFade(color.a, kCardSlideDuration)
+                    tween:SetDelay(delay)
+                    SetEaseSafe(tween, "OutQuad")
+                    tween:OnComplete(function()
+                        if Alive(image) then
+                            image.color = color
+                        end
+                    end)
+                    cardSlideItems[#cardSlideItems + 1] = { graphic = image, color = color, tween = tween }
+                end
+            end
+        end
+    end)
+    if not ok then
+        -- DOTween 侧任何异常都不能把副本卡留在半截位置/半透明
+        LogError("DailyCarbonPanel: 副本卡入场失败 " .. tostring(err))
+        this.StopCardSlideIn()
+        return 0
+    end
+    return #cards
+end
+
 function DailyCarbonPanel:InitComponent()
     this.panel = Util.GetGameObject(this.gameObject,"Panel")
 
@@ -228,9 +371,12 @@ function DailyCarbonPanel:RefreshRedPotShow()
 end
 
 function DailyCarbonPanel:OnClose()
+    this.StopCardSlideIn()
 end
 
 function DailyCarbonPanel:OnDestroy()
+    -- DestroyPanel 不走 OnClose，面板还会被 openedList 缓存复用 ⇒ 两处都要收
+    this.StopCardSlideIn()
     itemList = {}
     this.scrollView = nil
     SubUIManager.Close(this.HeadFrameView)
@@ -238,7 +384,13 @@ function DailyCarbonPanel:OnDestroy()
 end
 
 function this.FiveRefresh()
-    this.OnTabChange(1)
+    -- 5 点刷新是服务端数据回调，不是玩家换屏 ⇒ 重建列表不播入场
+    this.suppressCardAnim = true
+    local ok, err = pcall(this.OnTabChange, 1)
+    this.suppressCardAnim = false
+    if not ok then
+        LogError("DailyCarbonPanel: 5 点刷新失败 " .. tostring(err))
+    end
     DailyCarbonPanel:RefreshRedPotShow()
 end
 
@@ -310,8 +462,26 @@ function this.SetScroll(_index)
     end)
     Util.SetGray(this.sweepBtn, not this.isOk)
 
+    -- 副本卡入场：玩家主动进面板 / 换页签才播（数据刷新走 RefreshScrollSilently）
+    if this.suppressCardAnim then
+        this.StopCardSlideIn()
+    else
+        this.PlayCardSlideIn()
+    end
+
     -- this.scrollView:SetIndex(1)
     -- DelayCreation(itemList)
+end
+
+-- 数据刷新（战斗结算 / 一键扫荡 / 5 点刷新）重建列表时不播入场：卡片闪一下很显眼。
+-- pcall 只是为了保证标记一定被复位 —— 否则一次异常会让后面所有入场动画永久失效。
+local function RefreshScrollSilently()
+    this.suppressCardAnim = true
+    local ok, err = pcall(this.SetScroll)
+    this.suppressCardAnim = false
+    if not ok then
+        LogError("DailyCarbonPanel: 刷新副本列表失败 " .. tostring(err))
+    end
 end
 
 --设置滚动条数据 root根节点 data本地表数据 ldata 上一条数据
@@ -445,7 +615,7 @@ function this.SetData(root, data, ldata)
                         if result.result == 0 then
                             this.SetTimeTip()
                             this:RefreshRedPotShow()
-                            this.SetScroll()
+                            RefreshScrollSilently()
                             isGoBattle = false
                         elseif result.result == 1 then
                             -- 关键关卡领奖 ⇒ 诱导评分（Google Play 内评价）
@@ -461,7 +631,7 @@ function this.SetData(root, data, ldata)
                                 -- this.RefreshShow(carbonIndex)
                                 this.SetTimeTip()
                                 this:RefreshRedPotShow()
-                                this.SetScroll()
+                                RefreshScrollSilently()
                                 isGoBattle = false
                                 -- 等奖励面板关掉再弹，避免内评价盖在领奖动画上
                                 AppReview_TryShowOnKeyLevel(reviewKey)
@@ -475,7 +645,7 @@ function this.SetData(root, data, ldata)
                         -- this.RefreshShow(carbonIndex)
                         this.SetTimeTip()
                         this:RefreshRedPotShow()
-                        this.SetScroll()
+                        RefreshScrollSilently()
                         isGoBattle = false
                     end)
                 end

@@ -1,8 +1,28 @@
 require("Base/BasePanel")
+local ItemPopIn = require("Modules/Common/ItemPopIn")--未开宝箱入场（从小到大弹一下）
 BlitzStrikePanel = Inherit(BasePanel)
 local this = BlitzStrikePanel
 
 local buildingName = {"cn2-x1_yiwangzhicheng_TB_nandu_01", "cn2-x1_yiwangzhicheng_TB_nandu_02", "cn2-x1_yiwangzhicheng_TB_nandu_03"}
+
+--==================== 未开宝箱入场（从小到大的弹性） ====================
+-- 面板打开时，还显示「关闭态箱体」的宝箱按路径顺序逐个弹一下：0.45 → 1，OutElastic 自带过冲回弹。
+-- 🔴 配方只写在这里（+ Modules/Common/ItemPopIn 的缺省值），别在面板里复写一套 tween；
+--    配方/坑见 docs/ui_item_pop_in_skill.md。
+-- mode = "duang" 只给一条 tween，过冲由缓动自己给（不要设 peak）：
+--   箱体图 171×176，没到「大块头 250px」那条线，可以用弹性；再大就得改 phases 关键帧。
+-- 缩放目标是 Bg/box（箱体图那层），不是 Box 根：Box 根 rect 是 261×115，箱体却画在 pivot 上方 61px，
+-- 缩放根节点会「往下长」，看着没居中；Bg/box 的 rect 就是箱体本身，pivot 正好在画面中心
+-- ⇒ centerPivot = false，别让模块再按子节点并集去挪 pivot。
+local kBoxPopInCfg = {
+    mode = "duang",
+    from = 0.45,          -- 起点 45%：「从小到大」的落差主要靠这里
+    duangDuration = 0.55, -- 单箱时长；拉到 0.8s 会变成软塌塌的果冻
+    ease = "OutElastic",
+    step = 0.08,          -- 相邻宝箱错开
+    maxSpan = 0.45,       -- 5 个时 0.08*4 = 0.32，不触发压缩
+    centerPivot = false,
+}
 
 local isCanClick = false
 
@@ -26,6 +46,12 @@ function BlitzStrikePanel:InitComponent()
     for i = 1, BlitzStrikeManager.BoxNum do
         this.BoxGo[i] = Util.GetGameObject(self.gameObject, "Root/Center/StageRoot/Box" .. tostring(i))
     end
+
+    -- 未开宝箱的入场队列：内容由 UpdateMain 每次重建（空表时 Play 是 no-op）
+    this.unopenedBoxGo = {}
+    this.boxPopIn = ItemPopIn.New(function()
+        return this.unopenedBoxGo
+    end, kBoxPopInCfg)
 
     this.Model = {}
     for i = 1, 3 do
@@ -102,6 +128,8 @@ function BlitzStrikePanel:OnShow()
             BlitzStrikeManager.RrefreshFormation()
         end)
         this.UpdateMain()
+        -- 🔴 只在这里播（玩家主动打开/换屏）：领奖后刷新走的是 UpdateMain，不重播
+        this.boxPopIn:Play()
     end
 
 end
@@ -153,10 +181,14 @@ function BlitzStrikePanel.UpdateMain()
             table.insert(BoxSignIdx, StageConfigDatas[i])
         end
     end
+    -- 「未开」= 还显示关闭态箱体：没达到的 + 达到但还没领的；已领的换成开箱图，不参与入场
+    this.unopenedBoxGo = {}
     for i = 1, #this.BoxGo do
         local N = Util.GetGameObject(this.BoxGo[i], "Bg/box/N")
         local O = Util.GetGameObject(this.BoxGo[i], "Bg/box/O")
+        local boxRoot = Util.GetGameObject(this.BoxGo[i], "Bg/box")
         local box = Util.GetGameObject(this.BoxGo[i], "Bg/box/box"):GetComponent("Image")
+        local isOpened = false
         N:SetActive(false)
         O:SetActive(false)
 
@@ -194,6 +226,7 @@ function BlitzStrikePanel.UpdateMain()
                     end)
                 end)
             else
+                isOpened = true
                 O:SetActive(true)
                 if i == 5 then
                     box.sprite = Util.LoadSprite(boxSprite[4])
@@ -203,6 +236,10 @@ function BlitzStrikePanel.UpdateMain()
             end
         else
             N:SetActive(false)
+        end
+
+        if not isOpened then
+            this.unopenedBoxGo[#this.unopenedBoxGo + 1] = boxRoot
         end
     end
 
@@ -236,10 +273,13 @@ end
 
 --界面关闭时调用（用于子类重写）
 function BlitzStrikePanel:OnClose()
+    -- 🔴 漏 Stop = 宝箱永久停在 0.45 半截缩放上，下次进来像卡图
+    this.boxPopIn:Stop()
 end
 
 --界面销毁时调用（用于子类重写）
 function BlitzStrikePanel:OnDestroy()
+    this.boxPopIn:Stop()
     SubUIManager.Close(this.PlayerHeadFrameView)
     SubUIManager.Close(this.UpView)
 end

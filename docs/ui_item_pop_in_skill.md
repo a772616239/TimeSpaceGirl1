@@ -8,7 +8,9 @@
 > （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / **成长礼金 page_3** / **终身限购 page_9** / 战令 /
 > 副官挑战 / 副官赠礼）；
 > 固定版面（不是列表）走关键帧模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位，`phases`）、
-> `DefenseTrainingPopup`（5 个关卡节点 `Stage1..5`，`phases`，只在 `OnOpen` 那一轮播）。
+> `DefenseTrainingPopup`（5 个关卡节点 `Stage1..5`，`phases`，只在 `OnOpen` 那一轮播）；
+> 地图上的单点元素走 `duang`：`BlitzStrikePanel`（**未开宝箱**从小到大弹一下，数组数据源，
+> 缩放目标是 `Bg/box` 而不是宝箱根节点，见第 5 节第 15 条）。
 > 更新时间 2026-10-21。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
 
 ---
@@ -280,6 +282,13 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
     - 还原时写回开播那一刻记录的老位置 ⇒ 期间滚动换过格的 item 被拽回上一格；必须
       `anchoredPosition = 当前值 - 补偿量`，只撤自己加的那部分。
     - 动画结束 scale 已经回 1，此时还原 pivot 视觉上零变化，是最安全的时机；`Stop` 只兜打断的情况。
+15. **缩放目标要选「画面那层」，不是「挂点容器那层」**（BlitzStrikePanel 的宝箱）：
+    宝箱根节点 `Box1..5` 的 rect 是 261×115（一条挂点带），可箱体图 `Bg/box` 是 171×176、
+    画在根 pivot **上方 61px**。对根节点 `DOScale` 会绕着那条带子的中心缩放 ⇒ 观感是
+    「从下面长出来」，不是居中弹一下；而且 `ArtCenterOf` 也救不了——根节点的 `Bg` 子节点
+    正好铺满 261×115，子节点并集中心 == pivot，模块认为「模板是对的」，什么都不做。
+    正确做法：让数据源直接给 `Bg/box`（箱体图那层，pivot 就在画面中心）并关掉 `centerPivot`。
+    同理：`O`（已领角标）/`N`（可领角标）都挂在 `Bg/box` 下，跟着一起缩放才对。
 
 
 ---
@@ -418,3 +427,9 @@ end
   `rewardPre` 的 pivot 是 `(0,1)`，`DOScale` 绕 pivot 缩放。模块加 `CenterPivotOf`（临时居中 +
   `anchoredPosition` 补偿 ½ 尺寸、`Stop` 还原，`centerPivot = false` 可关），顺带修掉
   ExpertPanel `rewardPre1..10` 同样的偏心；`test_itempopin` 加 case14，扩到 14 组。
+- **2026-10-21**（闪击战未开宝箱）：`BlitzStrikePanel` 接入（数组数据源 + `duang`）：打开面板时
+  只弹**还没领**的宝箱（已领的换成开箱图，不参与），`0.45 → 1`、`OutElastic`、0.55s、相邻错开 0.08。
+  放大目标是 `Bg/box`（箱体图那层）而不是 `Box1..5` 根节点——根节点 rect 是 261×115 的挂点带、箱体画在
+  pivot 上方 61px，缩放根会「从下面长出来」（见第 5 节第 15 条）。播的时机只有 `OnShow`（玩家打开/换屏）：
+  领奖回调走 `UpdateMain` 刷新，不重播；`difficultyLevel = 0`（弹选难度）那支也不播。
+  新增 `test_blitzstrike_boxpopin.lua`（6 组：队列采集 / 手感 / 回收 / 时机 / 源码接线）。

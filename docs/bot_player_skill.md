@@ -256,53 +256,96 @@ GM     thrift 7916               ← 只有「操作按钮」才走这条
 ## 10. 测试服（129.226.213.65）部署流程
 
 测试服的 **7916(GM) / 6379(Redis) 只监听 127.0.0.1**，而 DSH 必须跑在本机 Mac 上。
-所以是「三条隧道 + 本地控制台」的结构：
+所以是「三条转发 + 本地控制台」的结构：
 
 ```
 本机 17916 ──正向──▶ 测试服 127.0.0.1:7916   GM 命令
 本机 16379 ──正向──▶ 测试服 127.0.0.1:6379   在线数/聊天队列/BOT_STATUS
-测试服 18765 ◀─反向── 本机 127.0.0.1:18765   游戏服回连 DSH 桥接（已实测通）
+测试服 18765 ◀─反向── 本机 127.0.0.1:18765   游戏服回连 DSH 桥接
 ```
+
+三条转发**放在一个 ssh 连接里**（`ExitOnForwardFailure=yes` 保证一条失败就整体退出，
+状态可判）。别拆成三个后台 ssh —— 拆开时进程会被父 shell 回收，出现「pid 还在但端口不通」的假活。
 
 ```bash
 # ① 本机起桥接（游戏服侧只是 HTTP 客户端，桥接挂了会走本地语料兜底）
 scripts/bot/start_bridge.sh start
+curl -s --noproxy '*' http://127.0.0.1:18765/health     # ok:true, provider=workbuddy-ai
 
-# ② 三条隧道
+# ② 隧道：另开一个终端窗口前台挂着（最可靠）
+scripts/bot/testserver.sh fg
+
+#    想放后台用 up，但它可能被拉起它的 shell 回收；up 现在会探端口而不是只看 pid，
+#    被回收会直接报「失败或被父 shell 回收」并提示改用 fg。
 scripts/bot/testserver.sh up
-scripts/bot/testserver.sh status      # 三条都 up + redis PING + 桥接健康
+scripts/bot/testserver.sh status      # gm/redis up + PONG + 反向回连 JSON + 控制台
+```
 
-# ③ 部署 jar（本地编译 → 上传 → 远端备份 → 重启）
-#    ⚠️ 重启会踢线，先 ssh gs 'ss -tn state established "( sport = :16081 )" | wc -l' 看在线上人数
-$JAVA_HOME/bin/javac -encoding UTF-8 -source 8 -target 8 -nowarn \
-  -cp "$HOME/home/java/gameserver/gameSrv-1.0.0.jar:$HOME/home/java/gameserver/lib/*" \
-  -d /tmp/bot_patch/classes com/ljsd/jieling/bot/*.java com/ljsd/jieling/kefu/Cmd_bot.java \
-  com/ljsd/jieling/chat/logic/ChatLogic.java com/ljsd/jieling/thread/ThreadManager.java \
+`status` 里的「反向回连」是**问测试服自己** `curl 127.0.0.1:18765/health`，
+不能探本机 18765 —— 那是桥接本体，探了永远是 up，说明不了隧道通不通。
+
+### 打补丁（本地编译 → 上传 → 重启）
+
+```bash
+cd TimeSpaceServer/Server_x1tag1.2.2/server_game/serverlogic/src/main/java
+
+# 关键：用【测试服那份 jar】当 classpath 基准 + -implicit:none
+#   不加 -implicit:none 会把 sourcepath 里的 thrift 等依赖一起编出来（几十个类，容易和线上版本不一致）
+#   不用测试服 jar 而用本地 jar 当基准，可能带上本地独有的差异
+scp gs:/home/java/gameserver/gameSrv-1.0.0.jar /tmp/bot_patch/gameSrv-ts.jar
+javac -nowarn -encoding UTF-8 -source 8 -target 8 \
+  -cp "$HOME/home/java/gameserver/lib/*:/tmp/bot_patch/gameSrv-ts.jar" -implicit:none \
+  -d /tmp/bot_patch/classes \
+  com/ljsd/jieling/bot/{BotProfile,BotConfig,BotText,DshClient,BotManager,BotTask}.java \
+  com/ljsd/jieling/kefu/Cmd_bot.java \
+  com/ljsd/jieling/chat/logic/ChatLogic.java \
+  com/ljsd/jieling/thread/ThreadManager.java \
   com/ljsd/jieling/thread/task/MinuteTask.java
-#    ↑ 在 server_game/serverlogic/src/main/java 下执行；再把 /tmp/bot_patch/classes 里的 class
-#      用 `zip -u` 打进远端的 gameSrv-1.0.0.jar（先 cp 一份 .bak-bot-<日期>）
+# 应为 19 个 class（含内部类）。字节码版本校验：xxd -l 8 <class> → cafe babe 0000 0034（0x34=52=Java8）
 
-# ④ 配置
+cd /tmp/bot_patch/classes && cp ../gameSrv-ts.jar ../gameSrv-patched.jar
+find . -name '*.class' | sed 's|^\./||' | zip -q -u ../gameSrv-patched.jar -@
+
+# 备份 + 上传 + 配置 + 重启
+ssh gs 'cd /home/java/gameserver && cp gameSrv-1.0.0.jar gameSrv-1.0.0.jar.bak-<日期>-bot'
+scp /tmp/bot_patch/gameSrv-patched.jar gs:/home/java/gameserver/gameSrv-1.0.0.jar
 scp TimeSpaceServer/Server_x1tag1.2.2/server_game/conf/bot_config.json gs:/home/java/gameserver/conf/
+ssh gs 'md5sum /home/java/gameserver/gameSrv-1.0.0.jar'      # 与本机 md5 对齐再重启
+ssh gs 'cd /home/java/gameserver && bash RESTART-GAMESERVER.sh'   # 约 40s，自带自检
+```
 
-# ⑤ 控制台（自动带上隧道端口）
-scripts/bot/testserver.sh console
+重启脚本自检判据：**实例数=1 / Authentication failed=0 / Address already in use=0**。
+`WorldChat (rPCClient is null) > 0` 属正常（测试服 chatserver 没起，不影响登录）。
+重启前先确认在线人数：`redis-cli keys 'ONLINE_NUM:*'`。
+
+### 控制台
+
+```bash
+scripts/bot/testserver.sh console      # 带隧道端口起控制台
 open http://127.0.0.1:18766/
 ```
 
-验证顺序（控制台里点，或 `scripts/gm_client.py --port 17916`）：
+### 验证顺序（2026-10-21 实测通过）
 
-1. `bot status` → 日志出现 `[bot] status enabled=... virtualOnline=1/2`
-2. 控制台底栏发一句「模拟玩家发言」→ 右列流水线 8~25s 后转「思考中」→ 再 ~15s 变「已回复」
-3. 中列能看到 `玩家` 那条 + 紧接着 `BOT` 的回复，字符数 ≤40
-4. `bot announce` → 世界/系统频道出现 `Congratulations! Nova has obtained the ...`
-5. `redis-cli -p 16379 get ONLINE_NUM:10001` → 至少 1（虚拟在线）
+| 步骤 | 命令 / 动作 | 期望 |
+|---|---|---|
+| 1 | `redis-cli -p 16379 get 10001:BOT_STATUS` | JSON，`virtualOnline:1`，`bots[0].online:true` |
+| 2 | `redis-cli -p 16379 get ONLINE_NUM:10001` | `1`（真人 0 + 虚拟 1） |
+| 3 | `gm_client.py --port 17916 'bot fake any1 on? need help with boss'` | 世界频道出现 `any1: on? need help with boss` |
+| 4 | 等 20~40s | Nova 回 `on, wut boss u stuck on lol`（15.5s，27 字符，走 dsh） |
+| 5 | `bot say test from nova` | 事件流 `manual`，世界频道出现该条 |
+| 6 | `bot announce` | 事件流 `announce`，`channel=sys`，`hero#<id> star=<n>` |
+| 7 | 等 3~12 分钟 | 事件流出现 `chatter`（本地语料，`source=local`） |
 
-**回滚**：`cp gameSrv-1.0.0.jar.bak-bot-<日期> gameSrv-1.0.0.jar` + 重启；配置里 `enabled:false` 也能一键哑火（`bot reload` 即可，不用重启）。
+实测数据（测试服 10001，首轮）：AI 回复 15.5s，兜底率 0%，世界队列 8 条历史恢复，
+`bot fake` 注入 → 回复全链路一次成功；反向隧道 `curl /health` 返回 `okCount` 递增。
+
+**回滚**：`cp gameSrv-1.0.0.jar.bak-<日期>-bot gameSrv-1.0.0.jar` + 重启；
+或配置里 `enabled:false` + `bot reload`（不用重启，立即哑火）。
 
 ---
 
-## 11. 上线（129.226.213.65）注意事项
+## 11. 线上注意（同一台机，先灰度）
 
 1. 线上只有 **127.0.0.1:7916** 的 GM 端口，验证要开隧道：`ssh -N -L 17916:127.0.0.1:7916 gs`。
 2. 热补丁沿用 runbook：`zip -u` 就地替换 class，**不要整包重打**；重启会踢线，先确认在线人数。

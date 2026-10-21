@@ -303,6 +303,46 @@ $PY scripts/image/gen_chatgpt_web.py --image ... --prompt-file ... --out ... --r
 ```
 
 
+### 额度台账 `provider_ledger.py`（2026-10-21 起，换号的记忆）
+
+换号链以前是「失忆」的：只记 `quota_date`（哪一天空过），而且**只降权不排除**。后果很具体 ——
+2026-10-21 一轮实测：本机 Chrome 空 → k1hiv2p8 空 → k12w7kmd 打不开，三个号轮流「额度已用尽」，
+**光等失败就烧掉 9 分钟**；而这三件事上一轮就知道。
+
+现在额度这件事由 `scripts/image/provider_ledger.py` 管，台账落
+`_output/art_restyle/quota_ledger.json`（跟钥匙缓存同目录，gitignore）：
+
+| 旧口径 | 新口径 |
+|---|---|
+| `quota_date = 今天` | `blocked_until = 什么时候恢复`（绝对时间） |
+| 只降权，照样排队试 | 没到恢复时间**直接不排队**（省掉每次 3~9 分钟的撞墙） |
+| 无解封动作 | 出图成功即 `mark-ok` 解封并提到最前（钥匙缓存同时记住端口） |
+| 站点只给一句话 | 解析成时间：`21 小时后` / `22 時間後` / `明日の 16:54` / `明天 08:30` / `about 16:54` |
+| 站点什么都不给 | 兜底 `now + 6h`（标 `estimated`），刻意不用 24h 把一个其实已恢复的号堵一整天 |
+
+🔴 **台账只能是优先级，不能是一票否决。** 同一天实测过反例：`provider_state.json` 里
+`ktmrjhu` 明明标着 `quota_date=2026-10-21`，显式排进去却一次过。所以「**所有号都被封锁**」时
+仍按**最快恢复**的那个赌一把（日志会写「台账可能已过期」），赌到就自动解封。
+
+```bash
+$PY scripts/image/provider_ledger.py list --live     # 台账 + AdsPower 实时状态（只读，6 个号约 7s）
+$PY scripts/image/provider_ledger.py pick --max 3    # 只看候选顺序，不启动浏览器
+$PY scripts/image/provider_ledger.py switch --max 1  # 真的接/开下一个号，打印 CDP_PORT
+$PY scripts/image/provider_ledger.py mark-exhausted --id k1hiv2p8 --raw "上限将在 21 小时后重置"
+$PY scripts/image/provider_ledger.py mark-ok --id ktmrjhu
+$PY scripts/image/provider_ledger.py reset --id k1hiv2p8 | --all
+$PY scripts/image/provider_ledger.py check           # 自检：解析器 5 例 + 排序/挑选 4 例
+```
+
+- 状态机：`unknown → ok`（出图成功）/ `exhausted`（额度空，带恢复时间）/
+  `unusable`（未登录、验证码、页面没出图，短冷却 120 分钟）。
+- `gen_chatgpt_web.py` 已内置：本机 Chrome 在封锁期时**直接从换号链起步**（不再先撞一次），
+  换号链里封锁的号不进队列，成败都写回台账；`--ignore-ledger` 可临时关掉这套记忆。
+- 手工改台账也行（就是 JSON），但改完跑一次 `check`，它会拦「状态是额度空却没写恢复时间」这种自相矛盾。
+- Jenkins：**`TS-Art-Provider`**（`ACTION=status|pick|switch|reset|check`）——看台账、算顺序、真切号、
+  解封、自检。`switch` 会把 `CDP_PORT=<端口>` 打进 `artifacts/NEXT_STEPS.md`，
+  直接填进 `TS-Art-Restyle` 的同名参数即可。`TS-Art-Restyle` 新增 `IGNORE_LEDGER` 开关。
+
 ### 手工指定账号（自动换号之外）
 
 自动换号只是「挑第一个能用上的」。要**指定**某个号，把端口写死给 job 的 `CDP_PORT` 即可：

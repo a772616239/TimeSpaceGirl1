@@ -102,6 +102,18 @@ def read_fail(out: Path) -> dict:
         return {}
 
 
+def _ledger():
+    """额度台账（同目录 provider_ledger.py）。导入失败返回 None —— 台账只是加速器，缺了照样能跑。"""
+    try:
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import provider_ledger as pl
+        return pl
+    except Exception as e:                                    # noqa: BLE001
+        log(f"⚠ 导入 provider_ledger 失败（{e}）：本轮不做额度台账记忆")
+        return None
+
+
 def find_node() -> str | None:
     cand = [os.environ.get("NODE_BIN"), shutil.which("node"),
             "/Users/wangxufeng/.workbuddy/binaries/node/versions/22.22.2-6/bin/node",
@@ -237,6 +249,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="整条换号链的总时间预算（秒，默认 960=16 分钟）。用完就停，别把 job 拖爆")
     ap.add_argument("--adspower-stop-when-done", action="store_true",
                     help="换号成功后也关掉现开的那个号（默认留着：下次跑直接接入，不用再等启动）")
+    ap.add_argument("--ignore-ledger", action="store_true",
+                    help="忽略额度台账（provider_ledger.py）。默认会跳过「还没到恢复时间」的号，"
+                         "免得每轮都拿同一个空号从头试；要验某个号的额度时加这个开关")
     ap.add_argument("--check-only", action="store_true", help="只做连通性与登录态预检")
     args = ap.parse_args(argv)
 
@@ -273,6 +288,25 @@ def main(argv: list[str] | None = None) -> int:
     #    额度用尽」重试一万次也没用，必须直接返回 RC_WARN。
     attempts = 1 if args.grab_existing else max(1, args.attempts)
     last = RC_FAIL
+
+    # 🔴 台账先行：本机 Chrome 上一轮已经额度用尽、又还没到恢复时间 ⇒ 别再花 3~9 分钟撞一次。
+    #    2026-10-21 实测：一轮里 3 个号轮流「额度已用尽」，光等失败就烧掉 9 分钟，
+    #    而这件事本来是「上一轮就知道的」。台账记的是**什么时候恢复**，不是「今天空过」。
+    pl = _ledger()
+    if pl and not args.ignore_ledger and not args.reuse_cdp and not args.grab_existing:
+        t = pl.blocked_until("chrome", args.profile)
+        if t:
+            log(f"↪ 台账：本机 Chrome（{args.profile}）额度封锁到 "
+                f"{t:%m-%d %H:%M}（还有 {pl.human_left(t)}），本轮跳过它")
+            if args.auto_fallback:
+                rc = try_fallback(args, image, prompt_file, out, node, pw)
+                if rc == RC_OK:
+                    return RC_OK
+                if rc == RC_REFUSED:
+                    return RC_WARN
+            log("🔴 换号链也没拿到图，而本机 Chrome 台账封锁中 —— 本轮不再试它")
+            return RC_WARN
+
     for i in range(1, attempts + 1):
         if i > 1:
             log(f"↻ 第 {i}/{attempts} 次重试（上一次页面/浏览器被关，判定为环境抖动）")
@@ -280,6 +314,8 @@ def main(argv: list[str] | None = None) -> int:
         if last == RC_OK:
             # 本机 Chrome profile 也记进钥匙缓存：下次同一台机器直接从它开始
             record_key("chrome", args.profile, port=args.port)
+            if pl:
+                pl.mark_ok("chrome", args.profile)
             return RC_OK
         if last == RC_REFUSED:
             # 被拒是「这张图/这句话不能画」，不是环境问题：不重试、不换号，改 LAYOUT 再说。
@@ -292,13 +328,21 @@ def main(argv: list[str] | None = None) -> int:
         if last == RC_QUOTA:
             # 🔴 额度用尽是账号级限制：重试没用，换号才有用。
             #    换号链（见 try_fallback）：① 接入已开着的 SunBrowser → ② 让 AdsPower 现开一个 profile。
+            detail = read_fail(out)
+            if pl and not args.reuse_cdp:
+                # 把「什么时候恢复」写进台账，下一轮直接从换号链起步
+                pl.mark_exhausted("chrome", args.profile,
+                                  raw=str(detail.get("reset") or ""),
+                                  message=str(detail.get("message") or ""))
+                t = pl.blocked_until("chrome", args.profile)
+                log(f"   台账：chrome:{args.profile} 记额度用尽"
+                    f"{'，恢复时间 ' + t.strftime('%m-%d %H:%M') if t else ''}")
             if args.auto_fallback:
                 rc = try_fallback(args, image, prompt_file, out, node, pw)
                 if rc == RC_OK:
                     return RC_OK
                 if rc == RC_REFUSED:
                     return RC_WARN
-            detail = read_fail(out)
             log(f"🔴 出图额度已用尽（账号级，重试无效）：{detail.get('message') or '站点未给出原文'}")
             log("   处理：在 AdsPower 里换一个已登录 ChatGPT 的 profile 后重跑，或等额度重置")
             return RC_WARN
@@ -328,6 +372,7 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
     deadline = time.time() + max(0, args.fallback_budget)
     tried_ports = {args.port} if args.reuse_cdp else set()
     today = time.strftime("%Y-%m-%d")
+    pl = _ledger()
 
     # ── ① 已经开着的 SunBrowser ────────────────────────────────────────────
     ports = [p for p in find_sunbrowser_ports(exclude=args.port) if p not in tried_ports]
@@ -359,9 +404,35 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
     if not cands:
         log("⚠ AdsPower 里没有可换的 profile（缓存目录里没有启动过的号）")
         return RC_QUOTA
-    log(f"↪ 换号 ②／②：AdsPower 里现开一个（候选 {', '.join(c['user_id'] for c in cands[:args.adspower_max_profiles])}）")
 
-    for c in cands[:args.adspower_max_profiles]:
+    # 🔴 台账过滤：还没到恢复时间的号**直接不排队**。
+    #    以前是「只降权不排除」，于是每轮都拿同一个空号从头试，等一轮失败就得几分钟。
+    #    但台账也可能是错的（实测 ktmrjhu 标着当天空过却一次过）⇒ 全被封时按最快恢复的赌一把。
+    queue = cands
+    if pl and not args.ignore_ledger:
+        explicit = [x.strip() for x in (args.adspower_profiles or "").split(",") if x.strip()]
+        ordered = pl.order([{"id": c["user_id"], "cookies": int(c.get("cookies") or 0)}
+                            for c in cands], "adspower", explicit=explicit)
+        by_id = {c["user_id"]: c for c in cands}
+        queue = [by_id[r["id"]] for r in ordered]
+        blocked = []
+        free = []
+        for c in queue:
+            t = pl.blocked_until("adspower", c["user_id"])
+            (blocked if t else free).append((c, t))
+        if blocked:
+            tail = "、".join(f"{c['user_id']}({pl.human_left(t)})" for c, t in blocked)
+            log(f"   台账封锁中、本轮不碰：{tail}")
+        if free:
+            queue = [c for c, _ in free]
+        elif blocked:
+            queue = [blocked[0][0]]
+            log(f"⚠ 台账里所有号都在封锁期，按最快恢复的 {queue[0]['user_id']} 赌一把（记录可能已过期）")
+            log("   如果它其实还有额度，这次就能出图；出来了会自动解封并提到最前")
+
+    log(f"↪ 换号 ②／②：AdsPower 里现开一个（候选 {', '.join(c['user_id'] for c in queue[:args.adspower_max_profiles])}）")
+
+    for c in queue[:args.adspower_max_profiles]:
         if time.time() > deadline:
             log("⚠ 换号预算用完，停止继续尝试")
             return RC_QUOTA
@@ -408,6 +479,8 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
             state["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
             save_state(state)
             record_key("adspower", uid, port=port)
+            if pl:
+                pl.mark_ok("adspower", uid)
             log(f"✅ 换号成功：AdsPower profile {uid}（CDP {port}）")
             if args.adspower_stop_when_done:
                 log(f"   --adspower-stop-when-done：关闭 {uid}")
@@ -420,12 +493,22 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
                 fb.adspower_stop(uid)
             return rc
         if rc == RC_QUOTA:
-            log(f"   {uid} 这个号也额度用尽 → 记下来，明天之前排在最后")
+            detail = read_fail(out)
+            resume = str(detail.get("reset") or "")
+            if pl:
+                e = pl.mark_exhausted("adspower", uid, raw=resume,
+                                      message=str(detail.get("message") or ""))
+                log(f"   {uid} 这个号也额度用尽 → 台账记到 {e.get('blocked_until')}"
+                    f"（依据 {e.get('reset_basis')}{'，估的' if e.get('reset_estimated') else ''}）")
+            else:
+                log(f"   {uid} 这个号也额度用尽 → 记下来，明天之前排在最后")
             state.setdefault("profiles", {}).setdefault(uid, {})["quota_date"] = today
             save_state(state)
         else:
             # rc=3=未登录/人机验证/非空对话，rc=1=页面没出图。现开的号不折腾，换下一个
             log(f"   {uid} 不可用（rc={rc}，见上面 driver 日志）→ 换下一个号")
+            if pl:
+                pl.mark_unusable("adspower", uid, note=f"rc={rc} @ {today}")
             state.setdefault("profiles", {}).setdefault(uid, {})["note"] = f"rc={rc} @ {today}"
             save_state(state)
         if launched:

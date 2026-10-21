@@ -75,6 +75,24 @@ $PY scripts/image/restyle_pipeline.py publish --work "$W" --variant alpha --yes 
   $PY scripts/image/find_browser_cdp.py --stop k1hiv2p8   # 收掉自己开的
   ```
 
+### 1.1.1 额度台账：换号要有记忆，别每轮从第一个号重撞（2026-10-21 新增）
+
+`scripts/image/provider_ledger.py`（台账 `_output/art_restyle/quota_ledger.json`）
+＋ Jenkins **`TS-Art-Provider`**（`ACTION=status|pick|switch|reset|check`）。
+
+| 用户说 | 跑什么 |
+|---|---|
+| 「现在哪些号还有额度 / 哪个号空到什么时候」 | `TS-Art-Provider` `ACTION=status`（只读，不启动浏览器） |
+| 「切到下一个能用的号」 | `ACTION=switch` → 产物里直接给 `CDP_PORT=`，填进 `TS-Art-Restyle` |
+| 「这个号我确认有额度，别跳过」 | `ACTION=switch` + `FORCE=true`，或出图加 `--ignore-ledger` |
+| 「把 k1hiv2p8 解封」 | `ACTION=reset` + `RESET_ID=k1hiv2p8` |
+
+- 记的是**什么时候恢复**（`blocked_until`），不是「今天空过」；没到点的号**不进队列**。
+  以前只降权不排除，实测一轮 3 个号轮流「额度已用尽」白烧 9 分钟。
+- 🔴 **封锁不是一票否决**：全被封时按最快恢复的赌一把（`ktmrjhu` 标着当天空过却一次过）。
+- 出图成功即 `mark-ok` 并提到最前；`rc=1/3` 记 `unusable` 短冷却 120 分钟。
+- 改完台账跑 `check`：5 条解析用例 + 4 条排序/挑选用例，自相矛盾（空号没写恢复时间）直接红。
+
 - 🔴 **免费版调不了 `user/list`**（`This feature is only available in paid subscriptions`），
   但 `browser/active|start|stop` 免费可用 ⇒ profile 的 user_id 从本地缓存目录反推：
   `~/Library/Application Support/adspower_global/cwd_global/source/cache/<user_id>_<hash>/`。

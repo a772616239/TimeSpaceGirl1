@@ -11,6 +11,7 @@
     {"name":"ADSPOWER_PROFILES","type":"string","default":"","description":"换号顺序（逗号分隔的 AdsPower user_id，如 k1hiv2p8,k12w7kmd）：排在最前，不受自动排序影响。留空=自动排（上次成功的 → 今天没空的 → chatgpt cookie 多的）。用 scripts/image/find_browser_cdp.py --profiles 看有哪些号"},
     {"name":"ADSPOWER_MAX_PROFILES","type":"string","default":"3","description":"最多现开几个号（默认 3）。每开一个都要等一次完整出图，贪多只会把 job 拖长"},
     {"name":"FALLBACK_BUDGET","type":"string","default":"960","description":"整条换号链的总时间预算（秒，默认 960=16 分钟）。用完即停，避免一个号接一个号地试到 job 超时"},
+    {"name":"IGNORE_LEDGER","type":"boolean","default":false,"description":"忽略额度台账（scripts/image/provider_ledger.py）。默认会跳过「还没到恢复时间」的号，所以上一轮空过的号这一轮不会再来撞一遍；只在「就是要验某个号的额度」时勾上"},
     {"name":"GEN_IMAGE","type":"string","default":"","description":"provider=manual 时显式指定生成图绝对路径。留空 = 取 _output/art_restyle/<资源>/<主题>/inbox 下最新的图"},
     {"name":"PROMPT_OVERRIDE","type":"text","default":"","description":"覆盖预设提示词（留空=用 theme_presets.json 里的）。用于「同一主题但要改某句话」"},
     {"name":"ALPHA_FROM","type":"string","default":"","description":"alpha 参照图。资源被压成 RGB（丢了透明浮层）时用；支持 git:HEAD:<path> 直接从 git 取原版"},
@@ -85,6 +86,13 @@ mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
   echo "🔴 写回时原图不留在工程里：搬到 ResBackpack/备份/<资源相对路径>，Assets 只留当前生效版本；"
   echo "   要回滚跑 restyle_pipeline.py restore --asset <资源>（--list 看有哪些版本）。"
 } | tee "$TS_RUN_DIR/context.txt"
+
+# 进来时先看额度台账：哪些号已经空了、什么时候恢复。这一步只读，不启动任何浏览器。
+{
+  echo ""
+  echo "额度台账（进来时）："
+  "$PY" scripts/image/provider_ledger.py pick --max 3 2>/dev/null | sed 's/^/  /' || echo "  （台账读不出来，本轮按无台账跑）"
+} | tee -a "$TS_RUN_DIR/context.txt"
 
 # 提示词先落盘，后面 provider 与人工出图都用同一份，避免「job 里跑的和手搓的不是一句话」
 PROMPT_FILE="$TS_RUN_DIR/artifacts/prompt.txt"
@@ -162,13 +170,20 @@ if [[ "$PROVIDER" == "chatgpt_web" ]]; then
   # 🔴 这个 provider 走本机 Chrome 的登录态，出口封了就是 403/超时。
   #    失败只标黄（--warn-ok），因为「网络不可用」不是这份代码的缺陷。
   #    timeout 要容得下「本机号 420s + 换号预算」：900 会把换号链腰斩。
+  LEDGER_ARGS=""
+  if [[ "${IGNORE_LEDGER:-false}" == "true" ]]; then
+    LEDGER_ARGS="--ignore-ledger"
+    echo "额度台账：忽略（IGNORE_LEDGER=true，会把封锁中的号也再试一遍）"
+  else
+    echo "额度台账：启用（跳过还没到恢复时间的号；台账看 TS-Art-Provider 的 ACTION=status）"
+  fi
   "$BASH" .jenkins/lib/run_stage.sh --name "chatgpt.com 出图" \
     --group "美术资源链" --slug art-gen-web --timeout 2400 --warn-ok \
     -- "$PY" scripts/image/gen_chatgpt_web.py \
          --image "$ART_WDIR/src/source.png" \
          --prompt-file "$TS_RUN_DIR/artifacts/prompt.txt" \
          --out "$ART_WDIR/inbox/gen_web.png" \
-         --crop-height "$ART_CROP" $CDP_ARGS $FB_ARGS
+         --crop-height "$ART_CROP" $CDP_ARGS $FB_ARGS $LEDGER_ARGS
   if [[ -f "$ART_WDIR/inbox/gen_web.png" ]]; then
     cp -f "$ART_WDIR/inbox/gen_web.png" "$TS_RUN_DIR/artifacts/gen.png"
     printf '%s\\n' "$ART_WDIR/inbox/gen_web.png" > "$TS_RUN_DIR/generated.path"

@@ -3,7 +3,8 @@
 > 适用：TimeSpaceGirl1（Unity 6000.6.5f1）。礼包墙、奖励档位、任务列表这类
 > 「ScrollCycleView + 卡片」的入场——卡片按版面顺序一张接一张弹一下。
 > 唯一实现：`Assets/ManagedResources/~Lua/Modules/Common/ItemPopIn.lua`。
-> 已接入：`ValuePackPanel`（礼包墙）、`GrowthManual_RewardPreview`、`GrowthManual_TaskPreview`；
+> 已接入：`ValuePackPanel`（礼包墙）、`GrowthManual_RewardPreview`、`GrowthManual_TaskPreview`、
+> `RankingSingleListPanel`（榜单，A 方案 + 统一接点见第 3.1 节）；
 > 页签多的三个面板走「页面级接入」：`ExpertPanel`、`OperatingPanel`、`AdjutantActivityPanel`
 > （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / **成长礼金 page_3** / **终身限购 page_9** / 战令 /
 > 副官挑战 / 副官赠礼）；
@@ -177,6 +178,7 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 | `ThousandDrawPanel`（phases） | `Init` 的网络回调末尾（数据到位、卡面填好之后） | 领奖后的整表刷新会重播——那是**新一局**，可以接受 |
 | `DefenseTrainingPopup`（phases，关卡节点） | `OnOpen` 置位 → `OnShow` 末尾消费（`UpdateMain` 之后，status 节点已按状态激活） | 战斗返回（`IsBackOpen` 只走 `OnShow`，不经 `OnOpen`）、点「重置关卡」（回调里直接调 `OnShow`）——都是同屏刷新 |
 | `BlitzStrikePanel`（duang，未开宝箱） | 同上：`OnOpen` 置位 → `OnShow` 里 `UpdateMain` 之后消费 | 战斗返回（只走 `OnShow`）、领奖回调里的 `UpdateMain` 刷新；`difficultyLevel = 0`（弹选难度）那一支也不播 |
+| `RankingSingleListPanel` | `OnOpen` 置位 → 首轮榜单数据灌列表时消费（接点在 `CheckIsTop`，见 3.1 节） | 翻页 / 事件回调重灌列表（标记已消费）；空榜（`SetData` 前 return） |
 | 抽中单张卡（phases） | 抽卡回调里 `SetCard` 之后 `PlayCardIn(msg.number)` | —— |
 
 **TabBox 点击为什么自动就有动画**：`GrowthManualPanel.SwitchView` 里本来就会调
@@ -189,6 +191,35 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 > 首开时会连播两次：`OnOpen` 调了一次 `view:OnShow`，`OnShow → TabCtrl:Init` 的回调又调一次。
 > 两次在同一帧里（`OnOpen`/`OnShow` 由 `UIManager.OpenPanel` 同步调用），中间没有渲染间隙，
 > 所以视觉上只有一次。**跨帧连播才需要去抖**，这里不需要。
+
+### 3.1 单列表 + 异步网络数据（榜单形态：统一接点）
+
+`RankingSingleListPanel` 是另一类形态：**一个 ScrollCycleView，数据走网络回调**，
+12 条 `Set*Info` 路径（战力/竞技/爬塔/试炼/关卡/公会…）各自灌列表。逐条路径加
+`Play()` 就是 12 处样板，而且「哪些路径灌列表」这份名单一定会过期。接点选在
+`CheckIsTop()`——**它本来就是每条路径在 `SetData` 之后都要调的收尾函数**：
+
+```lua
+-- OnOpen（玩家主动打开面板）置位
+this.listPopPending = true
+
+-- 统一接点：消费一次，之后分页加载 / 事件回调重灌 SetData 不再重播
+function this.TryPlayListPopIn()
+    if not this.listPopPending then return end
+    this.listPopPending = false
+    if this.popIn ~= nil then this.popIn:Play() end
+end
+function this.CheckIsTop()
+    if this.istop then ... end
+    this.TryPlayListPopIn()
+end
+```
+
+- 🔴 一次性标记（`OnOpen` 置位 → 首次填充消费）是这里的关键：榜单的翻页请求会触发
+  事件回调**重灌整个列表**（`SetData` 再来一遍），没有标记就会每翻一页整列重弹。
+- 空榜路径在 `SetData` 之前就 return，不会空耗标记（也正好不播——没东西可弹）。
+- A 方案没有 `PlayPage` 的重试机制，但这里不需要：`SetData` 是同步克隆 item 的，
+  `CheckIsTop` 被调到时 item 一定已经在了。
 
 ---
 
@@ -435,3 +466,9 @@ end
   （`OnOpen` 置位 → `OnShow` 消费）：战斗返回（只走 `OnShow`）与领奖后的 `UpdateMain` 刷新都不重播，
   `difficultyLevel = 0`（弹选难度）那支也不播。
   新增 `test_blitzstrike_boxpopin.lua`（6 组：队列采集 / 手感 / 回收 / 时机 / 源码接线）。
+- **2026-10-21**（榜单）：`RankingSingleListPanel` 接入（A 方案 + 统一接点，见 3.1 节）。
+  面板是「单 ScrollCycleView + 12 条网络回调灌列表」形态，逐条加 `Play()` 必然漏接，
+  接点选在每条路径 `SetData` 后都要调的 `CheckIsTop`；`OnOpen` 置位一次性标记，
+  翻页 / 事件回调重灌列表不重播。ItemPre 根节点是纯 RectTransform（prefab 实测只挂 224），
+  无 Animator 抢缩放。新增 `test_rankingsingle_listpopin.lua`
+  （7 组：接线 / 12 路径接点完整性 / 首轮逐格 / 翻页不重播 / 重开再播 / 空列表防御 / 生命周期回收）。

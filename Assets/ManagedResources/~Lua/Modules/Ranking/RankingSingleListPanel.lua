@@ -2,6 +2,8 @@ require("Base/BasePanel")
 require("Modules/CountryRank/CountryFlagUtil")
 RankingSingleListPanel = Inherit(BasePanel)
 local this = RankingSingleListPanel
+--列表项入场：逐格「放大缩小」（配方见 docs/ui_item_pop_in_skill.md，唯一实现在 Modules/Common/ItemPopIn）
+local ItemPopIn = require("Modules/Common/ItemPopIn")
 --头像
 this.firsthead = nil
 this.playerHeadList = {}--背景前三头像
@@ -74,6 +76,9 @@ function RankingSingleListPanel:InitComponent()
 
     this.MyRankHead = Util.GetGameObject(this.record, "Head")
     this.MyRankHeroHead = Util.GetGameObject(this.record, "HeroHead")
+
+    --列表逐格弹入：getter 传函数，scrollView 在 OnDestroy 里会被置 nil
+    this.popIn = ItemPopIn.New(function() return this.scrollView end)
 end
 
 --绑定事件（用于子类重写）
@@ -141,6 +146,8 @@ function RankingSingleListPanel:OnOpen(_sData)
     this.GetRankInfo(sData.Id, sData)
 
     this.record:SetActive(true)
+    --玩家主动打开面板：第一轮榜单数据灌进列表时播一次逐格弹入
+    this.listPopPending = true
 
     --英雄排行榜 
     if sData.rankType == RANK_TYPE.HERO_FORCE_RANK then
@@ -188,6 +195,11 @@ function RankingSingleListPanel:OnClose()
     this.playerHeroListGo = {}
     this.playerHeroListHead = {}
     -- this.HideList()
+
+    this.listPopPending = false
+    if this.popIn ~= nil then
+        this.popIn:Stop()
+    end
 end
 
 --界面销毁时调用（用于子类重写）
@@ -197,6 +209,9 @@ function RankingSingleListPanel:OnDestroy()
     end
     this.playerHeroListHead ={}
     this.playerHeadList = {}
+    if this.popIn ~= nil then
+        this.popIn:Stop()
+    end
     this.scrollView = nil
 
 end
@@ -1121,12 +1136,30 @@ function this.TabAdapter(tab, index, status)
     end
 end
 
+--[[
+ * 面板打开后的第一轮榜单数据到了：列表逐格弹入（docs/ui_item_pop_in_skill.md）
+ * 🔴 只在「玩家主动打开面板」这一轮播：12 条 Set*Info 路径全部在 scrollView:SetData
+ *   之后调 CheckIsTop，拿它当统一接点；标记消费一次后，分页加载
+ *   （RequestNext*PageData 触发的事件回调会重灌 SetData）/ 事件刷新不再重播。
+ *   空榜路径在 SetData 之前就 return 了，不会空耗这一次标记。
+--]]
+function this.TryPlayListPopIn()
+    if not this.listPopPending then
+        return
+    end
+    this.listPopPending = false
+    if this.popIn ~= nil then
+        this.popIn:Play()
+    end
+end
+
 --检查是否显示第一页 当切换页签时切换到第一页 当请求下一页时不跳转第一页
 function this.CheckIsTop()
     if this.istop then
         this.scrollView:SetIndex(1)
         this.istop = false
     end
+    this.TryPlayListPopIn()
 end
 
 --检查Tab是否解锁

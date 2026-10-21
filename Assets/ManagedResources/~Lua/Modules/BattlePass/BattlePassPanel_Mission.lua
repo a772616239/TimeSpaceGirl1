@@ -34,7 +34,8 @@ local tabIndex = 1
 
 --============================== 任务卡入场（左滑入 + 淡入）==============================
 -- 参考 Assets/Art/UIAni/cn2-X1_UI_TreasureStorePopup.anim（dump_clip.py 反解，m_EditorCurves 12 条全读）：
---   grid/item1..3     m_AnchoredPosition.x   -200 / -150 / -100 → 0   逐格错开
+--   grid/item1..3     m_AnchoredPosition.x   -200 / -150 / -100 → 0   逐格错开（左侧滑入）
+-- 本页做**反向**：从右侧 +260 向左归位 0。
 --   grid/item1..3/Bg  m_Color.a              0.3647 → 1             淡入比位移长
 -- 前 4 条（Panel 的位移/现高、Panel/Bg 的回弹 + alpha）是弹窗本体进出场，
 -- 本页是 BattlePassPanel 的子页，没有对应节点、也不该整页位移 ⇒ 只复刻列表项那 6 条。
@@ -46,6 +47,8 @@ local tabIndex = 1
 -- 🔴 本列表 Open 时传的是 fixedCount=1 / itemCount=1 ⇒ 一屏只有 1 张卡，item 池反复复用，
 --    所以每次 SetData 之后都要在终值上重新起播（PlayTaskSlideIn 开头先 Stop 复位）。
 local kCardSlideFrom     = 260      -- 起点位移（px）：卡宽 870 的 ~30%；参考是 203 宽的 73%~98%
+-- 方向：从**右侧**滑入（起点 x + kCardSlideFrom，向左归位）。参考 clip 是左侧滑入（-200 → 0），
+-- 这里按要求做反向；要改回左侧只需把 PlayTaskSlideIn 里的 + 改成 -（见该处注释）。
 local kCardSlideDuration = 0.22     -- 单卡时长
 local kCardSlideStep     = 0.05     -- 多卡时相邻错开（当前一屏 1 张，实际不起作用）
 local kCardFadeFrom      = 0.3647   -- 参考 item/Bg 的 alpha 起点
@@ -113,7 +116,7 @@ local function CollectCards()
     return cards
 end
 
--- 起播：每张卡从左侧 260px 滑回原位，底板 alpha 0.3647 → 1。
+-- 起播：每张卡从右侧 260px 向左滑回原位，底板 alpha 0.3647 → 1。
 function this.PlayTaskSlideIn()
     this.StopTaskSlideIn()
     local cards = CollectCards()
@@ -131,7 +134,8 @@ function this.PlayTaskSlideIn()
                     local rect = go:GetComponent("RectTransform")
                     if Alive(rect) then
                         local pos = rect.anchoredPosition
-                        rect.anchoredPosition = Vector2.New(pos.x - kCardSlideFrom, pos.y)
+                        -- 从右侧滑入：起点在右边，向左归位（反向 = 把这里的 + 改回 -）
+                        rect.anchoredPosition = Vector2.New(pos.x + kCardSlideFrom, pos.y)
                         local tween = rect:DOAnchorPosX(pos.x, kCardSlideDuration)
                         tween:SetDelay(delay)
                         SetEaseSafe(tween, "OutQuad")

@@ -1,6 +1,6 @@
 -- 离线验证 BattlePassPanel_Mission 的**任务卡**入场动画（不依赖 Unity）：
 -- 用假 Util / getComponent / DOTween / ScrollCycleView 跑真源码，覆盖
---   ① PlayTaskSlideIn   卡的 6 个可视子节点一起左移 260px 滑回原位 + 底板 bg 淡入 0.3647
+--   ① PlayTaskSlideIn   卡的 6 个可视子节点一起从右侧 260px 向左滑回原位 + 底板 bg 淡入 0.3647
 --   ② 完成恢复          anchoredPosition 与 alpha 精确回到基准值（不是"差不多"）
 --   ③ 中途 StopTaskSlideIn Kill 后必须全复位（不能停在半截位置/半透明）
 --   ④ 多卡错开          相邻卡 delay = 0.05
@@ -208,8 +208,8 @@ assert(#tweens == 7, "tween 条数应为 7，实际 " .. #tweens)
 local ns = nodesOf(card1)
 for _, name in ipairs(CARD_NODES) do
     local b = BASE[name]
-    assert(ns[name].anchoredPosition.x == b[1] - 260,
-           ("%s 起点应为 x-260 = %d，实际 %.1f"):format(name, b[1] - 260, ns[name].anchoredPosition.x))
+    assert(ns[name].anchoredPosition.x == b[1] + 260,
+           ("%s 起点应为 x+260 = %d，实际 %.1f"):format(name, b[1] + 260, ns[name].anchoredPosition.x))
     assert(ns[name].anchoredPosition.y == b[2], name .. " 的 y 不该被动")
 end
 assert(math.abs(ns.bg.graphics.Image.color.a - 0.3647) < 1e-6,
@@ -220,7 +220,7 @@ for _, t in ipairs(tweens) do
     assert(t.ease == Ease.OutQuad, "ease 应为 OutQuad")
     assert(t.delay == 0, "单卡不该有延迟")
 end
-print("  6 节点 x-260 + bg 0.3647，共 7 条 tween")
+print("  6 节点 x+260（右侧起）+ bg 0.3647，共 7 条 tween")
 
 -- ---------------- case 2: 完成恢复 ----------------
 print("== case2 完成后精确回基准值 ==")
@@ -232,7 +232,7 @@ print("  位置/颜色全复位")
 print("== case3 中途 Stop 全复位 ==")
 tweens = {}
 Panel.PlayTaskSlideIn()
-assert(ns.title.anchoredPosition.x == -340, "重播应从起点起")
+assert(ns.title.anchoredPosition.x == 180, "重播应从起点起（-80 + 260 = 180）")
 Panel.StopTaskSlideIn()
 assert(liveTweens() == 0, "Stop 后不该有存活 tween，实际 " .. liveTweens())
 assertBase(card1, "Stop 后")

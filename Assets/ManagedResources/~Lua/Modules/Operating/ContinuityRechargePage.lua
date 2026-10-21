@@ -26,6 +26,13 @@ function ContinuityRechargePage:ctor(mainPanel, gameObject)
     self.continuityTaskList = {}
 end
 
+--手工克隆的长列表（不是 ScrollCycleView）：给通用入场动画声明容器，
+--ItemPopIn.PlayPage 扫到这个方法就会取容器下的 active 子节点逐格播（itemPro 模板自身
+--是 SetActive(false) 的，天然被跳过）。
+function ContinuityRechargePage:GetPopInSource()
+    return self.continuityTaskContent
+end
+
 function ContinuityRechargePage:OnShow(_sortingOrder)
     isFirstOn = true
     --Util.AddParticleSortLayer( self.effect, _sortingOrder - sortingOrder)

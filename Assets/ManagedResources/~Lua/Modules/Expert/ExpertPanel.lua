@@ -50,6 +50,7 @@ local ContinuityRechargePage = require("Modules/Operating/ContinuityRechargePage
 local GiftBuy = require("Modules/Expert/GiftBuy") --限定珍藏
 local OpenService = require("Modules/Expert/OpenService") --开服双倍
 local BoxPool = require("Modules/Expert/BoxPool")--扭蛋
+local ItemPopIn = require("Modules/Common/ItemPopIn")--列表项逐格入场（页面级批量接入）
 local curIndex = 0
 local isBindRedPoint = false
 
@@ -267,6 +268,42 @@ function this.PlayTabSelectFlip(index)
     tabSelectTween = tf:DOScale(Vector3.one, kTabFlipDuration):SetEase(Ease.OutQuad)
 end
 
+--==================== 内容页入场：长列表逐格放大缩小 ====================
+-- 只有「列表页」才有东西可播（限定珍藏、积天豪礼），其余页签是固定版面 —— 通用工具
+-- 自己扫页面里的列表，扫不到就 no-op，所以这里不用维护「哪些页签有列表」的名单。
+-- 首次打开正好停在这类页签时同样会播：OnShow → ActivityRewardShow → PlayContentPopIn。
+function this:GetContentPage()
+    if curIndex == ExperType.ExChange then
+        return this.exChange
+    elseif curIndex == ExperType.UpLv then
+        return this.upLvRewardGrid
+    elseif curIndex == ExperType.ContinueRecharge then
+        return this.continuityRechargePage
+    elseif curIndex == ExperType.GiftBuy or curIndex == ExperType.Resupply then
+        return this.giftBuy
+    elseif curIndex == ExperType.OpenService then
+        return this.openService
+    elseif curIndex == ExperType.BoxPool then
+        return this.boxPool
+    end
+    return this.expert
+end
+
+function this:PlayContentPopIn()
+    ItemPopIn.PlayPage(this:GetContentPage())
+end
+
+--页签会被多个页签共用（限定珍藏 / 物资补给），关闭时全停一遍最省心
+function this:StopContentPopIn()
+    ItemPopIn.StopPage(this.exChange)
+    ItemPopIn.StopPage(this.expert)
+    ItemPopIn.StopPage(this.upLvRewardGrid)
+    ItemPopIn.StopPage(this.continuityRechargePage)
+    ItemPopIn.StopPage(this.giftBuy)
+    ItemPopIn.StopPage(this.openService)
+    ItemPopIn.StopPage(this.boxPool)
+end
+
 --初始化组件（用于子类重写）
 function ExpertPanel:InitComponent()
     this.btnBack = Util.GetGameObject(self.gameObject, "btnBack")
@@ -289,6 +326,8 @@ function ExpertPanel:InitComponent()
         Util.AddOnceClick(tabBtns[i], function()
             curIndex = i
             this:ActivityRewardShow()
+            --切页签：新页是长列表就逐格入场（数据回调刷新不播，见 RefreshActivity）
+            this:PlayContentPopIn()
         end)
     end
     
@@ -357,6 +396,8 @@ function ExpertPanel:OnShow()
     this.PlayTabFlipIn()
     -- 内容区从上往下落位（与翻入同时起，和参考一致）
     this.PlayDropIn()
+    -- 首次打开就停在这类页签时也要播：列表项逐格放大缩小（排在页内容 OnShow 之后）
+    this:PlayContentPopIn()
 end
 
 function ExpertPanel:OnSortingOrderChange()
@@ -370,12 +411,15 @@ end
 function ExpertPanel:OnClose()
     -- 翻到一半被关掉：必须把临时禁用的按钮 Animator 恢复，否则这颗页签以后没按下反馈
     this.StopOpenAnims()
+    -- 列表项半截缩放也要复位
+    this:StopContentPopIn()
     PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
 end
 
 --界面销毁时调用（用于子类重写）
 function ExpertPanel:OnDestroy()
     this.StopOpenAnims()
+    this:StopContentPopIn()
     SubUIManager.Close(this.HeadFrameView)
     SubUIManager.Close(self.UpView)
     this:ClearRedPoint()

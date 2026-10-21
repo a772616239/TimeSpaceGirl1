@@ -45,6 +45,20 @@
 - 战令 `BattlePassConfig.BuyId = 72001`（198 元，单档，无 30–68 元入门档）。
 - 首充活动 = `GlobalActivity Id=5`（Type=5 RechargeTotal），`ActivityRewardConfig ActivityId=5`。
 
+## 🔴 价值口径必须三源合并（R12）
+一个 SKU 的抽等值 = SKU 行 `BaseReward`/`ExtraReward` + `LuxuryFund` 日领
++ `ActivityRewardConfig` 轨道（经 `GlobalActivity.CanBuyRechargeId` 挂到 SKU）。
+只看 SKU 行会把成长基金（98 元、30,160 钻、1.399 抽/元）判成空包。
+
+全表真实阶梯（抽/元，2026-10-21 R12）：
+成长基金 98 元 **1.399** ＞ 月卡（累充 12 元白送）1.364 ＞ 首充 6 元 0.879 ＞
+豪华基金 128 元 0.827 ＞ 豪华基金 328 元 0.718（**倒挂**）＞ 战令 198 元 0.339 ＞
+礼包带 0.194–0.292 ＞ 直充 0.046–0.059（首购 0.118）。
+**落差 5.6 倍**：98 元基金 137 抽 vs 648 元礼包 189 抽 ⇒ 礼包线在数值上没有购买理由。
+`LuckyCatConfig` 901–904 满次数 22,704 钻 → 37,990 钻（1.67x），是钻石产出口不是回收口。
+`OnSaleRule=1#999#999` = 永久关停，占 283/833 行；`Android_ilod_OneStoreCB` 计费点 0/833。
+工具：`scripts/monetization_audit.py`（只读，7 项检查）。
+
 ## 🔴 星级成长礼的星级从哪来
 - `PackPush.ConditionId` 的 `4#N`（条件类型 4 = 妖灵师星级），`Packs` 列 `#` 分割 SKU。
   只覆盖 15 个 SKU；`30702/30802/30902` 这类"低价兄弟包"没被登记 ⇒ 靠 **Name 组内继承**

@@ -1,5 +1,6 @@
 ChanagePanel = quick_class("GuildBattlePanel")
 local this = ChanagePanel
+local ItemPopIn = require("Modules/Common/ItemPopIn")--地图据点入场（从小到大的弹性）
 local guildWarSetting = ConfigManager.GetConfig(ConfigName.GuildWarSetting)
 local guildWarConfig = ConfigManager.GetConfig(ConfigName.GuildWarConfig)
 local itemConfig = ConfigManager.GetConfig(ConfigName.ItemConfig)
@@ -9,6 +10,37 @@ local cityImg = {
     "cn2-X1_gonghui_dibiao_zhandouzhong"
 }
 local server = {}--跨服
+
+--==================== 地图据点入场（从小到大的弹性）====================
+-- map/city1..10 不是列表，是散在地图上的 10 个固定据点 ⇒ 用数组数据源 + phases 关键帧
+-- （配方与坑见 docs/ui_item_pop_in_skill.md，列表项一律走公共模块，别在这儿复写第二份）。
+-- 不用 duang / OutElastic：单个据点的画面是 315x257（根节点 baseScale 1.2），属「大块头」，
+-- OutElastic 在 0.5s 内抖 3 个来回、观感是「闪一下」（同 skill 1.1）。
+--   0.65 → 1.05（0.28s OutCubic，冲出峰值）
+--        → 0.985（0.14s InOutQuad，被拉回）
+--        → 1.00（0.10s OutQuad，落定）           单据点 ≈ 0.52s
+-- 相邻错开 0.05（0.45s 内 10 个全起播），整批 ≈ 0.97s。
+-- 峰值只到 1.05：city5 的 x=345，右边缘本来就贴着画布边（345 + 315*1.2/2 = 534，半屏 540），
+-- 再往上冲会把据点顶出屏幕。
+-- centerPivot 关掉：据点图就是根节点自己的 Image、pivot 本来在图的中心；而 cityName/guildName/btn
+-- 全挂在中心**上方**，让模块去「按内容并集居中」会把缩放原点抬到那串文字上 ⇒ 看起来像「从文字往下长」。
+local kCityPhases = {
+    { scale = 1.05,  duration = 0.28, ease = "OutCubic" },
+    { scale = 0.985, duration = 0.14, ease = "InOutQuad" },
+    { scale = 1,     duration = 0.10, ease = "OutQuad" },
+}
+local kCityPopInCfg = {
+    mode = "phases",
+    from = 0.65,
+    phases = kCityPhases,
+    centerPivot = false,
+    step = 0.05,
+    maxSpan = 0.45,
+}
+-- 只播「这一屏第一次被看到」那一轮：面板打开时 GuildBattlePanel:OnOpen 调 RequestCityPopIn 置位、
+-- 本文件的 OnShow 消费。点「刷新」（回调里直接调 OnShow）与战斗返回都只走 OnShow ⇒ 不重播
+-- （判据见 docs/ui_item_pop_in_skill.md 第 3 节）。
+local playCityInOnShow = false
 
 function this:InitComponent(go)
     this.gameObject = go
@@ -26,19 +58,69 @@ function this:InitComponent(go)
 
     this.city = {}
     for i = 1, 10 do
+        local cityGo = Util.GetGameObject(this.gameObject, "map/city"..i)
         this.city[i] = {
-            cityBg = Util.GetGameObject(this.gameObject, "map/city"..i):GetComponent("Image"),
+            go = cityGo,--据点根节点：入场动画的缩放目标（图就画在它自己身上）
+            cityBg = cityGo:GetComponent("Image"),
             cityName = Util.GetGameObject(this.gameObject, "map/city"..i.."/cityName"):GetComponent("Text"),
             guildName = Util.GetGameObject(this.gameObject, "map/city"..i.."/guildName"):GetComponent("Text"),
             btn = Util.GetGameObject(this.gameObject, "map/city"..i.."/btn"),
             data = {}
         }
     end
+    --地图据点入场：显式数组数据源（ItemPopIn 认 Lua 数组），顺序 = 从地图中心往外，见 BuildCityPopInList
+    this.cityPopInList = this:BuildCityPopInList()
+    this.cityPopIn = ItemPopIn.New(function() return this.cityPopInList end, kCityPopInCfg)
 
     --跨服
     this.crossService = Util.GetGameObject(this.gameObject, "crossService")
     this.serverGrid = Util.GetGameObject(this.crossService, "grid")
     this.serverPre = Util.GetGameObject(this.crossService, "grid/pre")
+end
+
+--入场顺序：按「离地图中心远近」由内向外一圈圈弹开 —— 比按 city1..10 顺着弹更像地图在展开，
+--也免得美术挪过节点之后顺序变得莫名其妙。读的是 anchoredPosition（据点都是 map 的直接子节点，
+--map 四边拉满、pivot 0.5 ⇒ 原点就是地图中心）；量不到就保持 1..10，别让一次取组件失败毁掉整批。
+function this:BuildCityPopInList()
+    local list, allOk = {}, true
+    for i = 1, #this.city do
+        local dist = 0
+        local ok = pcall(function()
+            local pos = this.city[i].go:GetComponent("RectTransform").anchoredPosition
+            dist = pos.x * pos.x + pos.y * pos.y--只比大小，不用开根号
+        end)
+        if not ok then
+            allOk = false
+        end
+        list[i] = { go = this.city[i].go, dist = dist }
+    end
+    if allOk then
+        table.sort(list, function(a, b) return a.dist < b.dist end)
+    end
+    local out = {}
+    for i = 1, #list do
+        out[i] = list[i].go
+    end
+    return out
+end
+
+--置位（GuildBattlePanel:OnOpen 调）：下一次 OnShow 播一轮据点入场
+function this:RequestCityPopIn()
+    playCityInOnShow = true
+end
+
+--整批入场：10 个据点从 0.65 弹到原大小（ShowCity 把贴图/文字刷完之后调）
+function this:PlayCityPopIn()
+    if this.cityPopIn then
+        this.cityPopIn:Play()
+    end
+end
+
+--回收：Kill + 复位。🔴 漏调 = 据点永久停在 0.65
+function this:StopCityPopIn()
+    if this.cityPopIn then
+        this.cityPopIn:Stop()
+    end
 end
 
 function this:BindEvent()
@@ -110,6 +192,9 @@ end
 
 --界面打开时调用（用于子类重写）
 function this:OnShow()
+    local playCityIn = playCityInOnShow
+    playCityInOnShow = false--一次性标记：这次不管播不播都清掉，别漏给下一次
+
     CheckRedPointStatus(RedPointType.GuildBattle_FreeTime)
     GuildBattleManager.GetTotalDamageRankRequest(function ()
         this.RefreshRank()
@@ -119,10 +204,15 @@ function this:OnShow()
     this.ShowCity()
     this.crossService:SetActive(GuildBattleManager.guildType == 1)
     this.SetCrossServerList()
+    --据点入场放在最后：上面已经把据点数据（ShowCity）和显隐都摆好了
+    if playCityIn then
+        this:PlayCityPopIn()
+    end
 end
 
 --界面关闭时调用（用于子类重写）
 function this:OnClose()
+    this:StopCityPopIn()
     if this.timer then
         this.timer:Stop()
         this.timer = nil
@@ -131,6 +221,7 @@ end
 
 --界面销毁时调用（用于子类重写）
 function this:OnDestroy()
+    this:StopCityPopIn()
     if this.timer then
         this.timer:Stop()
         this.timer = nil

@@ -77,6 +77,8 @@ end
 -- 打开时调用
 function this:OnOpen(index)
     curPanelIndex = index and index or 1
+    --地图据点入场只在这一轮打开时置位（战斗返回只走 OnShow ⇒ 不重播）；子模块自己消费这个标记
+    this.contents[1].view:RequestCityPopIn()
     this.PageTabCtrl:Init(this.tabbox, tabs, curPanelIndex)
 end
 

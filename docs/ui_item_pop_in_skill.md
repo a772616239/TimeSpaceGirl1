@@ -11,7 +11,9 @@
 > 固定版面（不是列表）走关键帧模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位，`phases`）、
 > `DefenseTrainingPopup`（5 个关卡节点 `Stage1..5`，`phases`，只在 `OnOpen` 那一轮播）；
 > 地图上的单点元素走 `duang`：`BlitzStrikePanel`（**未开宝箱**从小到大弹一下，数组数据源，
-> 缩放目标是 `Bg/box` 而不是宝箱根节点，见第 5 节第 15 条）。
+> 缩放目标是 `Bg/box` 而不是宝箱根节点，见第 5 节第 15 条）；
+> 地图上的据点走「由中心往外」的 `phases`：`ChallengePanel`（公会战 `map/city1..10`，
+> 数组数据源按 `anchoredPosition` 离中心远近排序 + `centerPivot = false`，见第 8 节末条）。
 > 更新时间 2026-10-21。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
 
 ---
@@ -178,6 +180,7 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 | `ThousandDrawPanel`（phases） | `Init` 的网络回调末尾（数据到位、卡面填好之后） | 领奖后的整表刷新会重播——那是**新一局**，可以接受 |
 | `DefenseTrainingPopup`（phases，关卡节点） | `OnOpen` 置位 → `OnShow` 末尾消费（`UpdateMain` 之后，status 节点已按状态激活） | 战斗返回（`IsBackOpen` 只走 `OnShow`，不经 `OnOpen`）、点「重置关卡」（回调里直接调 `OnShow`）——都是同屏刷新 |
 | `BlitzStrikePanel`（duang，未开宝箱） | 同上：`OnOpen` 置位 → `OnShow` 里 `UpdateMain` 之后消费 | 战斗返回（只走 `OnShow`）、领奖回调里的 `UpdateMain` 刷新；`difficultyLevel = 0`（弹选难度）那一支也不播 |
+| `ChallengePanel`（公会战地图据点，phases） | 父面板 `GuildBattlePanel:OnOpen` 调 `RequestCityPopIn()` 置位 → 本模块 `OnShow` 末尾（`ShowCity` 之后）消费 | 点「刷新」（回调里直接调 `OnShow`）、战斗返回（只走 `OnShow`）——都是同屏刷新 |
 | `RankingSingleListPanel` | `OnOpen` 置位 → 首轮榜单数据灌列表时消费（接点在 `CheckIsTop`，见 3.1 节） | 翻页 / 事件回调重灌列表（标记已消费）；空榜（`SetData` 前 return） |
 | 抽中单张卡（phases） | 抽卡回调里 `SetCard` 之后 `PlayCardIn(msg.number)` | —— |
 
@@ -472,3 +475,20 @@ end
   翻页 / 事件回调重灌列表不重播。ItemPre 根节点是纯 RectTransform（prefab 实测只挂 224），
   无 Animator 抢缩放。新增 `test_rankingsingle_listpopin.lua`
   （7 组：接线 / 12 路径接点完整性 / 首轮逐格 / 翻页不重播 / 重开再播 / 空列表防御 / 生命周期回收）。
+- **2026-10-21**（公会战地图据点）：`ChallengePanel`（`GuildBattlePanel` 的 `challengePanel`，
+  据点 `map/city1..10`）接入。三处与前面几个面板不同，都是「地图」这个形态带来的：
+  1. **子模块没有 `OnOpen`**：`GuildBattlePanel:OnOpen` 只初始化页签，不会把 `OnOpen` 转给
+     `contents[i].view`。所以一次性标记改成父面板显式置位（`this.contents[1].view:RequestCityPopIn()`），
+     子模块自己消费；`IsBackOpen` 只走 `OnShow` ⇒ 战斗返回天然不重播。
+  2. **顺序按几何排，不按节点名**：10 个据点的 `anchoredPosition` 就是版面位置，
+     按「离地图中心远近」升序 ⇒ 由内向外一圈圈弹开。美术挪了节点也不会出现「顺序莫名其妙」，
+     量不到（取组件失败）才退回 `city1..10`。
+  3. **`centerPivot = false`**：据点图就画在根节点自己的 `Image` 上、pivot 本来在图中心，
+     而 `cityName/guildName/btn` 全挂在中心**上方** —— 交给模块「按内容并集居中」会把缩放原点
+     抬到那串文字上，看起来像「从文字往下长」（第 5 节第 13 条的镜像情况）。
+  配方：`0.65 → 1.05（0.28 OutCubic）→ 0.985（0.14 InOutQuad）→ 1（0.10 OutQuad）` 单据点 0.52s，
+  相邻错开 0.05、整批 0.45 起播完（≈0.97s）；峰值卡 1.05 而不是 1.06 —— `city5` 右边缘本来就
+  贴到画布边（345 + 315×1.2/2 = 534 / 半屏 540）。据点 `baseScale` 是 1.2（不是 1），
+  模块按 `tf.localScale` 当基准，配方里写的都是**相对倍数**。
+  新增 `test_guildbattle_mapin.lua`（6 组：数据源与由内向外顺序 / 起点与错开 / 三段关键帧 /
+  时机 / 回收 / 接线与选型）。

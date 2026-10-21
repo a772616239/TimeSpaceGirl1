@@ -95,6 +95,22 @@ function BoxPool:OnShow(sortingOrder)
 
 end
 
+--==================== 列表项入场（ItemPopIn 页面级）====================
+-- 扭蛋池是固定摆位的奖池格（type1 / type2 的 grid/pos1..N），不是 ScrollCycleView。
+-- 只收当前形态里真正显示的格子（type1、type2 只有一个 active），否则没显示的那一套
+-- 会白占错开时间、还会把动画播在看不见的节点上。itemList[11] 是 type1 的大奖位。
+function BoxPool:GetPopInSource()
+    local list = {}
+    for i = 1, #itemList do
+        local view = itemList[i]
+        local go = view and view.gameObject
+        if go ~= nil and not IsNull(go) and go.activeInHierarchy then
+            list[#list + 1] = view
+        end
+    end
+    return list
+end
+
 --界面关闭时调用（用于子类重写）
 function BoxPool:OnClose()
     CardActivityManager.StopTimeDown()

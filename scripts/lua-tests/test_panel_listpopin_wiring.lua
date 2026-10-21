@@ -136,5 +136,25 @@ Check(lifelongGetter ~= nil and lifelongGetter:find("self.preList", 1, true) ~= 
     "返回 preList 数组，而不是 grid 容器（rewardPre 模板挂在 grid 下，按容器扫会把模板也算进去）")
 Check(lifelong:find("go:SetActive(true)", 1, true) ~= nil, "克隆项填完数据是 active 的（否则会被跳过）")
 
+-- ---------------- ExpertPanel 各活动页的数据源 ----------------
+-- 页签 7/13/21 这类「达人」活动都在 Expert.lua 里，内容是手工克隆的奖励行；
+-- 23=升级豪礼、31=开服双倍、8=限时兑换、32=开服馈赠同理。除限定珍藏（GiftBuy，
+-- ScrollCycleView 会被自动扫到）外都得自己声明 GetPopInSource，漏了就是
+-- 「点进去一格都不动」而且不报错 —— 所以这里逐页断言数据源取的是哪张表。
+print("== ExpertPanel 各活动页的数据源 ==")
+for _, case in ipairs({
+    { file = "Expert/Expert.lua", cls = "Expert", field = "expertRewardGrid" },
+    { file = "Expert/Expert_UpLv.lua", cls = "Expert_UpLv", field = "expertRewardGrid" },
+    { file = "Expert/OpenService.lua", cls = "OpenService", field = "self.preList" },
+    { file = "Expert/ExChange.lua", cls = "ExChange", field = "itemList" },
+    { file = "Expert/BoxPool.lua", cls = "BoxPool", field = "itemList" },
+}) do
+    local src = readSource(BASE .. case.file)
+    local fn = bodyOf(src, "function " .. case.cls .. ":GetPopInSource()")
+    Check(fn ~= nil and fn:find(case.field, 1, true) ~= nil,
+        case.cls .. " 声明了 GetPopInSource 且取 " .. case.field)
+end
+print("  · 限定珍藏（GiftBuy）的 this.ScrollView 由 PlayPage 自动扫，不用声明")
+
 print(failed == 0 and "ALL OK" or ("FAILED: " .. failed))
 if failed > 0 then os.exit(1) end

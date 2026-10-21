@@ -37,6 +37,14 @@ function OpenService:OnShow()
     self:RefreshList()
 end
 
+--==================== 列表项入场（ItemPopIn 页面级）====================
+-- 开服双倍：手工克隆的礼包行（content/rect/grid 下 rewardPre1..N），不是 ScrollCycleView。
+-- 模板 rewardPre 自身 activeSelf=false 且不在 preList 里，天然不会被弹到；
+-- preList 的顺序就是版面顺序，ItemPopIn 只收 activeSelf 的行。
+function OpenService:GetPopInSource()
+    return self.preList
+end
+
 --界面关闭时调用（用于子类重写）
 function OpenService:OnClose()
 end

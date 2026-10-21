@@ -128,6 +128,21 @@ function this.SingleItemDataShow(go,data)
     end)
 end
 
+--==================== 列表项入场（ItemPopIn 页面级）====================
+-- 升级豪礼同样是手工克隆的奖励行（rect/rect/grid 下 rewardPre1..N），不是 ScrollCycleView。
+-- ⚠️ OnShow 里列表是在 ActivityGiftManager.RefreshAcitvityData 的回调里才造的 ⇒ 面板切页签
+--    那一刻可能一行都没有，由 ItemPopIn.PlayPage 的异步重试兜住（扫到 0 个会隔几帧再扫）。
+function Expert_UpLv:GetPopInSource()
+    local list = {}
+    for i = 1, #expertRewardGrid do
+        local go = expertRewardGrid[i]
+        if go ~= nil and not IsNull(go) and go.activeSelf then
+            list[#list + 1] = go
+        end
+    end
+    return list
+end
+
 --界面关闭时调用（用于子类重写）
 function Expert_UpLv:OnClose()
 

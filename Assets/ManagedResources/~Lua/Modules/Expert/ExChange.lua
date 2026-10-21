@@ -112,6 +112,13 @@ function ExChange:ExChangeShow()
         UIManager.OpenPanel(UIName.MapShopPanel, exChangeConFig.ShopId)
     end)
 end
+--==================== 列表项入场（ItemPopIn 页面级）====================
+-- 限时兑换展示的奖励是 ItemView 挂在 itemRewardParent 下（不是 ScrollCycleView）。
+-- 直接给 ItemView 数组：ItemPopIn 的数组源分支认 .transform，会按 ShowItem 的顺序弹。
+function ExChange:GetPopInSource()
+    return itemList
+end
+
 --界面关闭时调用（用于子类重写）
 function ExChange:OnClose()
     CardActivityManager.StopTimeDown()

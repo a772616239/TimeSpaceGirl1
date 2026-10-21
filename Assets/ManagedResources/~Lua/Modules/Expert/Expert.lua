@@ -282,6 +282,22 @@ function Expert:ActivityRewardSingleShow(index, data)
     end
 end
 
+--==================== 列表项入场（ItemPopIn 页面级）====================
+-- 达人活动的内容是「手工克隆的奖励行」rewardPre1..N（不是 ScrollCycleView），
+-- 给通用入场动画声明数据源。只收本轮真正显示的行：OnShowData 会把多出来的行
+-- SetActive(false)，而 1..10 行是常驻复用的（不随活动重建），所以必须按 activeSelf 过滤；
+-- 返回顺序即版面顺序（expertRewardGrid 的 1..N）。
+function Expert:GetPopInSource()
+    local list = {}
+    for i = 1, #expertRewardGrid do
+        local go = expertRewardGrid[i]
+        if go ~= nil and not IsNull(go) and go.activeSelf then
+            list[#list + 1] = go
+        end
+    end
+    return list
+end
+
 --界面关闭时调用（用于子类重写）
 function Expert:OnClose()
     CardActivityManager.StopTimeDown()

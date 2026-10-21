@@ -1,12 +1,13 @@
 # 虚拟玩家（机器人）：在线数 / 世界喊话 / 英雄公告 / AI 回话
 
-> 更新时间：2026-10-21
+> 更新时间：2026-10-22
 > 关联：`server_ops_runbook.md`（线上热补丁口径）、`scripts/bot/dsh_bridge.py`（DSH 桥接）、
 > `scripts/bot/start_bridge.sh`（桥接启停）、`scripts/bot/bot_console.py` + `console.html`（可视化后台）、
 > `scripts/bot/testserver.sh`（测试服隧道+控制台）、
 > `TimeSpaceServer/Server_x1tag1.2.2/server_game/conf/bot_config.json`（配置）
 > 一句话：**服务端内存里养 1~2 个虚拟玩家，撑起后台在线数、世界频道人气和英雄公告；
-> 世界频道出现玩家发言时，把近 3 天上下文丢给本机 DSH，回一句 40 字符以内的真人味儿短句。
+> 它们是「躺平挂机」的玩家 —— 随机 20~240 分钟醒一次，醒来只做一件事（回话 / 公告 / 闲聊 / 纯挂机）；
+> 玩家说话不会立刻被回，只是记进账本，等下次有人醒来才可能被回一句 40 字符以内的真人味儿短句。
 > 有一个网页控制台能看实时流水线、指标和事件，并直接点按钮操作。**
 
 ---
@@ -16,9 +17,14 @@
 | 现象 | 机器人做的事 |
 |---|---|
 | 测试服/新服 `ONLINE_NUM=0`，后台看板上一个活人都没有 | 把在线机器人叠加进 `ONLINE_NUM`（后台、登录服 `recommend` 都读这个 key） |
-| 世界频道 7 天没人说话，像鬼服 | 每 3~12 分钟让一个机器人在世界频道说句话 |
-| 抽卡没有「别人也在抽」的氛围 | 每 25~75 分钟发一条吉运公告（复用真实玩家公告链路，名字换成机器人） |
-| 玩家在世界上说话没人接 | 最新一条玩家消息**如果机器人没回过**，8~25 秒后由 DSH 生成一句短回复 |
+| 世界频道 7 天没人说话，像鬼服 | 机器人**随机 20~240 分钟醒一次**，醒来才可能说句话 |
+| 抽卡没有「别人也在抽」的氛围 | 醒来时 40% 概率发一条吉运公告（复用真实玩家公告链路，名字换成机器人） |
+| 玩家在世界上说话没人接 | 醒来时若还有没回过的消息，8~25 秒后由 DSH 生成一句短回复 |
+
+> 🔴 **核心口径（2026-10-22 起）：机器人是「躺平挂机」的玩家，不是客服。**
+> 所有行为（回话 / 公告 / 闲聊）都挂在同一个总闸上 —— 每个机器人**独立随机 20~240 分钟醒来一次**，
+> 醒来按 `回话 > 公告 > 闲聊 > 挂机` 的优先级**只做一件事**，然后继续躺。
+> 玩家说话**不会**立刻触发回复，只是被记进账本，等下一次有人醒来才可能被回。
 
 ---
 
@@ -29,7 +35,7 @@
    └─ ChatLogic.sendChatMessage
         ├─ MessageCache.addWordMsg(chatInfo, mid)      ← 客户端拉取式聊天，读这里
         └─ BotManager.onWorldChat(chatInfo, mid, "world")   ← 新增钩子
-              └─ 记 lastHumanMsgId / 排一条 replyDueAt
+              └─ 只记账：lastHumanMsgId / lastHumanText / lastHumanAt（**不排回复**）
 
 chatserver 跨服回包(chatType=16)
    └─ ChatLogic.sendChatMessage(chatInfo, mid)
@@ -37,10 +43,14 @@ chatserver 跨服回包(chatType=16)
         └─ BotManager.onWorldChat(..., "cross")
 
 BotTask（15s 一拍）
-   ├─ maybeChatter   → 造 ChatInfo("0|文案") → addWordMsg → 客户端下一次拉取就能看到
-   ├─ maybeAnnounce  → ChatLogic.sendSysChatMessage(lamp_lottery_content, LUCKY_LUCK, heroId)
-   ├─ maybeReply     → 拼 3 天上下文 → POST DSH 桥接 → 洗文案 → 同上发世界
-   └─ maybeFlipOnline→ 随机上下线，让在线数看起来是活的
+   ├─ maybeFlipOnline→ 随机上下线，让在线数看起来是活的
+   ├─ maybeWake     → 每个机器人各自的 nextActiveAt 到了就「醒来」，只做一件事：
+   │                    ├─ schedulePendingReply  有欠账 → 排 8~25s 后回话
+   │                    ├─ announceHero          roll<40% → 吉运公告
+   │                    ├─ sayChatter            roll<80% → 世界闲聊
+   │                    └─ 什么都不做 → 继续挂机
+   ├─ maybeReply    → 拼 3 天上下文 → POST DSH 桥接 → 洗文案 → addWordMsg
+   └─ publishStatus → 推控制台快照（含每个机器人的 wake 倒计时）
 ```
 
 **关键点：世界频道本来就是「客户端按 messageId 拉取」，不是服务端 push。**
@@ -145,14 +155,18 @@ TS_REDIS_PORT=16379 TS_SERVER_ID=10001 python3 scripts/bot/clean_fake_chat.py
 | `virtualOnline` | true | 是否把机器人算进 `ONLINE_NUM` |
 | `dshUrl` | `http://127.0.0.1:18765/reply` | 桥接地址；改成本机/内网均可 |
 | `replyDelaySecMin/Max` | 8 / 25 | 「思考」延迟，**真人不会秒回** |
-| `replyCooldownSec` | 25 | 两次回复最小间隔 |
+| `replyCooldownSec` | 25 | 同一频道两次回复最小间隔 |
+| `replyMinGapSec` | 1200 | **两次 AI 回复之间的硬间隔**（20 分钟），防两个机器人前后脚各回一条 |
 | `minSpeakGapSec` | 45 | **任意两条机器人发言**的最小间隔（喊话/回复/手动/晒卡互相避让），防刷屏 |
-| `replyFreshSec` | 600 | 超过 10 分钟的旧消息不再追着回 |
+| `replyFreshSec` | 14400 | 只回 4 小时内的消息（= 醒来间隔上限，否则醒来时全过期，永远回不了） |
+| `activeMinSec` / `activeMaxSec` | 1200 / 14400 | 🔴 **节奏总闸**：每个机器人独立随机「醒来」间隔 = 20~240 分钟 |
+| `announceChancePct` | 40 | 醒来时抽到「发英雄公告」的概率（%） |
+| `chatterChancePct` | 40 | 醒来时抽到「世界闲聊」的概率（%）；剩下 20% 就是纯挂机 |
 | `maxReplyChars` | 40 | 回复硬上限（按 code point 截断，尽量切在空格） |
 | `contextHours` | 72 | 喂给 AI 的上下文时间窗 = **3 天** |
 | `contextMaxLines` | 40 | 上下文最多带多少条 |
-| `chatterMin/MaxSec` | 180 / 720 | 日常喊话间隔 |
-| `announceMin/MaxSec` | 1500 / 4500 | 英雄公告间隔 |
+| `chatterMin/MaxSec` | 180 / 720 | 闲聊的额外下限（醒来还要再过这道闸才发） |
+| `announceMin/MaxSec` | 1500 / 4500 | 公告的额外下限（同上） |
 | `onlineFlipMin/MaxSec` | 600 / 1800 | 上下线抖动间隔（至少保留 1 个在线） |
 | `bots[]` | Nova / Kai | uid、name、level、vip、head、frame、country、soulVal、persona |
 | `fakeSenderUid` | 99990001 | `bot fake` 注入假玩家用的 uid，**不能落真实号段** |
@@ -161,19 +175,69 @@ TS_REDIS_PORT=16379 TS_SERVER_ID=10001 python3 scripts/bot/clean_fake_chat.py
 机器人 uid 固定落在 **9xxxxxxx** 段（默认 90000001/90000002），与真实号段（1xxxxxxxx）天然隔开，
 `isBotUid()` 靠这个判断「这条消息是不是自己人发的」，避免自问自答。
 
-### 防刷屏的三道闸
+### 节奏：一个「醒来」总闸，管住所有行为
+
+早期版本是三个独立定时器（喊话 3~12 分钟、公告 25~75 分钟、回复秒级），
+结果是机器人比玩家还勤快，一眼假。现在改成**单闸**：
+
+```java
+// BotManager
+private final Map<Integer, Long> nextActiveAt;   // 每个机器人各自的醒来时刻
+private int nextActiveGapSec() {                 // 1200 ~ 14400 秒
+    return config.activeMinSec + rnd.nextInt(
+            Math.max(1, config.activeMaxSec - config.activeMinSec + 1));
+}
+
+private void maybeWake() {          // 每 15s tick 一次
+    for (BotProfile p : bots.values()) {
+        if (now < nextActiveAt.get(p.uid)) continue;
+        nextActiveAt.put(p.uid, now + sec(nextActiveGapSec()));   // 先排下一次
+        if (!online.contains(p.uid)) continue;                    // 不在线就跳过
+        onActive(p);                                              // 醒来，做一件事
+    }
+}
+```
+
+`onActive()` 的优先级与概率：
+
+| 顺序 | 条件 | 动作 |
+|---|---|---|
+| 1 | `replyEnabled` 且存在「没回过、且不超过 4 小时」的玩家消息，且过了 `replyMinGapSec` | 排一次 8~25 秒后的 AI 回话 |
+| 2 | `roll < announceChancePct`（40%）且过了 `announceMinSec` | 抽个高星英雄发吉运公告 |
+| 3 | `roll < announceChancePct + chatterChancePct`（80%）且过了 `chatterMinSec` | 世界频道闲聊一句（本地语料） |
+| 4 | 其余 20% | 纯挂机，什么都不发 |
+
+首启给一次「1~5 分钟后」的预热活动，避免新服开起来半小时没人说话；之后才进入 20~240 分钟的正态节奏。
+
+**玩家说话不会立刻触发回复**：`onWorldChat` 只更新 `lastHumanMsgId/lastHumanText/lastHumanAt`，
+`schedulePendingReply()` 在醒来那一刻才检查 `lastHumanMsgId > lastBotMsgId`。
+这就是「躺平挂机的人上线才看到你昨天说的话」的效果。
+
+### 防刷屏的四道闸
 
 各来源（喊话 / AI 回复 / GM 手动 / 公告后晒卡）各自有间隔，但**不互相避让**时会挤在几秒内连发，
-玩家看到的就是「机器人自说自话」。现在三道闸：
+玩家看到的就是「机器人自说自话」。现在四道闸：
 
-1. `minSpeakGapSec`（45s）：`sendBotChat` 统一更新 `lastSpeakAt`，喊话和晒卡在动手前先看这个值，
-   不够就顺延；`replyCooldownSec`（25s）管两次 AI 回复之间。
-2. `isBotUid()`：机器人自己的消息进 `onWorldChat` 只 bump `lastBotMsgId`，不更新 `lastHumanMsgId`，
+1. **醒来总闸**（`activeMin/MaxSec`）：一个机器人 20~240 分钟才醒一次，一次只做一件事。
+   这是最粗也是最有效的一道 —— 频率根本高不起来。
+2. `minSpeakGapSec`（45s）：`sendBotChat` 统一更新 `lastSpeakAt`，喊话和晒卡在动手前先看这个值，
+   不够就顺延；`replyCooldownSec`（25s）管同一频道两次回复，`replyMinGapSec`（20 分钟）管全局。
+3. `isBotUid()`：机器人自己的消息进 `onWorldChat` 只 bump `lastBotMsgId`，不更新 `lastHumanMsgId`，
    不触发回复。
-3. **回调二次校验**：DSH 要等 10~15 秒，回来时若 `lastHumanMsgId <= lastBotMsgId`（期间已经被回过），
+4. **回调二次校验**：DSH 要等 10~15 秒，回来时若 `lastHumanMsgId <= lastBotMsgId`（期间已经被回过），
    这次回复直接丢弃，不会对着自己的话再说一遍。
 
-实测：3 条玩家消息间隔 3~4 秒连发 → 只回 1 条；回复后 chatter 间隔 46 秒（≥45s 闸值）。
+实测（临时把醒来间隔压到 60~120 秒验证链路）：
+
+```
+[bot] Kai 醒来 -> 不在线，继续挂机（下次 1 分钟后）
+[bot] Nova 醒来 -> 回话
+[bot] #1 请求 AI 回复 channel=world bot=Nova last="yo nova u still playin today"
+[bot] 世界发言 bot=Nova mid=55 reply=true text="yeah lol just idlin rn"
+```
+
+`bot status` 会显示每个机器人的醒来倒计时，例如 `90000001:Nova(on),wake=43s | 90000002:Kai(off),wake=57s`；
+控制台快照里也有 `nextWakeAt` / `nextWakeInSec`。
 
 ### 机器人账号数据（个人面板不空的关键）
 
@@ -333,10 +397,14 @@ DSH_TIMEOUT=60 python3 scripts/bot/dsh_bridge.py --once "say hi"   # 单次直�
 4. **DSH 必须和游戏服同机**（或改 `dshUrl` 指到能跑 dsh 的机器）：线上 CentOS 只有 2C/3.6G，
    再跑 node 版 dsh 不现实 —— 上线前要么把 `dshUrl` 指向你本机（需要反代/内网），要么只开
    `chatter/announce/virtualOnline`，`replyEnabled=false` 让它走本地语料。
-5. **回复有 8~25 秒延迟 + 10~15 秒模型耗时**，一条回复最坏 ~40 秒才出现在世界频道。
-   这是刻意做的（真人也要看消息、打字），不是卡了。
-6. **机器人不会追着旧消息回**：超过 `replyFreshSec`（默认 10 分钟）就放弃，避免半夜没人时堆一堆延迟回复。
+5. **回复有 8~25 秒「思考」延迟 + 10~15 秒模型耗时**，一条回复最坏 ~40 秒才出现在世界频道。
+   这是刻意做的（真人也要看消息、打字），不是卡了。再加上「20~240 分钟才醒一次」，
+   所以玩家说话后可能几十分钟才被回 —— **这是设计，不是 bug**，别拿「秒回」当验收标准。
+6. **机器人不会追着旧消息回**：超过 `replyFreshSec`（默认 4 小时）就放弃。
+   这个值必须 ≥ `activeMaxSec`，否则醒来时消息全过期，会表现为「怎么永远不回话」。
 7. **跨服频道（chatType=16）需要 `isOpenCross`**；没开跨服时机器人只在本服世界频道活动。
+8. **别把 `activeMin/MaxSec` 调太小当压测**：临时调 60~120 秒验链路可以，验完必须改回
+   `1200/14400` 重新部署，否则测试服会变成刷屏现场。
 
 ---
 
@@ -457,10 +525,16 @@ open http://127.0.0.1:18766/
 | 4 | 等 20~40s | Nova 回 `on, wut boss u stuck on lol`（15.5s，27 字符，走 dsh） |
 | 5 | `bot say test from nova` | 事件流 `manual`，世界频道出现该条 |
 | 6 | `bot announce` | 事件流 `announce`，`channel=sys`，`hero#<id> star=<n>` |
-| 7 | 等 3~12 分钟 | 事件流出现 `chatter`（本地语料，`source=local`） |
+| 7 | `bot status` 看 `wake=xx` | 每个机器人都有醒来倒计时；到点日志出现 `醒来 -> 回话/公告/闲聊/挂机` |
+
+> 第 4 步的「等 20~40s」只在**临时把醒来间隔调小**时成立。默认配置下机器人 20~240 分钟才醒，
+> 要验回复链路请用 `bot fake` 之后**把 `activeMin/MaxSec` 临时改成 60/120** + `bot reload`，
+> 验完立刻改回 `1200/14400`（`bot reload` 即可，不用重启）。
 
 实测数据（测试服 10001，首轮）：AI 回复 15.5s，兜底率 0%，世界队列 8 条历史恢复，
 `bot fake` 注入 → 回复全链路一次成功；反向隧道 `curl /health` 返回 `okCount` 递增。
+节奏重构后本地复验：`Nova 醒来 -> 回话` → 世界发言 `yeah lol just idlin rn`（DSH 重复句已被
+`BotText.collapseRepeat()` 吃掉）。
 
 **回滚**：`cp gameSrv-1.0.0.jar.bak-<日期>-bot gameSrv-1.0.0.jar` + 重启；
 或配置里 `enabled:false` + `bot reload`（不用重启，立即哑火）。
@@ -473,4 +547,6 @@ open http://127.0.0.1:18766/
 2. 热补丁沿用 runbook：`zip -u` 就地替换 class，**不要整包重打**；重启会踢线，先确认在线人数。
 3. 线上 2C/3.6G，`dsh_bridge` 不要跑在服务器上（node + 模型推理扛不住），
    建议 `replyEnabled=false` 先只上「在线数 + 喊话 + 公告」，或者把 `dshUrl` 指向内网的另一台机器。
-4. 首次上线把 `chatterMinSec` 调大（比如 600~1800），先观察一天日志里有没有重复文案、有没有玩家抱怨。
+4. 首次上线保持 `activeMinSec/activeMaxSec = 1200/14400`（20~240 分钟）的躺平节奏，
+   先观察一天日志里有没有重复文案、有没有玩家抱怨；觉得太冷清就把 `activeMaxSec` 往下调，
+   **不要**去动 `chatterMinSec`（那只是醒来后的第二道闸，改它治不了冷清）。

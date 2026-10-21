@@ -53,7 +53,7 @@ do_deploy() {
   ( cd "$OUT" && zip -qr "$JAR" com )
   cp "$BASE" "$BASE.bak-$(date +%Y%m%d-%H%M%S)"
   cp "$JAR" "$BASE"
-  echo "已替换 $BASE（备份 $BASE.bak-*）"
+  echo "已替换 ${BASE}（备份 ${BASE}.bak-*）"
   bash "$HOME/home/java/start-local.sh" restart gs
   echo "等 60s 起服…"
   for i in $(seq 1 30); do

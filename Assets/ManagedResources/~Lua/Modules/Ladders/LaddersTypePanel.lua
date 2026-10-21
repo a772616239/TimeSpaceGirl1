@@ -20,6 +20,8 @@ local type = {
             open = true,
             id = FUNCTION_OPEN_TYPE.ChaosZZ,
             bg = "cn2-X1_kuafu_rukou",
+            -- 图集里的中文原图没有 _zh 后缀，英文版单独出一张并登记成 _en
+            bgEn = "cn2-X1_kuafu_rukou_en",
             name = GetLanguageStrById(16010080),
             resetTime = "",
             tip = "每周一0点~周五22点开启",
@@ -190,7 +192,14 @@ function this.RefreshItem(go,data)
     if data.id ~= -1 then
         BindRedPointObject(data.redPointType,Util.GetGameObject(Icon, "RedPoint"))
         Icon.gameObject:SetActive(true)
-        Icon:GetComponent("Image").sprite = Util.LoadSprite(data.bg)
+        -- 只看 bgEn 在不在：图集里的原图没有 _zh 后缀，
+        -- 直接走 GetPictureFont 会拼出并不存在的 _zh/_jp，图片变白；
+        -- 日文等暂无译图的语言继续用中文原图。
+        local bgName = data.bg
+        if data.bgEn ~= nil and GetLan() == 1 then
+            bgName = data.bgEn
+        end
+        Icon:GetComponent("Image").sprite = Util.LoadSprite(bgName)
        -- Icon:GetComponent("Image").alphaHitTestMinimumThreshold = 0.1
         --Name.text = data.name
         Desc.text = data.tip

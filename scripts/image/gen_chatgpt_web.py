@@ -278,6 +278,8 @@ def main(argv: list[str] | None = None) -> int:
             log(f"↻ 第 {i}/{attempts} 次重试（上一次页面/浏览器被关，判定为环境抖动）")
         last = run_once(args, image, prompt_file, out, node, pw)
         if last == RC_OK:
+            # 本机 Chrome profile 也记进钥匙缓存：下次同一台机器直接从它开始
+            record_key("chrome", args.profile, port=args.port)
             return RC_OK
         if last == RC_REFUSED:
             # 被拒是「这张图/这句话不能画」，不是环境问题：不重试、不换号，改 LAYOUT 再说。
@@ -329,6 +331,10 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
 
     # ── ① 已经开着的 SunBrowser ────────────────────────────────────────────
     ports = [p for p in find_sunbrowser_ports(exclude=args.port) if p not in tried_ports]
+    # 钥匙缓存排前面：上次出过图的端口优先（端口号会变，但同一个号通常连着同一个端口）
+    good_ports = [int(x) for x in cached_order("sunbrowser") if x.isdigit()]
+    if good_ports:
+        ports.sort(key=lambda p: (good_ports.index(p) if p in good_ports else len(good_ports), p))
     for p in ports[:3]:
         if time.time() > deadline:
             log("⚠ 换号预算用完，停止继续尝试")
@@ -337,8 +343,10 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
         log(f"↪ 换号 ①／②：接入已开着的 SunBrowser CDP {p}（只连不断）")
         rc = run_on_port(args, p, image, prompt_file, out, node, pw)
         if rc == RC_OK:
+            record_key("sunbrowser", p, port=p)
             log(f"✅ 换号成功：SunBrowser {p} 已出图")
             return RC_OK
+        record_key("sunbrowser", p, port=p, ok=False, note=f"rc={rc}")
         if rc == RC_REFUSED:
             return rc
         log(f"   SunBrowser {p} 没成（rc={rc}），继续找下一个号")
@@ -399,11 +407,13 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
             state["last_ok_profile"] = uid
             state["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
             save_state(state)
+            record_key("adspower", uid, port=port)
             log(f"✅ 换号成功：AdsPower profile {uid}（CDP {port}）")
             if args.adspower_stop_when_done:
                 log(f"   --adspower-stop-when-done：关闭 {uid}")
                 fb.adspower_stop(uid)
             return RC_OK
+        record_key("adspower", uid, port=port, ok=False, note=f"rc={rc}")
         if rc == RC_REFUSED:
             # 提示词被拒与账号无关，换号也不会变：收掉自己开的号，直接退出
             if launched:
@@ -445,6 +455,10 @@ def pick_profiles(args, fb, state: dict) -> list[dict]:
     by_id = {r["user_id"]: r for r in rows}
     explicit = [x.strip() for x in (args.adspower_profiles or "").split(",") if x.strip()]
     head = [u for u in explicit if u in by_id]
+    # 钥匙缓存（成功出过图的号，最近成功的在前）优先于台账里的 last_ok_profile
+    for u in cached_order("adspower"):
+        if u in by_id and u not in head:
+            head.append(u)
     last_ok = str(state.get("last_ok_profile") or "").strip()
     if last_ok in by_id and last_ok not in head:
         head.append(last_ok)
@@ -497,6 +511,72 @@ def save_state(state: dict) -> None:
         STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as e:                                    # noqa: BLE001
         log(f"⚠ 换号台账写不进去（{e}），不影响出图")
+
+
+# ---------------------------------------------------------------- 钥匙缓存（成功过的号）
+# 🔴 用户 2026-10-21 要求：每次出图成功就把「成功的钥匙」缓存到 table1.json 所在的目录，
+#    下次绘制直接从这儿开始试，别再靠 cookie 数瞎猜。
+#    为什么不放 _output：那里是产物目录（会被清理），钥匙要跨任务/跨天复用，得跟脚本走。
+#    只存「怎么连上哪个号」的标识（端口 / AdsPower user_id / Chrome profile 名），
+#    **不存 cookie、不存密码**——登录态始终留在浏览器自己的 profile 里，这里只是路标。
+KEY_CACHE_FILE = HERE / "gen_keys_cache.json"
+
+
+def load_keys() -> dict:
+    try:
+        data = json.loads(KEY_CACHE_FILE.read_text(encoding="utf-8"))
+        if isinstance(data.get("keys"), dict):
+            return data
+    except Exception:                                         # noqa: BLE001
+        pass
+    return {
+        "_note": "出图成功过的浏览器/账号钥匙（只有路标，没有 cookie）。自动维护，可手删。",
+        "keys": {},
+    }
+
+
+def save_keys(data: dict) -> None:
+    try:
+        data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        KEY_CACHE_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                                  encoding="utf-8")
+    except Exception as e:                                    # noqa: BLE001
+        log(f"⚠ 钥匙缓存写不进去（{e}），不影响出图")
+
+
+def record_key(kind: str, ident, port=None, ok: bool = True, note: str = "") -> None:
+    """记一次出图结果：成功就把它顶到最前，失败只累加计数。
+
+    🔴 成功后清掉 quota_date：额度是会重置的，别让「昨天空过」永久压着一个好号。
+    """
+    data = load_keys()
+    k = f"{kind}:{ident}"
+    row = data["keys"].setdefault(k, {"kind": kind, "id": str(ident)})
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    if port:
+        row["port"] = int(port)
+    row["last_at"] = now
+    if ok:
+        row["ok_at"] = now
+        row["ok_count"] = int(row.get("ok_count") or 0) + 1
+        row["fails"] = 0
+        row.pop("last_fail", None)
+        row.pop("quota_date", None)
+    else:
+        row["fails"] = int(row.get("fails") or 0) + 1
+        row["last_fail"] = note or now
+        if note.startswith("rc=4") or "quota" in note:
+            row["quota_date"] = time.strftime("%Y-%m-%d")
+    save_keys(data)
+
+
+def cached_order(kind: str) -> list[str]:
+    """某类钥匙里「成功过、今天没被判额度空」的 id，最近成功的排前面。"""
+    today = time.strftime("%Y-%m-%d")
+    rows = [r for r in load_keys()["keys"].values()
+            if r.get("kind") == kind and r.get("ok_at") and r.get("quota_date") != today]
+    rows.sort(key=lambda r: str(r.get("ok_at") or ""), reverse=True)
+    return [str(r.get("id")) for r in rows]
 
 
 def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str) -> int:

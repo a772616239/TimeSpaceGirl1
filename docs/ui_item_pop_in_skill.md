@@ -3,7 +3,9 @@
 > 适用：TimeSpaceGirl1（Unity 6000.6.5f1）。礼包墙、奖励档位、任务列表这类
 > 「ScrollCycleView + 卡片」的入场——卡片按版面顺序一张接一张弹一下。
 > 唯一实现：`Assets/ManagedResources/~Lua/Modules/Common/ItemPopIn.lua`。
-> 已接入：`ValuePackPanel`（礼包墙）、`GrowthManual_RewardPreview`、`GrowthManual_TaskPreview`。
+> 已接入：`ValuePackPanel`（礼包墙）、`GrowthManual_RewardPreview`、`GrowthManual_TaskPreview`；
+> 页签多的三个面板走「页面级接入」：`ExpertPanel`、`OperatingPanel`、`AdjutantActivityPanel`
+> （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / 成长礼金 / 战令 / 副官挑战 / 副官赠礼）。
 > 更新时间 2026-10-21。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
 
 ---
@@ -49,6 +51,28 @@
 - ③🔴 **漏 `Stop` = 那一项永久停在 0.82 / 1.02 上**，下次进面板看起来像卡图。
   `Play` 内部也会先 `Stop`，所以重播不会叠加。
 
+### 2.1 B 方案：页面级接入（页签多的面板用这个）
+
+一个面板有十几个页签、每个页签一个内容页时，A 方案的「每页 3 行」就是几十行样板，
+而且「哪些页签有列表」这份名单一定会过期。B 方案把找列表也交给工具：
+
+| # | 位置 | 代码 |
+|---|---|---|
+| ① | 面板：`OnShow`（页内容 `OnShow` 之后） | `ItemPopIn.PlayPage(内容页)` |
+| ② | 面板：页签点击回调（`OnTabChanged` / `ActivityRewardShow` 之后） | `ItemPopIn.PlayPage(内容页)` |
+| ③ | 面板：`OnClose` + `OnDestroy` | `ItemPopIn.StopPage(内容页)`（多页就循环全停） |
+
+`PlayPage` 会到页面对象里自己找长列表，**找不到就 no-op**（返回 0），所以：
+
+- 不用维护「哪些页签有列表」的名单 —— 面板可以对每个页签无脑调用；
+- 首次打开就停在这类页签时会播（`OnShow` 那条路径），满足「首发也要弹」；
+- 扫描认三种挂法：实例字段（`self.scrollView`）、类表字段（`quick_class` 的 `local this = Class`）、
+  `metatable.__index`；一页多个列表（周/月礼包两个 `ScrollView`）会全部接上；
+- 手工克隆、不是 `ScrollCycleView` 的列表（积天豪礼 `taskList/viewPort/content`），
+  页面实现 `GetPopInSource()` 返回容器即可，工具按容器下的 active 子节点播（模板项自己
+  `SetActive(false)` 着，天然跳过）；
+- 绑定按页面缓存（弱表 key），第二次 `PlayPage` 复用第一次建的 popIn，`cfg` 只在首次生效。
+
 ---
 
 ## 3. 什么时候播、什么时候不播（本次三个面板）
@@ -58,6 +82,9 @@
 | `ValuePackPanel` | `OnShow`（`SetDataList()` 之后） | 购买后 `SetDataList` 刷新——它不经过 `OnShow`，所以天然不重播 |
 | `GrowthManual_RewardPreview` | `refresh(isTop, isAni)` 里 `isAni=true` | 领取奖励 / 余额变化等事件回调（`refresh(false,false)`） |
 | `GrowthManual_TaskPreview` | 同上；切日/周/月 toggle 也是 `refresh(true,true)` | 同上 |
+| `ExpertPanel` | `OnShow`、页签点击（`ActivityRewardShow` 之后） | `RefreshActivity`（活动开关 / 进度 / 5 点刷新 / 支付成功回调） |
+| `OperatingPanel` | `OnShow`、页签点击（`OnTabChanged` 之后） | `RefreshActivity`（月卡 / 活动开关 / 战令解锁） |
+| `AdjutantActivityPanel` | `PageTabCtrl:ChangeTab` 的回调（首开也走这条） | 无独立的事件刷新路径 |
 
 **TabBox 点击为什么自动就有动画**：`GrowthManualPanel.SwitchView` 里本来就会调
 `contentScripts[index].view:OnShow(this)`，而两个子模块的 `OnShow` 都走 `refresh(true,true)`
@@ -132,6 +159,8 @@ cd LuaEncoder/luajit_mac/64
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_itempopin.lua
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_valuepack_openanim.lua
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_growthmanual_openanim.lua
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_itempopin_page.lua
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_panel_listpopin_wiring.lua
 ```
 
 | 用例 | 覆盖 |
@@ -140,7 +169,10 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_g
 | `test_valuepack_openanim.lua` | 礼包墙：OnShow 顺序、跳过隐藏卡、购买刷新不重播、生命周期、`Play` 只有 1 处调用 |
 | `test_growthmanual_openanim.lua` | 两个列表页：OnShow 播、`isAni=false` 不播、切页重播、OnClose/OnDestroy 回收、面板 `SwitchView` 仍走 `view:OnShow` |
 
-三个用例都被 Jenkins `TS-Test-Lua` 自动发现（`tests/tests.json` 的 `tests_dir + pattern`），不用改配置。
+| `test_itempopin_page.lua` | 页面级接入 8 组：实例/类表字段扫描、一页两列表、无列表 no-op、`StopPage` 复位、容器模式（`GetPopInSource`）、绑定缓存、重播不叠加 |
+| `test_panel_listpopin_wiring.lua` | 三个面板接线：`OnShow` 有播（首开即列表页也会播）、切页签有播、`RefreshActivity` 不播、`OnClose`/`OnDestroy` 回收、积天豪礼声明 `GetPopInSource` |
+
+五个用例都被 Jenkins `TS-Test-Lua` 自动发现（`tests/tests.json` 的 `tests_dir + pattern`），不用改配置。
 
 **Editor**：打开面板看是否逐格；点 TabBox 切页看是否重播；**动画播到一半关面板再打开**（验证 Stop 复位）；
 买一次礼包看是否整墙重播（应该不重播）。
@@ -172,9 +204,44 @@ function XxxView:OnDestroy() this.popIn:Stop() end
 
 ---
 
+## 7.1 页签多的面板（用 B 方案，示例）
+
+```lua
+local ItemPopIn = require("Modules/Common/ItemPopIn")
+
+function Panel:GetContentPage()            -- 当前页签的内容页
+    return self.contents[curIndex]
+end
+
+function Panel:PlayContentPopIn()          -- 找不到列表就 no-op，不用判断页签
+    ItemPopIn.PlayPage(self:GetContentPage())
+end
+
+function Panel:StopContentPopIn()          -- 一个内容页可能被多个页签共用，全停
+    for i = 1, #self.contents do
+        ItemPopIn.StopPage(self.contents[i])
+    end
+end
+
+function Panel:OnShow()
+    this:OnTabChanged()                    -- 内部 OnShow 页内容 → SetData
+    this:PlayContentPopIn()                -- 🔴 必须在页内容 OnShow 之后
+end
+
+-- 页签点击回调里也加一行 this:PlayContentPopIn()
+-- OnClose / OnDestroy 里加 this:StopContentPopIn()
+-- RefreshActivity（数据事件刷新）里**不要**加
+```
+
+---
+
 ## 8. 变更记录
 
 - **2026-10-21** `c337ea8e7`：`ValuePackPanel` 首版（动画逻辑内联在面板里，`0.82→1.02→1`、错开 0.055s）。
-- **2026-10-21**（本次）：抽出 `Modules/Common/ItemPopIn.lua`（每实例独立状态 + 可覆盖配方 + 异常兜底），
+- **2026-10-21**：抽出 `Modules/Common/ItemPopIn.lua`（每实例独立状态 + 可覆盖配方 + 异常兜底），
   `ValuePackPanel` 改为薄封装；`GrowthManual_RewardPreview` / `GrowthManual_TaskPreview` 接入，
   打开与 TabBox 切页都播；新增 3 个离线用例。
+- **2026-10-21**（本次）：新增页面级接入 `ItemPopIn.PlayPage` / `StopPage`（自动扫页面里的长列表，
+  认实例字段 / 类表字段 / `__index`，并支持容器模式 `GetPopInSource`）；`ExpertPanel` /
+  `OperatingPanel` / `AdjutantActivityPanel` 三个面板接入，打开与切页签都播、数据事件刷新不播；
+  `ContinuityRechargePage`（积天豪礼，手工克隆列表）补 `GetPopInSource`；新增 2 个离线用例。

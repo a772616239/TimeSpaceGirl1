@@ -80,10 +80,17 @@
       "added_at": "2026-10-21",
       "added_by": "seed-scan-3day",
       "themes_done": {
-        "christmas": "2026-10-20"
+        "christmas": "2026-10-21"
       },
       "status": "active",
-      "note": "紫框(violet card)；zh 版，同系列多语言注意 glob"
+      "note": "紫框(violet card)；zh 版，同系列多语言注意 glob",
+      "last_publish": {
+        "at": "2026-10-21T15:46:27",
+        "variant": "alpha",
+        "sha256": "e8fd3ba3dc80464ff3dc358cd87db97216c0a323ca7c41bbc81a22614f287886",
+        "work": "/Users/wangxufeng/Documents/TimeSpaceGirl1/_output/art_restyle/cn2-X1_chaozhilibao_banner_zh/christmas"
+      },
+      "updated_at": "2026-10-21"
     },
     {
       "asset": "Assets/ManagedResources/ArtFont_en/GrowthManualPanelAtlas/cn2-X1_chengzhangshouce_banner_en.png",
@@ -254,15 +261,65 @@
       "asset": "Assets/ManagedResources/Atlas/FindTreasureMainPanelAtlas/cn2-X1_xunluo_peitu.png",
       "kind": "peitu",
       "size": [
-        988,
-        434
+        1080,
+        436
       ],
       "mode": "RGBA",
       "added_at": "2026-10-21",
       "added_by": "seed-scan-3day",
-      "themes_done": {},
+      "themes_done": {
+        "christmas": "2026-10-21"
+      },
       "status": "active",
-      "note": "待换皮"
+      "note": "design 档圣诞重绘（chatgpt_web 一次过）；底部下 1/4 偏虚 —— 画面自带景深衰减，不是后处理模糊",
+      "last_publish": {
+        "at": "2026-10-21T14:08:48",
+        "variant": "alpha",
+        "sha256": "16a81198393754586c2fe341c415fe6312dadfba13a7f24d49ded91d9bb2decf",
+        "work": "/Users/wangxufeng/Documents/TimeSpaceGirl1/_output/art_fade/cn2-X1_xunluo_peitu"
+      },
+      "updated_at": "2026-10-21",
+      "soft_bottom": {
+        "reported_by": "user",
+        "reported_at": "2026-10-21",
+        "observed_on": "christmas",
+        "metric": "laplacian(row mean)",
+        "peak": 61.6,
+        "peak_y": 214,
+        "soft_from_y": 319,
+        "soft_px": 117,
+        "soft_ratio": 0.27,
+        "band_mean": 23.7,
+        "mid_band_mean": 47.2,
+        "drop_pct": -50,
+        "last_rows_mean": [
+          129.0,
+          109.9
+        ],
+        "edge_alpha": "hard-255",
+        "cause": "画面自带景深/聚焦衰减（feather-top 14 只作用于顶边，底边 alpha 全 255 硬切）",
+        "advice": "后续换主题：底 117px 内不要放必须看清的元素（字/道具/手）；出图后按 1:1 看底部带"
+      },
+      "post_ops": [
+        {
+          "at": "2026-10-21",
+          "op": "fade",
+          "note": "bottom_fade 130px/violet",
+          "sha256": "16a8119839375458"
+        },
+        {
+          "at": "2026-10-21",
+          "op": "fade",
+          "note": "TS-Art-BottomFade #1",
+          "sha256": "16a8119839375458"
+        },
+        {
+          "at": "2026-10-21",
+          "op": "fade",
+          "note": "TS-Art-BottomFade #2",
+          "sha256": "16a8119839375458"
+        }
+      ]
     },
     {
       "asset": "Assets/ManagedResources/Atlas/MapPanelAtlas/cn2-X1_shikongzhanchang_shangdianpeitu.png",
@@ -326,6 +383,29 @@
         "variant": "opaque",
         "sha256": "238c542f25aa16e630727a40b4c42b09e99b3dab4a158e4b2bb7b503e692e1e8",
         "work": "/Users/wangxufeng/Documents/TimeSpaceGirl1/_output/art_restyle/cn2-X1_richang_banner_02/christmas"
+      },
+      "updated_at": "2026-10-21"
+    },
+    {
+      "asset": "Assets/Art/Scence/texture/cn2-Scence_tex_002.png",
+      "kind": "unknown",
+      "size": [
+        2048,
+        2048
+      ],
+      "mode": "RGBA",
+      "added_at": "2026-10-21",
+      "added_by": "publish",
+      "themes_done": {
+        "christmas": "2026-10-21"
+      },
+      "status": "active",
+      "note": "publish 钩子自动建档（publish）",
+      "last_publish": {
+        "at": "2026-10-21T15:37:30",
+        "variant": "atlas_band",
+        "sha256": "15224a8de7532eca5b5fb7b03bc2a83115e3c7dda499afa26d4864aec907de66",
+        "work": "/Users/wangxufeng/Documents/TimeSpaceGirl1/_output/art_restyle/fg1_band"
       },
       "updated_at": "2026-10-21"
     }

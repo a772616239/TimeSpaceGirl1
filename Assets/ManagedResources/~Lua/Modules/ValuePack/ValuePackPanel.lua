@@ -1,4 +1,5 @@
 require("Base/BasePanel")
+local ItemPopIn = require("Modules/Common/ItemPopIn")
 ValuePackPanel = Inherit(BasePanel)
 local this = ValuePackPanel
 
@@ -19,43 +20,11 @@ local boxImage = {
 this.ItemList = {}
 
 --============================== 卡片入场：逐格放大缩小 ==============================
--- 参考 Coin Master 的礼包墙入场：每张卡先缩到 0.82，再弹到 1.02，最后落回 1，
--- 相邻卡错开 0.055s 依次起跳，整体跨度不超过 0.55s。
--- 卡片由 ScrollCycleView 克隆后挂在 grid 下，卡片根节点只有 Image（buyBtn 的 Animator
--- 在子节点上），所以动根节点 localScale 不会被 Animator 每帧盖回去。
--- 🔴 峰值只能压到 1.02：卡宽 1062 在 1080 画布里左右各让 9px，scroll/grid 都没有 Mask，
---    峰值再大卡片就会顶出屏幕边缘（1062*1.04 已经越界 12px/侧）。
-local kPopFrom = 0.82          -- 起始缩放
-local kPopPeak = 1.02          -- 弹起的最大缩放（受上面这条几何约束限制）
-local kPopRiseDuration = 0.14  -- 放大段时长
-local kPopFallDuration = 0.12  -- 缩小回落时长
-local kPopStep = 0.055         -- 相邻卡的间隔
-local kPopMaxSpan = 0.55       -- 卡片多时压缩间隔，整体不超过 0.55s
-
-local popItems = {}   -- { tf = , base = }  参与过动画的节点（Stop 时复位）
-local popTweens = {}  -- 存活的 tween（Stop 时 Kill）
-
--- UnityEngine.Object 在 lua 侧是 userdata：Destroy 之后既不是 nil 也不能直接取字段
--- （tolua fake-null），必须先 IsNull 判活。
-local function PopAlive(obj)
-    if obj == nil then
-        return false
-    end
-    if type(obj) == "userdata" then
-        return not IsNull(obj)
-    end
-    return true
-end
-
--- tolua 的枚举表是运行期注册的，取不到就不设：否则整段被 pcall 吃掉、什么都不动
-local function SetEaseSafe(tween, name)
-    local enum = _G.Ease
-    local value = enum and enum[name]
-    if value ~= nil then
-        tween:SetEase(value)
-    end
-    return tween
-end
+-- 复用 Modules/Common/ItemPopIn（Coin Master 式：每张卡 0.82 → 1.02 → 1，相邻错开 0.055s）。
+-- 卡片根节点只有 Image（buyBtn 的 Animator 在子节点上），动根节点 localScale 不会被
+-- Animator 每帧盖回去；配方/坑的完整说明见 docs/ui_item_pop_in_skill.md。
+-- 🔴 峰值只能到 1.02（ItemPopIn 的缺省值）：卡宽 1062 在 1080 画布里左右各让 9px，
+--    scroll/grid 都没有 Mask，峰值再大卡片就会顶出屏幕边缘（1.04 已越界 12px/侧）。
 
 function ValuePackPanel:InitComponent()
     this.HeadFrameView = SubUIManager.Open(SubUIConfig.PlayerHeadFrameView, self.transform)
@@ -70,6 +39,8 @@ function ValuePackPanel:InitComponent()
     this.ScrollView = SubUIManager.Open(SubUIConfig.ScrollCycleView, this.scroll.transform,this.prefab, nil, Vector2.New(rootWidth, rootHeight), 1, 1, Vector2.New(0,10))
     this.ScrollView.moveTween.MomentumAmount = 1
     this.ScrollView.moveTween.Strength = 2
+    --用函数取 ScrollView：面板销毁重建后仍然指向当前实例
+    this.popIn = ItemPopIn.New(function() return this.ScrollView end)
 
     this.sellOut = Util.GetGameObject(this.gameObject, "Bg/sellOut")--售罄
     this.time = Util.GetGameObject(this.gameObject, "Bg/down/time"):GetComponent("Text")
@@ -89,8 +60,7 @@ function ValuePackPanel:OnShow()
     this.HeadFrameView:OnShow()
     this.UpView:OnOpen({ showType = UpViewOpenType.ShowRight, panelType = PanelType.Main })
     ValuePackPanel:SetDataList()
-    --卡片逐格入场：必须排在 SetDataList 之后（先定下哪些卡显示、各自尺寸）
-    --购买后走的也是 SetDataList 刷新，不经过这里 ⇒ 不会整墙重播
+    --卡片逐格入场（必须排在 SetDataList 之后）
     this:PlayItemPopIn()
     this.time.text = GetLanguageStrById(10028) .. TimeToHMS(CalculateSecondsNowTo_N_OClock(24))
     ValuePackPanel:CountDown()
@@ -191,89 +161,18 @@ function ValuePackPanel.SetItemInfo(go, data, index)
     end)
 end
 
---回收入场动画：Kill 掉所有 tween，并把缩放复位到 ScrollCycleView 给的基准值。
---🔴 漏复位 = 那张卡永久停在 0.82 / 1.02 上（重播、关闭、销毁都必须走这里）
-function ValuePackPanel:StopItemPopIn()
-    for i = #popTweens, 1, -1 do
-        if PopAlive(popTweens[i]) then
-            popTweens[i]:Kill(false)
-        end
-        popTweens[i] = nil
-    end
-    for i = #popItems, 1, -1 do
-        local item = popItems[i]
-        if PopAlive(item.tf) then
-            item.tf.localScale = item.base
-        end
-        popItems[i] = nil
+--卡片入场（逐格放大缩小）。OnShow 里排在 SetDataList 之后调用：先定下哪些卡显示，
+--购买后走的也是 SetDataList 刷新、不经过 OnShow ⇒ 不会整墙重播。
+function ValuePackPanel:PlayItemPopIn()
+    if this.popIn then
+        this.popIn:Play()
     end
 end
 
---打开面板：可视卡片按版面顺序逐格「放大再缩小」入场。
---ForeachItemGO 按数据下标给出 1..dataCount 的节点，下标顺序即版面顺序；
---滚出可视区的 card 是 SetActive(false) 的，跳过（否则会白等一轮错开时间）。
-function ValuePackPanel:PlayItemPopIn()
-    this:StopItemPopIn()
-    local scrollView = this.ScrollView
-    if not PopAlive(scrollView) or not scrollView.ForeachItemGO then
-        return
-    end
-
-    local targets = {}
-    local okScan, errScan = pcall(function()
-        scrollView:ForeachItemGO(function(_, go)
-            if PopAlive(go) and go.activeSelf then
-                targets[#targets + 1] = go.transform
-            end
-        end)
-    end)
-    if not okScan then
-        LogError("ValuePackPanel: 遍历礼物卡失败 " .. tostring(errScan))
-        return
-    end
-
-    local count = #targets
-    if count <= 0 then
-        return
-    end
-    local step = kPopStep
-    if count > 1 and step * (count - 1) > kPopMaxSpan then
-        step = kPopMaxSpan / (count - 1)
-    end
-
-    local order = 0
-    local ok, err = pcall(function()
-        for i = 1, count do
-            local tf = targets[i]
-            local base = tf.localScale
-            popItems[#popItems + 1] = { tf = tf, base = base }
-            tf.localScale = base * kPopFrom
-
-            local rise = tf:DOScale(base * kPopPeak, kPopRiseDuration)
-            rise:SetDelay(order * step)
-            SetEaseSafe(rise, "OutQuad")
-            popTweens[#popTweens + 1] = rise
-            rise:OnComplete(function()
-                -- 中途被 Kill 时 OnComplete 不会回调，回落段也就不会再建
-                if not PopAlive(tf) then
-                    return
-                end
-                local fall = tf:DOScale(base, kPopFallDuration)
-                SetEaseSafe(fall, "InOutQuad")
-                popTweens[#popTweens + 1] = fall
-                fall:OnComplete(function()
-                    if PopAlive(tf) then
-                        tf.localScale = base
-                    end
-                end)
-            end)
-            order = order + 1
-        end
-    end)
-    if not ok then
-        -- DOTween 侧任何异常都不能把卡片留在半截缩放上
-        LogError("ValuePackPanel: 卡片入场动画失败 " .. tostring(err))
-        this:StopItemPopIn()
+--回收：Kill + 复位。🔴 不调 = 那张卡永久停在 0.82 / 1.02 上（重播、关闭、销毁都要走这里）
+function ValuePackPanel:StopItemPopIn()
+    if this.popIn then
+        this.popIn:Stop()
     end
 end
 

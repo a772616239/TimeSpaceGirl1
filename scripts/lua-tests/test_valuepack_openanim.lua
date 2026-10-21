@@ -15,6 +15,7 @@
 
 local ROOT = (os.getenv("TS_ROOT") or ".") .. "/"
 local SRC = ROOT .. "Assets/ManagedResources/~Lua/Modules/ValuePack/ValuePackPanel.lua"
+local POPIN = ROOT .. "Assets/ManagedResources/~Lua/Modules/Common/ItemPopIn.lua"
 
 local failed = 0
 local function Check(cond, msg)
@@ -48,7 +49,17 @@ Ease = { Linear = "Linear", InOutQuad = "InOutQuad", OutQuad = "OutQuad" }
 IsNull = function() return false end
 LogError = function(msg) print("  [LogError] " .. msg) end
 function Inherit(base) return setmetatable({}, { __index = base }) end
-function require() return {} end
+-- 「逐格放大缩小」的公共模块：这里跑真源码（面板只是薄封装）
+local popInModule
+function require(path)
+    if path == "Modules/Common/ItemPopIn" then
+        if not popInModule then
+            popInModule = assert(loadfile(POPIN))()
+        end
+        return popInModule
+    end
+    return {}
+end
 
 local tweens = {}
 local function newTween(tf, endv, dur)
@@ -100,6 +111,7 @@ local Panel = chunk()
 
 local scrollView = newScrollView()
 Panel.ScrollView = scrollView
+Panel.popIn = require("Modules/Common/ItemPopIn").New(function() return Panel.ScrollView end)
 Panel.time = { text = "" }
 Panel.HeadFrameView = { OnShow = function() end }
 Panel.UpView = { OnOpen = function() end }

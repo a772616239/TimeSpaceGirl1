@@ -23,6 +23,154 @@ local _PropItemList = {}
 local _PointerDownList = {}
 local _PointerUpList = {}
 this.mainList = {}
+
+--============================== HUD 环绕入场 ==============================
+-- 进图 / 换层时，贴边的 HUD 各自从「最近的那条边」滑进来，替掉原来「一次性齐刷刷冒出来」的死板开场。
+-- 与 ui_item_slide_in_skill.md 那份列表配方同源（一侧滑入 + 逐格错开），三处差别：
+--   ① 载体不是列表项，而是 9 个贴边容器 ⇒ 方向按各自锚点定（上/下/左/右），不是统一从右侧；
+--   ② 只播一次入场、不做常驻循环 —— 地图里 HUD 一直动会干扰走格子；
+--   ③ 这些容器里装着按钮，按钮自带 CommonButton 的 Animator（Normal 是单帧写 localScale=1），
+--      Animator 在 Update 之后求值 ⇒ 给这种节点写 scale 每帧会被盖回去，所以「自带 Animator 的只写位置」。
+local kHudDuration  = 0.26   -- 单组时长
+local kHudStep      = 0.05   -- 相邻组的错开
+local kHudFromScale = 0.94   -- 起始缩放（只给没有 Animator 的纯容器）
+-- { 节点名, 方向, 位移量 }，表顺序 = 播放顺序（可见的才占一格延迟）
+local kHudGroups = {
+    { "leftUp",       "up",    64 },  -- 关卡名 / 进度（贴顶）
+    { "endLessTitle", "up",    56 },  -- 无尽副本标题（只有无尽模式才激活）
+    { "rightUp",      "right", 96 },  -- 返回 / 背包 / 队伍
+    { "leftCenter",   "left",  88 },  -- 排行 / 奖励
+    { "helpBtn",      "right", 88 },
+    { "rightDown",    "right", 96 },  -- 技能 / 道具
+    { "centerDown",   "down",  88 },  -- 时间 / buff / 返回
+    { "btnJump",      "down",  56 },  -- 跳过战斗
+    { "btnAutoJian",  "down",  56 },  -- 自动拾取
+}
+local hudAnimItems = {}   -- { rect=, tf=, x=, y=, sx=, sy=, sz=, tween=, scaleTween= }
+
+-- tolua 的枚举表是运行期注册的，取不到就不设：否则整段被 pcall 吃掉、什么都不动
+local function SetEaseSafe(tween, name)
+    local enum = _G.Ease
+    local value = enum and enum[name]
+    if value ~= nil then
+        tween:SetEase(value)
+    end
+    return tween
+end
+
+-- UnityEngine.Object 在 lua 侧是 userdata：Destroy 之后既不是 nil 也不能直接取字段
+local function HudAlive(obj)
+    if obj == nil then
+        return false
+    end
+    if type(obj) == "userdata" then
+        return not IsNull(obj)
+    end
+    return true
+end
+
+-- 该节点自带的 Animator（按钮几乎都有 CommonButton）：有就不写 scale 通道
+local function HudHasOwnAnimator(go)
+    if not HudAlive(go) then
+        return false
+    end
+    local ok, anim = pcall(function()
+        return go:GetComponent("Animator")
+    end)
+    if not ok or anim == nil then
+        return false
+    end
+    if type(anim) == "userdata" then
+        return not IsNull(anim)
+    end
+    return true
+end
+
+-- 回收全部入场 tween，并把位置 / 缩放复位。
+-- 🔴 位置和缩放都要复位：只复位位置 = 容器永久停在 0.94；只 Kill 不复位 = 停在中途。
+function this.StopHudSlideIn()
+    for i = #hudAnimItems, 1, -1 do
+        local item = hudAnimItems[i]
+        if HudAlive(item.tween) then
+            item.tween:Kill(false)
+        end
+        if HudAlive(item.scaleTween) then
+            item.scaleTween:Kill(false)
+        end
+        if HudAlive(item.rect) then
+            item.rect.anchoredPosition = Vector2.New(item.x, item.y)
+        end
+        if HudAlive(item.tf) then
+            item.tf.localScale = Vector3.New(item.sx, item.sy, item.sz)
+        end
+        hudAnimItems[i] = nil
+    end
+end
+
+-- 进图 / 换层：可见的 HUD 容器按表顺序从各自那条边滑回原位（一次性，总跨度约 0.66s）。
+-- 未激活的容器直接跳过（数量随副本类型变：无尽标题、战斗类按钮都是按类型 SetActive）。
+function this.PlayHudSlideIn()
+    this.StopHudSlideIn()
+    local order = 0
+    local ok, err = pcall(function()
+        for i = 1, #kHudGroups do
+            local cfg = kHudGroups[i]
+            local go = Util.GetGameObject(this.gameObject, cfg[1])
+            if HudAlive(go) and go.activeSelf then
+                local rect = go:GetComponent("RectTransform")
+                local tf = go.transform
+                if HudAlive(rect) and HudAlive(tf) then
+                    local pos, scale = rect.anchoredPosition, tf.localScale
+                    local dx, dy = 0, 0
+                    if cfg[2] == "left" then
+                        dx = -cfg[3]
+                    elseif cfg[2] == "right" then
+                        dx = cfg[3]
+                    elseif cfg[2] == "up" then
+                        dy = cfg[3]
+                    else
+                        dy = -cfg[3]
+                    end
+                    local delay = order * kHudStep
+                    local item = { rect = rect, tf = tf, x = pos.x, y = pos.y,
+                                   sx = scale.x, sy = scale.y, sz = scale.z }
+                    rect.anchoredPosition = Vector2.New(pos.x + dx, pos.y + dy)
+                    local tween = rect:DOAnchorPos(Vector2.New(pos.x, pos.y), kHudDuration)
+                    tween:SetDelay(delay)
+                    SetEaseSafe(tween, "OutCubic")
+                    tween:OnComplete(function()
+                        if HudAlive(rect) then
+                            rect.anchoredPosition = Vector2.New(pos.x, pos.y)
+                        end
+                    end)
+                    item.tween = tween
+                    if not HudHasOwnAnimator(go) then
+                        tf.localScale = Vector3.New(scale.x * kHudFromScale,
+                                                    scale.y * kHudFromScale, scale.z)
+                        local scaleTween = tf:DOScale(Vector3.New(scale.x, scale.y, scale.z), kHudDuration)
+                        scaleTween:SetDelay(delay)
+                        SetEaseSafe(scaleTween, "OutCubic")
+                        scaleTween:OnComplete(function()
+                            if HudAlive(tf) then
+                                tf.localScale = Vector3.New(scale.x, scale.y, scale.z)
+                            end
+                        end)
+                        item.scaleTween = scaleTween
+                    end
+                    hudAnimItems[#hudAnimItems + 1] = item
+                    order = order + 1
+                end
+            end
+        end
+    end)
+    if not ok then
+        LogError("MapPanel: HUD 入场失败 " .. tostring(err))
+        this.StopHudSlideIn()
+        return 0
+    end
+    return order
+end
+
 --初始化组件（用于子类重写）
 function this:InitComponent()
 
@@ -266,6 +414,12 @@ function this:OnShow()
     if MapManager.curCarbonType == CarBonTypeId.ENDLESS then
         this.GetMonsterNumberData()
     end
+
+    -- HUD 环绕入场：放在 OnShow 末尾，等各容器的 SetActive 都落定再播（未激活的直接跳过）
+    if this.needHudAnim then
+        this.needHudAnim = false
+        this.PlayHudSlideIn()
+    end
 end
 function this.ThisTypeOpen()
 end
@@ -286,6 +440,9 @@ end
 -- end
 --界面打开时调用（用于子类重写）
 function this:OnOpen(...)
+    -- 只有「进图 / 换层」才播 HUD 入场（这两条路径都会走 OnOpen）；
+    -- 从弹窗返回地图只走 OnShow，标记已被 OnShow 清掉 ⇒ 不会重播
+    this.needHudAnim = true
     MapManager.FirstEnter = true
     EndLessMapManager.EndLessRoleDead = true
     -- 永久隐藏设置按钮
@@ -452,6 +609,8 @@ end
 --界面关闭时调用（用于子类重写）
 function this:OnClose()
 
+    -- 中途出图：Kill 掉入场 tween 并复位（漏掉的话容器会永久停在半截位置 / 0.94 缩放）
+    this.StopHudSlideIn()
     playerView.PlayerMove()
     -- UIManager.camera.clearFlags = CameraClearFlags.Skybox
 
@@ -544,6 +703,7 @@ end
 --界面销毁时调用（用于子类重写）
 function this:OnDestroy()
 
+    this.StopHudSlideIn()
     this.Dispose()
 
     trialPanel:OnDestroy()

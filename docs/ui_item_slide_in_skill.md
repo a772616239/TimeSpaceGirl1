@@ -284,6 +284,52 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 | `TreasureStorePopup`（参考） | `grid/item1..3` | 左 → 右 | -200/-150/-100 / 0.05~0.10s |
 | `BattlePassPanel_Mission` | 任务卡 `itempre`（一屏 1 张） | **右 → 左**（按要求反向） | +260 / 0.22s |
 | `DailyCarbonPanel` | 副本卡 `Pre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | 打开 +260 / 0.26s / 错开 0.055；切页签 +170 / 0.30s / 错开 0.05 / 整批 +0.05 |
+| `MapPanel` | HUD 贴边容器 9 个（见 §10） | **各自就近的那条边** | 56~96px / 0.26s / 错开 0.05（总 0.61s） |
+
+---
+
+## 10. HUD 环绕入场（2026-10-21，`MapPanel`）
+
+**场景不同**：这份配方前三个落地都是「列表项从一侧进来」，`MapPanel` 是**进图后的 HUD**——
+没有列表，只有贴四条边的容器。所以方向不能统一，**每个容器从它自己最近的那条边走**，
+读起来才是「屏幕四周的东西一起收拢回来」，而不是「整块屏往左飞」。
+
+`MapPanel` 的根节点原本**没有任何动画组件**（prefab 里只有 29 个按钮的 `CommonButton` Animator），
+且容器数量/显隐随副本类型变，所以走 **Lua 驱动**（`MapPanel.lua` 顶部 `PlayHudSlideIn` / `StopHudSlideIn`），
+prefab 一行没动。
+
+**层级与方向**（`dump_prefab_tree.py --rect` 读出来的锚点决定方向，别照抄）：
+
+| 节点 | 锚点 | 基准 pos | 方向 | 位移 | 读作 |
+|---|---|---|---|---|---|
+| `leftUp` | (0.5,1) 顶中 | (0,-190) | up | +64 | 关卡名从上方落下 |
+| `endLessTitle` | (0.5,1) 顶中 | (0,-50) | up | +56 | 无尽标题（**只有无尽模式激活**） |
+| `rightUp` | (1,1) 右上 | (446,-213) | right | +96 | 返回/背包/队伍从右边进 |
+| `leftCenter` | (1,0) | (-80,638) | left | -88 | 排行/奖励从左边进 |
+| `helpBtn` | (1,1) 右上 | (-109.5,-255) | right | +88 | 自带 Animator ⇒ 只写位置 |
+| `rightDown` | (1,1) 右上 | (-28,-1242) | right | +96 | 技能/道具 |
+| `centerDown` | 底边拉伸 | (0,0) | down | -88 | 时间/buff/返回从下方升起 |
+| `btnJump` / `btnAutoJian` | (0.5,0) 底中 | (265,420/520) | down | -56 | 自带 Animator ⇒ 只写位置 |
+
+**四个必须做对的地方**：
+
+1. **方向由锚点定，不由「看起来在哪」定**。`leftCenter` 锚在 `(1,0)`（右下角）但 pos 是 `(-80,638)`
+   —— 它在屏幕左侧竖直居中，所以走 `left`。按「锚点 x==0 才是左边」判断会把它写反。
+2. **自带 Animator 的节点只写位置**。`helpBtn` / `btnJump` / `btnAutoJian` 都挂着 `CommonButton.controller`，
+   它的 Normal 是单帧 `m_LocalScale = 1`；Animator 在 `Update` 之后求值 ⇒ 给它们写 scale 每帧被盖回去。
+   代码里用 `HudHasOwnAnimator(go)` 自动判（`GetComponent("Animator")` 非空就跳过 scale 通道），不再手维护名单。
+3. **未激活容器**（`endLessTitle` 在 prefab 里就是 `m_IsActive: 0`，由 `OnShow` 按副本类型 `SetActive`）
+   **不能占错开位**：延迟按「可见序号」算，不是按表下标，否则会白空一格。
+4. **闸门放 `OnOpen`，播放在 `OnShow` 末尾**。`OnShow` 在「从弹窗返回地图」时也会走（`BasePanel:OpenUI(IsBackOpen)`），
+   直接在 `OnShow` 里播会让玩家每关一次背包就重看一遍入场；而 `OnOpen` 只在「进图/换层」走。
+   做法：`OnOpen` 置 `needHudAnim = true`，`OnShow` 末尾判 `if needHudAnim then 清标记 + 播 end`。
+
+**参数自证**：`0.26s` 单组、`0.05s` 错开、8 组可见时末组收在 `0.61s` —— 正好压在
+`SetRoleShow` 那 1s 的地图镜头缩放里结束，不会拖到玩家开始走格子之后。
+
+**验收**：`scripts/lua-tests/test_mappanel_hudslide.lua`（7 case 全过：起点方向 / 错开顺序 /
+完成精确复位 / 中途 Stop 双复位 / 重播不叠加 / OnShow 闸门 / 缺节点不抛错）；
+`LuaBytes/Modules_Map_MapPanel_64.bytes` 重编 `--check` 已同步。**AB 未重打**（Lua 改动走 LuaBytes，仍建议进包后真机复验一次）。
 
 `DailyCarbonPanel` 是这套配方的**第二个落地**，也是第一个"一屏多卡"的场景，可以直接对照看：
 
@@ -297,7 +343,7 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 
 ---
 
-## 10. 变更记录
+## 11. 变更记录
 
 - 2026-10-21 首版。从 `ui_anim_reproduce_skill.md` 的「第四次复用」抽出成独立配方：
   第一版误把曲线落在 TabBox 的 13 个小页签上（曲线对、对象错），返工到任务卡后才定型；
@@ -305,6 +351,9 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 - 2026-10-21 第二个落地：`DailyCarbonPanel`（副本卡，一屏多卡、错开真正生效）。
   新增 §5 的数据刷新一行、§7 第 10 条（`Util.GetGameObject` 按名字 DFS，重名会拿错节点）、
   §9 的落地说明与 `RefreshScrollSilently` 写法（`pcall` 只为复位标记）。
+- 2026-10-21 第三个落地：`MapPanel`（HUD，非列表）。新增 §10：方向由锚点定、
+  自带 Animator 的节点只写位置（`HudHasOwnAnimator` 自动判）、未激活容器不占错开位、
+  闸门放 `OnOpen` 而播放在 `OnShow` 末尾（否则每次关弹窗返回地图都重播）。
 - 2026-10-21 复盘「切换太快 + 有点卡」：拆出**打开 / 切页签两套节奏**（§2）、切页签整批延 0.05s 起播
   躲开重建帧、加连点保护（§7 第 11 条）。同时把 `DailyCarbonPanel` 的页签翻入从参考的 0.167/0.033
   放慢到 0.21/0.045、切页高亮板单独给 0.26 —— 参考值适合一次性入场，放在玩家反复点的操作上偏快。

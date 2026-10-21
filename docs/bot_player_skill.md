@@ -124,7 +124,8 @@ sleep 30; grep "\[bot\]" ~/home/java/logs/gameserver.log | tail -3
 | `virtualOnline` | true | 是否把机器人算进 `ONLINE_NUM` |
 | `dshUrl` | `http://127.0.0.1:18765/reply` | 桥接地址；改成本机/内网均可 |
 | `replyDelaySecMin/Max` | 8 / 25 | 「思考」延迟，**真人不会秒回** |
-| `replyCooldownSec` | 25 | 两次回复最小间隔，防刷屏 |
+| `replyCooldownSec` | 25 | 两次回复最小间隔 |
+| `minSpeakGapSec` | 45 | **任意两条机器人发言**的最小间隔（喊话/回复/手动/晒卡互相避让），防刷屏 |
 | `replyFreshSec` | 600 | 超过 10 分钟的旧消息不再追着回 |
 | `maxReplyChars` | 40 | 回复硬上限（按 code point 截断，尽量切在空格） |
 | `contextHours` | 72 | 喂给 AI 的上下文时间窗 = **3 天** |
@@ -136,6 +137,51 @@ sleep 30; grep "\[bot\]" ~/home/java/logs/gameserver.log | tail -3
 
 机器人 uid 固定落在 **9xxxxxxx** 段（默认 90000001/90000002），与真实号段（1xxxxxxxx）天然隔开，
 `isBotUid()` 靠这个判断「这条消息是不是自己人发的」，避免自问自答。
+
+### 防刷屏的三道闸
+
+各来源（喊话 / AI 回复 / GM 手动 / 公告后晒卡）各自有间隔，但**不互相避让**时会挤在几秒内连发，
+玩家看到的就是「机器人自说自话」。现在三道闸：
+
+1. `minSpeakGapSec`（45s）：`sendBotChat` 统一更新 `lastSpeakAt`，喊话和晒卡在动手前先看这个值，
+   不够就顺延；`replyCooldownSec`（25s）管两次 AI 回复之间。
+2. `isBotUid()`：机器人自己的消息进 `onWorldChat` 只 bump `lastBotMsgId`，不更新 `lastHumanMsgId`，
+   不触发回复。
+3. **回调二次校验**：DSH 要等 10~15 秒，回来时若 `lastHumanMsgId <= lastBotMsgId`（期间已经被回过），
+   这次回复直接丢弃，不会对着自己的话再说一遍。
+
+实测：3 条玩家消息间隔 3~4 秒连发 → 只回 1 条；回复后 chatter 间隔 46 秒（≥45s 闸值）。
+
+### 机器人账号数据（个人面板不空的关键）
+
+**只配 uid/level 是不够的**：`user` 集合里没有这条文档，客户端点开机器人头像查不到玩家，
+个人面板全空。要让面板有等级、战力、英雄、道具，必须往 `user` 集合里放一份真实玩家数据。
+
+`scripts/bot/clone_bot_user.js` 做这件事：整份文档复制，把「指向自己的引用」全改掉
+（`rootId`、`roleUid`、`_id`，以及 `<uid><type><timestamp>` 形式的合成 map key），
+再换掉 `nickName` / `openId`。
+
+```bash
+scp scripts/bot/clone_bot_user.js gs:/tmp/
+ssh gs 'cd /tmp && mongosh "mongodb://<user>:<pwd>@127.0.0.1:27017/m5_x1_game_10001?authSource=admin" \
+  --quiet --file clone_bot_user.js'
+# CLONE_DRY=1 只打印不落库；CLONE_FORCE=1 覆盖已存在的文档
+```
+
+🔴 **最大的坑：`Date` 字段**。递归改写时如果把 `Date` 当普通对象遍历，会被 `for...in` 变成空文档 `{}`，
+写回后服务端 `getUser` 直接抛 `MappingException: No mapping metadata found for java.util.Date`，
+整个玩家读不出来（日志只有一行 `2-UserManager::getUser null exception<uid>`，不带堆栈时完全看不出原因）。
+所以改写函数里 **`o instanceof Date` 必须最先返回**，再判断 `_bsontype`。
+
+验证（GM 端口）：
+
+```bash
+gm_client.py --port 17916 'oneuserinfo 90000001'
+# 服务端日志应出现：cmd____uid 90000001_____level:50 nick:Nova
+```
+
+配置里的 `level` / `vip` / `head` **必须和 `playerManager` 里的一致**，
+否则聊天条显示 lv62、点开面板 lv50，一眼假。
 
 ---
 

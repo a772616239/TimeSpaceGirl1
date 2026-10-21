@@ -122,6 +122,25 @@ MONOTONE_FROM = 50
 # 全表地板：任何档位都不许低于 3.3x 直充（≈0.15 抽/元）
 FLOOR_RATE = 0.150
 
+# ─────────────────── 星级成长礼：让"星越高越值"看得见 ───────────────────
+#
+# R10 用"同价同抽/元"给全表补券，副作用是**把星级梯子抹平了**：
+# 648 元档 5 星 0.2913 / 7 星 0.2913 / 10 星 0.2908 / 11 星 0.2904 /
+# 12 星 0.2915 / 13 星 0.2911 —— 13 星甚至比 5 星更低（只补不削 ⇒ 低星被抬到同高）。
+# 玩家看到的结论是"升星没用，礼包一样"。
+#
+# 所以目标曲线改成 star-aware：星级来源是 `PackPush.ConditionId` 的 `4#N`
+# （条件类型 4 = 妖灵师星级），同一个礼包在 PackPush 里登了几星就按几星算。
+#
+# 每高 1 星 +0.006 抽/元（648 元档 ≈ +3.9 抽/星），并且对**同价**的星级礼包
+# 再做一次强约束：相邻星级至少差 0.004 抽/元（避免取整把梯度吃成 0）。
+# 4 星为基准（无加成），因为 4 星礼包（Name=34010110）是最低档。
+STAR_BASE = 4
+STAR_STEP = 0.006
+STAR_MIN_GAP = 0.004
+F_PACKPUSH = "PackPush"
+STAR_COND_TYPE = "4"      # PackPush.ConditionId 的 `4#N` = 妖灵师星级
+
 # 单 SKU 补券上限：防单个礼包被算成"一车券"（648 档目标才 ~168 张）
 MAX_ADD_TICKETS = 400
 # 只补不削：当前抽/元 已达标即跳过（留 1% 容差，避免浮点抖动反复改同一行）
@@ -141,6 +160,74 @@ def target_at(price):
         if p0 <= price <= p1:
             return v0 + (v1 - v0) * (price - p0) / (p1 - p0)
     return pts[-1][1]
+
+
+def star_bonus(star):
+    """星级加价（抽/元）：4 星基准 0，每高 1 星 +STAR_STEP；未知星级不参与。"""
+    if not star or star <= STAR_BASE:
+        return 0.0
+    return STAR_STEP * (star - STAR_BASE)
+
+
+def target_at_star(price, star):
+    """star-aware 目标抽/元。非星级礼包（star=None）等价于 target_at。"""
+    return target_at(price) + star_bonus(star)
+
+
+def load_star_map():
+    """从 PackPush 建 `SKU -> 星级` 映射。
+
+    PackPush.ConditionId 形如 `4#7`（条件类型 4 = 妖灵师星级，7 = 达到 7 星），
+    Packs 形如 `30700` 或 `30500#30501#30502`（# 分割，多段即多个礼包）。
+
+    只靠 PackPush 会漏掉"低价变体"（30702/30802/30902 这类没被推送表登记的兄弟礼包），
+    所以再用 Name（语言 id，34010111..34010119 = 5..13 星）做组内兜底：
+    同一 Name 组里只要有一个 SKU 被 PackPush 标过星级，整组继承。
+    """
+    try:
+        wb, _ = load(F_PACKPUSH)
+    except SystemExit:
+        return {}, {}
+    ws = wb.worksheets[0]
+    idx = header_index(ws)
+    c_id, c_cond, c_packs = idx.get("Id"), idx.get("ConditionId"), idx.get("Packs")
+    if c_id is None or c_cond is None or c_packs is None:
+        return {}, {}
+
+    sku_star, name_of = {}, {}
+    for r, v in iter_rows(ws):
+        cond = str(v[c_cond] or "").split("#")
+        if len(cond) < 2 or cond[0] != STAR_COND_TYPE:
+            continue
+        try:
+            star = int(cond[1])
+        except ValueError:
+            continue
+        for sku in str(v[c_packs] or "").split("#"):
+            sku = sku.strip()
+            if sku.isdigit():
+                sku_star[int(sku)] = max(sku_star.get(int(sku), 0), star)
+    wb.close()
+
+    # Name 组兜底：需要 Recharge 表的 Name 才能把 SKU 归组，交由 collect() 后处理。
+    return sku_star, name_of
+
+
+def resolve_stars(rows, sku_star):
+    """给每个 SKU 补 star 字段：PackPush 直读优先，Name 组内继承兜底。"""
+    group_star = {}
+    for sk in rows:
+        if sk["id"] in sku_star:
+            name = str(sk.get("name") or "")
+            if name:
+                group_star[name] = max(group_star.get(name, 0), sku_star[sk["id"]])
+    inherited = 0
+    for sk in rows:
+        star = sku_star.get(sk["id"]) or group_star.get(str(sk.get("name") or ""))
+        sk["star"] = star
+        if sk["id"] not in sku_star and star:
+            inherited += 1
+    return inherited
 
 
 def load(sheet):
@@ -216,7 +303,7 @@ def pick_ticket(rewards):
 
 
 def collect(ws, idx):
-    """读盘：返回 (sku 行信息, 按价格档的统计)。"""
+    """读盘：返回 SKU 行信息（star 字段由 resolve_stars 事后补）。"""
     rows = []
     for r, v in iter_rows(ws):
         price = v[idx["Price"]] or 0
@@ -227,9 +314,10 @@ def collect(ws, idx):
         show = dict(parse_pairs(v[idx["RewardShow"]])) if idx.get("RewardShow") is not None else {}
         rows.append({
             "row": r, "id": v[idx["Id"]], "price": price,
+            "name": v[idx["Name"]] if idx.get("Name") is not None else None,
             "base": v[idx["BaseReward"]] or "", "show": v[idx["RewardShow"]] or "",
             "rewards": rewards, "show_rewards": show,
-            "pull": pull_equiv(rewards),
+            "pull": pull_equiv(rewards), "star": None,
         })
     return rows
 
@@ -237,29 +325,66 @@ def collect(ws, idx):
 # ─────────────────────────── 规划 ───────────────────────────
 
 def plan(rows, scale=1.0):
-    """算出每个 SKU 要补多少张券。返回 (plans, stats)。"""
-    plans = []
+    """算出每个 SKU 要补多少张券。返回 (plans, stats)。
+
+    两遍：
+      1) 逐个 SKU 对 star-aware 目标补券（只补不削）；
+      2) 同一价格档内按星级从低到高再扫一遍，强制"相邻星级至少差 STAR_MIN_GAP"，
+         把取整吃掉的梯度补回来（否则 0.006/星的差在补券取整后会变成 0）。
+    """
+    adds = {}          # id -> {"sku","add","ticket"}
     stats = collections.defaultdict(lambda: {"n": 0, "raise": 0, "tickets": 0,
                                              "before": [], "after": []})
+
     for sk in rows:
         price = sk["price"]
-        tgt_rate = target_at(price) * scale
+        tgt_rate = target_at_star(price, sk["star"]) * scale
         cur_rate = sk["pull"] / price
-        st = stats[price]
-        st["n"] += 1
-        st["before"].append(cur_rate)
+        stats[price]["n"] += 1
+        stats[price]["before"].append(cur_rate)
         if cur_rate >= tgt_rate * TOLERANCE:
-            st["after"].append(cur_rate)          # 只补不削
-            continue
+            continue                                   # 只补不削
         need = int(-(-(tgt_rate * price - sk["pull"]) // 1))   # ceil
         need = max(1, min(need, MAX_ADD_TICKETS))
-        tick = pick_ticket(sk["rewards"])
-        plans.append({"sku": sk, "ticket": tick, "add": need,
-                      "rate_before": cur_rate,
-                      "rate_after": (sk["pull"] + need) / price})
+        adds[sk["id"]] = {"sku": sk, "add": need, "ticket": pick_ticket(sk["rewards"])}
+
+    # 第二遍：同价星级梯子。
+    # 注意：同价同星常有多个变体（区域/附带道具不同），阶梯必须按**星级**跨档，
+    # 不能按 SKU 逐个累加 —— 否则同星的 3 个变体会被 gap 依次顶高，低星反超。
+    by_price = collections.defaultdict(list)
+    for sk in rows:
+        if sk["star"]:
+            by_price[sk["price"]].append(sk)
+    for price, group in by_price.items():
+        prev_max = None
+        for star in sorted({s["star"] for s in group}):
+            same = [s for s in group if s["star"] == star]
+            for sk in same:
+                cur = (sk["pull"] + adds.get(sk["id"], {}).get("add", 0)) / price
+                if prev_max is not None and cur + 1e-9 < prev_max + STAR_MIN_GAP * scale:
+                    want_rate = prev_max + STAR_MIN_GAP * scale
+                    need = int(-(-(want_rate * price - sk["pull"]) // 1))
+                    need = max(1, min(need, MAX_ADD_TICKETS))
+                    entry = adds.setdefault(sk["id"], {"sku": sk, "add": 0,
+                                                       "ticket": pick_ticket(sk["rewards"])})
+                    if need > entry["add"]:
+                        entry["add"] = need
+            prev_max = max((sk["pull"] + adds.get(sk["id"], {}).get("add", 0)) / price
+                           for sk in same)
+
+    plans = []
+    for sk in rows:
+        a = adds.get(sk["id"], {}).get("add", 0)
+        st = stats[sk["price"]]
+        if a <= 0:
+            st["after"].append(sk["pull"] / sk["price"])
+            continue
+        plans.append({"sku": sk, "ticket": adds[sk["id"]]["ticket"], "add": a,
+                      "rate_before": sk["pull"] / sk["price"],
+                      "rate_after": (sk["pull"] + a) / sk["price"]})
         st["raise"] += 1
-        st["tickets"] += need
-        st["after"].append((sk["pull"] + need) / price)
+        st["tickets"] += a
+        st["after"].append((sk["pull"] + a) / sk["price"])
     return plans, stats
 
 
@@ -306,6 +431,32 @@ def print_report(rows, plans, stats, scale):
     print("复购带(%d 元起)阶梯单调性：%s" % (MONOTONE_FROM, "✅ 通过" if mono else "❌ 失败"))
     print("全表地板（无 SKU 低于 %.3f 抽/元 = 3.3x 直充）：%s"
           % (FLOOR_RATE, "✅ 通过" if floor_ok else "❌ 失败"))
+    print()
+    print_star_report(rows, plans)
+
+
+def print_star_report(rows, plans):
+    """星级成长礼：同价看星级，验证"星越高越值"。"""
+    grp = [sk for sk in rows if sk["star"]]
+    if not grp:
+        print("（PackPush 里没有星级礼包，跳过星级梯度）")
+        return
+    add_of = {p["sku"]["id"]: p for p in plans}
+    stars = sorted({sk["star"] for sk in grp})
+    print("星级成长礼（%d 个 SKU，%d–%d 星）：目标 = 基础档 + %.3f×（星-%d）"
+          % (len(grp), stars[0], stars[-1], STAR_STEP, STAR_BASE))
+    print("| 价格 | 星 | id | 券 | 钻石 | 抽/元 | 目标 | 补券 |")
+    print("|-----:|---:|----:|---:|-----:|------:|-----:|-----:|")
+    for price in sorted({sk["price"] for sk in grp}):
+        for sk in sorted((s for s in grp if s["price"] == price),
+                         key=lambda s: (s["star"], s["id"])):
+            plan = add_of.get(sk["id"])
+            rate = plan["rate_after"] if plan else sk["pull"] / sk["price"]
+            tic = sum(n for k, n in sk["rewards"].items() if k in TICKETS and n)
+            print("| %4d | %2d | %5d | %3d | %5d | %.4f | %.4f | %+4d |"
+                  % (price, sk["star"], sk["id"], tic, sk["rewards"].get(DIA, 0),
+                     rate, target_at_star(price, sk["star"]), plan["add"] if plan else 0))
+    print()
 
 
 # ─────────────────────────── 落表 ───────────────────────────
@@ -342,10 +493,12 @@ def snapshot(rows):
     return snap
 
 
-def verify(ws, idx, before_snap, scale):
+def verify(ws, idx, before_snap, scale, sku_star=None):
     """落表后自检。返回 (ok, msgs)。"""
     msgs, ok = [], True
     rows = collect(ws, idx)
+    if sku_star:
+        resolve_stars(rows, sku_star)
 
     def add(tag, cond, detail):
         nonlocal ok
@@ -356,9 +509,10 @@ def verify(ws, idx, before_snap, scale):
     add("礼包 SKU 数量与改前一致", len(rows) == len(before_snap),
         "%d / %d" % (len(rows), len(before_snap)))
 
-    # S1 每档达标
+    # S1 每档达标（星级礼包按 star-aware 目标）
     bad = [sk["id"] for sk in rows
-           if sk["pull"] / sk["price"] < target_at(sk["price"]) * scale * TOLERANCE]
+           if sk["pull"] / sk["price"]
+           < target_at_star(sk["price"], sk["star"]) * scale * TOLERANCE]
     add("每个 SKU 都达到本档目标抽/元", not bad, "未达标 %d 个 %s" % (len(bad), bad[:6]))
 
     # S2 复购带单调（新手带限购一次，不参与）
@@ -407,6 +561,28 @@ def verify(ws, idx, before_snap, scale):
     badt = [(sk["id"], k) for sk in rows for k in sk["rewards"] if k not in TICKETS and k == "16x"]
     add("券种 id 合法", not badt, "%s" % badt[:4])
 
+    # S8 星级梯度：同价下相邻星级至少差 STAR_MIN_GAP（"星越高越值"必须可计算）
+    # 同价同星有多个变体，比的是**星级组**：低星组的最高值 vs 高星组的最低值。
+    flat = []
+    by_price = collections.defaultdict(list)
+    for sk in rows:
+        if sk["star"]:
+            by_price[sk["price"]].append(sk)
+    for price, group in by_price.items():
+        prev_max = None
+        for star in sorted({s["star"] for s in group}):
+            rates = [s["pull"] / price for s in group if s["star"] == star]
+            if prev_max is not None and min(rates) + 1e-9 < prev_max + STAR_MIN_GAP * scale:
+                flat.append((price, star, round(prev_max, 4), round(min(rates), 4)))
+            prev_max = max(rates)
+    add("星级梯度（同价 %+0.3f 抽/元/星）" % STAR_MIN_GAP, not flat,
+        "梯度不足 %d 处 %s" % (len(flat), flat[:4]))
+
+    # S9 星级来自 PackPush（不能靠猜）：至少覆盖 5–13 星
+    if sku_star:
+        stars = {sk["star"] for sk in rows if sk["star"]}
+        add("PackPush 星级覆盖 5–13 星", {5, 13} <= stars, "实际 %s" % sorted(stars))
+
     return ok, msgs
 
 
@@ -446,12 +622,16 @@ def main():
     ws = wb.worksheets[0]
     idx = header_index(ws)
     rows = collect(ws, idx)
+    sku_star, _ = load_star_map()
+    inherited = resolve_stars(rows, sku_star)
+    if sku_star:
+        print("星级：#PackPush 直读 %d 个 SKU，Name 组内继承 %d 个" % (len(sku_star), inherited))
     plans, stats = plan(rows, args.scale)
     print_report(rows, plans, stats, args.scale)
 
     if args.verify_only:
         print()
-        ok, msgs = verify(ws, idx, snapshot(rows), args.scale)
+        ok, msgs = verify(ws, idx, snapshot(rows), args.scale, sku_star)
         print("\n".join(msgs))
         return 0 if ok else 1
 
@@ -474,7 +654,7 @@ def main():
     wb2, _ = load(F_RECHARGE)
     ws2 = wb2.worksheets[0]
     idx2 = header_index(ws2)
-    ok, msgs = verify(ws2, idx2, snap, args.scale)
+    ok, msgs = verify(ws2, idx2, snap, args.scale, sku_star)
     print("\n自检：")
     print("\n".join(msgs))
     if not ok:

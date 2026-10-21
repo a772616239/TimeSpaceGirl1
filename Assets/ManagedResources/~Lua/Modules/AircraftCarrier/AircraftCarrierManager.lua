@@ -91,19 +91,19 @@ function AircraftCarrierManager.LeadUpLv(func)
         PopupTipPanel.ShowTipByLanguageId(11993)
         return
     end
-    for i = 1, 2 do
-        local itemId = MotherShipConfig[this.LeadData.lv].Cost[i][1]
-        local bagNum = BagManager.GetItemCountById(itemId)
-        if bagNum < MotherShipConfig[this.LeadData.lv].Cost[i][2] then
-            PopupTipPanel.ShowTipByLanguageId(10073)
-            return
-        end
+    if not AircraftCarrierManager.IsEnoughUpLvCost() then
+        PopupTipPanel.ShowTipByLanguageId(10073)
+        --材料不足时立刻把红点校准成「灭」，避免残留红点让人反复点
+        CheckRedPointStatus(RedPointType.Lead_UpLv)
+        return
     end
     NetManager.MotherShipUplevelRequest(function()
         this.LeadData.lv = this.LeadData.lv + 1
         if func then
             func()
         end
+        --升级成功即扣掉材料：背包同步存在时序差，回调后重算一次（背包推送到达时还会再算一次）
+        CheckRedPointStatus(RedPointType.Lead_UpLv)
     end)
 end
 
@@ -437,9 +437,35 @@ function AircraftCarrierManager.GetMaxLvInCurBreak(id)
     return datas[#datas].Level
 end
 
+--获取当前等级对应的配置行（红点、消耗、属性统一从这里取，避免各处各算一套）
+function AircraftCarrierManager.GetLeadLvConfig()
+    if not this.LeadData then
+        return nil
+    end
+    return MotherShipConfig[this.LeadData.lv]
+end
+
 --获取升级消耗
 function AircraftCarrierManager.GetCost()
-    return MotherShipConfig[this.LeadData.lv].Cost
+    local config = AircraftCarrierManager.GetLeadLvConfig()
+    if not config then
+        return nil
+    end
+    return config.Cost
+end
+
+--是否满足升级消耗（红点判定与点击校验共用，保证两边结论永远一致）
+function AircraftCarrierManager.IsEnoughUpLvCost()
+    local config = AircraftCarrierManager.GetLeadLvConfig()
+    if not config or not config.Cost then
+        return false
+    end
+    for i = 1, #config.Cost do
+        if BagManager.GetItemCountById(config.Cost[i][1]) < config.Cost[i][2] then
+            return false
+        end
+    end
+    return true
 end
 
 -- 获取主角属性
@@ -855,22 +881,30 @@ end
 
 -- 检测主角是否可以升级红点
 function AircraftCarrierManager.CheckRedPoint_CV_LvUp()
+    if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.AIRCRAFT_CARRIER) then
+        return false
+    end
+    local config = AircraftCarrierManager.GetLeadLvConfig()
+    if not config then
+        return false
+    end
+    if not config.NextId or config.NextId == 0 then
+        return false
+    end
+    return AircraftCarrierManager.IsEnoughUpLvCost()
+end
+
+-- 神眷者相关红点整体复算（背包变化、升级/进阶后调用）
+-- 历史上 BagManager.BagIndicationRefresh 里调用的正是这个名字，但函数被删掉了，
+-- 结果「材料/金钱变动后升级红点无人重算」=> 红点残留、点进去报升级材料不足
+function AircraftCarrierManager.RedPointCheckStatus_CV()
     if not this.LeadData then
-        return false
+        return
     end
-    local id = this.LeadData.lv
-    local shipConfig = MotherShipConfig[id]
-    if shipConfig.NextId == 0 then
-        return false
-    end
-    for i = 1, 2 do
-        local itemId = shipConfig.Cost[i][1]
-        local bagNum = BagManager.GetItemCountById(itemId)
-        if bagNum < shipConfig.Cost[i][2] then
-            return false
-        end
-    end
-    return true
+    CheckRedPointStatus(RedPointType.Lead_UpLv)
+    CheckRedPointStatus(RedPointType.Lead_Normal)
+    CheckRedPointStatus(RedPointType.Lead_Privilege)
+    CheckRedPointStatus(RedPointType.Lead_Assembly)
 end
 
 -- 获取特权是否解锁

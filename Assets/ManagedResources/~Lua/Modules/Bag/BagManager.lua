@@ -1184,7 +1184,10 @@ function this.BagIndicationRefresh(msg)
     CheckRedPointStatus(RedPointType.Bag_HeroDebris)
     CheckRedPointStatus(RedPointType.Bag_BoxAndBlueprint)
 
-    -- AircraftCarrierManager.RedPointCheckStatus_CV()
+    -- 神眷者（主角升级/研究/装配）红点：材料或金钱只要变了就得重算，否则红点会残留
+    if AircraftCarrierManager and AircraftCarrierManager.RedPointCheckStatus_CV then
+        AircraftCarrierManager.RedPointCheckStatus_CV()
+    end
     CheckRedPointStatus(RedPointType.Support)
     if UIManager.IsOpen(UIName.SupportPanel) then
         SupportPanel.CheckRedPoint()

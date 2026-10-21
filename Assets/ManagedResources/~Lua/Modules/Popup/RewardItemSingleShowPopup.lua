@@ -179,7 +179,7 @@ function RewardItemSingleShowPopup:OnShow()
     this.frame:GetComponent("Image").sprite = Util.LoadSprite(GetQuantityImageByquality(itemConfigData.Quantity))
     this.fragmentBG:GetComponent("Image").sprite = Util.LoadSprite(GetQuantityProBgImageByquality(itemConfigData.Quantity))
     this.icon.sprite = Util.LoadSprite(GetResourcePath(itemConfigData.ResourceID))
-    this.armorType.text = GetLanguageStrById(this.getType())--道具类型显示
+    this.armorType.text = this.getType()--道具类型显示（getType 已返回翻译后的文本，别再套一层查表）
     -- this.armorLanTuNum:SetActive(true) --n1
     -- this.armorLanTuNum:GetComponent("Text").text = GetLanguageStrById(11595) .. BagManager.GetItemCountById(itemSid) --n1
     this.armorInfo.text = string.gsub(GetLanguageStrById(itemConfigData.ItemDescribe), "\\n", "")
@@ -245,21 +245,12 @@ end
 
 --获取道具种类
 function this.getType()
-    local type = GetLanguageStrById(itemConfig[itemSid].ItemTypeDes)
-    -- if type == 1 then
-    --     return GetLanguageStrById(11093)..GetLanguageStrById(12266)
-    -- elseif type == 2 then
-    --     return GetLanguageStrById(11093)..GetLanguageStrById(10219)
-    -- elseif type == 4 then
-    --     return GetLanguageStrById(11093)..GetLanguageStrById(12267)
-    -- elseif type == 5 then
-    --     return GetLanguageStrById(11093)..GetLanguageStrById(12268)
-    -- elseif type == 6 then
-    --     return GetLanguageStrById(11093)..GetLanguageStrById(12269)
-    -- elseif type == 7 then
-    --     return GetLanguageStrById(11093)..GetLanguageStrById(12270)
-    -- end
-    return type
+    local cfg = itemConfig[itemSid]
+    if cfg == nil then
+        return ""
+    end
+    local typeName = GetLanguageStrById(cfg.ItemTypeDes)
+    return typeName or ""
 end
 --为关卡跳转做的排序
 function this.JumpSort(jumps)

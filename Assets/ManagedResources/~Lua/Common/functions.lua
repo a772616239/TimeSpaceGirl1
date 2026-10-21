@@ -2079,11 +2079,21 @@ function GetLanguageStrById(zhStr)
         return zhStr
     end
     local t = type(zhStr)
-    local languageID = 0
-    if t == "string" then
-        languageID = tonumber(zhStr)
-    else
+    local languageID
+    if t == "number" then
         languageID = zhStr
+    elseif t == "string" then
+        languageID = tonumber(zhStr)
+        -- 非纯数字串不可能是语言表 id（languageDic 以 Language.xlsx 的 id 为键）：
+        -- 多为「已经翻译过的文本」被二次查表，例如
+        -- RewardItemSingleShowPopup:182 把 getType() 的返回值又传进来一次。
+        -- 直接原样返回：既不查表、也不写去重表——用 nil 当键会 table index is nil 崩。
+        if languageID == nil then
+            return zhStr
+        end
+    else
+        -- 表/函数等异常入参：老逻辑会在这里拼字符串报错，统一兜成文本
+        return tostring(zhStr)
     end
 
     if languageDic then

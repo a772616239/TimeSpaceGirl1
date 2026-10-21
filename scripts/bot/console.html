@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>虚拟玩家控制台</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#11161d; --panel-2:#0d1218; --line:#1e2630;
+    --text:#d7dee8; --dim:#7d8b9c; --dim-2:#5a6878;
+    --accent:#4c9aff; --green:#3fb950; --amber:#d29922; --red:#f85149; --purple:#a371f7;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  /* ---------- header ---------- */
+  header{
+    display:flex; align-items:center; gap:16px; padding:12px 18px;
+    background:linear-gradient(180deg,#131a23,#0e131a); border-bottom:1px solid var(--line);
+    flex:0 0 auto;
+  }
+  .brand{display:flex; align-items:center; gap:10px; font-weight:650; letter-spacing:.2px}
+  .logo{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#4c9aff,#a371f7);
+    display:grid;place-items:center;font-size:14px}
+  .chip{
+    display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px;
+    background:#0c1117; border:1px solid var(--line); color:var(--dim); font-size:12px;
+    white-space:nowrap;
+  }
+  .chip b{color:var(--text); font-weight:600}
+  .chip.stale{border-color:rgba(210,153,34,.45); color:#e3b341}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--dim-2);flex:0 0 auto}
+  .dot.on{background:var(--green); box-shadow:0 0 0 3px rgba(63,185,80,.15)}
+  .dot.warn{background:var(--amber); box-shadow:0 0 0 3px rgba(210,153,34,.15)}
+  .dot.off{background:var(--red); box-shadow:0 0 0 3px rgba(248,81,73,.15)}
+  .spacer{flex:1}
+  .switch{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+  .track{width:42px;height:22px;border-radius:999px;background:#26303c;position:relative;transition:.18s}
+  .track::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;
+    background:#8b98a8;transition:.18s}
+  .switch.on .track{background:rgba(63,185,80,.28)}
+  .switch.on .track::after{left:23px;background:var(--green)}
+  .switch span{font-size:12px;color:var(--dim)}
+  /* ---------- layout ---------- */
+  main{
+    flex:1; min-height:0; display:grid; gap:12px; padding:12px 14px;
+    grid-template-columns:290px minmax(0,1fr) 380px;
+  }
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    display:flex; flex-direction:column; min-height:0; overflow:hidden;
+  }
+  .panel > h2{
+    margin:0; padding:10px 14px; font-size:12px; font-weight:600; letter-spacing:.08em;
+    color:var(--dim); text-transform:uppercase; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:8px; flex:0 0 auto;
+  }
+  .panel > h2 .right{margin-left:auto;font-weight:500;letter-spacing:0;text-transform:none;font-size:11px}
+  .body{overflow:auto; min-height:0; padding:10px 12px}
+  .body::-webkit-scrollbar{width:8px;height:8px}
+  .body::-webkit-scrollbar-thumb{background:#232c38;border-radius:4px}
+  /* ---------- bots ---------- */
+  .bot{
+    border:1px solid var(--line); border-radius:10px; padding:10px 11px; margin-bottom:10px;
+    background:var(--panel-2); position:relative;
+  }
+  .bot.offline{opacity:.55}
+  .bot-top{display:flex;align-items:center;gap:9px}
+  .ava{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-weight:700;
+    background:linear-gradient(135deg,#243244,#1a2431); color:#9fc3ff; border:1px solid #26303c; flex:0 0 auto}
+  .bot-name{font-weight:600}
+  .bot-meta{color:var(--dim); font-size:11.5px; font-family:var(--mono)}
+  .persona{color:var(--dim-2); font-size:11.5px; margin:7px 0 8px; line-height:1.45}
+  .bot-actions{display:flex; gap:6px}
+  /* ---------- buttons ---------- */
+  button{
+    font:inherit; font-size:12px; padding:5px 10px; border-radius:7px; cursor:pointer;
+    background:#18202b; color:var(--text); border:1px solid #26303c; transition:.12s;
+  }
+  button:hover{background:#1e2836; border-color:#33414f}
+  button:active{transform:translateY(1px)}
+  button.primary{background:rgba(76,154,255,.14); border-color:rgba(76,154,255,.45); color:#bcd8ff}
+  button.primary:hover{background:rgba(76,154,255,.22)}
+  button.ghost{background:transparent; color:var(--dim)}
+  button:disabled{opacity:.45; cursor:not-allowed}
+  /* ---------- chat ---------- */
+  .chat-row{
+    display:grid; grid-template-columns:52px 62px minmax(0,1fr); gap:8px;
+    padding:6px 8px; border-radius:8px; align-items:start;
+  }
+  .chat-row + .chat-row{margin-top:2px}
+  .chat-row.bot{background:rgba(76,154,255,.06); border-left:2px solid rgba(76,154,255,.5)}
+  .chat-row.new{animation:fade .5s ease}
+  @keyframes fade{from{background:rgba(76,154,255,.18)}to{background:transparent}}
+  .t{color:var(--dim-2); font-family:var(--mono); font-size:11px; padding-top:2px}
+  .tag{font-size:10px; padding:1px 6px; border-radius:5px; text-align:center; font-weight:600; letter-spacing:.04em}
+  .tag.bot{background:rgba(76,154,255,.16); color:#8ec1ff}
+  .tag.human{background:rgba(163,113,247,.14); color:#c9a6ff}
+  .who{font-weight:600; font-size:12.5px}
+  .who .lv{color:var(--dim-2); font-weight:400; font-size:11px; margin-left:5px; font-family:var(--mono)}
+  .msg{word-break:break-word}
+  .msg .len{color:var(--dim-2); font-size:10.5px; margin-left:6px; font-family:var(--mono)}
+  /* ---------- pipeline ---------- */
+  .pipe{border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:10px; background:var(--panel-2)}
+  .pipe-head{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--dim);
+    letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px}
+  .pipe-head .state{margin-left:auto;text-transform:none;letter-spacing:0;font-size:11px}
+  .step{display:flex;gap:8px;align-items:flex-start;font-size:12.5px}
+  .step + .step{margin-top:7px}
+  .step .k{color:var(--dim-2); width:34px; flex:0 0 auto; font-size:11px; padding-top:1px}
+  .step .v{min-width:0; word-break:break-word}
+  .arrow{margin:6px 0 6px 16px; height:14px; border-left:1px dashed #2b3542; position:relative}
+  .arrow.busy{border-left-color:var(--accent); animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:1px 7px;border-radius:6px}
+  .badge.ok{background:rgba(63,185,80,.14);color:#7ee08a}
+  .badge.warn{background:rgba(210,153,34,.14);color:#e3b341}
+  .badge.err{background:rgba(248,81,73,.14);color:#ff8b84}
+  .badge.idle{background:#1a222c;color:var(--dim)}
+  /* ---------- metrics ---------- */
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+  .metric{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:9px 10px}
+  .metric .k{font-size:11px;color:var(--dim-2)}
+  .metric .v{font-size:19px;font-weight:650;font-family:var(--mono);margin-top:2px}
+  .metric .v small{font-size:11px;color:var(--dim);font-weight:400;margin-left:3px}
+  .cfgs{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+  .cfg{font-size:10.5px;color:var(--dim);background:var(--panel-2);border:1px solid var(--line);
+    border-radius:6px;padding:2px 7px;font-family:var(--mono)}
+  .cfg b{color:var(--text);font-weight:600}
+  /* ---------- events ---------- */
+  .ev{display:grid;grid-template-columns:44px 58px minmax(0,1fr);gap:7px;font-size:12px;padding:4px 2px;
+    border-bottom:1px solid rgba(30,38,48,.6)}
+  .ev:last-child{border-bottom:0}
+  .ev .et{color:var(--dim-2);font-family:var(--mono);font-size:10.5px;padding-top:2px}
+  .ev .ty{font-size:10.5px;font-weight:600;letter-spacing:.03em}
+  .ev .tx{color:var(--dim);word-break:break-word}
+  .ev .tx b{color:var(--text);font-weight:600}
+  /* ---------- composer ---------- */
+  footer{
+    flex:0 0 auto; border-top:1px solid var(--line); background:#0e131a;
+    padding:10px 14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  }
+  input[type=text]{
+    font:inherit; font-size:13px; padding:7px 10px; border-radius:8px;
+    background:#0a0f15; border:1px solid #26303c; color:var(--text); outline:none;
+  }
+  input[type=text]:focus{border-color:rgba(76,154,255,.55)}
+  #fText{flex:1; min-width:220px}
+  #fName{width:96px}
+  #fHero{width:96px}
+  .sep{width:1px;height:22px;background:var(--line);margin:0 2px}
+  /* ---------- toast ---------- */
+  #toasts{position:fixed;right:16px;bottom:64px;display:flex;flex-direction:column;gap:8px;z-index:9}
+  .toast{background:#161d26;border:1px solid #26303c;border-left:3px solid var(--accent);
+    border-radius:8px;padding:8px 12px;font-size:12.5px;box-shadow:0 8px 24px rgba(0,0,0,.45);
+    animation:slide .2s ease}
+  .toast.err{border-left-color:var(--red)}
+  .toast.ok{border-left-color:var(--green)}
+  @keyframes slide{from{transform:translateY(6px);opacity:0}to{transform:none;opacity:1}}
+  .muted{color:var(--dim-2)}
+  .empty{color:var(--dim-2);font-size:12.5px;text-align:center;padding:18px 0}
+  @media (max-width:1180px){ main{grid-template-columns:260px minmax(0,1fr)} .pipe-col{display:none} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="logo">🤖</span>虚拟玩家控制台</div>
+  <span class="chip" id="cServer">server <b>—</b></span>
+  <span class="chip"><span class="dot" id="dOnline"></span>在线 <b id="cOnline">—</b><span id="cVirt" class="muted"></span></span>
+  <span class="chip"><span class="dot" id="dBridge"></span>DSH <b id="cBridge">—</b></span>
+  <span class="chip" id="cModel">—</span>
+  <div class="spacer"></div>
+  <div class="switch" id="swMain" title="机器人总开关">
+    <div class="track"></div><span id="swLabel">总开关</span>
+  </div>
+  <span class="chip" id="cTick">—</span>
+</header>
+
+<main>
+  <!-- 机器人 -->
+  <section class="panel">
+    <h2>机器人 <span class="right" id="botCount">—</span></h2>
+    <div class="body" id="bots"></div>
+  </section>
+
+  <!-- 世界频道 -->
+  <section class="panel">
+    <h2>世界频道 · 实时 <span class="right" id="chatMeta">—</span></h2>
+    <div class="body" id="chat"></div>
+  </section>
+
+  <!-- 流水线 -->
+  <section class="panel pipe-col">
+    <h2>回复流水线 <span class="right" id="pipeMeta">—</span></h2>
+    <div class="body">
+      <div id="pipes"></div>
+
+      <div class="metrics" id="metrics"></div>
+      <div class="cfgs" id="cfgs"></div>
+
+      <div class="pipe" style="margin-bottom:10px">
+        <div class="pipe-head">DSH 耗时 <span class="state muted" id="sparkMeta">—</span></div>
+        <div id="spark"></div>
+      </div>
+
+      <div class="pipe" style="margin-bottom:0">
+        <div class="pipe-head">事件流 <span class="state muted">最近 40 条</span></div>
+        <div id="events"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <input type="text" id="fName" value="Mia" title="模拟玩家的名字">
+  <input type="text" id="fText" placeholder="输入一句话 → 模拟玩家在世界频道发言（会触发机器人 AI 回复）">
+  <button class="primary" id="bFake">模拟玩家发言</button>
+  <button id="bSay">机器人说话</button>
+  <span class="sep"></span>
+  <input type="text" id="fHero" placeholder="heroId 可空">
+  <button id="bAnnounce">英雄公告</button>
+  <button id="bReply">强制回复</button>
+  <span class="sep"></span>
+  <button class="ghost" id="bReload">重载配置</button>
+</footer>
+
+<div id="toasts"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let lastChatId = 0;
+let chatPinned = true;
+let busy = false;
+
+function esc(s){ return (s??"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function hhmmss(ts){ const d=new Date(ts); return d.toTimeString().slice(0,8); }
+function rel(ts){
+  if(!ts) return "—";
+  const s = Math.round((Date.now()-ts)/1000);
+  if(s < 60) return s + "s 前";
+  if(s < 3600) return Math.round(s/60) + "m 前";
+  return Math.round(s/3600) + "h 前";
+}
+function toast(msg, kind){
+  const el = document.createElement("div");
+  el.className = "toast " + (kind||"");
+  el.textContent = msg;
+  $("toasts").appendChild(el);
+  setTimeout(()=>el.remove(), 3200);
+}
+
+/* ---------- 渲染：机器人 ---------- */
+function renderBots(st){
+  const box = $("bots");
+  const bots = (st && st.bots) || [];
+  $("botCount").textContent = bots.length ? `${bots.filter(b=>b.online).length}/${bots.length} 在线` : "—";
+  if(!bots.length){ box.innerHTML = `<div class="empty">没有机器人配置<br><span class="muted">检查 conf/bot_config.json</span></div>`; return; }
+  box.innerHTML = bots.map(b=>`
+    <div class="bot ${b.online?"":"offline"}">
+      <div class="bot-top">
+        <div class="ava">${esc((b.name||"?").slice(0,1).toUpperCase())}</div>
+        <div style="min-width:0">
+          <div class="bot-name">${esc(b.name)}</div>
+          <div class="bot-meta">uid ${b.uid} · Lv${b.level} · VIP${b.vip} · ${esc((b.country||"--").toUpperCase())}</div>
+        </div>
+        <span class="dot ${b.online?"on":""}" style="margin-left:auto"></span>
+      </div>
+      <div class="persona">${esc(b.persona || "—")}</div>
+      <div class="bot-actions">
+        <button data-say="${esc(b.name)}">说一句</button>
+        <button data-announce="1">公告</button>
+      </div>
+    </div>`).join("");
+  box.querySelectorAll("[data-say]").forEach(el=>{
+    el.onclick = () => {
+      const text = prompt(`让 ${el.dataset.say} 在世界频道说一句：`, "gg wp");
+      if(text) act("say", {text});
+    };
+  });
+  box.querySelectorAll("[data-announce]").forEach(el=>{ el.onclick = () => act("announce", {}); });
+}
+
+/* ---------- 渲染：聊天 ---------- */
+function renderChat(chats){
+  const box = $("chat");
+  $("chatMeta").textContent = chats.length ? `${chats.length} 条` : "—";
+  if(!chats.length){ box.innerHTML = `<div class="empty">世界频道还没有消息<br><span class="muted">用底部输入框模拟一条玩家发言</span></div>`; return; }
+  const maxId = chats[chats.length-1].messageId;
+  box.innerHTML = chats.map(c=>`
+    <div class="chat-row ${c.isBot?"bot":""} ${c.messageId>lastChatId?"new":""}">
+      <div class="t">${hhmmss(c.ts)}</div>
+      <div><span class="tag ${c.isBot?"bot":"human"}">${c.isBot?"BOT":"玩家"}</span></div>
+      <div>
+        <div class="who">${esc(c.name)}<span class="lv">Lv${c.level}${c.vip?" · V"+c.vip:""}${c.country?" · "+esc(c.country.toUpperCase()):""}</span></div>
+        <div class="msg">${esc(c.text)}<span class="len">${[...c.text].length}</span></div>
+      </div>
+    </div>`).join("");
+  lastChatId = maxId;
+  if(chatPinned) box.scrollTop = box.scrollHeight;
+}
+
+/* ---------- 渲染：流水线 ---------- */
+function renderPipes(st){
+  const box = $("pipes");
+  const chs = (st && st.channels) || [];
+  if(!chs.length){ box.innerHTML = `<div class="empty">服务端还没写快照</div>`; $("pipeMeta").textContent="—"; return; }
+  const now = Date.now();
+  $("pipeMeta").textContent = (st.flags && st.flags.reply) ? "AI 回复已开启" : "AI 回复已关闭";
+  box.innerHTML = chs.map(c=>{
+    let state, cls;
+    if(c.inFlight){ state = "思考中…"; cls = "busy"; }
+    else if(c.pending && c.replyDueAt){ const left = Math.max(0, Math.round((c.replyDueAt-now)/1000)); state = left>0 ? `等待 ${left}s` : "即将触发"; cls="busy"; }
+    else if(c.pending){ state = "待回复"; cls="busy"; }
+    else { state = "已回复"; cls=""; }
+    const badge = c.inFlight ? `<span class="badge warn">思考中</span>`
+      : c.pending ? `<span class="badge warn">待回复</span>`
+      : `<span class="badge ok">已回复</span>`;
+    return `
+    <div class="pipe">
+      <div class="pipe-head">${c.name==="world"?"世界频道":"跨服频道"} <span class="state">${badge}</span></div>
+      <div class="step"><span class="k">玩家</span><span class="v">
+        ${c.lastHumanMsgId ? `<b>${esc(c.lastHumanName||"?")}</b>：${esc(c.lastHumanText||"")}<br><span class="muted">mid ${c.lastHumanMsgId} · ${rel(c.lastHumanAt)}</span>` : `<span class="muted">暂无</span>`}
+      </span></div>
+      <div class="arrow ${cls}"></div>
+      <div class="step"><span class="k">机器人</span><span class="v">
+        ${c.lastBotMsgId ? `mid ${c.lastBotMsgId}<br><span class="muted">上次回复 ${rel(c.lastReplyAt)}</span>` : `<span class="muted">还没回过</span>`}
+        <br><span class="muted">${c.pending ? "最新一条玩家消息尚未被回复" : "最新消息已回复"}</span>
+      </span></div>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- 渲染：生效配置 ---------- */
+function renderCfgs(st){
+  const c = (st && st.config) || {};
+  const box = $("cfgs");
+  if(!c.maxReplyChars){ box.innerHTML = ""; return; }
+  const min = (s) => Math.round((s||0)/60);
+  box.innerHTML = [
+    `回复 <b>≤${c.maxReplyChars}</b> 字符`,
+    `上下文 <b>${c.contextHours}h</b>/${c.contextMaxLines}条`,
+    `思考 <b>${c.replyDelaySecMin}-${c.replyDelaySecMax}s</b>`,
+    `冷却 <b>${c.replyCooldownSec}s</b>`,
+    `喊话 <b>${min(c.chatterMinSec)}-${min(c.chatterMaxSec)}min</b>`,
+    `公告 <b>${min(c.announceMinSec)}-${min(c.announceMaxSec)}min</b>`,
+  ].map(t=>`<span class="cfg">${t}</span>`).join("");
+}
+
+/* ---------- 渲染：指标 / 耗时 / 事件 ---------- */
+function renderMetrics(st){
+  const s = (st && st.stats) || {};
+  const total = s.replyTotal || 0;
+  const fb = s.replyFallback || 0;
+  const fbRate = total ? Math.round(fb*100/total) : 0;
+  $("metrics").innerHTML = `
+    <div class="metric"><div class="k">AI 回复</div><div class="v">${s.replyDsh||0}<small>条</small></div></div>
+    <div class="metric"><div class="k">兜底率</div><div class="v">${fbRate}<small>%</small></div></div>
+    <div class="metric"><div class="k">平均耗时</div><div class="v">${s.dshMsAvg?(s.dshMsAvg/1000).toFixed(1):"—"}<small>s</small></div></div>
+    <div class="metric"><div class="k">最大耗时</div><div class="v">${s.dshMsMax?(s.dshMsMax/1000).toFixed(1):"—"}<small>s</small></div></div>
+    <div class="metric"><div class="k">日常喊话</div><div class="v">${s.chatter||0}<small>条</small></div></div>
+    <div class="metric"><div class="k">英雄公告</div><div class="v">${s.announce||0}<small>次</small></div></div>`;
+}
+
+function renderSpark(st){
+  const evs = ((st && st.events) || []).filter(e=>e.type==="reply" && e.ms>0).slice(-24);
+  const box = $("spark");
+  if(!evs.length){ box.innerHTML = `<div class="empty" style="padding:8px 0">还没有 AI 回复样本</div>`; $("sparkMeta").textContent="—"; return; }
+  const w = 320, h = 46, pad = 3;
+  const max = Math.max(...evs.map(e=>e.ms), 1000);
+  const pts = evs.map((e,i)=>{
+    const x = pad + i*(w-2*pad)/Math.max(1,evs.length-1);
+    const y = h - pad - (e.ms/max)*(h-2*pad);
+    return [x,y];
+  });
+  const d = pts.map((p,i)=> (i?"L":"M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  box.innerHTML = `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(76,154,255,.35)"/><stop offset="100%" stop-color="rgba(76,154,255,0)"/>
+    </linearGradient></defs>
+    <path d="${d} L ${pts[pts.length-1][0].toFixed(1)} ${h-pad} L ${pts[0][0].toFixed(1)} ${h-pad} Z" fill="url(#g)"/>
+    <path d="${d}" fill="none" stroke="#4c9aff" stroke-width="1.6" stroke-linejoin="round"/>
+    ${pts.map(p=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2" fill="#8ec1ff"/>`).join("")}
+  </svg>`;
+  $("sparkMeta").textContent = `最近 ${evs.length} 次 · 峰值 ${(max/1000).toFixed(1)}s`;
+}
+
+const EV_COLOR = {reply:"#3fb950", chatter:"#4c9aff", say:"#4c9aff", announce:"#d29922", inject:"#a371f7", toggle:"#f85149", manual:"#8ec1ff"};
+const EV_LABEL = {reply:"回复", chatter:"喊话", say:"说话", announce:"公告", inject:"玩家", toggle:"开关", manual:"手动"};
+function renderEvents(st){
+  const evs = ((st && st.events) || []).slice().reverse();
+  const box = $("events");
+  if(!evs.length){ box.innerHTML = `<div class="empty" style="padding:8px 0">暂无事件</div>`; return; }
+  box.innerHTML = evs.map(e=>{
+    const extra = e.type==="reply" ? ` <span class="muted">${e.source||""}${e.ms?" · "+(e.ms/1000).toFixed(1)+"s":""}</span>` : "";
+    return `<div class="ev">
+      <div class="et">${hhmmss(e.ts)}</div>
+      <div class="ty" style="color:${EV_COLOR[e.type]||"#7d8b9c"}">${EV_LABEL[e.type]||e.type}</div>
+      <div class="tx"><b>${esc(e.bot||"-")}</b> ${esc(e.text||"")}${extra}</div>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- 顶栏 ---------- */
+function renderHeader(st){
+  const on = st.onlineNum;
+  const virt = (st.status && st.status.virtualOnline) || 0;
+  $("cServer").innerHTML = `server <b>#${st.serverId}</b>`;
+  $("cOnline").textContent = on===null ? "—" : `${on}`;
+  $("cOnline").title = `真实会话 ${on===null?"?":Math.max(0,on-virt)} + 虚拟 ${virt}`;
+  $("cVirt").textContent = virt ? ` (虚拟 ${virt})` : "";
+  $("dOnline").className = "dot " + (on>0 ? "on" : "warn");
+
+  const b = st.bridge;
+  if(b && b.ok){
+    $("dBridge").className = "dot " + (b.failCount>0 ? "warn" : "on");
+    $("cBridge").textContent = `${b.okCount||0} 成功 / ${b.failCount||0} 失败`;
+    $("cModel").textContent = `${b.provider||"?"} / ${b.model||"?"}`;
+  }else{
+    $("dBridge").className = "dot off";
+    $("cBridge").textContent = "离线";
+    $("cModel").textContent = "桥接未启动";
+  }
+
+  const enabled = !!(st.status && st.status.enabled);
+  $("swMain").className = "switch " + (enabled?"on":"");
+  $("swLabel").textContent = enabled ? "运行中" : "已关闭";
+  $("cTick").textContent = st.status ? `快照 ${rel(st.status.ts)}` : "无快照";
+  $("cTick").className = "chip" + (st.status && !st.statusFresh ? " stale" : "");
+}
+
+/* ---------- 动作 ---------- */
+async function act(action, payload){
+  if(busy) return;
+  busy = true;
+  try{
+    const r = await fetch("/api/action", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(Object.assign({action}, payload||{}))
+    });
+    const j = await r.json();
+    if(j.ok) toast(`已执行：${j.cmd || action}`, "ok");
+    else toast(`失败：${j.error || j.msg || action}`, "err");
+    setTimeout(poll, 400);
+  }catch(e){
+    toast("请求失败：" + e, "err");
+  }finally{ busy = false; }
+}
+
+$("bFake").onclick = () => {
+  const text = $("fText").value.trim();
+  if(!text) return toast("先输入一句话", "err");
+  act("fake", {name: $("fName").value.trim() || "Tester", text});
+  $("fText").value = "";
+};
+$("fText").addEventListener("keydown", e=>{ if(e.key==="Enter") $("bFake").click(); });
+$("bSay").onclick = () => {
+  const text = $("fText").value.trim() || prompt("让机器人说一句：", "gg wp");
+  if(text) { act("say", {text}); $("fText").value = ""; }
+};
+$("bAnnounce").onclick = () => act("announce", {heroId: $("fHero").value.trim()});
+$("bReply").onclick = () => act("reply", {});
+$("bReload").onclick = () => act("reload", {});
+$("swMain").onclick = () => {
+  const enabled = $("swMain").classList.contains("on");
+  act(enabled ? "off" : "on", {});
+};
+$("chat").addEventListener("scroll", e=>{
+  const el = e.target;
+  chatPinned = (el.scrollHeight - el.scrollTop - el.clientHeight) < 40;
+});
+
+/* ---------- 轮询 ---------- */
+async function poll(){
+  try{
+    const r = await fetch("/api/snapshot", {cache:"no-store"});
+    const st = await r.json();
+    renderHeader(st);
+    renderBots(st.status);
+    renderChat(st.chats || []);
+    renderPipes(st.status);
+    renderMetrics(st.status);
+    renderCfgs(st.status);
+    renderSpark(st.status);
+    renderEvents(st.status);
+  }catch(e){
+    $("cTick").textContent = "控制台未连上服务";
+  }
+}
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>

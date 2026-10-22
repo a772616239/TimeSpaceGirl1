@@ -105,10 +105,10 @@ function this.GetCurShowAllAchievementData(type)
             local curTaskData = TypeTaskData[type][i]
             local curTaskConFigData = achievementConfig[curTaskData.missionId]
             if ActTimeCtrlManager.SingleFuncState(curTaskConFigData.RefSysId) then
+                -- 已领取（state==2）不再剔除：领完就消失会让列表在“一键领取”后整体变空。
+                -- 保留 PreId 链门（上一步已领才放行下一档），已领取的条目靠 RewardTabsSort 沉底显示。
                 if curTaskConFigData.PreId == -1 or curShowAllOkAchievementData[curTaskConFigData.PreId]  then
-                    if curTaskData.state ~= 2 then
-                        curShowAllAchievementData[curTaskData.missionId] = curTaskData
-                    end
+                    curShowAllAchievementData[curTaskData.missionId] = curTaskData
                 end
             end
         end

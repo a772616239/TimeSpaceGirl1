@@ -7,8 +7,18 @@
 #
 # 用法：
 #   scripts/resource_build.sh --action export                  # 全量导表（= 面板 Export All）
+#   scripts/resource_build.sh --action export --sync-tables plan   # 导表 + 只体检服务端表漂移
+#   scripts/resource_build.sh --action export --sync-tables off    # 导表但不碰线上服
 #   scripts/resource_build.sh --action ab --server-env 正式服   # 重建 AB + 复制到 StreamingAssets
 #   scripts/resource_build.sh --action all  --server-env 正式服  # 先导表再重建 AB（两次 Unity 启动）
+#
+# 🔴 --sync-tables（默认 apply）：导表成功后调用 scripts/table_sync.py，把「本次导表改动的
+#    服务端 txt」增量推到线上服（gs:/home/java/gameserver/conf/server + assets/conf/server）。
+#    为什么默认开：客户端 lua 与服务端 txt 同源，但服务端那份从来没被推过 ⇒ 客户端显示
+#    一套、服务端校验另一套。为什么不整目录 rsync：Language 会丢 Korean 列、
+#    EncourageTaskConfig 会删线上 25 条任务、30+ 张是未发布内容 —— 详见 docs/table_sync_skill.md。
+#    工具只推「基线差异」里的表，且逐张过结构体检（列丢失/行丢失/nil 空值一律拦下），
+#    第一次跑只建基线不推表。同步失败不拖垮导表（除非加 --sync-strict）。
 #
 # 🔴 为什么 AB 要带 --server-env：CopyAssetBundleToStreamingAssets 会把 Assets/Resources/
 #    整目录快照到 StreamingAssets/Android/Resources（含 version.txt）。快照里的 serverUrl
@@ -27,6 +37,9 @@ STAMP="$(date '+%Y%m%d-%H%M%S')"
 
 ACTION="all"
 SERVER_ENV=""
+SYNC_TABLES="apply"     # off | plan | apply
+SYNC_STRICT=0
+SYNC_RESTART=0
 
 # 🔴 2026-10-21 修：必须在解析参数**之前**留存原始 argv。
 # 旧写法把 ORIG_ARGS=("$@") 放在 while 之后，那时 $@ 已被 shift 掏空 ⇒ 下面
@@ -41,13 +54,20 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --action)     ACTION="${2:-}"; shift 2 ;;
         --server-env) SERVER_ENV="${2:-}"; shift 2 ;;
-        -h|--help)    /usr/bin/sed -n '2,20p' "$0"; exit 0 ;;
+        --sync-tables) SYNC_TABLES="${2:-}"; shift 2 ;;
+        --sync-strict) SYNC_STRICT=1; shift ;;
+        --sync-restart) SYNC_RESTART=1; shift ;;
+        -h|--help)    /usr/bin/sed -n '2,30p' "$0"; exit 0 ;;
         *) echo "未知参数：$1" >&2; exit 2 ;;
     esac
 done
 case "$ACTION" in
     export|ab|all) ;;
     *) echo "✗ --action 只能是 export / ab / all（收到：${ACTION}）" >&2; exit 2 ;;
+esac
+case "$SYNC_TABLES" in
+    off|plan|apply) ;;
+    *) echo "✗ --sync-tables 只能是 off / plan / apply（收到：${SYNC_TABLES}）" >&2; exit 2 ;;
 esac
 
 [[ -x "$UNITY_BIN" ]] || { echo "✗ 找不到 Unity：$UNITY_BIN" >&2; exit 2; }
@@ -119,6 +139,34 @@ RC=0
 if [[ "$ACTION" == "export" || "$ACTION" == "all" ]]; then
     run_unity ExportTables export || RC=$?
     [[ "$RC" -eq 0 ]] && echo "✅ 导表完成（明细 Logs/batch_resource_build.log）"
+fi
+
+# 🔴 导表后同步服务端表到线上服（2026-10-22 新增）。
+#    只在「刚导过表」时跑（--action ab 没有新产物，跑了也没意义）。
+#    同步失败默认不拖垮导表：导表产物已经在本地，线上没推只是「还是旧的」，
+#    这个信息由工具自己打印，构建仍算成功；要让它变成构建失败就加 --sync-strict。
+if [[ "$RC" -eq 0 && "$ACTION" != "ab" && "$SYNC_TABLES" != "off" ]]; then
+    PY_BIN="$VENV_PY"
+    [[ -x "$PY_BIN" ]] || PY_BIN="$(command -v python3 || true)"
+    if [[ -z "$PY_BIN" ]]; then
+        echo "⚠ 找不到 python3，跳过服务端表同步" >&2
+    else
+        echo ""
+        echo "==> 服务端表同步（table_sync --${SYNC_TABLES}）"
+        SYNC_ARGS=""
+        [[ "$SYNC_TABLES" == "apply" ]] && SYNC_ARGS="$SYNC_ARGS --apply"
+        [[ "$SYNC_RESTART" -eq 1 ]] && SYNC_ARGS="$SYNC_ARGS --restart"
+        [[ "$SYNC_STRICT" -eq 1 ]] && SYNC_ARGS="$SYNC_ARGS --strict"
+        # shellcheck disable=SC2086  # 参数里不含空格，按词拆分正是本意
+        "$PY_BIN" scripts/table_sync.py $SYNC_ARGS
+        SYNC_RC=$?
+        if [[ "$SYNC_RC" -eq 0 ]]; then
+            echo "✅ 服务端表同步完成"
+        else
+            echo "⚠ 服务端表同步返回 ${SYNC_RC}（导表产物不受影响，明细见 build/table_sync/reports/）" >&2
+            [[ "$SYNC_STRICT" -eq 1 ]] && RC="$SYNC_RC"
+        fi
+    fi
 fi
 
 if [[ "$RC" -eq 0 && ( "$ACTION" == "ab" || "$ACTION" == "all" ) ]]; then

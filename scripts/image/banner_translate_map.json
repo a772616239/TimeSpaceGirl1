@@ -107,5 +107,11 @@
     "zh_text": "神圣审判",
     "lines": ["Divine Judgment"],
     "note": "真田英雄特写技能横幅「HERO-SKILL 神圣审判」（ArtFont_zh/font，512x256 RGBA 透明底：黑色笔刷横幅底板 + 橙金渐变大字，左上小字 HERO-SKILL 本来就是英文不许动）。译名取 Language.lua 技能名表「Divine Judgment」（同系列 Sacred Judgment 相邻对齐双源核实）。🔴 512x256 落在 artfont 带但不是 884x544 三段版面、也不是单色 glyph（橙金渐变 1000+ 种颜色）⇒ local 锚点与 600x400 闸门都不适用，必须 chatgpt_web；family=auto 判成 artfont 即走「整幅重绘 + alpha lock + 可见区改动 2%~75%」口径"
+  },
+  "cn2-x1_texie_suoluomen_01_zh.png": {
+    "zh_text": "恶魔之影",
+    "lines": ["Demonic Shadow"],
+    "gpt_layout": "WIDTH LIMIT (hard, measured on the 512x256 canvas): the Chinese 恶魔之影 occupies x≈59..428 (about 369px wide, 86px tall, y≈120..206). The single English line 'DEMONIC SHADOW' is far wider than four Chinese characters, so it MUST be condensed to fit inside that same span — start at the same left edge (x≈59) and end no later than x≈425, keeping clearance from the banner's right boundary (the solid brush plate ends around x≈433; beyond that is only a sparse dotted tail and then full transparency, and anything drawn there is cut off by the artwork's own silhouette / alpha lock). Tighten letter-spacing first, then reduce glyph height proportionally if still needed. Never widen, extend or re-shape the banner, and never drop or truncate the final 'W'. Keep the small 'HERO-SKILL' label at the top-left exactly where it is — it is already English and must stay unchanged.",
+    "note": "suoluomen 英雄特写技能横幅「HERO-SKILL 恶魔之影」（ArtFont_zh/font，512x256 RGBA 透明底：黑色笔刷横幅底板 + 紫金渐变大字，左上小字 HERO-SKILL 本来就是英文不许动）。译名取 Language.lua 技能名表逐位对齐：恶魔之影 ↔ Demonic Shadow（同数组 14 项连续偏移全对上；血之回响↔Echoes of Blood、魔神的睿智↔Devilish Wisdom 与 baiqi/shiba 条目同表双源核实）。同系列口径同 cn2-x1_texie_mozhate_01：512x256 落在 artfont 带但不是 884x544 三段版面、也不是单色 glyph（1000+ 种颜色）⇒ local 锚点与 600x400 闸门都不适用，必须 chatgpt_web；family=auto 判成 artfont 即走「整幅重绘 + alpha lock + 可见区改动 2%~75%」口径。🔴 英文 'DEMONIC SHADOW' 远宽于 4 个汉字，同 mozhate 首跑（#14）末字母被 alpha lock 啃掉的坑 ⇒ gpt_layout 补显式宽度上限（整幅族 2026-10-22 新增逐条目 gpt_layout 钩子）"
   }
 }

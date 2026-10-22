@@ -78,6 +78,7 @@ end
 --界面销毁时调用（用于子类重写）
 function LeadAssemblyPanel:OnDestroy()
     this.selectSkill = nil
+    AircraftCarrierManager.pendingAssemblySelect = nil
     lastBg = nil
 end
 
@@ -129,6 +130,16 @@ function this.SetSkill()
             if data then
                 this.selectSkill = data.id
                 this.SetScroll(false)
+            else
+                -- 空槽原来点了没反应，玩家只能自己去下面列表里找基因。
+                -- 改成直接选中第一个可装配的基因（没有就提示没材料）。
+                local equippable = AircraftCarrierManager.GetEquippableSkillList()
+                if #equippable > 0 then
+                    this.selectSkill = equippable[1].id
+                    this.SetScroll(false)
+                else
+                    PopupTipPanel.ShowTipByLanguageId(91000141)
+                end
             end
         end)
     end
@@ -167,10 +178,46 @@ function this.SetScroll(isRefreshData)
                 num = bagGene[i].num,
             })
         end
+        -- 面板里到底有什么，和红点日志 [LeadAssembly] equipCheck 对着看，
+        -- 「外面亮、进来空」一比对就知道是红点算错还是列表没数据
+        Log("[LeadAssembly] list equip=" .. tostring(#equipGene)
+            .. " bag=" .. tostring(#bagGene) .. " total=" .. tostring(#this.data))
+
+        -- 入口带进来的那一个优先选中；它如果已经不在了（刚装过/刚分解），
+        -- 就退回到「当前选中项还在不在」，都不在就选第一项，
+        -- 别让右侧信息区停在已经不存在的旧基因上（表现也像「没有材料」）
+        local target = AircraftCarrierManager.pendingAssemblySelect
+        AircraftCarrierManager.pendingAssemblySelect = nil
+        this.selectSkill = this.ResolveSelectId(target)
     end
     this.scrollView:SetData(this.data, function(index, root)
         this.SetScrollItem(root, this.data[index])
     end)
+    -- 面板就是「可装配」的唯一事实来源：列表建完再反算一次入口红点，
+    -- 保证红点亮的时刻，这里一定能装；这里装不了，红点立刻灭。
+    CheckRedPointStatus(RedPointType.Lead_Assembly)
+end
+
+-- 选中项兜底：优先入口指定的，其次原来的选中项，最后第一项
+function this.ResolveSelectId(target)
+    local function existInData(id)
+        if not id then
+            return false
+        end
+        for i = 1, #this.data do
+            if this.data[i].id == id then
+                return true
+            end
+        end
+        return false
+    end
+    if existInData(target) then
+        return target
+    end
+    if existInData(this.selectSkill) then
+        return this.selectSkill
+    end
+    return this.data[1] and this.data[1].id or nil
 end
 
 function this.SetScrollItem(go, data)

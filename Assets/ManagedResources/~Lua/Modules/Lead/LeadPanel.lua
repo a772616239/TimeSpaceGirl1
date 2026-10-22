@@ -75,11 +75,17 @@ function LeadPanel:BindEvent()
         self:ClosePanel()
     end)
     Util.AddClick(this.btnAssembly, function ()
-        local data = AircraftCarrierManager.GetAllSkillData(true)
-        if #data < 1 then
+        -- 一个基因都没有 = 真的没材料，直接提示，不进空面板
+        if #AircraftCarrierManager.GetAllSkillData(true) < 1 then
             PopupTipPanel.ShowTipByLanguageId(91000141)
             return
         end
+        -- 和装配红点同一个口径：把第一个「真能装上」的基因带进面板直接选中。
+        -- 红点点亮时，玩家进去第一眼就该看到那个可装的基因，而不是自己翻列表。
+        -- 交接位放在 manager 上而不是 OnOpen 参数里：面板是缓存的，
+        -- BasePanel:OpenUI 只有首次打开才调 OnOpen，第二次起参数会被直接丢掉。
+        local equippable = AircraftCarrierManager.GetEquippableSkillList()
+        AircraftCarrierManager.pendingAssemblySelect = equippable[1] and equippable[1].id or nil
         UIManager.OpenPanel(UIName.LeadAssemblyPanel)
     end)
     Util.AddClick(this.btnList, function ()

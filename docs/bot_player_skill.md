@@ -168,6 +168,14 @@ TS_REDIS_PORT=16379 TS_SERVER_ID=10001 python3 scripts/bot/clean_fake_chat.py
 | `chatterMin/MaxSec` | 180 / 720 | 闲聊的额外下限（醒来还要再过这道闸才发） |
 | `announceMin/MaxSec` | 1500 / 4500 | 公告的额外下限（同上） |
 | `onlineFlipMin/MaxSec` | 600 / 1800 | 上下线抖动间隔（至少保留 1 个在线） |
+| `realActionEnabled` / `realActionChancePct` | true / 50 | 醒来时「真的升一级英雄 / 抽一个没有的英雄」的概率（改库，面板看得见） |
+| `arenaEnabled` | true | 醒来时会不会顺路去打一场竞技场（**只打系统机器人**，见 §4.3） |
+| `arenaChancePct` | 70 | 竞技场到期后真的开打的概率（%） |
+| `arenaMin/MaxGapSec` | 14400 / 36000 | 同一个机器人两次竞技场的间隔 = **4~10 小时** |
+| `arenaDailyMax` | 2 | 每个机器人每天最多打几场 |
+| `arenaStopRank` | 2 | **不占前 N 名**（判的是打完之后的预计分数，榜上人少时放宽到「绝不第一」） |
+| `arenaChaseTopPct` | 85 | 分数不许超过榜首的 85%，留明显距离 |
+| `arenaMinGain` | 6 | 赢一场至少涨这么多分才值得打（Elo 打弱队几乎不涨分） |
 | `bots[]` | Nova / Kai | uid、name、level、vip、head、frame、country、soulVal、persona |
 | `fakeSenderUid` | 99990001 | `bot fake` 注入假玩家用的 uid，**不能落真实号段** |
 | `ignoreUids` | `[10000004]` | 这些 uid 发言只进上下文、不触发回复（GM 号/测试号） |
@@ -203,11 +211,14 @@ private void maybeWake() {          // 每 15s tick 一次
 | 顺序 | 条件 | 动作 |
 |---|---|---|
 | 1 | `replyEnabled` 且存在「没回过、且不超过 4 小时」的玩家消息，且过了 `replyMinGapSec` | 排一次 8~25 秒后的 AI 回话 |
-| 2 | `roll < announceChancePct`（40%）且过了 `announceMinSec` | 抽个高星英雄发吉运公告 |
-| 3 | `roll < announceChancePct + chatterChancePct`（80%）且过了 `chatterMinSec` | 世界频道闲聊一句（本地语料） |
-| 4 | 其余 20% | 纯挂机，什么都不发 |
+| 2 | `arenaEnabled` 且**竞技场到期**（4~10 小时）且掷到 `arenaChancePct`（70%） | 去打一场竞技场（§4.3） |
+| 3 | `roll < realActionChancePct`（50%） | 真的升一级英雄 / 抽一个还没有的英雄（改库） |
+| 4 | `roll < realPct + announceChancePct` 且过了 `announceMinSec` | 抽个高星英雄发吉运公告 |
+| 5 | `roll < realPct + announcePct + chatterChancePct` 且过了 `chatterMinSec` | 世界频道闲聊一句（本地语料） |
+| 6 | 其余 | 纯挂机，什么都不发 |
 
 首启给一次「1~5 分钟后」的预热活动，避免新服开起来半小时没人说话；之后才进入 20~240 分钟的正态节奏。
+竞技场另有一条独立排期：**首启 3~25 分钟内错峰去一次**（方便部署后当场验证），之后进入 4~10 小时节奏。
 
 **玩家说话不会立刻触发回复**：`onWorldChat` 只更新 `lastHumanMsgId/lastHumanText/lastHumanAt/lastHumanCountry`，
 `schedulePendingReply()` 在醒来那一刻才检查「这条真人消息有没有被认领过」（见下面 §4.2 的账本）。
@@ -253,6 +264,62 @@ st.lastBotMsgId.set(Math.max(msgId, claimed));
 
 另外三道硬防护：`isBotUid()` 按号段兜底（9xxxxxxx，`fakeSenderUid` 例外）、
 `isBotName()` 认名字（跨服 uid 被改写时兜底）、`fireReply()` 开头再判一次名字，是机器人就直接记账不发。
+
+### 4.3 偶尔打一场竞技场（2026-10-22）
+
+需求原话：**「被激活的时候要学会自己挑战符合能竞升规则的竞技场排行榜，次数不要太频繁，不要尝试登顶，低调一点。」**
+
+实现落点：`BotManager.applyArenaAction()`（走 `AyyncWorker` → 玩家逻辑线程 → 落库，和 `doRealAction` 同一条通道）。
+分数、次数、奖励、对手列表全是**真实数据**，玩家点开竞技场面板能看到这个号在榜上挪位置。
+
+**四条硬规则（都不是给机器人开的后门，是复刻真人的）**
+
+| 规则 | 代码 | 说明 |
+|---|---|---|
+| 能竞升才打 | `ArenaLogic.calScore(my, def, 1) >= arenaMinGain` | Elo：打比自己分低很多的赢了只涨 2~3 分，那种局跳过。机器人对手固定按默认分 1000 算（和 `ArenaChallengeHandler` 同口径） |
+| 不登顶 | `arenaRankSafe()` | 用**打完之后的预计分数**反推：预计分数之上至少还要有 `arenaStopRank`（默认 2）个别人，且比较用**严格大于**（追平也算挤进同一档）。榜上人少时放宽到 1 ⇒ 永远不抢第一名 |
+| 离榜首远 | `arenaCeiling()` = `max(默认分+50, 榜首 × arenaChaseTopPct%)` | 默认 85%。`myScore >= 封顶` 直接收手，日志写「已经够高，不往上爬了」 |
+| 不频繁 | `arenaMin/MaxGapSec`（4~10h）+ `arenaDailyMax`（2/天）+ `arenaChancePct`（70%） | 三道叠起来：一天最多两场，且每场之间至少 4 小时 |
+
+**只打系统机器人，不碰真人。** 原因不是省事，是风险：打真人要同步改对方的
+`ARENA_RRECORD`（被挑战战报）、扣对方分数、给对方发红点，还要在**别人的逻辑线程**里改别人的 `User`。
+一旦哪一步写错，影响的是真人玩家的榜单和战报。机器人列表里通常是「真人 + 机器人补位」，
+现在只从机器人里挑；整张列表都是真人就跳过（日志写「列表里只有真人」）。
+以后要开 PVP，得先把防守方的战报/扣分/红点三段一起补齐再动开关。
+
+**实测数据（测试服 10001，season 20）**
+
+```
+# 机器人榜上的对手列表（全是机器人，enemyType=0）
+mongosh ... --eval 'db.user.findOne({_id:90000001},{arenaManager:1}).arenaManager.arenaEnemies'
+→ [{291,0,0},{286,0,0},{290,0,0},{287,0,0},{289,0,0}]
+# 挑战券够用：90000001 有 38 张、90000002 有 21 张（item 23）
+```
+
+按真实榜单（1311 / 1098 / 1016）跑一遍 Elo 推演，机器人从默认 1000 分起：
+
+| 场次 | 分数 | 涨分 | 打完预计 | 名次安全 |
+|---|---|---|---|---|
+| 1 | 1000 | +16 | 1016 | ✅（头顶 3 人） |
+| 2 | 1016 | +15 | 1031 | ✅ |
+| … | … | … | … | … |
+| 7 | 1086 | +12 | 1098 | ❌ 会追平榜二 ⇒ **收手** |
+
+也就是：**两三天爬到榜三、停在榜二下面一格，之后不再动**，直到真人把分数往上抬（封顶跟着涨）。
+这正是「低调」想要的效果 —— 榜上有活人味儿，又不会有人被机器人抢了名次。
+
+**日志/看板**
+
+```
+[bot] Nova 竞技场 -> 胜 vs robot#291，1024 分 -> 1040 分，当前第 3 名
+[bot] Nova 竞技场：1180 分已经够高（封顶 1114，榜首 1311），不往上爬了
+[bot] Nova 竞技场：没有合适的对手（榜上 3 人，能涨分的会顶到封顶/名次，或列表里只有真人），跳过
+```
+
+`BOT_STATUS` 快照里新增：`bots[].arenaScore` / `arenaRank` / `nextArenaAt` / `nextArenaInSec` /
+`arenaToday`，`stats.arenaFight` / `arenaWin`，`config.arena*`。
+分数名次同时进 AI 提示词的「Your account: ... arena rank #N on this server」，
+并明确要求**不许吹自己是第一**。
 
 ### 防刷屏的四道闸
 

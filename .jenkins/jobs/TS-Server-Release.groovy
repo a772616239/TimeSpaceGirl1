@@ -20,6 +20,8 @@
     {"name":"PROTO_LOGIN","type":"bool","default":false,"description":"🔴 协议自检是否做「真登录 + GM 命令」。默认关：生产上会用真实账号的 token 建会话，该号在线会被顶掉。只在指定了 PROTO_OPERATOR 且确认该号不在线时打开"},
     {"name":"PROTO_OPERATOR","type":"string","default":"","description":"PROTO_LOGIN=true 时用哪个 uid 发起（留空则该用例跳过）"},
     {"name":"HEALTH_AFTER","type":"bool","default":true,"description":"跑完是否异步触发 TS-Server-Health（生产服每日巡检同一个 job）。异步、不阻塞本次发布，结果去那个 job 看"},
+    {"name":"API_TEST_AFTER","type":"bool","default":true,"description":"打包完成后是否自动跑**全量接口测试**（触发 TS-Api-Test：把 proto 里 372 个接口逐个真发一遍）。异步、不阻塞发布。用专用测试号发空参数请求，会顶掉该号的在线会话"},
+    {"name":"API_TEST_SCOPE","type":"choice","choices":["全量","核心","只读"],"default":"全量","description":"接口测试的档位：全量=372 个全扫（约 6~9 分钟）；核心=主界面必需 11 个（约 30 秒）；只读=不写库的那批。拿不准就用全量"},
     {"name":"ALLOW_DIRTY","type":"bool","default":false,"description":"主工作区有未提交改动时是否继续。默认否（发布必须基于一次明确提交）。勾上后脏改动**不参与构建**，只在记录里列出来"},
     {"name":"PUSH_BRANCH","type":"bool","default":true,"description":"打包成功后把 release 分支 + 发布记录 + tag 一次原子推到 origin（演练也推：记录要能追溯）。连跑多次演练嫌远端分支多时关掉"},
     {"name":"ROLLBACK_DIR","type":"string","default":"","description":"ACTION=rollback 时指定备份目录（如 /home/java/gameserver/deploy-staging/20261019-2013/backup）。留空 = 取生产上最新的那个"},
@@ -76,6 +78,9 @@ pipeline {
           env.SR_PROTO_LOGIN     = params.PROTO_LOGIN.toString()
           env.SR_PROTO_OPERATOR  = params.PROTO_OPERATOR.trim()
           env.SR_HEALTH_AFTER    = params.HEALTH_AFTER.toString()
+          // 打包后的第三件事：全量接口测试（异步触发 TS-Api-Test）
+          env.SR_API_AFTER       = params.API_TEST_AFTER.toString()
+          env.SR_API_SCOPE       = params.API_TEST_SCOPE
 
           // 🔴 闸门一：动生产必须手打确认词。放在最前面，避免跑完 6 个环节才被拒。
           if (params.ACTION == 'rollback') {
@@ -116,6 +121,7 @@ MODE="演练（只构建+比对+记录）"
   echo "审批       ：AUTO_APPROVE=$SR_AUTO_APPROVE  DEPLOY=$SR_DEPLOY"
   echo "协议自检   ：PROTO_CHECK=$SR_PROTO_CHECK  PROTO_LOGIN=$SR_PROTO_LOGIN  OPERATOR=${SR_PROTO_OPERATOR:-（未指定）}"
   echo "跑完巡检   ：HEALTH_AFTER=$SR_HEALTH_AFTER（异步触发 TS-Server-Health）"
+  echo "接口测试   ：API_TEST_AFTER=$SR_API_AFTER  SCOPE=$SR_API_SCOPE（异步触发 TS-Api-Test）"
   echo "推送记录   ：$SR_PUSH（打包成功即推分支+tag，不区分演练/上线）"
   echo "说明       ：${SR_NOTES:-（空）}"
   echo "证据目录   ：$SR_RUN_DIR"
@@ -417,6 +423,43 @@ cd "$PROJ"
 "$PY" "$SHARED/lib/stage_report.py" add --run "$SR_RUN_DIR" \
   --name "触发生产巡检" --group "交付" --status pass \
   --detail "TS-Server-Health 已异步触发${HEALTH_TAG:-}（结果去该 job 看）"
+''')
+        }
+      }
+    }
+
+    // 打完包之后的第三件事：**全量接口测试**。
+    // 为什么放在这里、为什么是异步：
+    //   ⑩ 上线自检只证明「进程在、端口在听」，⑩-2 协议自检只证明「这条链路通」，
+    //   两者都回答不了「那 372 个接口里有没有哪个已经悄悄没了 handler」。
+    //   发版当场扫一遍，坏在发版当场，而不是坏在玩家点到那个面板的时候。
+    //   wait:false —— 全量档要 6~9 分钟，不该把已经发完的包堵在这里；
+    //   结果去 TS-Api-Test 看，页面固定地址见该 job 的看板。
+    stage('⑬-2 触发全量接口测试（TS-Api-Test）') {
+      when { expression { params.API_TEST_AFTER } }
+      steps {
+        script {
+          def at = build job: 'TS-Api-Test',
+            parameters: [string(name: 'TARGET', value: '现网-129.226.213.65'),
+                         string(name: 'SCOPE',  value: env.SR_API_SCOPE),
+                         string(name: 'UID',    value: ''),
+                         string(name: 'TIMEOUT', value: '1.5'),
+                         string(name: 'BUDGET',  value: '900')],
+            wait: false, propagate: false
+          def tag = ''
+          try { tag = "#${at.number}" } catch (ignored) { tag = '' }
+          echo "已异步触发 TS-Api-Test ${tag}（档位 ${env.SR_API_SCOPE}，不阻塞本次发布）"
+          env.API_TAG = tag
+          sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+# 演练档要写明「测的是当前线上，不是本次构建产物」，否则看板会误导人
+NOTE="TS-Api-Test 已异步触发${API_TAG:-}（档位 ${SR_API_SCOPE}）"
+if [[ "$SR_DEPLOY" != "true" ]]; then
+  NOTE="$NOTE；本次是演练，测的是当前线上，不是本次构建产物"
+fi
+"$PY" "$SHARED/lib/stage_report.py" add --run "$SR_RUN_DIR" \
+  --name "触发全量接口测试" --group "交付" --status pass --detail "$NOTE"
 ''')
         }
       }

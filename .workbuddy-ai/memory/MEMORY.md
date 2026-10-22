@@ -24,6 +24,13 @@
   本机 AppleScript quit 被 TCC 拒，只能 `kill -TERM <pid>`。
 - version.txt 共四处（`Assets/Resources/`、`Assets/StreamingAssets/Android/Resources/`、
   `Assets/Android/Resources/`、`AssetBundles/`），改环境要一起对齐；进包的是 StreamingAssets 那份。
+- **发线上包必须连服务端表一起同步**（2026-10-23 起 `TS-Android-Release` 的 `③-1` 环节）：
+  客户端表走 git、服务端 txt 走 `TimeSpaceServer/` 影子目录，两条路本来没打通，
+  `EXPORT_TABLES=false` 时导表不跑 ⇒ 同步也不跑。环境→目标映射**只写在
+  `scripts/build_envs.json` 的 `tableTargets`**（现网→gs、测试服→local、正式服→[]），
+  用 `table_sync.py --env <SERVER_ENV>` 取，别在 job 里写 case。
+- 打包 clone（`TimeSpaceGirl1-build`）里 `build/table_sync/state.json` 必须由 `ci_sync.sh`
+  第④步从开发目录镜像过去（`rsync --update`），否则 clone 永远「首次运行」、只建基线不推表。
 
 ## 关键坑位
 

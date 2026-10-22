@@ -6,10 +6,10 @@ return {
     ["cn2-X1_loading_01"] = { minX = 0.22807, minY = 0.79248, maxX = 0.988304, maxY = 0.962402 },
     ["cn2-X1_loading_02"] = { minX = 0.22807, minY = 0.79248, maxX = 0.929825, maxY = 0.953125 },
     ["cn2-X1_loading_03"] = { minX = 0.233918, minY = 0.79248, maxX = 1.0, maxY = 0.968262 },
-    ["cn2-X1_loading_04"] = { minX = 0.298246, minY = 0.79248, maxX = 0.885965, maxY = 0.967773 },
+    ["cn2-X1_loading_04"] = { minX = 0.244152, minY = 0.79248, maxX = 0.885965, maxY = 0.967773 },
     ["cn2-X1_loading_05"] = { minX = 0.22807, minY = 0.79248, maxX = 0.997076, maxY = 0.970215 },
-    ["cn2-X1_loading_06"] = { minX = 0.226608, minY = 0.79248, maxX = 0.774854, maxY = 0.941406 },
+    ["cn2-X1_loading_06"] = { minX = 0.226608, minY = 0.79248, maxX = 0.827485, maxY = 0.941406 },
     ["cn2-X1_loading_07"] = { minX = 0.226608, minY = 0.792969, maxX = 1.0, maxY = 0.971191 },
-    ["cn2-X1_loading_08"] = { minX = 0.223684, minY = 0.79248, maxX = 0.821637, maxY = 0.936523 },
+    ["cn2-X1_loading_08"] = { minX = 0.223684, minY = 0.79248, maxX = 0.827485, maxY = 0.936523 },
     ["cn2-X1_loading_09"] = { minX = 0.223684, minY = 0.79248, maxX = 0.950292, maxY = 0.957031 },
 }

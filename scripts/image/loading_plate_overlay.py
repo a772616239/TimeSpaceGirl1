@@ -620,10 +620,79 @@ def multiscale_fill(img: np.ndarray, mask: np.ndarray, levels: int = 5) -> np.nd
 
 
 # --------------------------------------------------------------------------- #
+# tagbg：条带底图（tagbg/tag1..4.png）。原来的纯色红/黑条上直接排英文标签太素，
+# 换成用户提供的故障风贴图；九张按原条色系各配一张（layout 里逐张写 tagbg 字段）。
+# --------------------------------------------------------------------------- #
+TAGBG_STYLE = {
+    # 标签字色按条芯颜色定：tag2 是浅紫白芯 → 深字浅描边；其余深芯 → 白字深描边
+    "tag1": {"fill": (255, 255, 255), "stroke": (40, 8, 60)},
+    "tag2": {"fill": (56, 24, 88), "stroke": (250, 248, 255)},
+    "tag3": {"fill": (255, 255, 255), "stroke": (70, 8, 4)},
+    "tag4": {"fill": (255, 255, 255), "stroke": (6, 24, 70)},
+}
+
+
+def load_tagbg(name: str) -> Image.Image:
+    p = os.path.join(SRC_DIR, "tagbg", f"{name}.png")
+    if not os.path.exists(p):
+        raise SystemExit(f"tagbg 不存在：{p}")
+    return Image.open(p).convert("RGBA")
+
+
+def tagbg_geom(im: Image.Image) -> dict:
+    """量主成分（条带本体）的质心与中线角。
+
+    🔴 逐张现算、不写死：四张贴图构图不同（箭头尾/故障碎块的占比都不一样），
+       质心和中线角各不相同，写死任何一张的值都会让其余三张错位。
+    """
+    a = np.array(im.split()[3])
+    n, lab, st, cent = cv2.connectedComponentsWithStats((a > 200).astype(np.uint8), 8)
+    mx = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
+    ys, xs = np.nonzero(lab == mx)
+    cols = np.unique(xs)
+    mid = [(c, (ys[xs == c].min() + ys[xs == c].max()) / 2) for c in cols[::8]]
+    k, _ = np.polyfit(np.array([p[0] for p in mid]), np.array([p[1] for p in mid]), 1)
+    return {"cx": float(cent[mx][0]), "cy": float(cent[mx][1]),
+            "angle": float(np.degrees(np.arctan(-k)))}
+
+
+def place_tagbg(layout: dict, tilt: float, W: int, H: int):
+    """缩放/旋转/摆位 tagbg，返回 (图, 左上角落点, 覆盖四边形)。
+
+    - 宽度 = 条长 × tagbg_scale（默认 1.30）：左端箭头尾、右端故障碎块都在条长
+      之外，只按条长缩会让装饰挤进条芯、字没地方落。
+    - 角度 = 条带倾角 − 贴图自带倾角：四张贴图倾角 8.5°~13.6° 各不同，不补这个
+      差值，条芯和字会差出 2°~6.5°。
+    - 摆位 = 主成分质心对准条带中心线中点（tagbg_dx/dy 可逐张微调）。
+      dy 默认 -8：贴图下缘的故障刺会扎进台词带（刺尖比条芯低 40px+），整体上移
+      让刺尖只轻擦台词上沿；上缘离大字还有 30px+ 余量，不会顶到名字。
+    - 覆盖四边形交给 plate_box 并入贴片 bbox，否则贴图超出贴片被裁。
+    """
+    im = load_tagbg(layout["tagbg"])
+    bar_len = layout["x_right"] - layout["x_left"]
+    scale = bar_len * float(layout.get("tagbg_scale", 1.30)) / im.width
+    im = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))),
+                   Image.LANCZOS)
+    delta = tilt - tagbg_geom(im)["angle"]
+    if abs(delta) > 0.05:
+        im = im.rotate(delta, resample=Image.BICUBIC, expand=True)
+    g = tagbg_geom(im)          # rotate(expand) 会换画布，质心按变换后的图重算
+    bar_cx = (layout["x_left"] + layout["x_right"]) / 2
+    bar_cy = top_y(layout, bar_cx) + layout["bar_h"] / 2
+    px = int(round(bar_cx - g["cx"] + float(layout.get("tagbg_dx", 0))))
+    py = int(round(bar_cy - g["cy"] + float(layout.get("tagbg_dy", -8))))
+    quad = np.array([[px, py], [px + im.width, py],
+                     [px + im.width, py + im.height], [px, py + im.height]],
+                    np.float32)
+    return im, (px, py), quad
+
+
+# --------------------------------------------------------------------------- #
 # 排版（只排字，不碰底图）
 # --------------------------------------------------------------------------- #
 def build_lines(asset: str, lang: str, layout: dict, W: int, H: int,
-                q_fill=(255, 255, 255), q_stroke=(0, 0, 0)):
+                q_fill=(255, 255, 255), q_stroke=(0, 0, 0),
+                t_fill=(255, 255, 255), t_stroke=(112, 16, 8)):
     """按版面排三条线（大字 / 标签 / 台词），返回 [(图层, 锚点, 角度, 底图落点)]。
 
     只排字、不碰底图像素：同一份结果既用来画贴片，也用来反推贴片 bbox（见 `plate_box`）。
@@ -670,12 +739,14 @@ def build_lines(asset: str, lang: str, layout: dict, W: int, H: int,
             start = max(24, font.size - max(1, int(round(over))))
         items.append((lay, anchor, ang, tgt))
 
-    # 3a) 定位标签：贴着红条左端进一点，垂直居中于条带
+    # 3a) 定位标签：贴着条带左端进一点，垂直居中于条带
     if tag:
         tx = layout["x_left"] + 12
         font = fit_font(tag, int(layout["x_right"] - tx - 12),
                         int(layout["bar_h"] * 0.62), start=int(layout["bar_h"] * 0.52))
-        lay, bb, ink_c = line_layer(tag, font, stroke=0, stroke_fill=(112, 16, 8, 255))
+        # tagbg 上字要有 1px 描边才压得住故障纹理（tag2 浅芯是深字浅描边）
+        lay, bb, ink_c = line_layer(tag, font, fill=tuple(t_fill) + (255,), stroke=1,
+                                    stroke_fill=tuple(t_stroke) + (255,))
         # 左中点对齐：标签左端钉在条带左端的中心线上
         items.append((lay, (bb[0], ink_c[1]), tilt,
                       (tx, top_y(layout, tx) + layout["bar_h"] / 2)))
@@ -694,7 +765,8 @@ def build_lines(asset: str, lang: str, layout: dict, W: int, H: int,
     return items
 
 
-def plate_box(asset: str, layout: dict, W: int, H: int, changed: np.ndarray | None = None):
+def plate_box(asset: str, layout: dict, W: int, H: int, changed: np.ndarray | None = None,
+              extra: list | None = None):
     """贴片 bbox（底图像素）＝ 红条 ∪ 台词带 ∪ 擦除区 ∪ **所有语言**的墨迹，再外扩 PLATE_PAD。
 
     🔴 必须对 `LANGS` 全部取并集，不能只按当前语言算：`LoadingPlateGeom.lua` 一张图
@@ -723,6 +795,8 @@ def plate_box(asset: str, layout: dict, W: int, H: int, changed: np.ndarray | No
     for lang in LANGS:
         for lay, anchor, ang, tgt in build_lines(asset, lang, layout, W, H):
             pts.append(layer_ink_quad(lay, anchor, ang, tgt))
+    if extra:
+        pts.extend(extra)          # tagbg 覆盖四边形等额外区域
     allp = np.vstack(pts)
     return (max(0, int(np.floor(allp[:, 0].min())) - PLATE_PAD),
             max(0, int(np.floor(allp[:, 1].min())) - PLATE_PAD),
@@ -765,27 +839,42 @@ def render(asset: str, lang: str, layout: dict) -> dict:
     #    「偏离红条中位色 > 45」，把字、描边、投影一起圈进来；红条自身的渐变只差 15 左右。
     bar_region = np.zeros((H, W), np.uint8)
     cv2.fillPoly(bar_region, [pb.astype(np.int32)], 255)
-    bar_region = cv2.erode(bar_region, np.ones((3, 3), np.uint8))   # 内缩，别吃红条边缘
+    bar_region_er = cv2.erode(bar_region, np.ones((3, 3), np.uint8))   # 内缩，别吃条边缘
 
-    keep0 = (bar_region > 0)
+    keep0 = (bar_region_er > 0)
     bar_color = (np.median(img[keep0].reshape(-1, 3), axis=0).astype(np.uint8)
                  if keep0.any() else np.array([25, 55, 240], np.uint8))
 
-    dev = np.abs(img.astype(np.int16) - bar_color.astype(np.int16)).max(axis=2)
-    m_bar = (((dev > 70) & (bar_region > 0))).astype(np.uint8) * 255
-    m_bar = cv2.morphologyEx(m_bar, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
-    m_bar = cv2.dilate(m_bar, np.ones((3, 3), np.uint8))
-    m_bar = (m_bar & bar_region).astype(np.uint8)
+    # layout 里配了 tagbg 且本语言有标签译文 → 整条条带换成故障风贴图；
+    # 否则走原路：条内偏离条色的像素（中文标签 + 描边 + 投影）用条色填掉。
+    use_tagbg = bool(layout.get("tagbg") and tag)
+    if use_tagbg:
+        # 🔴 条要整条擦：dilate 19 把条边缘的过渡带一起吃掉，否则贴图边缘会露出
+        #    一圈旧条色的边。擦除排在台词带/名字都重建完之后（镜像取材方向此时
+        #    上下都已是干净背景，见下方 mirror_fill 调用处）。
+        m_bar = cv2.dilate(bar_region, np.ones((19, 19), np.uint8))
+    else:
+        dev = np.abs(img.astype(np.int16) - bar_color.astype(np.int16)).max(axis=2)
+        m_bar = (((dev > 70) & (bar_region_er > 0))).astype(np.uint8) * 255
+        m_bar = cv2.morphologyEx(m_bar, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+        m_bar = cv2.dilate(m_bar, np.ones((3, 3), np.uint8))
+        m_bar = (m_bar & bar_region_er).astype(np.uint8)
 
-    # --- 2) 台词行：整带重建（红条色 → 背景色）------------------------------ #
+    # --- 2) 台词行：整带重建（条色 → 背景色）------------------------------ #
     clean = img.copy()
-    clean[m_bar > 0] = bar_color
+    if not use_tagbg:
+        clean[m_bar > 0] = bar_color
     clean, m_quote = fill_quote_band(clean, layout, bar_color)
 
     # --- 2b) 大号角色名 + 小英文名：多尺度回填 ------------------------------ #
     m_name = np.zeros((H, W), np.uint8)
     if name:
         clean, m_name = erase_name(clean, layout)
+
+    if use_tagbg:
+        # 台词带/名字都重建完再擦条：mirror_fill 的取材方向（上=名字区、下=台词带）
+        # 此时都已是重建过的干净背景，不会把中文原稿镜像进来
+        clean = mirror_fill(clean, m_bar)
 
     changed = (((m_bar > 0) | (m_quote > 0) | (m_name > 0))
                .astype(np.uint8) * 255)
@@ -809,10 +898,18 @@ def render(asset: str, lang: str, layout: dict) -> dict:
         q_fill, q_stroke = (252, 250, 246), (24, 14, 20)      # 暗底：白字深描边
 
     # --- 3) 排版：先在**底图坐标**里算三条线的落点，拿到各自的墨迹范围 ----- #
-    ink_items = build_lines(asset, lang, layout, W, H, q_fill, q_stroke)
+    tilt = float(np.degrees(np.arctan(-layout["slope"])))
+    t_fill, t_stroke = (255, 255, 255), (112, 16, 8)
+    tag_place = None
+    if use_tagbg:
+        st = TAGBG_STYLE[layout["tagbg"]]
+        t_fill, t_stroke = st["fill"], st["stroke"]
+        tag_place = place_tagbg(layout, tilt, W, H)
+    ink_items = build_lines(asset, lang, layout, W, H, q_fill, q_stroke, t_fill, t_stroke)
 
     # --- 4) 贴片画布 = 几何区 ∪ 擦除区 ∪ 三条线的墨迹（全语言并集）-------- #
-    x0, y0, x1, y1 = plate_box(asset, layout, W, H, changed)
+    x0, y0, x1, y1 = plate_box(asset, layout, W, H, changed,
+                               extra=[tag_place[2]] if tag_place else None)
     pw, ph = x1 - x0, y1 - y0
 
     # 墨迹被**画板**边界（不是贴片边界）削掉多少：>0 说明这行字本身超出了 684×2048
@@ -825,6 +922,14 @@ def render(asset: str, lang: str, layout: dict) -> dict:
                        int(max(0, -q[:, 1].min())), int(max(0, q[:, 1].max() - (H - 1))))
 
     plate = Image.fromarray(cv2.cvtColor(clean[y0:y1, x0:x1], cv2.COLOR_BGR2RGB)).convert("RGBA")
+    # tagbg 先压到重建过的底上，译文字再压到 tagbg 上（顺序反了字会被贴图盖住）
+    tag_lay = None
+    if tag_place:
+        tag_im, (tpx, tpy), _ = tag_place
+        lay_full = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        lay_full.alpha_composite(tag_im, (tpx, tpy))
+        tag_lay = lay_full.crop((x0, y0, x1, y1))
+        plate = Image.alpha_composite(plate, tag_lay)
     ink = Image.new("RGBA", plate.size, (0, 0, 0, 0))     # 译文单独一层，最后取 alpha
     # 落点从底图坐标换算成贴片坐标再画（同一个仿射：绕锚点旋转 + 平移到落点）
     for lay, anchor, ang, tgt in ink_items:
@@ -833,9 +938,11 @@ def render(asset: str, lang: str, layout: dict) -> dict:
     plate = Image.alpha_composite(plate, ink)
     text_a = np.array(ink.split()[3])
 
-    # --- 4) alpha：只在「擦过的像素」和「新画的字」上不透明 ----------------- #
+    # --- 4) alpha：只在「擦过的像素」「tagbg」和「新画的字」上不透明 --------- #
     a = changed[y0:y1, x0:x1].copy()
     a = cv2.GaussianBlur(a, (FEATHER * 2 + 1, FEATHER * 2 + 1), 0)
+    if tag_lay is not None:
+        a = np.maximum(a, np.array(tag_lay.split()[3]))
     a = np.maximum(a, np.array(text_a))
     a = cv2.GaussianBlur(a, (3, 3), 0)
     plate.putalpha(Image.fromarray(a))

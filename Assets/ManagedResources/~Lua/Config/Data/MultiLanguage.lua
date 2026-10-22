@@ -2,7 +2,7 @@ local MultiLanguage = {
 __count = 4,
 __indexs = {10001,1,99,100},
 __values = {2,10},
-__exVals = {16,'OPPOSans-M-2','English','Chinese','Price_2','$','USD','中文','中文(新马)','日文','Japanese','Price_1','Price_3','￥','¥','CNY','JPY'},
+__exVals = {16,'OPPOSans-M-2','English','Chinese','Price_2','$','USD','中文','中文(新马)','日本語','Japanese','Price_1','Price_3','￥','¥','CNY','JPY'},
 __fields = {
 	'Id',
 	'Lang_Show',

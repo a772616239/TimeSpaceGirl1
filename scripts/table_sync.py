@@ -741,7 +741,7 @@ def main() -> int:
             log('首次运行只建基线，不推任何表。下次改表导表后会自动只推改动的那几张。')
             _seed(tables, local_tables, remote_tables)
             save_state(state)
-            _write_report(all_results, [], [], [], drift, None, remote_dirs)
+        _write_report(all_results, [], [], blocked, drift, None, remote_dirs)
         return 0
 
     if not pushable:

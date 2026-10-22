@@ -1023,18 +1023,32 @@ end
 --检测是否有技能可以装配
 --注意：装配的规则是「有空槽 + 同类型不能重复装」（与服务端 SAME_TYPE_MOTHER_SHIP_WEAR 一致），
 --不能只比「拥有数 > 已装数」，否则拥有多个同类型基因时红点会恒亮且永远装不上
-function AircraftCarrierManager.CheckRedPointForSkill()
-    if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.AIRCRAFT_CARRIER) then
-        return false
-    end
+-- 装配红点与装配面板共用同一份「可装配」口径：
+-- 有空槽 + 未装配 + 类型没被已装备的占掉，三条同时成立才算可装配。
+-- 两边各写一套的下场就是「外面亮、点进去没有可装的东西」。
+local function __setEquipStat(stat, max, equip, bag, equippable)
+    stat.max = max
+    stat.equip = equip
+    stat.bag = bag
+    stat.equippable = equippable
+end
+
+function AircraftCarrierManager.GetEquippableSkillList()
+    local ret = {}
+    local stat = { max = 0, equip = 0, bag = 0, equippable = 0 }
+    this.lastEquipStat = stat
     if not this.LeadData then
-        return false
+        return ret
+    end
+    if not ActTimeCtrlManager.SingleFuncState(FUNCTION_OPEN_TYPE.AIRCRAFT_CARRIER) then
+        return ret
     end
     local equipList = this.LeadData.skill
     local max = AircraftCarrierManager.GetOpenSlotMaxCnt()
+    --没有空槽
     if max <= 0 or #equipList >= max then
-        --没有空槽
-        return false
+        __setEquipStat(stat, max, #equipList, 0, 0)
+        return ret
     end
     local usedType = {}
     for i = 1, #equipList do
@@ -1048,10 +1062,30 @@ function AircraftCarrierManager.CheckRedPointForSkill()
     for i = 1, #rest do
         local cfg = MotherShipPlaneConfig[rest[i].cfgId]
         if cfg and not usedType[cfg.Type] then
-            return true
+            table.insert(ret, rest[i])
+            --同类型只留一个：装上一个之后，第二个同类型的又会变成非法
+            usedType[cfg.Type] = true
         end
     end
-    return false
+    __setEquipStat(stat, max, #equipList, #rest, #ret)
+    return ret
+end
+
+-- 装配红点 = 真的存在可装配的基因（面板里点一下就能装上的那种）
+-- 只在判定输入有变化时落日志，避免每次 CheckAll 都刷一行
+local lastEquipLog = nil
+function AircraftCarrierManager.CheckRedPointForSkill()
+    local list = AircraftCarrierManager.GetEquippableSkillList()
+    local stat = this.lastEquipStat or {}
+    local msg = "[LeadAssembly] equipCheck max=" .. tostring(stat.max)
+        .. " equip=" .. tostring(stat.equip)
+        .. " bag=" .. tostring(stat.bag)
+        .. " equippable=" .. tostring(#list)
+    if msg ~= lastEquipLog then
+        lastEquipLog = msg
+        Log(msg)
+    end
+    return #list > 0
 end
 
 return this

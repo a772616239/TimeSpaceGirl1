@@ -386,8 +386,14 @@ function this.RefreshFindTreasureStatrData(missionId,state)
 end
 --刷新下可领取状态
 function this.SetFindTreasureDataState()
-    for _, taskInfo in pairs(TypeTaskData[TaskTypeDef.FindTreasure]) do
-        if taskInfo.state == 0 and #taskInfo.heroId > 0  then--未完成 已派遣
+    --🔴 任务数据未下发时（登录期 BagIndicationRefresh 会先打到红点）这里不能直接 pairs(nil)：
+    --报错会被 RedPointData 的 pcall 吞掉 ⇒ func_result=nil ⇒ 红点被强制置 0（看起来像「红点自己灭了」）。
+    local taskList = TypeTaskData[TaskTypeDef.FindTreasure]
+    if taskList == nil then
+        return
+    end
+    for _, taskInfo in pairs(taskList) do
+        if taskInfo.state == 0 and taskInfo.heroId and #taskInfo.heroId > 0  then--未完成 已派遣
             local timeDown  = taskInfo.progress - GetTimeStamp()
             if timeDown <= 0 then
                 taskInfo.state = 1

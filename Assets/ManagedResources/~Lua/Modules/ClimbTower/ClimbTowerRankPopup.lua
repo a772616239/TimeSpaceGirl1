@@ -1,6 +1,8 @@
 require("Base/BasePanel")
 ClimbTowerRankPopup = Inherit(BasePanel)
 local this = ClimbTowerRankPopup
+--列表项入场：逐格「放大缩小」（配方见 docs/ui_item_pop_in_skill.md，唯一实现在 Modules/Common/ItemPopIn）
+local ItemPopIn = require("Modules/Common/ItemPopIn")
 
 --初始化组件（用于子类重写）
 function ClimbTowerRankPopup:InitComponent()
@@ -23,6 +25,9 @@ function ClimbTowerRankPopup:InitComponent()
     this.noneImage = Util.GetGameObject(self.gameObject,"RankList/NoneImage")
     --自己的排名信息
     this.record = Util.GetGameObject(self.gameObject,"RankList/Record")
+
+    --列表逐格弹入：getter 传函数（ScrollView 可能被销毁重建）
+    this.popIn = ItemPopIn.New(function() return this.scrollView end)
 end
 
 --绑定事件（用于子类重写）
@@ -46,6 +51,8 @@ end
 
 --界面打开时调用（用于子类重写）
 function ClimbTowerRankPopup:OnOpen()
+    --玩家主动打开面板：这一轮榜单灌进列表时播一次逐格弹入（见 docs/ui_item_pop_in_skill.md）
+    this.listPopPending = true
 end
 
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）
@@ -60,6 +67,9 @@ function ClimbTowerRankPopup:OnShow()
     if #this.rankDatas <= 0 then
         this.noneImage:SetActive(true)
     end
+
+    --🔴 必须在 RefreshScroll（SetData 同步克隆 item）之后：只播玩家打开面板这一轮
+    this:TryPlayListPopIn()
 end
 
 function ClimbTowerRankPopup:RefreshScroll(index)
@@ -68,6 +78,23 @@ function ClimbTowerRankPopup:RefreshScroll(index)
     end)
     if index then
         this.scrollView:SetIndex(index)
+    end
+end
+
+--[[
+ * 榜单列表逐格弹入（docs/ui_item_pop_in_skill.md 第 3.1 节的一次性标记写法）
+ * 🔴 只在「玩家主动打开面板」这一轮播：OnOpen 置位，OnShow 里灌完列表消费一次。
+ *    重开面板（从 PlayerInfoPopup 返回 / 关掉再开）会重新走 OnOpen ⇒ 会再播，
+ *    而数据回调刷新只走 OnShow ⇒ 不重播。
+ *    空榜不空耗标记（#rankDatas <= 0 时没有 item，Play 本身也是 no-op）。
+--]]
+function this.TryPlayListPopIn()
+    if not this.listPopPending then
+        return
+    end
+    this.listPopPending = false
+    if this.popIn ~= nil then
+        this.popIn:Play()
     end
 end
 
@@ -155,11 +182,19 @@ function ClimbTowerRankPopup:OnClose()
         end
         this.playerHead = {}
     end
+
+    --漏 Stop = 那一项永久停在 0.82 / 1.02 上，下次进面板像卡图
+    this.listPopPending = false
+    if this.popIn ~= nil then
+        this.popIn:Stop()
+    end
 end
 
 --界面销毁时调用（用于子类重写）
 function ClimbTowerRankPopup:OnDestroy()
-
+    if this.popIn ~= nil then
+        this.popIn:Stop()
+    end
 end
 
 return ClimbTowerRankPopup

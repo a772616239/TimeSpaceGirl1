@@ -5,6 +5,8 @@
 > 唯一实现：`Assets/ManagedResources/~Lua/Modules/Common/ItemPopIn.lua`。  
 > 已接入：`ValuePackPanel`（礼包墙）、`GrowthManual_RewardPreview`、`GrowthManual_TaskPreview`、  
 > `RankingSingleListPanel`（榜单，A 方案 + 统一接点见第 3.1 节）；  
+> `ClimbTowerRankPopup` / `ClimbTowerEliteRankPopup`（爬塔排行榜弹窗，A 方案 + 一次性标记：  
+> 打开前数据已就绪、`OnShow` 同步 `SetData`，接点就在 `OnShow` 末尾，见 3.2 节）；  
 > 页签多的三个面板走「页面级接入」：`ExpertPanel`、`OperatingPanel`、`AdjutantActivityPanel`  
 > （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / **成长礼金 page_3** / **终身限购 page_9** / 战令 /  
 > 副官挑战 / 副官赠礼）；`CardActivityPanel` 同为页面级接入（任务 / 英雄礼包 / 英雄豪礼 / 收集  
@@ -193,6 +195,7 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 | `BlitzStrikePanel`（phases，未开宝箱）     | 同上：`OnOpen` 置位 → `OnShow` 里 `UpdateMain` 之后消费                                              | 战斗返回（只走 `OnShow`）、领奖回调里的 `UpdateMain` 刷新；`difficultyLevel = 0`（弹选难度）那一支也不播  |
 | `ChallengePanel`（公会战地图据点，phases）    | 父面板 `GuildBattlePanel:OnOpen` 调 `RequestCityPopIn()` 置位 → 本模块 `OnShow` 末尾（`ShowCity` 之后）消费 | 点「刷新」（回调里直接调 `OnShow`）、战斗返回（只走 `OnShow`）——都是同屏刷新                            |
 | `RankingSingleListPanel`            | `OnOpen` 置位 → 首轮榜单数据灌列表时消费（接点在 `CheckIsTop`，见 3.1 节）                                       | 翻页 / 事件回调重灌列表（标记已消费）；空榜（`SetData` 前 return）                                 |
+| `ClimbTowerRankPopup` / `ClimbTowerEliteRankPopup` | `OnOpen` 置位 → `OnShow` 里 `RefreshScroll`（同步 `SetData`）之后消费（见 3.2 节）                            | 不经 `OnOpen` 的 `OnShow`（数据回调刷新 / 从 PlayerInfoPopup 返回）；空榜                         |
 | 抽中单张卡（phases）                       | 抽卡回调里 `SetCard` 之后 `PlayCardIn(msg.number)`                                                | ——                                                                          |
 
 **TabBox 点击为什么自动就有动画**：`GrowthManualPanel.SwitchView` 里本来就会调  
@@ -234,6 +237,43 @@ end
 - 空榜路径在 `SetData` 之前就 return，不会空耗标记（也正好不播——没东西可弹）。
 - A 方案没有 `PlayPage` 的重试机制，但这里不需要：`SetData` 是同步克隆 item 的，  
   `CheckIsTop` 被调到时 item 一定已经在了。
+
+### 3.2 单列表 + 打开前已就绪的同步数据（爬塔排行榜形态）
+
+`ClimbTowerRankPopup` / `ClimbTowerEliteRankPopup` 是 3.1 的简化版：同样是
+「一个 `ScrollCycleView` + 排行榜」，但**数据在打开面板之前就请求好了**——
+`ClimbTowerPanel` 的排行按钮是 `ClimbTowerManager.GetRankData(function() OpenPanel(...) end)`，
+回调里才开面板，所以 `OnShow` 里 `GetSortRanks()` 拿到的是完整数据、`SetData` 同步克隆 item。
+⇒ 不需要 3.1 的「统一接点函数」（没有 12 条异步路径），接点就在 `OnShow` 末尾：
+
+```lua
+function this.TryPlayListPopIn()          -- 一次性标记，OnOpen 置位 / OnShow 消费
+    if not this.listPopPending then return end
+    this.listPopPending = false
+    if this.popIn ~= nil then this.popIn:Play() end
+end
+
+function ClimbTowerRankPopup:OnShow()
+    ...
+    this:RefreshScroll(1)                  -- 内部 scrollView:SetData（同步克隆）
+    ...
+    this:TryPlayListPopIn()                 -- 🔴 必须在 RefreshScroll 之后
+end
+```
+
+| 项 | 这个面板的取值 | 备注 |
+| --- | --- | --- |
+| 数据源 | `this.scrollView`（`ScrollCycleView`） | A 方案，`ForeachItemGO` 顺序 = 版面顺序 |
+| item 宽 / 视口宽 | 1034 / 1080（`ItemPre` 与 `ScrollParentView`，两个 prefab 实测一致） | 余量 23px/侧 ⇒ 缺省 `peak = 1.02` 每侧还剩 12.7px，几何上限 1.0445 |
+| 有无 Mask | `ScrollParentView` 只有 Image + 脚本，列表无裁剪 | 但峰值仍按公式卡，缺省配方就够，不必覆盖 |
+| Animator | 只在 `btnClose` / `btnPraise` 上，不在列表子树 | 不会抢缩放（坑 #1 安全） |
+| pivot | `ItemPre` 是 `(0.5,0.5)`、纯 RectTransform（只挂 224） | 内容中心 ≈ pivot，`ArtCenterOf` 不会挪，不用 `centerPivot = false` |
+
+- 停的时机：`OnClose` 里 `listPopPending = false` + `popIn:Stop()`；`OnDestroy` 也要 `Stop()`
+  （`ClimbTowerEliteRankPopup` 原本没有 `OnDestroy`，本次补上）。
+- 不播的时机：不经 `OnOpen` 的 `OnShow`（数据回调刷新 / 从 `PlayerInfoPopup` 返回）。
+- 空榜（`#rankDatas == 0`）：`SetData` 没 item，`Play()` 收不到东西（no-op），标记照常消费掉，
+  不会在之后某次刷新里突然补弹。
 
 ---
 
@@ -352,6 +392,7 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_g
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_itempopin_page.lua
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_panel_listpopin_wiring.lua
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_thousanddraw_cardin.lua
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_climbtower_rankpopin.lua
 ```
 
 | 用例 | 覆盖 |
@@ -363,6 +404,7 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_t
 | `test_itempopin_page.lua` | 页面级接入 10 组：实例/类表字段扫描、一页两列表、无列表 no-op、`StopPage` 复位、容器模式（`GetPopInSource`）、**userdata 容器（探字段会抛错的替身）**、绑定缓存、重播不叠加、**异步列表自动重试 + 重试作废** |
 | `test_panel_listpopin_wiring.lua` | 三个面板接线：`OnShow` 有播（首开即列表页也会播）、切页签有播、`RefreshActivity` 不播、`OnClose`/`OnDestroy` 回收、积天豪礼声明 `GetPopInSource`；**成长礼金不再调 `DelayCreation`**、**终身限购返回 `preList` 数组**、**OperatingPanel 四个固定版面页各自的数据源（月卡/豪华月卡二态块 / 周末福利 gift1..N / 豪华周卡 dayItemList）**、**ExpertPanel 五个活动页各自的数据源（达人 / 升级豪礼 / 开服双倍 / 限时兑换 / 扭蛋池）** |
 | `test_thousanddraw_cardin.lua` | 千抽：卡/数字数据源与顺序、整版入场（3+4 条、卡片错开 0.11、数字 0.34 起）、**三段关键帧链 0.78→1.05→0.985→1**、`PlayCardIn(n)` 只弹一张、`StopCardsIn` 复位、`OnClose`/`OnDestroy` 回收、数据到位才播、不再退回 `duang` |
+| `test_climbtower_rankpopin.lua` | 爬塔两个排行榜弹窗（普通 / 高级）：接线（`OnOpen` 置位、`popIn` 只建一处、`Stop` 两处、`OnShow` 的 `TryPlayListPopIn` 必须在 `RefreshScroll` 之后）、首轮逐格 0.82/0.055、不经 `OnOpen` 的 `OnShow` 不重播、重开再播、30 行压进 `maxSpan`、空榜 no-op 且不空耗标记、`OnClose`/`OnDestroy` 复位、**prefab 峰值几何（1034/1080 ⇒ peak 1.02 不越界）** |
 
 六个用例都被 Jenkins `TS-Test-Lua` 自动发现（`tests/tests.json` 的 `tests_dir + pattern`），不用改配置。
 
@@ -429,6 +471,14 @@ end
 
 ## 8. 变更记录
 
+- **2026-10-22**（爬塔排行榜）：`ClimbTowerRankPopup` / `ClimbTowerEliteRankPopup` 接入（A 方案 + 一次性标记，
+  见 3.2 节）。形态是 3.1 的简化版：数据在 `GetRankData` 回调里才 `OpenPanel`，`OnShow` 同步 `SetData`，
+  所以接点直接落在 `OnShow` 末尾（`RefreshScroll` 之后），不需要统一的 `CheckIsTop` 式函数。
+  配方用**缺省 `surge`**（0.82→1.02→1、错开 0.055）——item 1034 / 视口 1080，`peak` 几何上限 1.0445，
+  缺省值每侧还剩 12.7px，和 `RankingSingleListPanel` 同手感。prefab 实测列表子树无 Animator（只有
+  `btnClose`/`btnPraise` 有）、`ItemPre` pivot 已在中心 ⇒ 不用 `centerPivot = false`。
+  `ClimbTowerEliteRankPopup` 原本没有 `OnDestroy`，本次补上（否则只靠 `OnClose` 兜，路径不全）。
+  新增 `test_climbtower_rankpopin.lua`（两面板 × 7 组断言）。
 - **2026-10-22**（OperatingPanel 固定版面页）：补上 page_2/8（月卡/豪华月卡）、page_10（周末福利）、
   page_12（豪华周卡）四页——它们是**固定版面、没有列表**，`PlayPage` 自动扫描 no-op，等于没动画
   （page_12 用户看到的「奖励物品放大」是 `ItemView` 稀有度特效，不是入场动画）。四页各声明

@@ -19,18 +19,28 @@
 
 - **线上服 = 柯测试服 = `129.226.213.65:8080`**（资源站 `:81`），即历史 Play 上架包用的现网。
   Jenkins 里选 `SERVER_ENV=现网-129.226.213.65`。
-- `build_envs.json` 里标「正式服」的 `103.151.173.99:8080` 实测已死（HTTP 000），**不要用**。
+  用户 2026-10-23 明确：**这就是「正式服」**，以后说正式服指这条。
+- `build_envs.json` 里标「正式服」的 `103.151.173.99:8080` 实测已死（`Empty reply from server`），**不要用**。
+- 🔴 `resource_build.sh` 的 `--sync-tables` **默认 `apply`**，TS-Resource-Build job 又不传这个参数
+  ⇒ 每次重建 AB 都会顺手把服务端表推到线上服；release job 的 `SYNC_TABLES=check` 只管 ③-1，管不到它。
+- 🔴 打包 job 的 versionCode bump 只发生在打包目录、被 `ci_sync` 的 reset 抹掉 ⇒ 仓库值必须跟上
+  Play 已占用的最大号，否则每次构建都原地撞号。
 - 出包前必须确认 Unity 编辑器未占用工程（`pgrep -x Unity`），否则 AB 重建 rc=3 直接失败；
   本机 AppleScript quit 被 TCC 拒，只能 `kill -TERM <pid>`。
 - version.txt 共四处（`Assets/Resources/`、`Assets/StreamingAssets/Android/Resources/`、
   `Assets/Android/Resources/`、`AssetBundles/`），改环境要一起对齐；进包的是 StreamingAssets 那份。
-- **发线上包必须连服务端表一起同步**（2026-10-23 起 `TS-Android-Release` 的 `③-1` 环节）：
-  客户端表走 git、服务端 txt 走 `TimeSpaceServer/` 影子目录，两条路本来没打通，
-  `EXPORT_TABLES=false` 时导表不跑 ⇒ 同步也不跑。环境→目标映射**只写在
-  `scripts/build_envs.json` 的 `tableTargets`**（现网→gs、测试服→local、正式服→[]），
+- **服务器表发版 = 独立 job `TS-Table-Sync`**（2026-10-23 用户口径：出包与改线上数值解耦）：
+  导表 → `table_sync.py --env <环境>` → 可选重启。`TS-Android-Release` **只做只读体检**
+  （`②-3`，不 `--apply`），不许在发包链路里推表。环境→目标映射只写在
+  `scripts/build_envs.json` 的 `tableTargets`（现网→gs、测试服→local、正式服→gs），
   用 `table_sync.py --env <SERVER_ENV>` 取，别在 job 里写 case。
+- 🔴 `resource_build.sh --sync-tables` **默认是 apply**：任何 `--action export` 都会顺手推
+  local+gs。CI 里必须显式 `--sync-tables off`（2026-10-23 因此在用户说「先不推」后推了 4 张表）。
 - 打包 clone（`TimeSpaceGirl1-build`）里 `build/table_sync/state.json` 必须由 `ci_sync.sh`
   第④步从开发目录镜像过去（`rsync --update`），否则 clone 永远「首次运行」、只建基线不推表。
+- 镜像 `TimeSpaceServer/` **必须 `--exclude='.git/'`**：`Server_x1tag1.2.2` 是独立 git 仓，
+  `.git/objects/pack/*.pack` 是 444 只读，`--inplace` 直写会 `Permission denied` / 退 23，
+  以前 `set -uo pipefail` 没 -e ⇒ 静默跳过（镜像从来没成功过）。现镜像失败判红 rc=5。
 
 ## 关键坑位
 

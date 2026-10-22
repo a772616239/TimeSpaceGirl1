@@ -16,6 +16,8 @@
 > 缩放目标是 `Bg/box` 而不是宝箱根节点，见第 5 节第 15 条）；  
 > 地图上的据点走「由中心往外」的 `phases`：`ChallengePanel`（公会战 `map/city1..10`，  
 > 数组数据源按 `anchoredPosition` 离中心远近排序 + `centerPivot = false`，见第 8 节末条）。  
+> OperatingPanel 另有四个**固定版面页**走缺省 `surge`（数组数据源）：page_2/8（月卡/豪华月卡的
+> `activation`/`receive` 二态状态块）、page_10（周末福利 `gift1..3`）、page_12（豪华周卡 `day1..7`）。
 > 更新时间 2026-10-22。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
 
 
@@ -359,7 +361,7 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_t
 | `test_growthmanual_openanim.lua` | 两个列表页：OnShow 播、`isAni=false` 不播、切页重播、OnClose/OnDestroy 回收、面板 `SwitchView` 仍走 `view:OnShow` |
 
 | `test_itempopin_page.lua` | 页面级接入 10 组：实例/类表字段扫描、一页两列表、无列表 no-op、`StopPage` 复位、容器模式（`GetPopInSource`）、**userdata 容器（探字段会抛错的替身）**、绑定缓存、重播不叠加、**异步列表自动重试 + 重试作废** |
-| `test_panel_listpopin_wiring.lua` | 三个面板接线：`OnShow` 有播（首开即列表页也会播）、切页签有播、`RefreshActivity` 不播、`OnClose`/`OnDestroy` 回收、积天豪礼声明 `GetPopInSource`；**成长礼金不再调 `DelayCreation`**、**终身限购返回 `preList` 数组**、**ExpertPanel 五个活动页各自的数据源（达人 / 升级豪礼 / 开服双倍 / 限时兑换 / 扭蛋池）** |
+| `test_panel_listpopin_wiring.lua` | 三个面板接线：`OnShow` 有播（首开即列表页也会播）、切页签有播、`RefreshActivity` 不播、`OnClose`/`OnDestroy` 回收、积天豪礼声明 `GetPopInSource`；**成长礼金不再调 `DelayCreation`**、**终身限购返回 `preList` 数组**、**OperatingPanel 四个固定版面页各自的数据源（月卡/豪华月卡二态块 / 周末福利 gift1..N / 豪华周卡 dayItemList）**、**ExpertPanel 五个活动页各自的数据源（达人 / 升级豪礼 / 开服双倍 / 限时兑换 / 扭蛋池）** |
 | `test_thousanddraw_cardin.lua` | 千抽：卡/数字数据源与顺序、整版入场（3+4 条、卡片错开 0.11、数字 0.34 起）、**三段关键帧链 0.78→1.05→0.985→1**、`PlayCardIn(n)` 只弹一张、`StopCardsIn` 复位、`OnClose`/`OnDestroy` 回收、数据到位才播、不再退回 `duang` |
 
 六个用例都被 Jenkins `TS-Test-Lua` 自动发现（`tests/tests.json` 的 `tests_dir + pattern`），不用改配置。
@@ -427,6 +429,16 @@ end
 
 ## 8. 变更记录
 
+- **2026-10-22**（OperatingPanel 固定版面页）：补上 page_2/8（月卡/豪华月卡）、page_10（周末福利）、
+  page_12（豪华周卡）四页——它们是**固定版面、没有列表**，`PlayPage` 自动扫描 no-op，等于没动画
+  （page_12 用户看到的「奖励物品放大」是 `ItemView` 稀有度特效，不是入场动画）。四页各声明
+  `GetPopInSource`：月卡两页返回 `{activation, receive}` **二态互斥块**（数组收集只收 activeSelf 的
+  ⇒ 天然只弹当前态，不用写状态判断）；周末福利动态收集 `gift1..N`（数到不存在为止，prefab 加卡
+  不用改代码）；豪华周卡返回 `dayItemList`（day1..7 行优先，7 格自动压缩进 `maxSpan`）。
+  prefab 实测这些块都没挂 Animator、可直接缩放；`activation/btn`、`receive/btn` 挂 CommonButton
+  Animator ⇒ **缩父块、不缩按钮**（坑 #1，Animator 只写自己那层 localScale，不干扰父级，按钮按下
+  反馈不受影响）。配方用缺省 `surge`（0.82→1.02→1、错开 0.055），与礼包墙同手感。
+  `test_panel_listpopin_wiring` 补四页数据源断言。
 - **2026-10-22**（卡牌活动）：`CardActivityPanel` 接入页面级批量（任务 / 英雄礼包 / 英雄豪礼 /
   收集四个页签的 ScrollCycleView，播在 `OnPageTabChange`，首开 `OnShow → ChangeTab` 同路）。
   🔴 page_1（`DrawCardPanel`）**显式跳过批量**：它唯一的长列表挂在 `ChangeWishPanel` 弹窗里、

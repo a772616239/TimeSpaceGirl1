@@ -136,6 +136,24 @@ Check(lifelongGetter ~= nil and lifelongGetter:find("self.preList", 1, true) ~= 
     "返回 preList 数组，而不是 grid 容器（rewardPre 模板挂在 grid 下，按容器扫会把模板也算进去）")
 Check(lifelong:find("go:SetActive(true)", 1, true) ~= nil, "克隆项填完数据是 active 的（否则会被跳过）")
 
+-- ---------------- OperatingPanel 四个固定版面页 ----------------
+-- page_2/8 = 月卡/豪华月卡（activation/receive 二态互斥块）、page_10 = 周末福利（gift1..3）、
+-- page_12 = 豪华周卡（day1..7）。都是固定版面、没有列表，PlayPage 自动扫描 no-op，
+-- 不声明 GetPopInSource 就是「点进去一格都不动」而且不报错。
+-- 月卡两页返回 {activation, receive}：数组收集只收 activeSelf 的 ⇒ 天然只弹当前态，不用写状态判断。
+print("== OperatingPanel 固定版面页的数据源 ==")
+for _, case in ipairs({
+    { file = "MonthCardPage.lua", cls = "MonthCardPage", field = "self.activation" },
+    { file = "HighMonthCardPage.lua", cls = "HighMonthCardPage", field = "self.activation" },
+    { file = "WeekendWelfare.lua", cls = "WeekendWelfare", field = '"gift" .. i' },
+    { file = "WeekCard.lua", cls = "WeekCard", field = "self.dayItemList" },
+}) do
+    local src = readSource(BASE .. "Operating/" .. case.file)
+    local fn = bodyOf(src, "function " .. case.cls .. ":GetPopInSource()")
+    Check(fn ~= nil and fn:find(case.field, 1, true) ~= nil,
+        case.cls .. " 声明了 GetPopInSource 且取 " .. case.field)
+end
+
 -- ---------------- ExpertPanel 各活动页的数据源 ----------------
 -- 页签 7/13/21 这类「达人」活动都在 Expert.lua 里，内容是手工克隆的奖励行；
 -- 23=升级豪礼、31=开服双倍、8=限时兑换、32=开服馈赠同理。除限定珍藏（GiftBuy，

@@ -110,6 +110,22 @@ function WeekendWelfare:OnShow(parentSorting, arg, pageIndex)
     end
 end
 
+-- 固定版面页（没有列表，PlayPage 自动扫描扫不到）：三张礼包卡 gift1..N 逐格弹。
+-- 按数组给而不是按容器扫，是因为卡下还挂着 itemGrid / mask / received 等子节点；
+-- 动态数到 giftN 不存在为止，prefab 加卡也不用改这里。
+function WeekendWelfare:GetPopInSource()
+    local out, i = {}, 1
+    while true do
+        local go = Util.GetGameObject(self.gameObject, "gift" .. i)
+        if not go then
+            break
+        end
+        out[#out + 1] = go
+        i = i + 1
+    end
+    return out
+end
+
 function WeekendWelfare:OnHide()
     self.gameObject:SetActive(false)
 end

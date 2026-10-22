@@ -149,6 +149,13 @@ function WeekCard:OnHide()
     self.gameObject:SetActive(false)
 end
 
+-- 固定版面页（没有列表，PlayPage 自动扫描扫不到）：七张日卡 day1..7 逐格弹。
+-- dayItemList 在 InitComponent 里就是按 day1..7 顺序填的（行优先 = 视觉阅读序），
+-- 7 格超过 maxSpan 时模块会自动压缩错开。
+function WeekCard:GetPopInSource()
+    return self.dayItemList
+end
+
 -- 时间戳转化
 function WeekCard:getTimeStamp(t)
     return os.date("%Y-%m-%d %H:%M:%S",t)

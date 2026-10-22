@@ -133,6 +133,12 @@ function MonthCardPage:RefreshStoneShow()
     end)
 end
 
+-- 固定版面页（没有列表，PlayPage 自动扫描扫不到）：把两个互斥状态块交给逐格入场。
+-- 未激活弹 activation、已激活弹 receive：数组收集只收 activeSelf 的，不用写状态判断。
+function MonthCardPage:GetPopInSource()
+    return { self.activation, self.receive }
+end
+
 function MonthCardPage:OnHide()
     if self.timer then
         self.timer:Stop()

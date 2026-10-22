@@ -1,6 +1,6 @@
 /**@META
 {
-  "description": "服务端「代码发包正式服」全链路：预检（工作区/工具链/生产状态）→ **切 release 分支**（独立 worktree，主工作区零影响）→ JDK8 编译 → 产物校验 → **与线上 jar 逐条目 CRC 比对**（只注差异类，不整包覆盖）→ 人工审批 → 线上备份 → 注入 + 重启 → 上线自检 → **协议连通自检**（本地直连验证编解码/通道/鉴权/会话，端口在听 ≠ 协议通）→ **回写发布记录（提交+tag+push）** → 发布看板 → **异步触发 TS-Server-Health**。默认 DEPLOY=false：只构建+比对+记录，一个字节都不碰生产。历史上「package.sh 全量包覆盖线上 jar」已被证伪（会回退线上未上线改动、带走 conf/assets），本 job 固定以线上 jar 为基线做类级注入。",
+  "description": "服务端「代码发包正式服」全链路：预检（工作区/工具链/生产状态）→ **切 release 分支**（独立 worktree，主工作区零影响）→ JDK8 编译 → 产物校验 → **与线上 jar 逐条目 CRC 比对**（只注差异类，不整包覆盖）→ 人工审批 → 线上备份 → **配置表一起发（调 TS-Table-Sync：导表 + 增量同步，推完不重启）** → 注入 + 重启（新代码与新表同时生效）→ 上线自检 → **协议连通自检**（本地直连验证编解码/通道/鉴权/会话，端口在听 ≠ 协议通）→ **回写发布记录（提交+tag+push）** → 发布看板 → **异步触发 TS-Server-Health**。默认 DEPLOY=false：只构建+比对+记录，一个字节都不碰生产。历史上「package.sh 全量包覆盖线上 jar」已被证伪（会回退线上未上线改动、带走 conf/assets），本 job 固定以线上 jar 为基线做类级注入。",
   "concurrent": false,
   "keep": [90, 60],
   "artifactKeep": 12,
@@ -15,6 +15,7 @@
     {"name":"ONLY_CLASSES","type":"string","default":"","description":"只注入匹配这些 glob 的条目（逗号分隔，如 com/ljsd/jieling/handler/*）。留空 = 注入全部差异。热修口径用它收窄"},
     {"name":"EXCLUDE_CLASSES","type":"string","default":"","description":"额外排除的 glob（逗号分隔）。留空使用默认排除：META-INF/*、application*.properties、*.properties、*.xml（这些**永不**自动注入）"},
     {"name":"RESTART","type":"choice","choices":["gameserver","none","all"],"default":"gameserver","description":"注入后重启什么。gameserver=只重启游戏服（会踢线，约 40s）；none=只落地不生效（等下次重启）；all=另外拉起 chatserver（该服默认没跑，谨慎）"},
+    {"name":"SYNC_TABLES","type":"bool","default":true,"description":"🔴 发版前把**服务端配置表**一起发到线上（调 `TS-Table-Sync`：导表 → 增量同步 → 不重启）。默认开：服务器发版 = 代码 + 表 一次上完。表在 ⑨ 重启前推完，重启后新代码与新表同时生效（只踢一次线）。关掉则本次只发代码，表留在原样"},
     {"name":"PROTO_CHECK","type":"bool","default":true,"description":"发完包是否跑「协议连通自检」（编解码/端口/双向通道/鉴权/会话）：验证 TEA 帧、回包编码、鉴权没被绕过。端口在听 ≠ 协议通，这一步补的就是这个缺口"},
     {"name":"PROTO_LOGIN","type":"bool","default":false,"description":"🔴 协议自检是否做「真登录 + GM 命令」。默认关：生产上会用真实账号的 token 建会话，该号在线会被顶掉。只在指定了 PROTO_OPERATOR 且确认该号不在线时打开"},
     {"name":"PROTO_OPERATOR","type":"string","default":"","description":"PROTO_LOGIN=true 时用哪个 uid 发起（留空则该用例跳过）"},
@@ -57,6 +58,7 @@ pipeline {
           env.SR_RELEASE_BRANCH  = params.RELEASE_BRANCH.trim()
           env.SR_DEPLOY          = params.DEPLOY.toString()
           env.SR_RESTART         = params.RESTART
+          env.SR_SYNC_TABLES     = params.SYNC_TABLES.toString()
           env.SR_ONLY            = params.ONLY_CLASSES.trim()
           env.SR_EXCLUDE         = params.EXCLUDE_CLASSES.trim()
           env.SR_ALLOW_DIRTY     = params.ALLOW_DIRTY.toString()
@@ -240,6 +242,7 @@ sed -n 's/^conn=//p' "$SR_RUN_DIR/release/remote-before.txt" 2>/dev/null || true
   release分支: ${br}
   注入条目  : ${sel} 个（gameSrv / gamecommon / chatserver 分别见差异报告）
   重启范围  : ${params.RESTART}${params.RESTART == 'none' ? '（只落地，不生效）' : '（会踢线）'}
+  配置表    : ${params.SYNC_TABLES ? '一起发（调 TS-Table-Sync：导表 + 增量同步，推完不重启，随本次重启生效）' : '不发（本次只动代码）'}
   在线连接  : ${conn ?: '?'} 条（重启时这些玩家会被断开）
   发布说明  : ${params.NOTES ?: '（空）'}
 
@@ -265,6 +268,29 @@ cd "$PROJ"
   --group "发布" --slug backup --timeout 600 \
   -- "$BASH" .jenkins/lib/server_release.sh backup
 ''')
+      }
+    }
+
+    // 🔴 2026-10-23 用户口径：**服务器发版 = 代码 + 配置表，一次发完**。
+    //    所以这里直接调 `TS-Table-Sync`（它自带导表 → 增量同步 → 逐表结构体检），
+    //    而不是让人另外去点一个 job。
+    //    位置很关键：在 ⑧ 备份之后、⑨ 注入+重启之前 —— 表先落盘，重启时新代码与新表
+    //    同时生效，而且**只踢一次线**。因此这里固定 RESTART=false，重启交给 ⑨ 统一做。
+    //    propagate=true：表没同步成功就不许重启（宁可停在旧版本，也不要半新半旧）。
+    stage('⑧-2 服务端配置表同步（调 TS-Table-Sync）') {
+      when { expression { params.DEPLOY && params.ACTION == 'release' && params.SYNC_TABLES } }
+      options { timeout(time: 40, unit: 'MINUTES') }
+      steps {
+        script {
+          def tb = build job: 'TS-Table-Sync', wait: true, propagate: true, parameters: [
+            string(name: 'SERVER_ENV',  value: '现网-129.226.213.65'),
+            string(name: 'MODE',        value: 'apply'),
+            booleanParam(name: 'EXPORT',      value: true),
+            booleanParam(name: 'FIX_NUMERIC', value: false),
+            booleanParam(name: 'RESTART',     value: false)
+          ]
+          echo "✅ 配置表已同步到线上：TS-Table-Sync #${tb.number}（${tb.result}）；重启由 ⑨ 统一执行"
+        }
       }
     }
 

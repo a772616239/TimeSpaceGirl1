@@ -53,8 +53,10 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -85,6 +87,28 @@ REPORT = ROOT / ".jenkins/lib/stage_report.py"
 GEN_WEB = HERE / "gen_chatgpt_web.py"
 # 出图台账：sha256 → 哪个资源用的。专抓「同一条链把上一张图又交回来」
 GEN_LEDGER = WORK_ROOT / "_gen_ledger.json"
+
+
+def _ledger():
+    """额度/占用台账模块（同目录 provider_ledger.py）。不可用时返回 None，流程照常跑。"""
+    try:
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import provider_ledger as pl
+        return pl
+    except Exception as e:                                        # noqa: BLE001
+        print(f"⚠ 台账模块不可用（{e}）：本轮不做额度记忆与占用检查", file=sys.stderr)
+        return None
+
+
+def _owner() -> str:
+    """本轮的身份：Jenkins 传 TSG_LEASE_OWNER（构建号），命令行跑用「本机:pid」。
+
+    一条构建里每张图都是独立的 python 进程，所以 owner 不能是 pid —— 否则第 2 张图
+    认不出「第 1 张图占着的那台浏览器是我自己的」，会去抢别人的号。
+    """
+    o = (os.environ.get("TSG_LEASE_OWNER") or "").strip()
+    return o or f"{os.uname().nodename.split('.')[0]}:{os.getpid()}"
 
 FONT_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
@@ -962,6 +986,8 @@ def call_provider(args, work: Path, ref: Path, prompt_file: Path, out: Path) -> 
 
     cmd = [sys.executable, str(GEN_WEB), "--image", str(ref),
            "--prompt-file", str(prompt_file), "--out", str(out)]
+    # 并发：把本轮身份交给出图通道，它靠这个身份抢/续号池里某台浏览器的独占租约。
+    cmd += ["--owner", _owner()]
     if int(getattr(args, "cdp_port", 0) or 0):
         cmd += ["--reuse-cdp", "--port", str(int(args.cdp_port))]
     if getattr(args, "adspower_profiles", ""):
@@ -1220,24 +1246,31 @@ def check_gen_reuse(gen_path: Path, asset: str) -> tuple[bool, str]:
        （driver 当时按「面积最大」选图，两张同尺寸就选中了上一张），而五条断言全绿 ——
        尺寸对、墨迹量 65%、纯白也对，只有内容哈希能发现。所以这一层必须有：
        断言量的是「图长什么样」，量不出「这张图是不是这次的」。
+
+    🔴 读-改-写要串行：这张台账现在是几个并行构建共写的，各写各的副本会互相覆盖
+       （覆盖掉「这张图已经被谁用过」＝ 去重失效，串图又会被放行）。
     """
-    try:
-        ledger = json.loads(GEN_LEDGER.read_text(encoding="utf-8"))
-    except Exception:                                            # noqa: BLE001
-        ledger = {}
     digest = sha256(gen_path)
-    prev = ledger.get(digest)
-    if prev and prev.get("asset") != asset:
-        return False, (f"这张出图与「{Path(prev['asset']).name}」那次的成品逐字节相同"
-                       f"（{prev.get('at', '?')}）—— 拿回的是上一轮的旧图，拒收")
-    ledger[digest] = {"asset": asset, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
-    if len(ledger) > 200:                                        # 只留最近 200 张
-        ledger = dict(sorted(ledger.items(), key=lambda kv: kv[1].get("at", ""))[-200:])
-    try:
-        WORK_ROOT.mkdir(parents=True, exist_ok=True)
-        GEN_LEDGER.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception as e:                                       # noqa: BLE001
-        print(f"⚠ 出图台账写不进去（{e}），不影响本次", file=sys.stderr)
+    pl = _ledger()
+    with (pl.locked() if pl else contextlib.nullcontext()):
+        try:
+            ledger = json.loads(GEN_LEDGER.read_text(encoding="utf-8"))
+        except Exception:                                        # noqa: BLE001
+            ledger = {}
+        prev = ledger.get(digest)
+        if prev and prev.get("asset") != asset:
+            return False, (f"这张出图与「{Path(prev['asset']).name}」那次的成品逐字节相同"
+                           f"（{prev.get('at', '?')}）—— 拿回的是上一轮的旧图，拒收")
+        ledger[digest] = {"asset": asset, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
+        if len(ledger) > 200:                                    # 只留最近 200 张
+            ledger = dict(sorted(ledger.items(), key=lambda kv: kv[1].get("at", ""))[-200:])
+        try:
+            WORK_ROOT.mkdir(parents=True, exist_ok=True)
+            tmp = GEN_LEDGER.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(GEN_LEDGER)
+        except Exception as e:                                   # noqa: BLE001
+            print(f"⚠ 出图台账写不进去（{e}），不影响本次", file=sys.stderr)
     return True, ""
 
 
@@ -2142,6 +2175,25 @@ def _name_keys(zh: Path) -> set[str]:
     return keys
 
 
+def _leased(pl, owner: str, zh: Path, note: str, fn):
+    """在「这张图归我」的独占租约下执行 fn（verify/publish 也要，别两轮同时写同一个目标）。
+
+    返回 fn 的返回值；抢不到租约返回 None（调用方按 skip 处理，不算失败）。
+    """
+    if not pl:
+        return fn()
+    asset_id = str(zh.relative_to(ROOT))
+    ok, info = pl.lease_claim("asset", asset_id, owner=owner, note=note, ttl=1800)
+    if not ok:
+        print(f"⏭ {zh.name} 正被 {info.get('held_by')} 这一轮处理中"
+              f"（心跳 {info.get('heartbeat')}），本轮跳过")
+        return None
+    try:
+        return fn()
+    finally:
+        pl.lease_release("asset", asset_id, owner=owner)
+
+
 def cmd_batch(args) -> int:
     """批量跑一个阶段：run / verify / publish 分开调用，方便在 Jenkins 里各占一个 stage。
 
@@ -2229,44 +2281,78 @@ def cmd_batch(args) -> int:
     budget = int(getattr(args, "budget", 0) or 0)
     generated = 0
     failures = 0
-    for zh in targets:
-        fam = _pick_family(zh, family)
-        work = work_dir_for(zh, fam)
-        stem = zh.stem if fam == FAMILY_ATLAS else zh.name[: -len("_zh.png")]
-        print(f"\n── [{stage}] {zh.name}（{fam}）──")
-        if stage == "run" and budget and generated >= budget:
-            print(f"⏹ 已达本轮预算 {budget} 张，剩下的下一轮再跑")
-            skipped.append(zh.name + "（超出本轮预算）")
-            break
-        if stage == "run":
-            generated += 1
-            rc = cmd_run(argparse.Namespace(
-                asset=str(zh), title=None, lines=None, work=None, family=fam,
-                provider=getattr(args, "provider", PROVIDER_LOCAL),
-                gen_image=getattr(args, "gen_image", ""),
-                cdp_port=getattr(args, "cdp_port", 0),
-                adspower_profiles=getattr(args, "adspower_profiles", ""),
-                provider_timeout=getattr(args, "provider_timeout", 0),
-                ignore_ledger=getattr(args, "ignore_ledger", False),
-                no_auto_fallback=getattr(args, "no_auto_fallback", False)))
-            if rc == 3:
-                if args.run:
-                    register(args.run, f"生成·{stem}", "warn", "美术翻译链",
-                             "缺译名 / 尺寸异常 / 出图环境不可用，已跳过")
-            elif rc != 0:
-                failures += 1
-                if args.run:
-                    register(args.run, f"生成·{stem}", "fail", "美术翻译链",
-                             "没有译名、源图不可用或出图通道硬失败")
-        elif stage == "verify":
-            rc = cmd_verify(argparse.Namespace(work=str(work), run=args.run))
-            if rc != 0:
-                failures += 1
-        else:
-            rc = cmd_publish(argparse.Namespace(work=str(work), yes=True,
-                                                force=args.force, run=args.run))
-            if rc == 1:
-                failures += 1
+    pl = _ledger()
+    owner = _owner()
+    try:
+        for zh in targets:
+            fam = _pick_family(zh, family)
+            work = work_dir_for(zh, fam)
+            stem = zh.stem if fam == FAMILY_ATLAS else zh.name[: -len("_zh.png")]
+            print(f"\n── [{stage}] {zh.name}（{fam}）──")
+            if stage == "run" and budget and generated >= budget:
+                print(f"⏹ 已达本轮预算 {budget} 张，剩下的下一轮再跑")
+                skipped.append(zh.name + "（超出本轮预算）")
+                break
+            if stage == "run":
+                # 🔴 同一张图的独占权：两轮同时画同一张会互相覆盖 work 目录（src/gen/out/state），
+                #    最后写回的是「谁后跑完算谁的」；开画前抢不到就直接跳过，别毁对方那份证据。
+                asset_id = str(zh.relative_to(ROOT))
+                if pl:
+                    ok, info = pl.lease_claim("asset", asset_id, owner=owner,
+                                              note=f"{stage} {fam}", ttl=3600)
+                    if not ok:
+                        print(f"⏭ {zh.name} 正被 {info.get('held_by')} 这一轮处理中"
+                              f"（心跳 {info.get('heartbeat')}），本轮跳过")
+                        skipped.append(zh.name + "（另一轮正在处理）")
+                        continue
+                try:
+                    generated += 1
+                    rc = cmd_run(argparse.Namespace(
+                        asset=str(zh), title=None, lines=None, work=None, family=fam,
+                        provider=getattr(args, "provider", PROVIDER_LOCAL),
+                        gen_image=getattr(args, "gen_image", ""),
+                        cdp_port=getattr(args, "cdp_port", 0),
+                        adspower_profiles=getattr(args, "adspower_profiles", ""),
+                        provider_timeout=getattr(args, "provider_timeout", 0),
+                        ignore_ledger=getattr(args, "ignore_ledger", False),
+                        no_auto_fallback=getattr(args, "no_auto_fallback", False)))
+                finally:
+                    if pl:
+                        pl.lease_release("asset", asset_id, owner=owner)
+                if rc == 3:
+                    if args.run:
+                        register(args.run, f"生成·{stem}", "warn", "美术翻译链",
+                                 "缺译名 / 尺寸异常 / 出图环境不可用，已跳过")
+                elif rc != 0:
+                    failures += 1
+                    if args.run:
+                        register(args.run, f"生成·{stem}", "fail", "美术翻译链",
+                                 "没有译名、源图不可用或出图通道硬失败")
+            elif stage == "verify":
+                rc = _leased(pl, owner, zh, f"verify {fam}",
+                             lambda: cmd_verify(argparse.Namespace(work=str(work), run=args.run)))
+                if rc is None:
+                    skipped.append(zh.name + "（另一轮正在处理）")
+                    continue
+                if rc != 0:
+                    failures += 1
+            else:
+                rc = _leased(pl, owner, zh, f"publish {fam}",
+                             lambda: cmd_publish(argparse.Namespace(
+                                 work=str(work), yes=True, force=args.force, run=args.run)))
+                if rc is None:
+                    skipped.append(zh.name + "（另一轮正在处理）")
+                    continue
+                if rc == 1:
+                    failures += 1
+    finally:
+        # 🔴 收工即放号：出图成功时浏览器**故意留着**（下一轮直接接入，省一次 20~40s 启动），
+        #    但租约必须放掉 —— 不放的话并行的另一轮会一直以为这个号「有人在用」而空转。
+        #    只放自己 owner 的，绝不动别人的。
+        if pl and stage == "run":
+            n = pl.lease_release(owner=owner)
+            if n:
+                print(f"\n🔓 本轮结束，释放 {n} 个通道租约（浏览器保留，下一轮直接接入）")
 
     return 1 if failures else (3 if notitle else 0)
 
@@ -2289,10 +2375,12 @@ def register(run_dir: str, name: str, status: str, group: str, detail: str) -> N
 
 
 def cmd_quota(args) -> int:
-    """出图额度预检：开工前就说清「今天还能不能出图」。
+    """出图额度预检：开工前就说清「今天还能不能出图、能同时开几路」。
 
     🔴 为什么要单开一个环节：额度用尽时 driver 要挨个号试一遍才肯退，实测白等 9 分钟；
        而「上一轮就已经记进台账」这件事，本来在第一分钟就能告诉人。
+    🔴 2026-10-22 起还要报「并行路数」：一个通道同时只允许一路（租约），
+       所以可并行数 = 未封锁且没被别人占用的通道数。为 0 就直接红，别排进队列干等。
     """
     try:
         import provider_ledger as pl
@@ -2304,19 +2392,31 @@ def cmd_quota(args) -> int:
     if not accts:
         print("台账还是空的（本机还没跑过出图）—— 认为有额度")
         return 0
-    free, blocked = [], []
+    holders = pl.lease_holders(data)
+    free, blocked, busy = [], [], []
     for key in sorted(accts):
         kind, _, ident = key.partition(":")
         if not kind or not ident:
             continue
         t = pl.blocked_until(kind, ident, data)
-        (blocked if t else free).append((kind, ident, t))
-    print(f"出图额度：可用 {len(free)} 个 / 封锁中 {len(blocked)} 个")
-    for kind, ident, t in free:
+        if t:
+            blocked.append((kind, ident, t))
+        elif holders.get(key):
+            busy.append((kind, ident, holders[key]))
+        else:
+            free.append((kind, ident, t))
+    print(f"出图额度：可用 {len(free)} 个 / 占用中 {len(busy)} 个 / 封锁中 {len(blocked)} 个"
+          f"　⇒ 可并行 {len(free)} 路")
+    for kind, ident, _t in free:
         print(f"   ✅ {kind}:{ident}")
+    for kind, ident, owner in busy:
+        print(f"   🔒 {kind}:{ident} 正被 {owner} 使用（这一路已被占用，跳过不算失败）")
     for kind, ident, t in blocked:
         print(f"   ⏳ {kind}:{ident} 封锁到 {t:%m-%d %H:%M}（{pl.human_left(t)}）")
     if not free:
+        if busy and not blocked:
+            print("⏳ 所有通道都在被别的任务使用 ⇒ 现在触发只会排队等租约，稍后再来")
+            return 3
         print("🔴 所有号都在封锁中 ⇒ 现在触发只会白等，等上面最早那个时间点再跑")
         return 1
     return 0

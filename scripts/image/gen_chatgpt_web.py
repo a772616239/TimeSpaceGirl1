@@ -36,6 +36,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -46,6 +47,11 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+
+try:                                                          # macOS/Linux 走 flock
+    import fcntl
+except ImportError:                                           # pragma: no cover - Windows
+    fcntl = None  # type: ignore[assignment]
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 CHROME_DATA = Path.home() / "Library/Application Support/Google/Chrome"
@@ -252,6 +258,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ignore-ledger", action="store_true",
                     help="忽略额度台账（provider_ledger.py）。默认会跳过「还没到恢复时间」的号，"
                          "免得每轮都拿同一个空号从头试；要验某个号的额度时加这个开关")
+    # 🔴 2026-10-22 并发三项（用户要求）：
+    #    ① 用完就关：额度用尽立刻关掉那台浏览器，别让一排空号浏览器挂着；
+    #    ② 不许挤同一台：每个通道开画前抢独占租约（provider_ledger.lease_claim），
+    #       多个任务同时开跑时各自拿不同的号 —— 以前两边会连进同一个 ChatGPT 标签页，
+    #       互相覆盖提示词、拿回对方的图，还各报一次「额度用尽」；
+    #    ③ 钉住本轮成功的那台：同一轮 batch 的第 2 张图直接接着它画，不重新猜。
+    ap.add_argument("--owner", default=os.environ.get("TSG_LEASE_OWNER", ""),
+                    help="租约 owner（Jenkins 传 TSG_LEASE_OWNER=$JOB_NAME-$BUILD_NUMBER）。"
+                         "留空=本机名:pid")
+    ap.add_argument("--lease-ttl", type=int, default=int(os.environ.get("TSG_LEASE_TTL", "1200")),
+                    help="独占租约的 TTL（秒）。进程被 kill 时最多占这么久")
+    ap.add_argument("--no-pin", action="store_true",
+                    help="不读/不写「本轮钉住的浏览器」（排查换号逻辑时用）")
+    ap.add_argument("--keep-browser-on-exhaust", action="store_true",
+                    help="额度用尽后**不关**那台浏览器（默认关：省内存，也顺手把号放回池子）")
     ap.add_argument("--check-only", action="store_true", help="只做连通性与登录态预检")
     args = ap.parse_args(argv)
 
@@ -293,18 +314,66 @@ def main(argv: list[str] | None = None) -> int:
     #    2026-10-21 实测：一轮里 3 个号轮流「额度已用尽」，光等失败就烧掉 9 分钟，
     #    而这件事本来是「上一轮就知道的」。台账记的是**什么时候恢复**，不是「今天空过」。
     pl = _ledger()
+    owner = resolve_owner(args)
+    pin = {} if (args.no_pin or args.reuse_cdp or args.grab_existing) else load_pin(owner)
+    if pin.get("kind") == "chrome":
+        # 本机 Chrome 这一路每次都是「复制 profile → 起临时实例 → 用完杀」，没有可接的端口，
+        # 钉子对它没意义（用户手上的 Chrome 不会被复用），下面按正常流程重走一遍即可。
+        pin = {}
+
+    # ⓪ 本轮已经钉住的浏览器（同一轮 batch 的第 2 张图）：直接接着它画，
+    #    不再从「本机 Chrome → 谁有额度」重新猜一遍（每猜错一次就是一次 3~9 分钟的额度空转）。
+    if pin:
+        log(f"↩ 本轮钉住的浏览器：{pin.get('kind')}:{pin.get('id')}"
+            f"{('（CDP ' + str(pin.get('port')) + '）') if pin.get('port') else ''}")
+        if args.auto_fallback:
+            rc = try_fallback(args, image, prompt_file, out, node, pw, pl=pl, owner=owner, pin=pin)
+            if rc == RC_OK:
+                return RC_OK
+            if rc == RC_REFUSED:
+                return RC_WARN
+        log("🔴 钉住的那台也没拿到图（换号链已走完）")
+        return RC_WARN
+
+    # 显式 --cdp-port 也要占：两个任务指同一个端口 = 同一个标签页两路在画。
+    if args.reuse_cdp and args.port and pl:
+        ok, info = pl.lease_claim("cdp", str(args.port), owner=owner, note="explicit --cdp-port")
+        if not ok:
+            log(f"🔴 CDP {args.port} 正被 {info.get('held_by')} 使用"
+                f"（心跳 {info.get('heartbeat')}，TTL {info.get('ttl')}s）")
+            log("   同一端口不能两路同时画（会互相覆盖提示词、拿回对方的图）"
+                "⇒ 换一个端口，或等它先画完")
+            return RC_WARN
+
     if pl and not args.ignore_ledger and not args.reuse_cdp and not args.grab_existing:
         t = pl.blocked_until("chrome", args.profile)
         if t:
             log(f"↪ 台账：本机 Chrome（{args.profile}）额度封锁到 "
                 f"{t:%m-%d %H:%M}（还有 {pl.human_left(t)}），本轮跳过它")
             if args.auto_fallback:
-                rc = try_fallback(args, image, prompt_file, out, node, pw)
+                rc = try_fallback(args, image, prompt_file, out, node, pw, pl=pl, owner=owner)
                 if rc == RC_OK:
                     return RC_OK
                 if rc == RC_REFUSED:
                     return RC_WARN
             log("🔴 换号链也没拿到图，而本机 Chrome 台账封锁中 —— 本轮不再试它")
+            return RC_WARN
+
+    # 本机 Chrome 也是一个「账号通道」：并行任务同时复制同一个 profile 就是同一个号在
+    # 两个标签页里画，最后双双撞额度。先抢租约再画。
+    chrome_ok = True
+    if pl and not args.reuse_cdp and not args.grab_existing:
+        chrome_ok, info = pl.lease_claim("chrome", args.profile, owner=owner,
+                                        note="local chrome profile copy")
+        if not chrome_ok:
+            log(f"↪ 本机 Chrome（{args.profile}）正被 {info.get('held_by')} 使用"
+                f"（心跳 {info.get('heartbeat')}，TTL {info.get('ttl')}s）⇒ 本任务改用号池")
+            if args.auto_fallback:
+                rc = try_fallback(args, image, prompt_file, out, node, pw, pl=pl, owner=owner)
+                if rc == RC_OK:
+                    return RC_OK
+                if rc == RC_REFUSED:
+                    return RC_WARN
             return RC_WARN
 
     for i in range(1, attempts + 1):
@@ -316,6 +385,7 @@ def main(argv: list[str] | None = None) -> int:
             record_key("chrome", args.profile, port=args.port)
             if pl:
                 pl.mark_ok("chrome", args.profile)
+                save_pin(owner, "chrome", args.profile, None)
             return RC_OK
         if last == RC_REFUSED:
             # 被拒是「这张图/这句话不能画」，不是环境问题：不重试、不换号，改 LAYOUT 再说。
@@ -327,7 +397,7 @@ def main(argv: list[str] | None = None) -> int:
             return RC_WARN
         if last == RC_QUOTA:
             # 🔴 额度用尽是账号级限制：重试没用，换号才有用。
-            #    换号链（见 try_fallback）：① 接入已开着的 SunBrowser → ② 让 AdsPower 现开一个 profile。
+            #    换号链（见 try_fallback）：⓪ 本轮钉住的那台 → ① 已开的 SunBrowser → ② AdsPower 现开一个。
             detail = read_fail(out)
             if pl and not args.reuse_cdp:
                 # 把「什么时候恢复」写进台账，下一轮直接从换号链起步
@@ -337,8 +407,13 @@ def main(argv: list[str] | None = None) -> int:
                 t = pl.blocked_until("chrome", args.profile)
                 log(f"   台账：chrome:{args.profile} 记额度用尽"
                     f"{'，恢复时间 ' + t.strftime('%m-%d %H:%M') if t else ''}")
+                # 用完即关：run_once 的 finally 已经杀掉临时 Chrome，这里只放掉租约
+                pl.lease_release("chrome", args.profile, owner=owner)
+                pl.note_event("chrome", args.profile, "quota_released", owner=owner,
+                              detail=str(detail.get("message") or "")[:120])
+                clear_pin(owner)
             if args.auto_fallback:
-                rc = try_fallback(args, image, prompt_file, out, node, pw)
+                rc = try_fallback(args, image, prompt_file, out, node, pw, pl=pl, owner=owner)
                 if rc == RC_OK:
                     return RC_OK
                 if rc == RC_REFUSED:
@@ -351,28 +426,217 @@ def main(argv: list[str] | None = None) -> int:
     return last
 
 
-def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str) -> int:
-    """额度用尽后的换号链。这是「一个号画完了就换下一个继续画」的唯一入口。
+def resolve_owner(args) -> str:
+    """租约 owner：Jenkins 传构建号，命令行跑就用「本机:pid」。
 
-    ① **已经开着的**另一台 SunBrowser：只连不断，秒级接上（用户手上开着就优先用它）；
-    ② **让 AdsPower 现开一个** profile：本进程负责起，失败自己收（用户 2026-10-21 要求）。
-
-    🔴 不搬 cookie、不改登录态：换的只是「连哪个浏览器」。 --reuse-cdp 只连不断，
-       不会关掉用户手上的窗口，driver 也优先复用已开的 chatgpt 标签、不抢 tab。
-    🔴 必须排除当前端口：否则「换号」会连回同一个额度已空的账号，白跑一轮。
-    🔴 现开的号在**成功后默认留着**（下次跑直接走①，不用再等启动）；失败即关，
-       免得任务结束时机器上挂着一排浏览器。--adspower-stop-when-done 可改成成功也关。
+    为什么不能只用 pid：一条构建里每张图都是独立的 python 进程，pid 天天变；
+    而「同一轮 batch 的第 2 张图接着第 1 张那台浏览器画」正需要跨进程认得出自己人。
     """
+    o = (getattr(args, "owner", "") or os.environ.get("TSG_LEASE_OWNER") or "").strip()
+    return o or f"{socket.gethostname().split('.')[0]}:{os.getpid()}"
+
+
+# 「本轮钉住的浏览器」：一轮 batch 里第 2、3 张图直接回到上一张成功的那台，
+# 不再从「本机 Chrome → 谁有额度」重新猜（每猜错一次都是 3~9 分钟的额度空转）。
+# 按 owner 分文件：两个并行任务各钉各的，互不覆盖。
+PIN_DIR = Path(__file__).resolve().parents[2] / "_output/art_translate/_pins"
+
+
+def _pin_path(owner: str) -> Path:
+    safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in owner)[:80]
+    return PIN_DIR / f"{safe}.json"
+
+
+def load_pin(owner: str) -> dict:
+    try:
+        return json.loads(_pin_path(owner).read_text(encoding="utf-8"))
+    except Exception:                                         # noqa: BLE001
+        return {}
+
+
+def save_pin(owner: str, kind: str, ident: str, port: int | None) -> None:
+    try:
+        PIN_DIR.mkdir(parents=True, exist_ok=True)
+        _pin_path(owner).write_text(json.dumps(
+            {"kind": kind, "id": str(ident), "port": int(port) if port else 0,
+             "owner": owner, "at": time.strftime("%Y-%m-%d %H:%M:%S")},
+            ensure_ascii=False, indent=2), encoding="utf-8")
+        # 顺手清掉 2 天前的旧钉子（每条构建一个文件，不清会越攒越多）
+        cutoff = time.time() - 2 * 86400
+        for f in PIN_DIR.glob("*.json"):
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+            except OSError:
+                pass
+    except Exception as e:                                    # noqa: BLE001
+        log(f"⚠ 钉住记录写不进去（{e}），不影响出图")
+
+
+def clear_pin(owner: str) -> None:
+    try:
+        _pin_path(owner).unlink(missing_ok=True)
+    except Exception:                                         # noqa: BLE001
+        pass
+
+
+def _profile_for_port(fb, port: int) -> str:
+    """反查某个 CDP 端口属于哪个 AdsPower profile（关浏览器用）。取不到就返回空。"""
+    if not port:
+        return ""
+    try:
+        for r in fb.adspower_profiles()[:8]:
+            st, p = fb.adspower_state(r["user_id"])
+            if p and int(p) == int(port):
+                return str(r["user_id"])
+    except Exception:                                         # noqa: BLE001
+        return ""
+    return ""
+
+
+def _release_and_maybe_close(fb, pl, owner, kind, ident, port, why: str) -> None:
+    """一次失败的收尾：记审计流水 → 释放租约 → （额度/不可用）关掉那台浏览器。
+
+    🔴 用户 2026-10-22 明确要求「额度用完就关掉，换下一个继续画」：
+       空额度的浏览器留着没有任何价值，还占内存、占号、让别的任务误以为这个号还活着。
+    """
+    if pl:
+        pl.lease_release(kind, ident, owner=owner)
+        pl.note_event(kind, ident, why, owner=owner,
+                      detail=f"port={port or '-'} closed={not args_keep}")
+    try:
+        if kind == "adspower":
+            ok = fb.adspower_stop(ident) if fb else False
+            log(f"   🗑 关闭 adspower:{ident}（{why}）{'成功' if ok else '失败，下次启动会复用同一实例'}")
+        elif kind == "cdp":
+            uid = _profile_for_port(fb, port) if fb else ""
+            if uid:
+                fb.adspower_stop(uid)
+                log(f"   🗑 关闭 CDP {port} 对应的 profile {uid}（{why}）")
+            else:
+                log(f"   ⚠ CDP {port} 反查不到 profile（外部/手工开的浏览器），不主动关（{why}）")
+    except Exception as e:                                    # noqa: BLE001
+        log(f"   ⚠ 关闭浏览器时出错：{e}")
+    clear_pin(owner)
+
+
+args_keep = False  # --keep-browser-on-exhaust 时置 True（见 try_fallback 开头）
+
+
+def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str,
+                 pl=None, owner: str | None = None, pin: dict | None = None) -> int:
+    """额度用尽后的换号链 —— 「一个号画完了就换下一个继续画」的唯一入口。
+
+    ⓪ 本轮钉住的那台（同一轮 batch 的第 2 张图）：接着它画，不重新猜；
+    ① 已经开着的另一台 SunBrowser：只连不断，秒级接上；
+    ② 让 AdsPower 现开一个 profile：本进程负责起，失败自己收。
+
+    🔴 **并发**：任何一步开画之前都要先抢该通道的独占租约（provider_ledger.lease_claim）。
+       两个任务同时挑中同一个 profile 时，AdsPower 的 browser/start 会把同一个调试端口
+       交回来，两边就连进同一个 ChatGPT 标签页 —— 互相覆盖提示词、拿回对方的图，
+       而且各自都会报一次「额度用尽」（2026-10-22 用户反馈的就是这个）。
+       抢不到就**跳过换下一个**，谁也不等谁：号池里 4~5 个号 = 最多 5 路并行。
+    🔴 **用完即关**：额度用尽/不可用的通道立刻关掉浏览器并放租约，然后继续下一个号。
+    🔴 不搬 cookie、不改登录态：换的只是「连哪个浏览器」。
+    """
+    global args_keep
+    args_keep = bool(getattr(args, "keep_browser_on_exhaust", False))
     fb = _fb()
     if fb is None:
         log("⚠ find_browser_cdp.py 不可用，换号链跳过")
         return RC_QUOTA
 
+    pl = pl if pl is not None else _ledger()
+    owner = owner or resolve_owner(args)
+    pin = load_pin(owner) if (pin is None and not args.no_pin) else (pin or {})
+    if pin.get("kind") == "chrome":
+        pin = {}                       # 本机 Chrome 没有常驻端口可接，钉子对它不适用
+
     state = load_state()
     deadline = time.time() + max(0, args.fallback_budget)
     tried_ports = {args.port} if args.reuse_cdp else set()
     today = time.strftime("%Y-%m-%d")
-    pl = _ledger()
+
+    def claim(kind: str, ident: str, note: str = "") -> bool:
+        if not pl:
+            return True
+        ok, info = pl.lease_claim(kind, ident, owner=owner, note=note or "draw")
+        if not ok:
+            log(f"   {kind}:{ident} 正被 {info.get('held_by')} 占用"
+                f"（心跳 {info.get('heartbeat')}，TTL {info.get('ttl')}s）→ 跳过，不抢别人的浏览器")
+        return ok
+
+    def finish(kind: str, ident: str, port, rc: int) -> int:
+        """统一的收尾：成功就钉住；额度用尽/不可用就关浏览器 + 记账 + 放租约。"""
+        record_key(kind if kind != "cdp" else "sunbrowser", ident, port=port, ok=(rc == RC_OK),
+                   note="" if rc == RC_OK else f"rc={rc}")
+        if rc == RC_OK:
+            if pl:
+                pl.mark_ok(kind, ident)
+                pl.note_event(kind, ident, "drawn", owner=owner, detail=f"port={port or '-'}")
+            save_pin(owner, kind, ident, port)
+            log(f"✅ 出图成功：{kind}:{ident}（CDP {port or '-'}）→ 本轮后续图都钉住它")
+            return RC_OK
+        if rc == RC_QUOTA:
+            detail = read_fail(out)
+            if pl:
+                e = pl.mark_exhausted(kind, ident, raw=str(detail.get("reset") or ""),
+                                      message=str(detail.get("message") or ""))
+                log(f"   {kind}:{ident} 额度用尽 → 台账记到 {e.get('blocked_until')}"
+                    f"（依据 {e.get('reset_basis')}{'，估的' if e.get('reset_estimated') else ''}）")
+            state.setdefault("profiles", {}).setdefault(ident, {})["quota_date"] = today
+            save_state(state)
+            _release_and_maybe_close(fb, pl, owner, kind, ident, port, "quota_exhausted")
+            return RC_QUOTA
+        if rc == RC_REFUSED:
+            # 提示词被拒与账号无关：换号也不会变，收掉自己开的号直接退出
+            _release_and_maybe_close(fb, pl, owner, kind, ident, port, "refused")
+            return RC_REFUSED
+        log(f"   {kind}:{ident} 不可用（rc={rc}，见上面 driver 日志）→ 换下一个号")
+        if pl:
+            pl.mark_unusable(kind, ident, note=f"rc={rc} @ {today}")
+        state.setdefault("profiles", {}).setdefault(ident, {})["note"] = f"rc={rc} @ {today}"
+        save_state(state)
+        _release_and_maybe_close(fb, pl, owner, kind, ident, port, "unusable")
+        return rc
+
+    # ── ⓪ 本轮钉住的那台 ───────────────────────────────────────────────────
+    if pin and pin.get("kind"):
+        kind, ident = str(pin["kind"]), str(pin.get("id") or "")
+        port = int(pin.get("port") or 0)
+        blocked = pl.blocked_until(kind, ident) if pl else None
+        if blocked:
+            log(f"↩ 钉住的 {kind}:{ident} 台账封锁到 {blocked:%m-%d %H:%M}（"
+                f"{pl.human_left(blocked)}）→ 换号")
+            clear_pin(owner)
+        elif not claim(kind, ident, "pinned"):
+            clear_pin(owner)
+        else:
+            log(f"↩ 换号 ⓪：接着本轮钉住的 {kind}:{ident}（CDP {port or '-'}）")
+            if kind == "adspower" and not port:
+                status, p2 = fb.adspower_state(ident)
+                if status == "active" and p2:
+                    port = p2
+                else:
+                    ok, port, msg = fb.adspower_start(ident)
+                    if not ok:
+                        log(f"   启动钉住的号失败：{msg} → 换号")
+                        if pl:
+                            pl.lease_release(kind, ident, owner=owner)
+                        clear_pin(owner)
+                        port = 0
+            if port and wait_cdp(port, time.time() + 30):
+                rc = run_on_port(args, port, image, prompt_file, out, node, pw)
+                if rc == RC_OK:
+                    return finish(kind, ident, port, rc)
+                if rc == RC_REFUSED:
+                    return RC_WARN
+                finish(kind, ident, port, rc)
+            elif port:
+                log(f"   CDP {port} 没起来 → 换号")
+                if pl:
+                    pl.lease_release(kind, ident, owner=owner)
+            tried_ports.add(port)
 
     # ── ① 已经开着的 SunBrowser ────────────────────────────────────────────
     ports = [p for p in find_sunbrowser_ports(exclude=args.port) if p not in tried_ports]
@@ -380,20 +644,20 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
     good_ports = [int(x) for x in cached_order("sunbrowser") if x.isdigit()]
     if good_ports:
         ports.sort(key=lambda p: (good_ports.index(p) if p in good_ports else len(good_ports), p))
-    for p in ports[:3]:
+    for p in ports[:4]:
         if time.time() > deadline:
             log("⚠ 换号预算用完，停止继续尝试")
             return RC_QUOTA
+        if not claim("cdp", str(p), "reuse browser"):
+            continue
         tried_ports.add(p)
         log(f"↪ 换号 ①／②：接入已开着的 SunBrowser CDP {p}（只连不断）")
         rc = run_on_port(args, p, image, prompt_file, out, node, pw)
         if rc == RC_OK:
-            record_key("sunbrowser", p, port=p)
-            log(f"✅ 换号成功：SunBrowser {p} 已出图")
-            return RC_OK
-        record_key("sunbrowser", p, port=p, ok=False, note=f"rc={rc}")
+            return finish("cdp", str(p), p, rc)
         if rc == RC_REFUSED:
-            return rc
+            return RC_WARN
+        finish("cdp", str(p), p, rc)
         log(f"   SunBrowser {p} 没成（rc={rc}），继续找下一个号")
 
     # ── ② 让 AdsPower 现开一个 profile ─────────────────────────────────────
@@ -412,11 +676,10 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
     if pl and not args.ignore_ledger:
         explicit = [x.strip() for x in (args.adspower_profiles or "").split(",") if x.strip()]
         ordered = pl.order([{"id": c["user_id"], "cookies": int(c.get("cookies") or 0)}
-                            for c in cands], "adspower", explicit=explicit)
+                            for c in cands], "adspower", explicit=explicit, owner=owner)
         by_id = {c["user_id"]: c for c in cands}
         queue = [by_id[r["id"]] for r in ordered]
-        blocked = []
-        free = []
+        blocked, free = [], []
         for c in queue:
             t = pl.blocked_until("adspower", c["user_id"])
             (blocked if t else free).append((c, t))
@@ -437,10 +700,17 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
             log("⚠ 换号预算用完，停止继续尝试")
             return RC_QUOTA
         uid = c["user_id"]
+        # 🔴 抢租约在**启动之前**：不然 A 已经把这台拉起来了，B 又 start 一次拿回同一个端口，
+        #    两边就共享同一个 ChatGPT 标签页（串图 + 双份额度提示的根因）。
+        if not claim("adspower", uid, "fresh launch"):
+            continue
         status, port = fb.adspower_state(uid)
         launched = False
         if status == "missing":
             log(f"   {uid}：AdsPower 不认这个 id（缓存目录残留），跳过")
+            if pl:
+                pl.set_note("adspower", uid, "ads_missing")
+                pl.lease_release("adspower", uid, owner=owner)
             continue
         if status == "active" and port:
             log(f"   {uid}：已经开着（CDP {port}），直接接上")
@@ -455,8 +725,12 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
                     log(f"   {uid}：AdsPower 不认这个 id（缓存目录残留，账号里已无此 profile）")
                     state.setdefault("profiles", {}).setdefault(uid, {})["note"] = "ads_missing"
                     save_state(state)
+                    if pl:
+                        pl.set_note("adspower", uid, "ads_missing")
                 else:
                     log(f"   {uid} 启动失败：{msg}")
+                if pl:
+                    pl.lease_release("adspower", uid, owner=owner)
                 continue
             launched = True
             log(f"   {uid} 已启动（CDP {port}）")
@@ -464,56 +738,34 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
             log(f"   {uid} 的端口 {port} 已经试过，跳过")
             if launched:
                 fb.adspower_stop(uid)
+            if pl:
+                pl.lease_release("adspower", uid, owner=owner)
             continue
         tried_ports.add(port)
         if not wait_cdp(port, time.time() + 45):
             log(f"   {uid} 的 CDP {port} 没起来")
             if launched:
                 fb.adspower_stop(uid)
+            if pl:
+                pl.lease_release("adspower", uid, owner=owner)
             continue
 
+        state.setdefault("profiles", {}).setdefault(uid, {})["ok_at"] = today
+        state["last_ok_profile"] = uid
+        state["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        save_state(state)
+
         rc = run_on_port(args, port, image, prompt_file, out, node, pw)
-        if rc == RC_OK:
-            state.setdefault("profiles", {}).setdefault(uid, {})["ok_at"] = today
-            state["last_ok_profile"] = uid
-            state["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            save_state(state)
-            record_key("adspower", uid, port=port)
-            if pl:
-                pl.mark_ok("adspower", uid)
-            log(f"✅ 换号成功：AdsPower profile {uid}（CDP {port}）")
+        out_rc = finish("adspower", uid, port, rc)
+        if out_rc == RC_OK:
             if args.adspower_stop_when_done:
                 log(f"   --adspower-stop-when-done：关闭 {uid}")
                 fb.adspower_stop(uid)
             return RC_OK
-        record_key("adspower", uid, port=port, ok=False, note=f"rc={rc}")
-        if rc == RC_REFUSED:
-            # 提示词被拒与账号无关，换号也不会变：收掉自己开的号，直接退出
-            if launched:
-                fb.adspower_stop(uid)
-            return rc
-        if rc == RC_QUOTA:
-            detail = read_fail(out)
-            resume = str(detail.get("reset") or "")
-            if pl:
-                e = pl.mark_exhausted("adspower", uid, raw=resume,
-                                      message=str(detail.get("message") or ""))
-                log(f"   {uid} 这个号也额度用尽 → 台账记到 {e.get('blocked_until')}"
-                    f"（依据 {e.get('reset_basis')}{'，估的' if e.get('reset_estimated') else ''}）")
-            else:
-                log(f"   {uid} 这个号也额度用尽 → 记下来，明天之前排在最后")
-            state.setdefault("profiles", {}).setdefault(uid, {})["quota_date"] = today
-            save_state(state)
-        else:
-            # rc=3=未登录/人机验证/非空对话，rc=1=页面没出图。现开的号不折腾，换下一个
-            log(f"   {uid} 不可用（rc={rc}，见上面 driver 日志）→ 换下一个号")
-            if pl:
-                pl.mark_unusable("adspower", uid, note=f"rc={rc} @ {today}")
-            state.setdefault("profiles", {}).setdefault(uid, {})["note"] = f"rc={rc} @ {today}"
-            save_state(state)
-        if launched:
-            fb.adspower_stop(uid)
+        if out_rc == RC_REFUSED:
+            return RC_WARN
     return RC_QUOTA
+
 
 
 def run_on_port(args, port: int, image: Path, prompt_file: Path, out: Path,
@@ -581,6 +833,44 @@ def _fb():
 STATE_FILE = Path(__file__).resolve().parents[2] / "_output/art_restyle/provider_state.json"
 
 
+# ---------------------------------------------------------------- 并发安全的小文件
+# 🔴 2026-10-22：这两个 json 现在会被**并行的几个构建同时改**（一个构建写「ktmrjhu 今天空过」、
+#    另一个写「k19wnpan 成功」）。以前是 read_text / write_text 直接写：并发时后写的整体覆盖
+#    先写的（丢状态），写到一半被读还会读到半截 JSON。统一改成「拿锁 → 读 → 改 → 原子替换」。
+
+@contextlib.contextmanager
+def _locked_file(path: Path, timeout: float = 15.0):
+    lock = Path(str(path) + ".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(lock, "a+")
+    t0 = time.time()
+    try:
+        while True:
+            try:
+                if fcntl:
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.time() - t0 > timeout:
+                    log(f"⚠ 等锁超时（{lock.name}），继续但不保证并发安全")
+                    break
+                time.sleep(0.05)
+        yield
+    finally:
+        try:
+            if fcntl:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+
+def _atomic_write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
 def load_state() -> dict:
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
@@ -590,10 +880,24 @@ def load_state() -> dict:
 
 def save_state(state: dict) -> None:
     try:
-        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        with _locked_file(STATE_FILE):
+            _atomic_write_json(STATE_FILE, state)
     except Exception as e:                                    # noqa: BLE001
         log(f"⚠ 换号台账写不进去（{e}），不影响出图")
+
+
+def update_state(fn) -> dict:
+    """在锁内 读-改-写，别整份覆盖掉并行任务刚写进去的内容。"""
+    try:
+        with _locked_file(STATE_FILE):
+            state = load_state()
+            fn(state)
+            state["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            _atomic_write_json(STATE_FILE, state)
+            return state
+    except Exception as e:                                    # noqa: BLE001
+        log(f"⚠ 换号台账更新失败（{e}），不影响出图")
+        return {}
 
 
 # ---------------------------------------------------------------- 钥匙缓存（成功过的号）
@@ -620,9 +924,9 @@ def load_keys() -> dict:
 
 def save_keys(data: dict) -> None:
     try:
-        data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        KEY_CACHE_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-                                  encoding="utf-8")
+        with _locked_file(KEY_CACHE_FILE):
+            data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            _atomic_write_json(KEY_CACHE_FILE, data)
     except Exception as e:                                    # noqa: BLE001
         log(f"⚠ 钥匙缓存写不进去（{e}），不影响出图")
 
@@ -631,26 +935,32 @@ def record_key(kind: str, ident, port=None, ok: bool = True, note: str = "") -> 
     """记一次出图结果：成功就把它顶到最前，失败只累加计数。
 
     🔴 成功后清掉 quota_date：额度是会重置的，别让「昨天空过」永久压着一个好号。
+    🔴 读-改-写要在同一把锁里：并行时两份副本互相覆盖会丢掉「今天额度空过」的标记。
     """
-    data = load_keys()
-    k = f"{kind}:{ident}"
-    row = data["keys"].setdefault(k, {"kind": kind, "id": str(ident)})
     now = time.strftime("%Y-%m-%d %H:%M:%S")
-    if port:
-        row["port"] = int(port)
-    row["last_at"] = now
-    if ok:
-        row["ok_at"] = now
-        row["ok_count"] = int(row.get("ok_count") or 0) + 1
-        row["fails"] = 0
-        row.pop("last_fail", None)
-        row.pop("quota_date", None)
-    else:
-        row["fails"] = int(row.get("fails") or 0) + 1
-        row["last_fail"] = note or now
-        if note.startswith("rc=4") or "quota" in note:
-            row["quota_date"] = time.strftime("%Y-%m-%d")
-    save_keys(data)
+    try:
+        with _locked_file(KEY_CACHE_FILE):
+            data = load_keys()
+            k = f"{kind}:{ident}"
+            row = data["keys"].setdefault(k, {"kind": kind, "id": str(ident)})
+            if port:
+                row["port"] = int(port)
+            row["last_at"] = now
+            if ok:
+                row["ok_at"] = now
+                row["ok_count"] = int(row.get("ok_count") or 0) + 1
+                row["fails"] = 0
+                row.pop("last_fail", None)
+                row.pop("quota_date", None)
+            else:
+                row["fails"] = int(row.get("fails") or 0) + 1
+                row["last_fail"] = note or now
+                if note.startswith("rc=4") or "quota" in note:
+                    row["quota_date"] = time.strftime("%Y-%m-%d")
+            data["updated_at"] = now
+            _atomic_write_json(KEY_CACHE_FILE, data)
+    except Exception as e:                                    # noqa: BLE001
+        log(f"⚠ 钥匙缓存写不进去（{e}），不影响出图")
 
 
 def cached_order(kind: str) -> list[str]:

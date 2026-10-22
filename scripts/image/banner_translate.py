@@ -901,6 +901,12 @@ Hard requirements:
 1. Replace ONLY the text. Keep the artwork, illustration, background, panel, decoration, framing, \
 glow and lighting untouched — pixel-identical where there is no text. Same texture, same pattern \
 scale, same shading everywhere outside the letters.
+1b. 🔴 This is an image EDIT, not a new illustration: the output must be recognizably the SAME \
+artwork with only the written words changed. Do NOT replace or repaint the background, and do NOT \
+add any character, person, face, animal, scenery, new illustration or extra decoration. If the \
+reference background is a plain dark ribbon / plate, the output background must stay that same \
+plain ribbon / plate. A newly drawn figure or scene is a hard failure. Output the same aspect ratio \
+and framing as the reference (e.g. a wide 2:1 banner), not a square or 16:9 canvas.
 2. Keep each line's position, size, weight, colour and effects (glow/gradient/shadow) exactly like \
 the original line it replaces. Same left alignment, same margins, same line count.
 3. The dark ribbon / plate that carries the text must keep its exact silhouette, position, \

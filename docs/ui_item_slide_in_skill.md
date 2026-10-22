@@ -212,7 +212,7 @@ for i = 0, box.childCount - 1 do ...
 
 ---
 
-## 7. 十一个坑（都在这套代码里踩过）
+## 7. 十三个坑（都在这套代码里踩过）
 
 1. **写 item 根节点 ⇒ 被抹回**。这是本配方的第一号坑，两种触发源（布局组 / 列表自己算位置）。写子节点根治。
 2. **`ScrollCycleView` 不是布局组也不能写根**。见 §4。
@@ -249,6 +249,20 @@ for i = 0, box.childCount - 1 do ...
     可复用的写法：`SlideChildren(go, ...)` 遍历 `go.transform.childCount` + `GetChild(i)`，
     对每个子节点 `GetComponent("RectTransform")` 起一条 tween；**不要判 `activeSelf`**
     （漏动会错位，动到隐藏节点由 tween 归位）。
+13. 🔴 **入场动画配套的「静默刷新」函数，定义用 `.` 而调用用 `:` ⇒ 列表被自己刷空**。
+    `CourtesyDressPanel:RefreshActivityDataSilently` 第一版写成
+    `function this.RefreshActivityDataSilently(activityData, ...)`，而 3 个调用点全是
+    `this:RefreshActivityDataSilently(data, type, state, idx)` ⇒ 第一个形参 `activityData`
+    收到的是 **this（面板表本身）**，真实数据整体右移一格被挤到 `activityType` 上。
+    于是 `OnShowActivityData` 里 `SetData(面板表)` ⇒ `#面板表 == 0` ⇒ `dataCount = 0` ⇒
+    `ScrollCycleView` 把池里每张卡 `SetActive(false)` ⇒ **面板还在、`grid` 空了**。
+    全程不抛错（`SetData` 自己 `dataList or {}` 吃掉 nil/空表，`pcall` 也不报，`EventManager`
+    更是 `xpcall` 静默吞异常），日志里一条错误都没有 —— 这类「静默清空」只能靠离线 harness 抓。
+    凡是「领奖 / 服务器 0 点刷新推送 / 在线奖励到点」都会走到这里，所以现象看起来像
+    「点某个按钮之后列表没了」。
+    同族的两个坑一起堵：① 刷新回调**不要信事件参数**（`GetRewardRefresh` 有一处完全不带参数、
+    一处带的是别的页签的数据），一律按当前页签从 manager 重新取；② `SetData` 前判空，
+    空列表**保持现状**而不是刷成 0 条。
 
 ---
 
@@ -343,6 +357,15 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 | 卡根节点自己就是满幅 Image | `card:GetComponent("Image")` | `MissionDailyPanel_Daily` |
 | 无 bg 子节点、根也无 Image | 直接子节点里那个满幅 `Image` | `CourtesyDressPanel` |
 | 底板是个「容器」（自身无 Image，可见图在子节点） | 显式路径 `Util.GetGameObject(card, "BG/Image_BG1")` | `FindTreasureMainPanel` |
+
+`CourtesyDressPanel` 的刷新链路单独备了两套离线用例（见 §8 的写法）：
+
+- `scripts/lua-tests/test_courtesydress_cardslide.lua`（13 case）—— 动画本体：起点/终值/中途 Stop/
+  错开/抑制/连点/回收。
+- `scripts/lua-tests/test_courtesydress_refresh.lua`（20 case）—— 刷新链路：点「前往」跳转、
+  无参事件（服务器 0 点推送）、错页签数据、领奖刷新、空数据、状态表有 nil、重开面板，
+  每条都断言 `rect/ScrollCycleView/grid` 的**激活卡数不变**。
+  其中 case 5b 专门钉 §7 坑 13（`.` / `:` 定义不一致），把定义改回 `.` 会立刻 3 条 FAIL。
 
 ---
 

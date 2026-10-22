@@ -170,16 +170,25 @@ def has_tesseract() -> bool:
     return _tesseract_bin() is not None
 
 
-def ocr_read(im: Image.Image, workdir: Path | None = None) -> str | None:
-    """读图上的拉丁字母。None = OCR 跑不起来（本机没装 / 环境不对）⇒ 闸门降级成 warn。
+def ocr_read_all(im: Image.Image, workdir: Path | None = None,
+                 psms: tuple[int, ...] = (6, 11)) -> list[str] | None:
+    """把图上的拉丁字母读出来，返回**所有候选**读法（按字母数降序）。
 
-    🔴 预处理是固定的：先 flatten 到**黑底**（透明区不能当白纸，否则白字消失），
-       再取灰度反相（字变黑、底变白），最后 `--psm 6`（按块识别）。
-       2026-10-22 实测 `cn2-x1_texie_mozhate_01_en` 读出 `HERO-SKILL / AVE VERUM / CoRPUS`。
+    None = OCR 跑不起来（本机没装 / 环境不对 / 临时目录打不开）⇒ 上层降级成 warn。
+    读成功但一张图确实没字 ⇒ 返回 `[]`（这是「没读出字」，和「环境坏了」不是一回事）。
+
+    🔴 预处理：先 flatten 到**黑底**（透明区不能当白纸，否则白字消失），再按两种极性
+       各试一遍。原实现固定「黑底 → 反相」＝假设白字，结果海报族「深色描边压在金色
+       彩带上」一反相就成白底白字，`jingyinghuodong_banner_12`（人眼清清楚楚写着
+       LIFETIME PACK / PERMANENT PURCHASE LIMIT）一个字都读不出 ⇒ 相似度 0.00 ⇒
+       被判「模型自造译名」标红。极性必须两种都试。
+    🔴 psm 也要两种：`--psm 6`（单块文本）对**斜排/透视**的美术字会整块丢掉，
+       同一张图 `--psm 11`（稀疏文本）能读出 `[UFETIME, Fo)`。所以取 psm 6 + 11
+       的候选并集，交给上层按「与译名表的相似度」挑最好的那个 —— 不能按长度挑，
+       长度大的那份未必读得对。
     🔴 临时文件必须落在 `workdir` 里，不能用默认临时目录：Jenkins 环境里 TMPDIR 常常
        没设 ⇒ 落到 /tmp ⇒ tesseract（sandbox 限制）打不开，rc=1、stdout 空。
        而「空字符串」会被上层算成「相似度 0 ⇒ 判红」，等于把环境问题变成资源判红。
-    🔴 rc != 0 一律返回 None（降级 warn），只有「读成功但确实没字」才算真失败。
     """
     exe = _tesseract_bin()
     if not exe:
@@ -190,22 +199,48 @@ def ocr_read(im: Image.Image, workdir: Path | None = None) -> str | None:
     fd, name = tempfile.mkstemp(suffix=".png", dir=str(workdir) if workdir else None)
     os.close(fd)
     tmp = Path(name)
+    reads: list[str] = []
+    ran_ok = False
     try:
-        ImageOps.invert(flat).save(tmp)
-        # 不吃 text=True：Jenkins 里 LANG 常常是空的，tesseract 会把 `°` 之类的字节
-        # 按 Latin-1 吐出来，严格 UTF-8 解码直接抛异常 ⇒ 闸门又被静默跳过。
-        r = subprocess.run([exe, str(tmp), "stdout", "--psm", "6"],
-                           capture_output=True, timeout=60)
-        err = r.stderr.decode("utf-8", errors="replace").strip()
-        if r.returncode != 0 or err.startswith("Error"):
-            print(f"⚠ OCR 退出码 {r.returncode}（{err[:120]}）⇒ 本轮跳过 OCR 闸门")
+        for inv in (True, False):
+            (ImageOps.invert(flat) if inv else flat).save(tmp)
+            for psm in psms:
+                # 不吃 text=True：Jenkins 里 LANG 常常是空的，tesseract 会把 `°` 之类的
+                # 字节按 Latin-1 吐出来，严格 UTF-8 解码直接抛异常 ⇒ 闸门被静默跳过。
+                r = subprocess.run([exe, str(tmp), "stdout", "--psm", str(psm)],
+                                   capture_output=True, timeout=60)
+                err = r.stderr.decode("utf-8", errors="replace").strip()
+                if r.returncode != 0 or err.startswith("Error"):
+                    print(f"⚠ OCR 退出码 {r.returncode}"
+                          f"（polarity={'inv' if inv else 'raw'} psm={psm}，{err[:120]}）")
+                    continue
+                ran_ok = True
+                txt = " ".join(r.stdout.decode("utf-8", errors="replace").split())
+                if _norm(txt) and txt not in reads:
+                    reads.append(txt)
+        if not ran_ok:
+            print("⚠ OCR 各极性/psm 组合一个都没跑起来 ⇒ 本轮跳过 OCR 闸门")
             return None
-        return " ".join(r.stdout.decode("utf-8", errors="replace").split())
+        reads.sort(key=lambda t: -len(_norm(t)))
+        return reads
     except Exception as e:                                          # noqa: BLE001
         print(f"⚠ OCR 执行失败（{e}）⇒ 本轮跳过 OCR 闸门")
         return None
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def ocr_read(im: Image.Image, workdir: Path | None = None) -> str | None:
+    """兼容旧调用：只取「字母最多」的那份读法（要挑最像的请用 `ocr_read_all`）。"""
+    reads = ocr_read_all(im, workdir)
+    if reads is None:
+        return None
+    return reads[0] if reads else ""
+
+
+def norm_text(s: str) -> str:
+    """公开归一化口径（只留 A-Z0-9），供上层量「OCR 到底读出几个字母」。"""
+    return _norm(s)
 
 
 def _norm(s: str) -> str:

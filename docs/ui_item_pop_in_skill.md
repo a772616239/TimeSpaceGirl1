@@ -7,6 +7,9 @@
 > `RankingSingleListPanel`（榜单，A 方案 + 统一接点见第 3.1 节）；  
 > `ClimbTowerRankPopup` / `ClimbTowerEliteRankPopup`（爬塔排行榜弹窗，A 方案 + 一次性标记：  
 > 打开前数据已就绪、`OnShow` 同步 `SetData`，接点就在 `OnShow` 末尾，见 3.2 节）；  
+> `OpenSeverWelfarePanel`（开服福利，A 方案 + 一次性标记：`OnShow` 置位 → `OnShowPanelData`  
+> 的 `SetData` 之后消费；首开原本走 `DelayCreation`，按坑 #8 删掉——奖励行 rewardPre 1060 宽 /  
+> 视口 1080，缺省 peak 1.02 卡面每侧出视口 0.6px，安全）；  
 > 页签多的三个面板走「页面级接入」：`ExpertPanel`、`OperatingPanel`、`AdjutantActivityPanel`  
 > （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / **成长礼金 page_3** / **终身限购 page_9** / 战令 /  
 > 副官挑战 / 副官赠礼）；`CardActivityPanel` 同为页面级接入（任务 / 英雄礼包 / 英雄豪礼 / 收集  

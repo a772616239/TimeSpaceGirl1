@@ -122,6 +122,8 @@ Color = { New = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end }
 Ease = { Linear = "Linear", OutQuad = "OutQuad" }
 IsNull = function() return false end
 LogError = function(msg) print("  [LogError] " .. msg) end
+-- 面板在「数据为空跳过刷新」时会打这条（见 test_courtesydress_refresh.lua）
+LogRed = function(msg) print("  [LogRed] " .. tostring(msg)) end
 function Inherit(base) return setmetatable({}, { __index = base }) end
 table.nums = function(t) local n = 0 for _ in pairs(t) do n = n + 1 end return n end
 GetLanguageStrById = function(id) return "L" .. tostring(id) end
@@ -327,13 +329,16 @@ print("  0 条 tween；正常/抛错两条路径标记都复位")
 
 -- ---------------- case 9: 真实入口（OnShowActivityData 末尾会播） ----------------
 print("== case9 OnShowActivityData 末尾确实会播 ==")
+-- 注意：OnShowActivityData 现在对空列表直接 return（空列表会把 grid 刷空，见
+-- test_courtesydress_refresh.lua 的 case3/6），所以这里必须喂非空数据
+local oneRow = { { Reward = {} } }
 tweens = {}
 Panel.ScrollView = newListView({ card1 })
 Panel.nextPlayIsSwitch = false
-Panel:OnShowActivityData({}, ActivityTypeDef.ChapterAward, {}, nil)
+Panel:OnShowActivityData(oneRow, ActivityTypeDef.ChapterAward, {}, nil)
 assert(#tweens == per, ("真实入口应起 %d 条 tween，实际 %d"):format(per, #tweens))
 Panel.suppressCardAnim = true
-Panel:OnShowActivityData({}, ActivityTypeDef.ChapterAward, {}, nil)
+Panel:OnShowActivityData(oneRow, ActivityTypeDef.ChapterAward, {}, nil)
 assert(liveTweens() == 0, "抑制期间真实入口也不该起 tween")
 Panel.suppressCardAnim = false
 print(("  真实入口 %d 条；抑制时 0 条"):format(per))

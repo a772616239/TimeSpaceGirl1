@@ -279,7 +279,7 @@ function this:SetGfitShow()
             local view = SubUIManager.Open(SubUIConfig.ItemView, pre.transform)
             _ItemViewList[i] = view
         end
-        _ItemViewList[i]:OnOpen(false, RechargeConfig[curGiftId].RewardShow[i], 0.75)
+        _ItemViewList[i]:OnOpen(false, RechargeConfig[curGiftId].RewardShow[i], 0.75, false, false, false, cursortingOrder)
         _ItemViewList[i].transform.parent.gameObject:SetActive(true)
         _ItemViewList[i].gameObject:SetActive(true)
     end

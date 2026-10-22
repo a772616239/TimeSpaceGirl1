@@ -302,7 +302,23 @@ function this:_Collect()
         return targets
     end
     if not Alive(src) then
+        if kDebugPopIn then
+            Log("[ItemPopIn] src 不是活对象: " .. tostring(src))
+        end
         return targets
+    end
+    if kDebugPopIn and type(src) == "table" then
+        local n = 0
+        for i = 1, #src do
+            local it = src[i]
+            if it ~= nil then
+                local go = it.gameObject or it
+                local act = go ~= nil and go.activeSelf
+                n = n + 1
+                Log("[ItemPopIn] src[" .. i .. "] active=" .. tostring(act))
+            end
+        end
+        Log("[ItemPopIn] srcLen=" .. tostring(#src) .. " 非空元素=" .. tostring(n))
     end
     local ok, err = pcall(function()
         -- ① ScrollCycleView：item 由 SetData 克隆，顺序即版面顺序
@@ -389,6 +405,9 @@ end
 function this:Play(only)
     self:Stop()
     local targets = self:_Collect()
+    if kDebugPopIn then
+        Log("[ItemPopIn] Play targets=" .. tostring(#targets))
+    end
     if only then
         targets = targets[only] and { targets[only] } or {}
     end
@@ -475,6 +494,9 @@ end
 local pagePops = setmetatable({}, { __mode = "k" })
 local kRetryDelays = { 0.1, 0.25, 0.5 }
 
+-- 🔴 临时诊断开关（定位完删掉）：打印 PlayPage 拿到的页面/数据源个数、每轮收到几项。
+local kDebugPopIn = true
+
 -- ScrollCycleView 的特征是 SetData + ForeachItemGO。用 duck typing 而不是 require，
 -- 免得 Common 反向依赖 View。
 local function IsListView(v)
@@ -551,6 +573,10 @@ function ItemPopIn.PlayPage(page, cfg)
     -- 每次调用都是一「轮」：重播会让上一轮还没跑的重试作废（否则切页后又弹一次旧的）
     entry.gen = entry.gen + 1
     local gen = entry.gen
+    if kDebugPopIn then
+        local nm = page.__cname or (page.class and page.class.__cname) or "?"
+        Log("[ItemPopIn] PlayPage page=" .. tostring(nm) .. " pops=" .. tostring(#entry.pops))
+    end
     if entry.timer then
         entry.timer:Stop()
         entry.timer = nil
@@ -565,7 +591,16 @@ function ItemPopIn.PlayPage(page, cfg)
             return
         end
         local wait = kRetryDelays[step]
-        if not wait or type(Timer) ~= "table" or type(Timer.New) ~= "function" then
+        if not wait then
+            -- 页面自己声明了数据源却一项都没收到：只可能是返回空表、或节点全被 activeSelf 过滤掉。
+            -- 这种「静默不播」最难查（没报错、没日志、看着像没接），留一条错误日志。
+            -- 没声明数据源的固定版面页 #entry.pops == 0，不会走到这里。
+            if #entry.pops > 0 then
+                LogError("[ItemPopIn] 声明了数据源但一项都没收到（检查 GetPopInSource 返回的节点是否 active）")
+            end
+            return
+        end
+        if type(Timer) ~= "table" or type(Timer.New) ~= "function" then
             return
         end
         local timer = Timer.New(function()

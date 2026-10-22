@@ -3,13 +3,13 @@
 -- 一张图只存一组：bbox = 版面几何 ∪ **所有语言**译文的墨迹并集（见 plate_box），
 -- 所以每种语言的贴片尺寸完全一致，运行时不用按语言分表。
 return {
-    ["cn2-X1_loading_01"] = { minX = 0.197368, minY = 0.785156, maxX = 0.988304, maxY = 0.962402 },
-    ["cn2-X1_loading_02"] = { minX = 0.197368, minY = 0.785156, maxX = 0.929825, maxY = 0.953125 },
-    ["cn2-X1_loading_03"] = { minX = 0.168129, minY = 0.76416, maxX = 1.0, maxY = 0.968262 },
-    ["cn2-X1_loading_04"] = { minX = 0.197368, minY = 0.785156, maxX = 0.922515, maxY = 0.967773 },
-    ["cn2-X1_loading_05"] = { minX = 0.152047, minY = 0.783203, maxX = 0.997076, maxY = 0.970215 },
-    ["cn2-X1_loading_06"] = { minX = 0.185673, minY = 0.782227, maxX = 0.942982, maxY = 0.941406 },
-    ["cn2-X1_loading_07"] = { minX = 0.19883, minY = 0.785645, maxX = 1.0, maxY = 0.971191 },
-    ["cn2-X1_loading_08"] = { minX = 0.185673, minY = 0.782227, maxX = 0.942982, maxY = 0.936523 },
-    ["cn2-X1_loading_09"] = { minX = 0.185673, minY = 0.782227, maxX = 0.950292, maxY = 0.957031 },
+    ["cn2-X1_loading_01"] = { minX = 0.209064, minY = 0.785156, maxX = 0.988304, maxY = 0.962402 },
+    ["cn2-X1_loading_02"] = { minX = 0.209064, minY = 0.785156, maxX = 0.934211, maxY = 0.953125 },
+    ["cn2-X1_loading_03"] = { minX = 0.179825, minY = 0.76416, maxX = 1.0, maxY = 0.968262 },
+    ["cn2-X1_loading_04"] = { minX = 0.209064, minY = 0.785156, maxX = 0.934211, maxY = 0.967773 },
+    ["cn2-X1_loading_05"] = { minX = 0.163743, minY = 0.783203, maxX = 0.997076, maxY = 0.970215 },
+    ["cn2-X1_loading_06"] = { minX = 0.197368, minY = 0.782227, maxX = 0.954678, maxY = 0.941406 },
+    ["cn2-X1_loading_07"] = { minX = 0.210526, minY = 0.785645, maxX = 1.0, maxY = 0.971191 },
+    ["cn2-X1_loading_08"] = { minX = 0.197368, minY = 0.782227, maxX = 0.954678, maxY = 0.936523 },
+    ["cn2-X1_loading_09"] = { minX = 0.197368, minY = 0.782227, maxX = 0.954678, maxY = 0.957031 },
 }

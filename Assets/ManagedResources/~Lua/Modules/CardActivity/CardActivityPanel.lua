@@ -3,6 +3,7 @@ CardActivityPanel = Inherit(BasePanel)
 local this = CardActivityPanel
 local _CurPageIndex = 1
 local TabBox = require("Modules/Common/TabBox")
+local ItemPopIn = require("Modules/Common/ItemPopIn")--列表项逐格入场（页面级批量接入）
 local tabs = {
     [1] = {
         default = "cn2-X1_zhutihuodong_yingxiongjiadao_02",
@@ -92,7 +93,31 @@ function this.OnPageTabChange(index)
         this.prefabs[i].gameObject:SetActive(i == index)--切换子模块预设显隐
     end
     this.contents[index].view:OnShow(this.sortingOrder,this)
+    this:PlayContentPopIn(index)--列表项逐格入场（必须在页内容 OnShow 的 SetData 之后）
     this.UpView:OnOpen({ showType = UpViewOpenType.ShowRight, panelType =  tabs[index].panelType })
+end
+
+-- 列表项逐格入场（页面级批量）：Task/Gift/Wish/Collect 四页都是 OnShow 里同步
+-- SetData 的 ScrollCycleView，PlayPage 自动扫描即可（找不到列表 no-op）。
+-- 🔴 page_1（DrawCardPanel）要跳过：它唯一的长列表挂在 ChangeWishPanel 弹窗里、
+-- 平时整窗隐藏，PlayPage 会把它扫出来播在看不见的弹窗里（弹窗真正打开时反而没动画），
+-- 这一页由弹窗打开时机自己播（DrawCardPanel:PlayWishPopIn）。
+-- 播的时机 = 玩家切页签 / 打开面板（OnShow → ChangeTab 也走 OnPageTabChange 这条）；
+-- 数据回调刷新（领奖 this.Refresh / 买礼包 / GameEvent.Task.Achievement → view:OnShow）
+-- 都不经过面板这条路径 ⇒ 天然不重播。
+function this.PlayContentPopIn(index)
+    if this.contents[index].view == DrawCardPanel then
+        return
+    end
+    ItemPopIn.PlayPage(this.contents[index].view)
+end
+
+-- 切页 / 关闭 / 销毁都要回收（🔴 漏调 = item 永久停在半截缩放上）。
+-- 没接上的页（DrawCardPanel 的批量入口）StopPage 是 no-op，循环全停即可。
+function this.StopContentPopIn()
+    for i = 1, #this.contents do
+        ItemPopIn.StopPage(this.contents[i].view)
+    end
 end
 
 --绑定事件（用于子类重写）
@@ -142,6 +167,7 @@ end
 
 --界面关闭时调用（用于子类重写）
 function CardActivityPanel:OnClose()
+    this:StopContentPopIn()
     for i = 1, #this.contents do
         this.contents[i].view:OnClose()
     end
@@ -150,6 +176,7 @@ end
 
 --界面销毁时调用（用于子类重写）
 function CardActivityPanel:OnDestroy()
+    this:StopContentPopIn()
     SubUIManager.Close(this.PlayerHeadFrameView)
     SubUIManager.Close(this.UpView)
     for i = 1, #this.contents do

@@ -1,5 +1,6 @@
 DrawCardPanel = quick_class("CardActivityPanel")
 local this = DrawCardPanel
+local ItemPopIn = require("Modules/Common/ItemPopIn")--切换心愿列表的逐格入场（A 方案：弹窗打开时机自己播）
 
 local HeroConfig = ConfigManager.GetConfig(ConfigName.HeroConfig)
 local ItemConfig = ConfigManager.GetConfig(ConfigName.ItemConfig)
@@ -42,6 +43,11 @@ function DrawCardPanel:InitComponent(parent)
     this.btnWishBack = Util.GetGameObject(this.changeWishPanel, "btnBack")
     this.btnLeft = Util.GetGameObject(this.changeWishPanel, "btnLeft")
     this.btnRight = Util.GetGameObject(this.changeWishPanel, "btnRight")
+
+    -- 切换心愿弹窗的长列表入场。🔴 这页不进 CardActivityPanel 的 PlayPage 批量：
+    -- 列表平时随 ChangeWishPanel 整窗隐藏，批量会把它扫出来播在看不见的弹窗里
+    -- （弹窗真正打开时反而没动画），所以由 btnChange 的打开时机自己播（PlayWishPopIn）。
+    this.popIn = ItemPopIn.New(function() return this.ScrollView end)
 end
 
 --绑定事件（用于子类重写）
@@ -49,6 +55,7 @@ function DrawCardPanel:BindEvent()
     Util.AddClick(this.btnChange, function ()
         this.ChangeWish(CardActivityManager.wishPool)
         this.changeWishPanel:SetActive(true)
+        this.PlayWishPopIn()
     end)
     Util.AddClick(this.btnComment, function ()
         UIManager.OpenPanel(UIName.CommentPanel, liveConfig)
@@ -137,10 +144,16 @@ end
 --界面关闭时调用（用于子类重写）
 function DrawCardPanel:OnClose()
     CardActivityManager.StopTimeDown()
+    if this.popIn then
+        this.popIn:Stop()--🔴 漏调 = item 永久停在半截缩放上
+    end
 end
 
 --界面销毁时调用（用于子类重写）
 function DrawCardPanel:OnDestroy()
+    if this.popIn then
+        this.popIn:Stop()
+    end
     if liveObj then
         UnLoadHerolive(liveConfig, liveObj)
         Util.ClearChild(this.root.transform)
@@ -237,6 +250,15 @@ function this.SetScroll()
         end
         if state then table.insert(wishHero, go) end
     end)
+end
+
+--切换心愿弹窗打开时的逐格入场。列表数据已在 OnShow 的 InitWish 回调里
+--SetScroll → SetData 灌好（🔴 Play 必须在 SetData 之后，这里天然满足），
+--弹窗每次打开（玩家主动换屏）重播一轮；弹窗内左右切换心愿不重灌列表、不播。
+function this.PlayWishPopIn()
+    if this.popIn then
+        this.popIn:Play()
+    end
 end
 
 local btnSprite = {

@@ -1,7 +1,7 @@
 /**@META
 {
   "description": "中文美术字 → 英文版流水线，四族资源共用一条链。① 战令横幅（ArtFont_zh/OperatingPanelAtlas/*_bg_zh.png，884x544）：标题+两行文案烘进图里，走写死的三段版面锚点；② 图集大图（Atlas/<面板>/*.png）：中文标题烘在一块纯色黑板上，走白字核+纯色板自动定位；③ 美术字块（ArtFont_zh/** 小型单色图，如 180x96 的页签）：只有纯白字 + alpha，本地排字会换掉笔画风格 ⇒ 必须交给模型重绘；④ 活动海报（**/banner/*_zh.png，884x856 不透明）：插画+斜切彩带+两行美术字，没有纯色底板可补也没锚点可写死 ⇒ 整幅交给模型重绘，再等比 cover 回原尺寸。出图方式由 PROVIDER 决定：chatgpt_web（默认，Chrome 登录态 / AdsPower 换号链驱动 chatgpt.com 出图）/ local（纯 OpenCV+PIL，可复现）/ manual（人交图）。无论谁画的，归位（尺寸/alpha/字块 bbox）、验收（尺寸/透明边/墨迹量/纯白/落位）、写回 ArtFont_en + .meta 都是同一套本地硬断言（写回一律平铺在族目录根，且校验目标目录在 resPathList 白名单里，否则当场 rc=1 —— 未登记的目录重扫会整目录跳过，是「图就位但真机白图」的唯一成因）。缺哪张补哪张，已存在的不动。译文对不对需要人眼看：glyph 与整幅图重绘都会把验收标黄（硬项全过但无 OCR 闸门）。",
-  "concurrent": false,
+  "concurrent": true,
   "params": [
     {"name":"MODE","type":"choice","choices":["batch","one"],"default":"batch","description":"batch=扫描全量（ArtFont_zh 横幅全目录 + 译名表里的 Atlas/glyph/poster 白名单），只补缺英文版且译名表里有条目的；one=只做 ASSET 指定的那一张"},
     {"name":"ASSET","type":"string","default":"","description":"MODE=one 时必填：源图相对工程根的路径。横幅如 Assets/ManagedResources/ArtFont_zh/OperatingPanelAtlas/cn2-X1_zhanling_mota_bg_zh.png；图集如 Assets/ManagedResources/Atlas/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou.png；字块如 Assets/ManagedResources/ArtFont_zh/DynamicActivityPanelAtlas/tab/cn2-X1_zhutihuodong_yuanliaoshouji_01_zh.png；海报如 Assets/ManagedResources/ArtFont_zh/DynamicActivityPanelAtlas/banner/cn2-X1_ciyuanyinqing_banner_zh.png"},
@@ -21,11 +21,15 @@ pipeline {
 
   options {
     timestamps()
-    // 🔴 2026-10-22：必须串行。出图只有一个 Chrome/AdsPower 登录态 + 一份包月额度，
-    //   多个构建并发时 driver 会把上一张图交回来（坑 #11），且共享 WORK_ROOT 会互相覆盖
-    //   src/gen/out/state。批量补图请排队跑，不要并发点。
-    disableConcurrentBuilds()
-    // 出图那一步要等模型（单张 3~8 分钟，额度用尽还要换号），30 分钟装不下两张 —— 宽到 75
+    // 🔴 2026-10-22 起**允许并发**（用户要求「能同时画几张」）。
+    //    以前这里是 disableConcurrentBuilds()，理由是「只有一份登录态」——那个前提已经不成立：
+    //    号池里有 4~5 个 AdsPower profile，每个号是独立的浏览器实例 + 独立额度。
+    //    并发的正确性不再靠「串行」保证，而是靠占用租约（provider_ledger.lease_claim）：
+    //      · 每个构建开画前抢「某台浏览器」的独占权，抢不到就换下一个号，绝不挤同一台；
+    //      · 同一张资源（asset）也只允许一个构建在画（复用 work 目录会互相覆盖证据）；
+    //      · 额度用尽立刻关掉那台浏览器 + 记台账（什么时候恢复）+ 放租约，接着画下一张。
+    //    ⚠ 仍然不要「同一张图点两次」：第二次会被 asset 租约挡成 skip（这是预期行为）。
+    //    ⚠ 并行路数上限 = 台账里没封锁的号数（当前 4~5 路），别再手工开更多。
     timeout(time: 75, unit: 'MINUTES')
     buildDiscarder(logRotator(daysToKeepStr: '60', numToKeepStr: '40'))
   }
@@ -34,6 +38,9 @@ pipeline {
     PROJ = '/Users/wangxufeng/Documents/TimeSpaceGirl1'
     PY   = '/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python'
     BASH = '/usr/local/bin/bash'
+    // 占用租约的身份 = 构建号。同一条构建里每张图都是独立进程，用 pid 认不出「自己人」，
+    // 第 2 张图就会去抢第 1 张图正开着的那台浏览器（并行时等于自己跟自己抢）。
+    TSG_LEASE_OWNER = "art-translate-${BUILD_NUMBER}"
   }
 
   stages {
@@ -79,6 +86,7 @@ mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
   echo "模式：$MODE   ${TR_ONLY:+只做 $TR_ONLY   }强制重做：$FORCE   写回资源：$WRITE"
   echo "出图：${PROVIDER}${CDP_PORT:+  CDP=${CDP_PORT}}${ADSPOWER_PROFILES:+  号序=${ADSPOWER_PROFILES}}"
+  echo "占用身份：${TSG_LEASE_OWNER}（并行时每个构建只抢自己那台浏览器，抢不到就换下一个号）"
   echo ""
   echo "🔴 中文是烘进图里的艺术字（带发光/渐变/立体阴影），不是 TMP 文本 —— 只能重出一张图。"
   echo "🔴 四族共用一条链，靠源图自身特征自动分派（尺寸带互不重叠）："
@@ -121,6 +129,8 @@ cd "$PROJ"
 
 # 出图额度预检（2026-10-22 新增）：台账里所有号都在封锁中就直接红。
 # 不预检的代价是 driver 挨个号试一遍才肯退 —— 实测白等 5~9 分钟，而这件事上一轮就记在台账里了。
+# 2026-10-22 起还会报「可并行几路」：并行构建时若所有通道都被别的构建占着，quota 返回 3（黄），
+# 说明「不是没额度，是现在排不上」，本轮会快速跳过而不是排队干等。
 if [[ "${PROVIDER:-chatgpt_web}" == "chatgpt_web" && -z "${GEN_IMAGE:-}" ]]; then
   "$BASH" .jenkins/lib/run_stage.sh --name "出图额度" \
     --group "美术翻译链" --slug tr-quota --timeout 120 --warn-rc 3 \
@@ -242,9 +252,20 @@ for d in "$PROJ"/_output/art_translate/*/; do
 done
 shopt -u nullglob
 {
-  echo "本次产物："
-  ls -1 "$TS_RUN_DIR/artifacts" 2>/dev/null | sed 's/^/  - /'
-} | tee "$TS_RUN_DIR/artifacts/manifest.txt"
+    echo "本次产物："
+    ls -1 "$TS_RUN_DIR/artifacts" 2>/dev/null | sed 's/^/  - /'
+  } | tee "$TS_RUN_DIR/artifacts/manifest.txt"
+
+# 通道占用收尾（2026-10-22）：本轮用过的浏览器租约必须放掉，否则并行的另一轮会一直
+# 以为这个号「有人在用」而拿不到（浏览器本身刻意留着，下一轮直接接入省一次启动）。
+"$PY" scripts/image/provider_ledger.py lease-release --owner "${TSG_LEASE_OWNER:-}" | sed 's/^/  /' || true
+{
+  echo "通道占用（还开着的浏览器 / 谁在用）："
+  "$PY" scripts/image/provider_ledger.py lease-list 2>&1 | sed 's/^/  /' || true
+  echo "最近 8 条浏览器事件（开关 / 额度用尽）："
+  "$PY" scripts/image/provider_ledger.py events --tail 8 2>&1 | sed 's/^/  /' || true
+} | tee "$TS_RUN_DIR/browser_leases.txt"
+
 "$PY" .jenkins/lib/stage_report.py add --run "$TS_RUN_DIR" \
   --name "证据归档" --group "交付" --status pass \
   --detail "artifacts 已就绪（$(ls -1 "$TS_RUN_DIR/artifacts" 2>/dev/null | wc -l | tr -d ' ') 个文件）"
@@ -271,6 +292,10 @@ if [[ -n "${WORKSPACE:-}" && -d "$WORKSPACE/evidence" ]]; then
 fi
 mkdir -p "$WORKSPACE/evidence"
 cp -R "$TS_RUN_DIR/." "$WORKSPACE/evidence/" 2>/dev/null || true
+# 🔴 无论哪一步失败都要放租约：构建中途红掉时 ⑤ 收尾不会执行，
+#    不放的话这个号会被「占用」到 TTL 过期（20 分钟），并行的另一轮白等。
+#    只放自己的（--owner 是构建号），绝不动别的构建/别的会话。
+"$PY" scripts/image/provider_ledger.py lease-release --owner "${TSG_LEASE_OWNER:-}" >/dev/null 2>&1 || true
 ''')
 
         if (fileExists("${WORKSPACE}/evidence/junit.xml")) {

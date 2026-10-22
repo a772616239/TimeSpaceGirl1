@@ -8,7 +8,8 @@
     "quote_x_right 逐张按「中文台词白字实际右端 +10」实测：中文台词长度九张差很多（565~660），沿用模板值会在长句右端留半截汉字（01/05/07 最明显）。",
     "tagbg：条带底换成 tagbg/tag1..4 故障风贴图（用户 10-22 提供），按原条色系分配：红/黑红底→tag3、紫/桃红→tag1、浅紫(03 整体浅底)→tag2、蓝青→tag4。脚本运行时量 tagbg 主成分质心与中线角，自动对齐条带中心线。",
     "tagbg_scale 默认 1.30、tagbg_dy 默认 -8：贴图下缘的故障刺会扎进台词带，缩到 1.30 并上移 8px 后刺尖只轻擦台词上沿；03 用 tag2（原生最高的一张）单独再收。",
-    "包裹模式（用户要求 tagbg 拉高包住台词）：条芯半厚按 tagbg_wrap_half=64 反推缩放（原生厚度 283~347 各不同，按宽度统一缩会让 tag1 包不住），带心 dy=+14，台词行落进条芯、字色跟条芯走（TAGBG_STYLE）。03 的旧 scale/dy 覆盖已删。"
+    "包裹模式（用户要求 tagbg 拉高包住台词）：条芯半厚按 tagbg_wrap_half=64 反推缩放（原生厚度 283~347 各不同，按宽度统一缩会让 tag1 包不住），带心 dy=+14，台词行落进条芯、字色跟条芯走（TAGBG_STYLE）。03 的旧 scale/dy 覆盖已删。",
+    "tagbg_dx=20：用户要求底图（tagbg 贴图层）整体右移 20px，9 张统一。"
   ],
   "cn2-X1_loading_01_zh": {
     "x_left": 225,
@@ -36,7 +37,8 @@
       10,
       22
     ],
-    "tagbg": "tag3"
+    "tagbg": "tag3",
+    "tagbg_dx": 20
   },
   "cn2-X1_loading_02_zh": {
     "x_left": 225,
@@ -64,7 +66,8 @@
       25,
       62
     ],
-    "tagbg": "tag3"
+    "tagbg": "tag3",
+    "tagbg_dx": 20
   },
   "cn2-X1_loading_03_zh": {
     "x_left": 225,
@@ -92,7 +95,8 @@
       40,
       112
     ],
-    "tagbg": "tag2"
+    "tagbg": "tag2",
+    "tagbg_dx": 20
   },
   "cn2-X1_loading_04_zh": {
     "x_left": 225,
@@ -120,7 +124,8 @@
       250,
       250
     ],
-    "tagbg": "tag3"
+    "tagbg": "tag3",
+    "tagbg_dx": 20
   },
   "cn2-X1_loading_05_zh": {
     "x_left": 225,
@@ -148,7 +153,8 @@
       22,
       72
     ],
-    "tagbg": "tag1"
+    "tagbg": "tag1",
+    "tagbg_dx": 20
   },
   "cn2-X1_loading_06_zh": {
     "x_left": 225,
@@ -176,7 +182,8 @@
       36,
       92
     ],
-    "tagbg": "tag4"
+    "tagbg": "tag4",
+    "tagbg_dx": 20
   },
   "cn2-X1_loading_07_zh": {
     "x_left": 225,
@@ -204,7 +211,8 @@
       30,
       82
     ],
-    "tagbg": "tag3"
+    "tagbg": "tag3",
+    "tagbg_dx": 20
   },
   "cn2-X1_loading_08_zh": {
     "x_left": 225,
@@ -232,7 +240,8 @@
       46,
       102
     ],
-    "tagbg": "tag4"
+    "tagbg": "tag4",
+    "tagbg_dx": 20
   },
   "cn2-X1_loading_09_zh": {
     "x_left": 225,
@@ -260,6 +269,7 @@
       42,
       92
     ],
-    "tagbg": "tag4"
+    "tagbg": "tag4",
+    "tagbg_dx": 20
   }
 }

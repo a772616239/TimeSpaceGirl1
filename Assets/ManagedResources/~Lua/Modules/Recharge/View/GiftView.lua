@@ -15,67 +15,6 @@ local Title_BG_NAME = {
     [SHOP_TYPE.VIP_GIFT] = GetPictureFont("cn2-X1_chongzhi_banner"),--成长礼包
 }
 
---============================== 特权礼包卡片说明文字 ==============================
--- Desc 跨语种长度差近 2 倍（中文 30~60 字、英文 150~200 字符），只靠 Text 的
--- VerticalOverflow=Truncate 会在半行处硬切。这里按「估算宽度」预先截到固定行数再补
--- 省略号。下面三个常量必须和 prefab 里 ItemPre2/tip 的实际值对齐：
---   框 460x100、字号 20（MainRechargePanel.prefab → content/GiftShop/Bg/ItemPre2/tip）
--- 改字号或框宽时同步改这里，否则会「截多了」或「截完还溢出」。
-local kTipFontSize = 20
-local kTipWidth = 452          -- 460 减左右各 4px 内边距
-local kTipMaxLine = 3          -- 100 高约放得下 4 行，留一行余量防换行误差
-local kTipLineWidth = kTipWidth / kTipFontSize
-
--- 单字符宽度（单位 em）：ASCII 半角按 0.5，其余（中日文/全角符号）按 1.0
-local function CharEm(ch)
-    local b = string.byte(ch, 1)
-    if b and b < 128 then
-        return 0.5
-    end
-    return 1.0
-end
-
--- 把说明文字截到 kTipMaxLine 行，末尾补省略号；本来就不超长则原样返回
-local function FitTipText(str)
-    if not str or str == "" then
-        return ""
-    end
-    -- LuaJIT 没有 utf8 库，按 UTF-8 首字节 + 续字节遍历
-    local chars = {}
-    for ch in string.gmatch(str, "[%z\1-\127\194-\244][\128-\191]*") do
-        chars[#chars + 1] = ch
-    end
-    local out, lines, lineW = {}, 1, 0
-    for i = 1, #chars do
-        local ch = chars[i]
-        if ch == "\n" then
-            if lines + 1 > kTipMaxLine then
-                return table.concat(out) .. "…"
-            end
-            lines = lines + 1
-            lineW = 0
-            out[#out + 1] = ch
-        else
-            local w = CharEm(ch)
-            if lineW + w > kTipLineWidth + 0.001 then
-                if lines + 1 > kTipMaxLine then
-                    -- 给省略号腾位：从行尾回退到还能放下一个「…」
-                    while #out > 0 and lineW + 1.0 > kTipLineWidth + 0.001 do
-                        lineW = lineW - CharEm(table.remove(out))
-                    end
-                    return table.concat(out) .. "…"
-                end
-                lines = lines + 1
-                lineW = w
-            else
-                lineW = lineW + w
-            end
-            out[#out + 1] = ch
-        end
-    end
-    return str
-end
-
 function GiftView:ctor(mainPanel, gameObject)
     self.mainPanel = mainPanel
     self.gameObject = gameObject
@@ -715,21 +654,18 @@ function GiftView:SetTipShow(tipRoot, data, buyType, DataTypeIndex)
     elseif buyType == SHOP_TYPE.VIP_GIFT then
     elseif buyType == DirectBuyType.FINDTREASURE_GIFT then
         local tipText = tipRoot:GetComponent("Text")
-        -- 循环滚动会复用格子：先清空，否则上一张卡的说明会残留在这一张上
-        tipText.text = ""
-        local desc
         if DataTypeIndex == DataType.Shop then
-            if data.id == 20091 or data.id == 20092 then
-                desc = shopItemConfig[data.id].Desc
+            local shopItemData = shopItemConfig[data.id]
+            if data.id == 20091 then
+                tipText.text = GetLanguageStrById(shopItemData.Desc)
+            elseif data.id == 20092 then
+                tipText.text = GetLanguageStrById(shopItemData.Desc)
             end
         elseif DataTypeIndex == DataType.Direct then
-            -- 原写法是 "goodsId == (4000) or (4001) or ..."，or 链恒真 ⇒ 任意直购商品都取 Desc
-            -- （线上 17 类只有 4000~4005，等于白名单，这里保留同一行为但去掉恒真判断）
-            local cfg = rechargeCommodityConfig[data.goodsId]
-            desc = cfg and cfg.Desc
-        end
-        if desc and desc ~= "" then
-            tipText.text = FitTipText(GetLanguageStrById(desc))
+            local shopItemData = rechargeCommodityConfig[data.goodsId]
+            if data.goodsId == (4000) or (4001) or (4002) or (4003) or (4004) or (4005) then
+                tipText.text = GetLanguageStrById(shopItemData.Desc)
+            end
         end
     end
 end

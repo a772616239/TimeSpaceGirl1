@@ -204,6 +204,7 @@ WSL 里没有 USB ⇒ 真机路线不可用，只能用模拟器或 `adb connect
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | 机器上装的是 Play 版（app signing key），这个包是 upload key 签的 | 勾 `UNINSTALL_FIRST`（会清本地数据；账号数据在服务端） |
+| `adb install` 挂住十几分钟不动，`mCurrentFocus` 是 `com.android.packageinstaller` | 国产 ROM（vivo/OPPO/小米/华为）的「外部来源应用」拦截页：要先勾「已了解风险」再点「继续安装」，**命令不会自己过去** | 已内置看门狗 `auto_accept_install_dialog`：边装边盯前台窗口，按 `uiautomator` 的 bounds 自动勾选 + 点确认（不写死坐标）。超时由 `INSTALL_DIALOG_TIMEOUT`（默认 1800s）控制 |
 | 装上了但一直转圈登录 | 测试服的包连 `127.0.0.1:8081`，端口反向没生效 | 确认 `REVERSE_PORTS` 非空、`adb reverse --list` 有记录 |
 | `启动后 60s 内没拿到进程` | 启动即崩（缺 so / ABI 不匹配 / 资源没打进包） | 看 `evidence/smoke/logcat-startup.txt` |
 | 模拟器起了但 `am start` 报 `Error type 3` | Activity 名读错了（多渠道包入口不同） | 显式给 `ACTIVITY` |

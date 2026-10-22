@@ -114,6 +114,8 @@ grep "\[bot\]" $HOME/home/java/logs/gameserver.log | tail
 | `bot announce [heroId]` | 触发一次英雄公告（不填随机挑 5 星） |
 | `bot fake <名字> <文本>` | **造一条玩家发言**，没有客户端也能验证 AI 回话链路。uid 走 `fakeSenderUid`（默认 99990001），**不占用任何真实玩家身份** |
 | `bot reply` | 跳过等待立刻回一次 |
+| `bot act <uid>` | 跳过等待立刻做一次真实游戏操作（升级英雄 / 抽卡） |
+| `bot arena <uid>` | 跳过 4~10 小时排期、不掷概率，立刻去竞技场打一场（额度/封顶/名次判定照旧，打完顺延下次排期） |
 | `bot team <uid>` | 复刻客户端个人面板的服务端路径，打印 `name/level/vip/head/force/heroes/...`，用来查「面板空白」 |
 
 ```bash
@@ -276,10 +278,27 @@ st.lastBotMsgId.set(Math.max(msgId, claimed));
 
 | 规则 | 代码 | 说明 |
 |---|---|---|
+| 用最强阵容 | `pickArenaTeam()` | 在「竞技场进攻 / 竞技场防御 / 主力」三套编队里按 `HeroLogic.calTeamTotalForce` 挑**战力最高**的那套。⚠️ 不能「存在即用」：克隆号经常只有防御编队填了 1 个英雄，Kai 就这么拿 1 人队去打机器人输了一场，换成主力编队后同一个对手就赢了 |
+| 打得过才打 | `arenaRankBeatable()` | 对手总战力（`SArenaRobotConfig.totalForce`）超过己方编队战力的 **120%** 就跳过。所有机器人防守分都是默认值，只按积分筛等于没筛 |
 | 能竞升才打 | `ArenaLogic.calScore(my, def, 1) >= arenaMinGain` | Elo：打比自己分低很多的赢了只涨 2~3 分，那种局跳过。机器人对手固定按默认分 1000 算（和 `ArenaChallengeHandler` 同口径） |
 | 不登顶 | `arenaRankSafe()` | 用**打完之后的预计分数**反推：预计分数之上至少还要有 `arenaStopRank`（默认 2）个别人，且比较用**严格大于**（追平也算挤进同一档）。榜上人少时放宽到 1 ⇒ 永远不抢第一名 |
 | 离榜首远 | `arenaCeiling()` = `max(默认分+50, 榜首 × arenaChaseTopPct%)` | 默认 85%。`myScore >= 封顶` 直接收手，日志写「已经够高，不往上爬了」 |
 | 不频繁 | `arenaMin/MaxGapSec`（4~10h）+ `arenaDailyMax`（2/天）+ `arenaChancePct`（70%） | 三道叠起来：一天最多两场，且每场之间至少 4 小时 |
+
+**额度与排期必须落盘**（`BOT_ARENA_STATE`）
+
+「今日已打几场」和「下次什么时候」早先只在内存里，踩了一个很实的坑：**每发一次热补丁重启，
+额度就归零、排期又回到 3~25 分钟的预热档** —— 一晚重启三次，机器人能打七八场，
+跟「次数不要太频繁」正好相反。
+
+现在写进 Redis：hash，key = `serverId:BOT_ARENA_STATE`，field = uid，
+value = `"yyyyMMdd,count,nextAtMs"`。`init()` 里 `restoreArenaState()` 读回：
+当天场次原样接着算，排期只在「还没到点」时才接管（过点的保持预热，别让重启立刻开打）。
+
+```
+[bot] Nova 竞技场状态恢复：今日已打 1 场，下次 15 分钟后
+[bot] Kai  竞技场状态恢复：今日已打 1 场，下次 2 分钟后
+```
 
 **只打系统机器人，不碰真人。** 原因不是省事，是风险：打真人要同步改对方的
 `ARENA_RRECORD`（被挑战战报）、扣对方分数、给对方发红点，还要在**别人的逻辑线程**里改别人的 `User`。
@@ -308,13 +327,22 @@ mongosh ... --eval 'db.user.findOne({_id:90000001},{arenaManager:1}).arenaManage
 也就是：**两三天爬到榜三、停在榜二下面一格，之后不再动**，直到真人把分数往上抬（封顶跟着涨）。
 这正是「低调」想要的效果 —— 榜上有活人味儿，又不会有人被机器人抢了名次。
 
+> 2026-10-22 20:28 线上实测（部署后 GM 强制触发）：Nova 胜 robot#290 `1000 → 1016` 第 3 名、
+> Kai 胜 robot#288 `1000 → 1016` 第 3 名；榜单 `1311 / 1098 / 1016(90000002) / 1016(90000001) / 1016(真人)`，
+> 两个号都压在 1098 下面。⚠️ 注意同分时的排序：zset 同分按成员串反序，`9xxxxxxx` 排在 `1xxxxxxxx` 前面，
+> 所以同分会把真人挤下去一名。如果介意，得再加一条「不许和真人同分」的判定（目前没加）。
+
 **日志/看板**
 
 ```
-[bot] Nova 竞技场 -> 胜 vs robot#291，1024 分 -> 1040 分，当前第 3 名
+[bot] Nova 竞技场 -> 胜 vs robot#290，1000 分 -> 1016 分，当前第 3 名
+[bot] Kai  竞技场 -> 胜 vs robot#288，1000 分 -> 1016 分，当前第 3 名   # 换主力编队前同一对手是「负」
 [bot] Nova 竞技场：1180 分已经够高（封顶 1114，榜首 1311），不往上爬了
-[bot] Nova 竞技场：没有合适的对手（榜上 3 人，能涨分的会顶到封顶/名次，或列表里只有真人），跳过
+[bot] Nova 竞技场：没有合适的对手（榜上 3 人，己方战力 115517；能涨分的会顶到封顶/名次，或对手都打不过/只有真人），跳过
 ```
+
+调试用 GM 命令：`bot arena <uid>` —— 跳过排期和概率立刻打一场（额度/封顶/名次判定照旧），
+打完会把下一次排期往后推 4~10 小时，免得手动测完十几分钟后又自然打一场。
 
 `BOT_STATUS` 快照里新增：`bots[].arenaScore` / `arenaRank` / `nextArenaAt` / `nextArenaInSec` /
 `arenaToday`，`stats.arenaFight` / `arenaWin`，`config.arena*`。

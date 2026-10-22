@@ -500,13 +500,13 @@ ok "版本信息与 sidecar 就绪"
 # 开发态设置 ⇒ isOpenGM=1，GM 面板随包发布。已从线上 v64 产物取证确认。
 # 修复后命令行会走 ReleaseBuildSettings.PrepareSceneForBuild（开场景→套配置→落盘）。
 # 这里对**产出物本身**复核，防止「改完代码但没生效」这类静默失败。
-# 口径由 CLIBuilder 的 kProfile 决定，默认 MinimalGmOff（只关 GM，其余位与线上逐位一致）。
+# 期望口径 = 本次 --profile（不能写死：2026-10-22 起 release/minimal 是两套口径）。
 # --------------------------------------------------------------------------- #
-step "包内出包开关自检（期望口径 minimal = 只关 GM）"
-if ! "$VENV_PY" scripts/verify_aab_release_config.py "$AAB" --expect minimal; then
-    fail "包内配置不是期望口径（isOpenGM 仍为 1？）—— 拒绝上传。构建日志：$BUILD_LOG"
+step "包内出包开关自检（期望口径 ${PROFILE}）"
+if ! "$VENV_PY" scripts/verify_aab_release_config.py "$AAB" --expect "$PROFILE"; then
+    fail "包内配置不是期望口径 ${PROFILE}（isOpenGM 仍为 1？或 logLevel 未落）—— 拒绝上传。构建日志：$BUILD_LOG"
 fi
-ok "包内 isOpenGM=0，出包配置核验通过"
+ok "包内配置命中口径 ${PROFILE}，核验通过"
 
 # --------------------------------------------------------------------------- #
 # 4.6 包内 native 库 16KB / NDK 体检

@@ -367,6 +367,108 @@ def server_parse_issues(t: Table, limit=3):
     return count, samples
 
 
+def _norm_int_token(tok: str):
+    """把 int 列的单元格归一化成服务端 Integer.parseInt 能吃的形式。
+
+    规则 = Java `(int)` 强制转换语义 + int32 夹取（不是取模回绕）：
+      '740.000000000001' → '740'        （Excel 浮点误差，截断）
+      '1.25' / '7.5'     → '1' / '7'    （整数列写了小数，向零截断）
+      '9999999999'       → '2147483647' （超 int32，夹到上限）
+    这套规则不是拍脑袋：发包树 TimeSpaceServer/Server_x1tag1.2.2/server_game
+    里这三处现存值正好就是 740 / 2147483647 / 1，说明历史上的导表链路就是这么归一的，
+    现在这条链路丢了 ⇒ 归一化只是把口径补回来，不改变服务端行为（int 列本来也存不下 1.25）。
+    返回 None 表示不是数字（无法自动修）。
+    """
+    s = tok.strip()
+    if _INT_RE.match(s):
+        v = int(s)
+        if INT32_MIN <= v <= INT32_MAX:
+            return s
+        return str(max(INT32_MIN, min(INT32_MAX, v)))
+    try:
+        f = float(s)
+    except ValueError:
+        return None
+    if f != f or f in (float('inf'), float('-inf')):
+        return None
+    v = int(f)                       # Python int() 就是向零截断，与 Java (int) 一致
+    return str(max(INT32_MIN, min(INT32_MAX, v)))
+
+
+def fix_numeric(path: Path, t: Table, dry=False):
+    """把 int 列里服务端解析不了的值就地归一化，返回 (改写数, 样例, 修不了的样例)。"""
+    if not t.types:
+        return 0, [], []
+    cols = []
+    for i, ty in enumerate(t.types):
+        base, kind = _base_type(ty)
+        if base == 'int':
+            cols.append((i, kind))
+    if not cols:
+        return 0, [], []
+    raw = path.read_bytes()
+    enc = 'utf-8'
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        enc, text = 'gb18030', raw.decode('gb18030', 'replace')
+    lines = text.split('\n')
+    changed, samples, unfixable = 0, [], []
+    for li in range(2, len(lines)):
+        if not lines[li].strip():
+            continue
+        cr = lines[li].endswith('\r')
+        cells = (lines[li][:-1] if cr else lines[li]).split('\t')
+        hit = False
+        for i, kind in cols:
+            if i >= len(cells):
+                continue
+            cell = cells[i]
+            if cell.strip().lower() in NULL_TOKENS:
+                continue
+            if kind == 'scalar':
+                new = _norm_int_token(cell)
+                if new is None:
+                    if len(unfixable) < 5:
+                        unfixable.append('%s(id=%s)=%s' % (t.header[i] if i < len(t.header) else i,
+                                                           cells[0], cell[:20]))
+                    continue
+                if new != cell:
+                    if len(samples) < 5:
+                        samples.append('%s(id=%s) %s→%s' % (t.header[i] if i < len(t.header) else i,
+                                                            cells[0], cell[:20], new))
+                    cells[i] = new
+                    changed += 1
+                    hit = True
+            else:
+                toks = re.split(r'([|#,;])', cell)      # 保留分隔符
+                col_hit = False
+                for k in range(0, len(toks), 2):
+                    if not toks[k].strip():
+                        continue
+                    new = _norm_int_token(toks[k])
+                    if new is None:
+                        if len(unfixable) < 5:
+                            unfixable.append('%s(id=%s)=%s' % (t.header[i] if i < len(t.header) else i,
+                                                               cells[0], cell[:20]))
+                        continue
+                    if new != toks[k]:
+                        if len(samples) < 5:
+                            samples.append('%s(id=%s) %s→%s' % (t.header[i] if i < len(t.header) else i,
+                                                                cells[0], toks[k][:20], new))
+                        toks[k] = new
+                        changed += 1
+                        col_hit = True
+                if col_hit:
+                    cells[i] = ''.join(toks)
+                    hit = True
+        if hit:
+            lines[li] = '\t'.join(cells) + ('\r' if cr else '')
+    if changed and not dry:
+        path.write_bytes('\n'.join(lines).encode(enc))
+    return changed, samples, unfixable
+
+
 def rewrite_nil(path: Path, t: Table) -> int:
     """把数值列里的 `nil` 就地改写成 `null`，返回改写个数。
 
@@ -731,7 +833,11 @@ def main() -> int:
     ap.add_argument('--refresh', action='store_true', help='强制重新下载远端快照')
     ap.add_argument('--fix-nil', action='store_true',
                     help='推送前把数值列的 nil 就地改写成 null（等价于重跑一次导表，会改 git 工作区文件）')
+    ap.add_argument('--fix-numeric', action='store_true',
+                    help='把 int 列里服务端解析不了的值（小数/超 int32）就地归一化，需配合 --apply-fix 落盘')
     ap.add_argument('--json-out', default='', help='额外写一份结构化结果 JSON')
+    ap.add_argument('--apply-fix', action='store_true',
+                    help='配合 --fix-numeric：真正改写本地 txt（不加只报告）')
     args = ap.parse_args()
 
     STATE_FILE = Path(args.state_file).resolve()
@@ -777,6 +883,32 @@ def main() -> int:
             log('   这些文件在 git 工作区已有改动，记得和导表产物一起提交')
         else:
             log('--fix-nil：没有需要改写的 nil')
+
+    if args.fix_numeric:
+        dry = not args.apply_fix
+        n_tab = n_cell = 0
+        for name, lt in list(local_tables.items()):
+            bad, _ = server_parse_issues(lt)
+            if not bad:
+                continue
+            c, samples, unfix = fix_numeric(local_files[name], lt, dry=dry)
+            if c:
+                n_tab += 1
+                n_cell += c
+                log('  %-32s %4d 处  %s' % (name, c, '；'.join(samples)))
+            if unfix:
+                log('  ⚠ %-30s 这些不是数字，自动改不了：%s' % (name, '；'.join(unfix)))
+            if c and not dry:
+                local_tables[name] = parse_txt(name, read_text(local_files[name]))
+                local_md5[name] = md5_file(local_files[name])
+        if n_tab:
+            log('🔧 --fix-numeric：%d 张表、%d 个单元格归一化（int 列截断 + int32 夹取，'
+                '与发包树 Server_x1tag1.2.2 现存口径一致）%s'
+                % (n_tab, n_cell, '' if not dry else '  —— 只报告，加 --apply-fix 才落盘'))
+            if not dry:
+                log('   这些文件在 git 工作区已有改动，记得和导表产物一起提交')
+        else:
+            log('--fix-numeric：没有需要归一化的 int 单元格')
 
     # ---- 各目标现状 ------------------------------------------------------
     log('读取各目标现状 …')

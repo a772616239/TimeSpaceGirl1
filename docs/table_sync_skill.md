@@ -69,6 +69,10 @@ python3 scripts/table_sync.py --apply --include-drift --yes
 
 # ⑦ 推完重启（本机 launchctl 立即生效；线上会踢线，非交互需 --yes）
 python3 scripts/table_sync.py --apply --restart
+
+# ⑧ 数值列脏数据：先看会改什么（只报告），确认后落盘（见 5.2）
+python3 scripts/table_sync.py --fix-numeric
+python3 scripts/table_sync.py --fix-numeric --apply-fix
 ```
 
 **导表时自动跑**（推荐入口，Jenkins / 本机通用）：
@@ -92,12 +96,17 @@ scripts/resource_build.sh --action export --sync-strict       # 同步失败算�
 
 ## 3. 「本次改动」是怎么算出来的（基线机制）
 
-基线文件 `build/table_sync/state.json`（v2：全局一份 `sig` + 各目标 `last_sync_at`），
+基线文件 `build/table_sync/state.json`（v3：全局一份 `sig` + **每个目标各一份 `sig`** + `last_sync_at`），
 每张表记一个**语义指纹**：
 
 ```
 指纹 = md5( 表头 + 按主键排序后的每一行（单元格归一化） )
 ```
+
+> v3 为什么要按目标分开记：v2 只有全局一份，`--targets local` 推完之后全局 `sig` 就前移了，
+> 于是线上服（gs）永远认为这批表「没变过」→ 永久漏推。现在全局 `sig` 只在
+> **所有已知目标都到位**时才前移；某个目标第一次接触时，以它**当前内容**建基线
+> （所以历史漂移不会因为「第一次跑」被当成「本次改动」自动推上去，要推得显式 `--include-drift`）。
 
 归一化吃掉的东西（**这些都不算改动**，否则一次导表 266 张表全变）：
 
@@ -174,8 +183,24 @@ if ("null".equals(value) || isEmpty(value) || " ".equals(value)) return new int[
 并给工具加了 `PARSE_BAD` 拦截：按类型行判 `int`/`ref*`/`mut,int#…`/`long`/`float`/`double`，
 逐单元格验（`mut` 按 `|#,;` 拆子值），越界或类型不符一律拦下。
 
-> 这几张表的根因在 xlsx，**不是同步工具能修的**：要么把 `740.000000000001` 改成 740、
-> `1.25` 改成整数、`9999999999` 换成一个 int32 内的哨兵值，要么把服务端列类型改成 `long`/`float`。
+**根因在 xlsx，但不在「有人写错了数」**：xlsx 里这些格子存的是**文本**，内容是 Excel 算出来的
+浮点噪声（`'740.0000000000006'`、`'499.99999999999994'`），导表只是原样搬运。所以三件事都做了：
+
+1. **导出器归一化**（根治）：`DataHelper.GetServerValByType` + `DataToTxtExporter` 改用新方法，
+   按 `fieldType` 判 `int`/`ref`/`mut,int#…`，写盘前做「Java `(int)` 截断 + int32 夹取」。
+   `mut,float#…` / `float` / `double` / `long` / `string` 原样不动。
+   口径不是拍脑袋：发包树 `TimeSpaceServer/Server_x1tag1.2.2/server_game` 里这三处现存值
+   正好是 `740` / `2147483647` / `1`，说明历史链路就是这么归一的，现在只是把丢掉的这步补回来。
+   单测用真实类型串跑过（`mcs` 编译 `DataHelper.cs` + `DataField.cs`，14 组输入全对）。
+2. **工具兜底**：`--fix-numeric` 对**已经导出的** txt 做同样的归一化（`--apply-fix` 才落盘），
+   2026-10-22 实测命中 3 张表 1904 个单元格，改完 `ChallengeConfig` / `RunesPoolConfig`
+   直接变 `SAME`（证明测试服上那三个值本来就是同一套归一化的产物）。
+3. **拦截**：`PARSE_BAD` 让这类表永远不会被推上去。
+
+> 注意 `1.25 → 1` 是**有损**的（向零截断）。设计上要小数就得把服务端列类型改成 `float`/`long`，
+> 而不是往 int 列里塞小数 —— 服务端 int 列本来也存不下。
+> 另外导出器改的是 **txt（服务端）**；客户端 Lua 仍拿原始单元格，`499.99999999999994` 在 Lua 里
+> 就是个数，不会报错，只是难看。
 
 ### 5.3 推完不重启等于没推（两边重启姿势不同）
 
@@ -223,20 +248,26 @@ ssh gs "bash /home/java/gameserver/RESTART-GAMESERVER.sh"
 
 ---
 
-## 6. 本次实测数据（2026-10-22 23:30，测试服已同步后）
+## 6. 本次实测数据（2026-10-22 23:39，测试服已同步后）
 
 本地影子目录 406 张 txt：
 
-测试服 23:24 已推 21 张（24 张通过体检，其中 3 张 `PARSE_BAD` 回滚，见 5.2），
-推完重启后 280 张表全部加载、零异常。剩下 9 张仍拦着：
+测试服分两批推：23:24 推 21 张（24 张过体检，其中 3 张 `PARSE_BAD` 回滚，见 5.2）；
+23:36 用 `--fix-numeric --apply-fix` 把 3 张的 1904 个脏单元格归一化后，23:39 补推
+`SupremacyLevelConfig`（另外两张归一化后直接 `SAME`，无需推）。
+每次推完重启都验证过：`initMap` 279 张全加载、**零 ERROR**。
+剩下 6 张仍拦着：
 
 | 表 | 判定 | 原因 |
 |---|---|---|
-| `SupremacyLevelConfig` / `ChallengeConfig` / `RunesPoolConfig` | `PARSE_BAD` | xlsx 脏数据（见 5.2） |
 | `EncourageTaskConfig` / `EncouragePlanConfig` / `MultiLanguage` | `ROW_LOSS` | 覆盖会删目标行 |
 | `Language` | `COL_LOSS` | 导出缺 `Korean` 列 |
 | `ChannelRechargeIdConfig` | `HEADER_DIFF` | 表头少一列 |
 | `RewardItemConfig` | `REVIEW` | 未发布道具 |
+
+> `SupremacyLevelConfig` 这次是 `VALUE_DIFF` 推的：15 行 × 6 列共 90 个单元格
+> `499→500`（xlsx 里是 `'499.99999999999994'`，现导出器四舍五入成 500；
+> 发包树里是旧链路截断的 499）。属于数值修正，不是结构变更。
 
 同步**前**的双目标全量体检（406 张）：
 

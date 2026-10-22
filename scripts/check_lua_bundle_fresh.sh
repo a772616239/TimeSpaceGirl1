@@ -7,6 +7,11 @@
 # 静默放过（2026-10-20 实测：#7 包内还是旧配置，到包内环境校验才暴露）。
 # 正确的判据是「bundle 不早于任何一个 LuaBytes/*_64.bytes」。
 #
+# ⚠️ 2026-10-23 补：mtime 判据在**复用 AB 缓存**（AB_MODE=复用缓存）下会误报 ——
+#    ci_sync 的 git reset --hard 会把改动过的文件重新检出（内容不变、mtime 变新）。
+#    所以 mtime 判「过期」时再问一次内容哈希（scripts/ab_cache.py fresh-check），
+#    指纹对得上就放行。判「不过期」时行为不变。
+#
 # 退出码：0 一致 / 1 不一致（需要重建 AB） / 2 环境问题
 #
 set -uo pipefail
@@ -39,10 +44,23 @@ echo "字节码：${BYTES_COUNT} 个，最新 $(date -r "$NEWEST_TS" '+%Y-%m-%d 
 echo "bundle：$(date -r "$BUNDLE_TS" '+%Y-%m-%d %H:%M')（$(ls -lh "$BUNDLE" | awk '{print $5}')）"
 
 if [[ "${NEWEST_TS:-0}" -gt "${BUNDLE_TS:-0}" ]]; then
+    # 🔴 mtime 只是**代理指标**，会被 git reset 骗：ci_sync 每次把改动过的文件重新检出，
+    #    内容一模一样但 mtime 变新 ⇒ 判「bundle 过期」。复用 AB 缓存（AB_MODE=复用缓存）
+    #    时这条误报会天天出现，所以再问一次**内容哈希**（ab_cache.py 的指纹）：
+    #    指纹里的 bundle sha256 == 现在这份，且当时的字节码哈希 == 现在的字节码哈希，
+    #    就说明 bundle 里装的正是这版字节码，mtime 差异纯属检出造成。
+    echo ""
+    echo "mtime 判据：字节码比 bundle 新，再核一次内容哈希…"
+    PY_BIN="/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python"
+    [[ -x "$PY_BIN" ]] || PY_BIN="$(command -v python3 || true)"
+    if [[ -n "$PY_BIN" ]] && "$PY_BIN" "$ROOT/scripts/ab_cache.py" fresh-check; then
+        echo "✅ 内容一致（mtime 差异来自 git 检出，不是配置没进 bundle）"
+        exit 0
+    fi
     echo ""
     echo "🔴 字节码比 Lua bundle 新 —— 这份 bundle 里没有最新配置，打进包也不会生效。"
     echo "   修复：scripts/resource_build.sh --action ab --server-env <环境>"
-    echo "   或 Jenkins：TS-Resource-Build（REBUILD_AB=true）"
+    echo "   或 Jenkins：TS-Resource-Build（AB_MODE=重建）"
     exit 1
 fi
 

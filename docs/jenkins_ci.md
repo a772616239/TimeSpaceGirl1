@@ -148,7 +148,7 @@
 > - 实现与换平台（Linux KVM / Apple Silicon / Windows / 云真机 / GitHub Actions）：
 >   见 **`docs/android_emulator_smoke.md`**；无设备时可跑 `jenkins-shared/lib/android/selftest.sh` 自测。
 
-| **TS-Resource-Build** | **包内资源构建**：导表（xlsx→客户端 Lua + 服务端 txt）→ 同步 Lua 字节码 → 重建 AB 并复制到 StreamingAssets → 新鲜度硬闸门 + 就绪体检 | `EXPORT_TABLES=True` `SYNC_BYTES=True` `REBUILD_AB=True` `SERVER_ENV=正式服` `LUA_FILES=` | — | **禁止** |
+| **TS-Resource-Build** | **包内资源构建**：导表（xlsx→客户端 Lua + 服务端 txt）→ 同步 Lua 字节码 → 处理 AB（`重建` / **`复用缓存`** / `跳过`）并复制到 StreamingAssets → 新鲜度硬闸门 + 就绪体检 | `EXPORT_TABLES=True` `SYNC_BYTES=True` `AB_MODE=重建` `SERVER_ENV=正式服` `LUA_FILES=` | — | **禁止** |
 | **TS-Table-Sync** | **服务器配置表发版**（2026-10-23 拆出，只碰服务端不出包）：代码同步 → 导表 → int 列归一化（可选）→ **把服务端 txt 增量推到指定环境**（逐表结构体检 + 推前备份 + 推后双向 md5）→ 可选重启。目标按 `build_envs.json` 的 `tableTargets`：现网→gs、测试服→local、正式服→跳过 | `SERVER_ENV=现网-129.226.213.65` `MODE=apply` `EXPORT=True` `FIX_NUMERIC=False` `RESTART=False` | — | **禁止** |
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
 | **TS-Art-Restyle** | **美术资源换节日风格**（登录底板 → 圣诞版等）：生图交给 provider → 去水印 → 等比归位（绝不拉伸）→ 出不透明版 + 沿用原 alpha 的浮层版 → 像素级验收 → 可选写回 | `ASSET=` `THEME=christmas` `PROVIDER=chatgpt_web` `CDP_PORT=` `GEN_IMAGE=` `COMPOSITION=lock` `POSE=` `FRAME=auto` `WATERMARK=auto` `WRITE_BACK=True` `BACKUP_ROOT=` | — | **禁止** |
@@ -811,6 +811,59 @@ $B .jenkins/lib/local_deploy.sh rollback ~/home/java/gameserver/backup/gameSrv-2
 - **定时与手动是同一条链**：手动跑也会发信（`SEND_MAIL` 默认 true），不想收就取消勾选；
   邮件里「触发」一行会写清是定时还是手动。
 
+### 3.12 AB 复用缓存（`AB_MODE=复用缓存`，2026-10-23 新增）
+
+**诉求原话**：「加一个不重建 AssetBundle 的选项，直接复用上一个打包的缓存来打包。」
+
+原来只有 `REBUILD_AB`（bool）：勾 = 重建 5~8 分钟，不勾 = **什么都不做**。后者的问题是
+「包里资源到底是什么」没人知道 —— 可能少了 `luabytes`（装上起不来），也可能是导表前的旧 Lua
+（改了配置真机不生效），而这两种错**运行期都不报错**。所以改成三档 `AB_MODE`：
+
+| 档位 | 做什么 | 耗时 | 什么时候用 |
+|---|---|---|---|
+| `重建`（默认） | Unity `BuildAllABs` + 复制到 StreamingAssets | 5~8 min | 改了 prefab / 图 / lua / xlsx |
+| `复用缓存` | **不启动 Unity**，直接用打包目录上一轮重建的 `Assets/StreamingAssets/Android`，只做「对齐环境快照 + 校验缓存指纹」 | ~10 s | 只改了 C# / 打包参数 / 环境，资源没动 |
+| `跳过` | 完全不碰 AB（不重建也不校验） | 0 | 只想导表 / 同步字节码，包内资源保持原样 |
+
+**为什么缓存能跨构建存活**：`Assets/StreamingAssets/Android` 是 gitignore 的，`ci_sync.sh` 的
+`git reset --hard` 不会删它 ⇒ 打包目录里天然留着上一次重建的产物，这就是「上一个打包的缓存」。
+
+**复用前必须回答的三个问题**（`scripts/ab_cache.py` 是唯一实现）：
+
+1. **缓存还在不在、全不全**：bundle 总数、`lzma|luabytes.unity3d`、`files.unity3d`、
+   `lzma|resconfigs.unity3d` —— 缺任何一个都判红（包能装上但起不来 / 没有资源索引）。
+2. **这份缓存是哪次重建产出的**：`build/ab_cache/manifest.json` 记 git HEAD / 时间 / 环境 /
+   Lua bundle 的 `sha256` / 字节码全量内容哈希。指纹里 `bundle.sha256` 与现文件不符 ⇒ 打黄
+   （缓存被别的构建覆盖过，指纹失效）。
+3. **字节码从那之后变过没有**：`LuaBytes/**/*.bytes` 的**内容哈希**（不是 mtime）。
+   变了 ⇒ **判红**，因为复用等于把旧 Lua 打进包。
+
+**为什么用内容哈希而不是 mtime**：`git reset --hard` 会把改动过的文件重新检出 —— 内容一模一样、
+mtime 变新。纯 mtime 判据（`check_lua_bundle_fresh.sh` 原来的口径）在这种场景下必然误报
+「bundle 过期」。所以给硬闸门加了兜底：mtime 说过期时再问一次内容哈希，指纹对得上就放行
+（判「不过期」时行为不变，老路径零影响）。
+
+**怎么用**
+
+```bash
+# Jenkins：TS-Resource-Build（EXPORT_TABLES=false / SYNC_BYTES=false / AB_MODE=复用缓存 / SERVER_ENV=…）
+# TS-Android-Release 也透传：REBUILD_RESOURCES=true + AB_MODE=复用缓存 ⇒ 整条发版链路省 5~8 分钟
+
+# 手工（在打包目录或开发目录都行，不启动 Unity）
+scripts/resource_build.sh --action reuse --server-env 正式服
+python scripts/ab_cache.py verify --server-env 正式服    # 0 可用 / 1 不可用
+python scripts/ab_cache.py record --server-env 正式服    # AB 重建后由脚本自动调
+```
+
+**边界（别踩）**
+
+- 复用的是**打包目录**的缓存，不是开发目录的：两个目录各有一份 `StreamingAssets` 与
+  `build/ab_cache/manifest.json`，互不相干。开发目录开着 Unity 也能跑（`reuse` 不做 Unity 占用检查）。
+- `EXPORT_TABLES=true` + `复用缓存` 是自相矛盾的组合：导表会改 LuaBytes，④ 会因内容哈希不同判红。
+- `跳过` 是「我知道自己在做什么」的逃生口：④ 不跑任何校验，⑤ 的 Lua 新鲜度闸门仍会拦。
+- 首次复用（没有 `manifest.json`，比如缓存是本次改造之前重建的）只做存在性判断并打黄 ——
+  先跑一次 `AB_MODE=重建` 把指纹立起来，之后复用才有内容级判据。
+
 ## 4. 「各环节可视化」到底指什么（四件产物）
 
 用户原话是「**要求各环节可视化**」。落地成四件东西，每件都验证过：
@@ -1149,6 +1202,8 @@ org.dom4j.DocumentException: … invalid XML character (Unicode: 0x1b)
 - **Library / BuildABs / StreamingAssets 不在 ci_sync 职责内**：Library 首次从开发目录播种后由
   打包目录自己维护（Unity 增量）；AB 过期由 `check_ab_ready.sh` 闸门拦住 → 重跑
   `TS-Resource-Build` 在打包目录重建。
+  🔁 **不想重建时**用 `AB_MODE=复用缓存`（见 §3.12）：直接吃打包目录里上一轮的
+  `StreamingAssets/Android`（gitignore，跨 reset 存活），④ 只做缓存指纹校验，约 10 秒。
 - 改了 xlsx / Lua / 资源想打进包：**先在开发目录 commit + push，再触发打包** —— 打包目录只认
   origin，开发目录未推送的改动打不进包（这是特性不是 bug）。
 - 其余 job（Server-* / Pipeline-Overview / Test-* / Art-Restyle / Client-Resources）**仍在开发目录**，

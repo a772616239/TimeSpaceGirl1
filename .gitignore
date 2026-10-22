@@ -89,3 +89,7 @@ data_execl/base_data/_backup_*/*.xlsx
 
 # 导表服务端同步的基线/备份/报告（table_sync.py 本地产物，不进版本库）
 /build/table_sync/
+
+# AB 缓存指纹（scripts/ab_cache.py 写，记录「上一轮重建的 AB 是哪次、含哪版字节码」）。
+# 与 build/table_sync/ 同性质的本机账本：每个打包目录各一份，不进版本库
+/build/ab_cache/

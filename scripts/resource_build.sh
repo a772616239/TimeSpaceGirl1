@@ -10,7 +10,16 @@
 #   scripts/resource_build.sh --action export --sync-tables plan   # 导表 + 只体检服务端表漂移
 #   scripts/resource_build.sh --action export --sync-tables off    # 导表但不碰线上服
 #   scripts/resource_build.sh --action ab --server-env 正式服   # 重建 AB + 复制到 StreamingAssets
+#   scripts/resource_build.sh --action reuse --server-env 正式服   # 不重建，复用上一轮 AB 缓存（秒级）
 #   scripts/resource_build.sh --action all  --server-env 正式服  # 先导表再重建 AB（两次 Unity 启动）
+#
+# 🔴 --action reuse（2026-10-23 新增）：**不启动 Unity**，直接把打包目录里上一轮重建的
+#    Assets/StreamingAssets/Android 当作包内资源（它 gitignore，跨 ci_sync 的 reset 存活）。
+#    只做两件事：① 按 --server-env 对齐包内快照 version.txt（apply_build_env 顺带做的）；
+#    ② 用 scripts/ab_cache.py verify 校验「这份缓存能不能复用」——缓存不完整、或字节码在
+#    上次重建之后变过（内容哈希不同）→ 直接 rc=3 拦住，因为这两种情况打出来的包
+#    要么起不来、要么配置是旧的，而且**运行期不会报任何错**。
+#    适用场景：只改了 C# / 打包参数 / 环境，资源没动，只想快速重出一版包。
 #
 # 🔴 --sync-tables（默认 apply）：导表成功后调用 scripts/table_sync.py，把「本次导表改动的
 #    服务端 txt」增量推到两套服务端：本机测试服 ~/home/java/gameserver 与线上服
@@ -25,7 +34,7 @@
 #    整目录快照到 StreamingAssets/Android/Resources（含 version.txt）。快照里的 serverUrl
 #    才是真正打进包里的值 —— 不在这里注入，包就会连到「上次谁改的那条地址」。
 #
-# 退出码：0 成功 / 2 参数或环境错误 / 3 Unity 执行失败
+# 退出码：0 成功 / 2 参数或环境错误 / 3 Unity 执行失败或 AB 缓存不可复用
 #
 set -uo pipefail
 
@@ -35,6 +44,11 @@ cd "$ROOT"
 UNITY_BIN="/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Contents/MacOS/Unity"
 VENV_PY="/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python"
 STAMP="$(date '+%Y%m%d-%H%M%S')"
+
+# python 解释器兜底：venv 不在（换机/新环境）就退回系统 python3，别让整条链路直接死
+py_bin() {
+    if [[ -x "$VENV_PY" ]]; then printf '%s' "$VENV_PY"; else command -v python3 || true; fi
+}
 
 ACTION="all"
 SERVER_ENV=""
@@ -63,15 +77,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 case "$ACTION" in
-    export|ab|all) ;;
-    *) echo "✗ --action 只能是 export / ab / all（收到：${ACTION}）" >&2; exit 2 ;;
+    export|ab|reuse|all) ;;
+    *) echo "✗ --action 只能是 export / ab / reuse / all（收到：${ACTION}）" >&2; exit 2 ;;
 esac
 case "$SYNC_TABLES" in
     off|plan|apply) ;;
     *) echo "✗ --sync-tables 只能是 off / plan / apply（收到：${SYNC_TABLES}）" >&2; exit 2 ;;
 esac
 
-[[ -x "$UNITY_BIN" ]] || { echo "✗ 找不到 Unity：$UNITY_BIN" >&2; exit 2; }
+# reuse 不启动 Unity（只读缓存 + 改 version.txt），所以不要求 Unity 存在
+if [[ "$ACTION" != "reuse" ]]; then
+    [[ -x "$UNITY_BIN" ]] || { echo "✗ 找不到 Unity：$UNITY_BIN" >&2; exit 2; }
+fi
 
 # 🔴 2026-10-21 修：整个执行体（注入→Unity→还原→快照核验）必须在 unity 锁内跑。
 #    注入/还原原来裸奔在锁外 —— 并行 job（如 TS-Android-TestPackage）在同一工作区
@@ -93,13 +110,17 @@ fi
 # 后果：GUI 开着照样往下跑，两个实例争同一个 Library，最坏写坏库。
 # 现在：只要命令行里带 -projectpath <本工程> 的 Unity 进程在（GUI 或别人的 batchmode），一律拒绝。
 # ⚠️ 必须限定到**本工程**：本机常年有其它项目的 Unity 在跑，无条件 pgrep 会误伤。
-UNITY_LIST=$(pgrep -fl "Unity.app/Contents/MacOS/Unity" 2>/dev/null || true)
-UNITY_BUSY=$(printf '%s\n' "$UNITY_LIST" | grep -iF -- "-projectpath $ROOT" || true)
-if [[ -n "$UNITY_BUSY" ]]; then
-    echo "✗ 本工程的 Unity 进程正在运行，batchmode 会争抢 Library：${UNITY_BUSY%%$'\n'*}" >&2
-    printf '%s\n' "$UNITY_BUSY" >&2
-    echo "  请先关闭 GUI Unity：osascript -e 'tell application \"Unity\" to quit'" >&2
-    exit 2
+# ⚠️ reuse 例外：它压根不启动 Unity（只读缓存 + 改 version.txt），不该被编辑器占工程挡住 ——
+#    这条路径的存在意义之一就是「开发目录开着编辑器时也能秒出一版包」。
+if [[ "$ACTION" != "reuse" ]]; then
+    UNITY_LIST=$(pgrep -fl "Unity.app/Contents/MacOS/Unity" 2>/dev/null || true)
+    UNITY_BUSY=$(printf '%s\n' "$UNITY_LIST" | grep -iF -- "-projectpath $ROOT" || true)
+    if [[ -n "$UNITY_BUSY" ]]; then
+        echo "✗ 本工程的 Unity 进程正在运行，batchmode 会争抢 Library：${UNITY_BUSY%%$'\n'*}" >&2
+        printf '%s\n' "$UNITY_BUSY" >&2
+        echo "  请先关闭 GUI Unity：osascript -e 'tell application \"Unity\" to quit'" >&2
+        exit 2
+    fi
 fi
 
 restore_env() {
@@ -143,11 +164,11 @@ if [[ "$ACTION" == "export" || "$ACTION" == "all" ]]; then
 fi
 
 # 🔴 导表后同步服务端表到线上服（2026-10-22 新增）。
-#    只在「刚导过表」时跑（--action ab 没有新产物，跑了也没意义）。
+#    只在「刚导过表」时跑（--action ab / reuse 没有新产物，跑了也没意义）。
 #    同步失败默认不拖垮导表：导表产物已经在本地，线上没推只是「还是旧的」，
 #    这个信息由工具自己打印，构建仍算成功；要让它变成构建失败就加 --sync-strict。
-if [[ "$RC" -eq 0 && "$ACTION" != "ab" && "$SYNC_TABLES" != "off" ]]; then
-    PY_BIN="$VENV_PY"
+if [[ "$RC" -eq 0 && ( "$ACTION" == "export" || "$ACTION" == "all" ) && "$SYNC_TABLES" != "off" ]]; then
+    PY_BIN="$(py_bin)"
     [[ -x "$PY_BIN" ]] || PY_BIN="$(command -v python3 || true)"
     if [[ -z "$PY_BIN" ]]; then
         echo "⚠ 找不到 python3，跳过服务端表同步" >&2
@@ -188,6 +209,39 @@ if [[ "$RC" -eq 0 && ( "$ACTION" == "ab" || "$ACTION" == "all" ) ]]; then
         SNAP="$ROOT/Assets/StreamingAssets/Android/Resources/version.txt"
         if [[ -f "$SNAP" ]]; then
             echo "   包内环境快照：$(/usr/bin/grep -o '"serverUrl":"[^"]*"' "$SNAP" || echo '（读不到 serverUrl）')"
+        fi
+        # 记录缓存指纹：下一次 --action reuse 靠它判断「这份缓存是哪次重建的、字节码有没有变」。
+        # 失败不拖垮本次构建（产物已经好了），只是下次复用会退化成「只能看文件在不在」。
+        PY_BIN="$(py_bin)"
+        if [[ -n "$PY_BIN" ]]; then
+            "$PY_BIN" scripts/ab_cache.py record --server-env "$SERVER_ENV" --mode rebuild \
+                || echo "⚠ 记录 AB 缓存指纹失败（不影响本次产物，只影响下次「复用缓存」的判定精度）" >&2
+        else
+            echo "⚠ 找不到 python3，跳过 AB 缓存指纹记录" >&2
+        fi
+    fi
+fi
+
+# 🔴 --action reuse：不重建，只把「上一轮的 AB 缓存」确认成可以进包的状态。
+#    为什么要有这一步而不是「什么都不做」：复用缓存最容易出的两种错都**不报错**——
+#    ① 缓存不完整（少了 luabytes / resconfigs）⇒ 包能装上但起不来；
+#    ② 缓存里的 Lua 是旧的（导过表/同步过字节码之后没重建）⇒ 改了配置真机不生效。
+#    两者都由 scripts/ab_cache.py verify 判（存在性 + 指纹 + 字节码内容哈希）。
+if [[ "$RC" -eq 0 && "$ACTION" == "reuse" ]]; then
+    echo ""
+    echo "==> 复用上一轮 AB 缓存（不启动 Unity，不重打 bundle）"
+    PY_BIN="$(py_bin)"
+    if [[ -z "$PY_BIN" ]]; then
+        echo "✗ 找不到 python3，无法校验 AB 缓存（拒绝在没校验的情况下出包）" >&2
+        RC=3
+    else
+        "$PY_BIN" scripts/ab_cache.py verify --server-env "$SERVER_ENV"
+        VERIFY_RC=$?
+        if [[ "$VERIFY_RC" -eq 0 ]]; then
+            echo "✅ AB 缓存可复用（包内资源就是上面这份，未重打）"
+        else
+            echo "✗ AB 缓存不可复用（见上方 ✗）。要么选 AB_MODE=重建，要么确认后选 跳过" >&2
+            RC=3
         fi
     fi
 fi

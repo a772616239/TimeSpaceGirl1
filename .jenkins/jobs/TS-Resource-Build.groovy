@@ -94,9 +94,12 @@ cd "$PROJ"
 #    （见其头部 TSG_INNER 说明）。外层再套一层 = 自己等自己，flock 不可重入 ⇒ 必然死锁。
 #    实测 2026-10-21：TS-Resource-Build #9/#10 都卡在「重建 AB」，等满 2400s 判 rc=75，
 #    连带 TS-Android-Release #15/#16 一起失败（stage ③-0 propagate）。
+# 🔴 `--sync-tables off` 必须显式给：resource_build.sh 的默认值是 `apply`，
+#    不写就会在导表完**顺手把服务端表推到 local + gs**。2026-10-23 00:56 就是这么
+#    在用户说「先不推」之后推了 4 张表到线上服。表只允许由 `TS-Table-Sync` 推。
 "$BASH" .jenkins/lib/run_stage.sh --name "导表（xlsx→Lua+txt）" \
   --group "资源构建" --slug export-tables --timeout 1800 \
-  -- "$BASH" scripts/resource_build.sh --action export
+  -- "$BASH" scripts/resource_build.sh --action export --sync-tables off
 ''')
       }
     }

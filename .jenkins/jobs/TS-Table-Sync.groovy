@@ -4,7 +4,7 @@
   "concurrent": false,
   "keep": [30, 30],
   "params": [
-    {"name":"SERVER_ENV","type":"choice","choices":["现网-129.226.213.65","测试服","正式服"],"default":"现网-129.226.213.65","description":"把表推到哪套服务端（映射见 scripts/build_envs.json 的 tableTargets）。现网=129.226.213.65 的 gs；测试服=本机 ~/home/java/gameserver；正式服（103.151.173.99）实测已死，tableTargets 为空 ⇒ 只导表不推表"},
+    {"name":"SERVER_ENV","type":"choice","choices":["现网-129.226.213.65","测试服","正式服"],"default":"现网-129.226.213.65","description":"把表推到哪套服务端（映射见 scripts/build_envs.json 的 tableTargets）。现网=129.226.213.65 的 gs；测试服=本机 ~/home/java/gameserver；正式服按用户口径也等于 129.226.213.65 ⇒ 同样是 gs（但该条 serverUrl 仍写着已死的 103.151.173.99，只影响出包，不影响推表）"},
     {"name":"MODE","type":"choice","choices":["apply","plan"],"default":"apply","description":"apply=真推（推前整目录 tar.gz 备份、推后 conf/server 与 assets/conf/server 双向 md5 校验、只推自上次同步以来的差异）；plan=只体检，不动任何服务端（改完表想先看会推什么就选它）"},
     {"name":"EXPORT","type":"bool","default":true,"description":"先跑一遍导表（Unity batchmode，约 4 分钟）再同步。默认开：这样推的是**刚导出来的**表。关掉则直接推仓库里现存的 TimeSpaceServer txt（只想补推、不想重导时用）"},
     {"name":"FIX_NUMERIC","type":"bool","default":false,"description":"推前把 int 列服务端解析不了的值就地归一化（Excel 浮点噪声 740.0000000000006 / 越界 9999999999 / 整数列写小数 1.25 ⇒ Java (int) 截断 + int32 夹取）。🔴 一个坏单元格 = 整张表不加载，历史上炸过一次（2026-10-22）。默认关，改了 xlsx 且怀疑有脏数据时勾"},

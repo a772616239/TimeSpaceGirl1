@@ -105,7 +105,7 @@ scripts/resource_build.sh --action export --sync-strict       # 同步失败算�
 
 | 入口 | 触发 | 目标怎么定 |
 |---|---|---|
-| **`TS-Table-Sync`（服务器配置表发版，2026-10-23 拆出来的正路）** | `EXPORT=true` 先导表（`resource_build.sh --action export --sync-tables off`）→ `table_sync.py --env "$SERVER_ENV"`（`MODE=apply` 才真推，`RESTART` 可选） | `--env` 映射，见 `scripts/build_envs.json` 的 `tableTargets`：现网→`gs`、测试服→`local`、正式服→`[]`（跳过） |
+| **`TS-Table-Sync`（服务器配置表发版，2026-10-23 拆出来的正路）** | `EXPORT=true` 先导表（`resource_build.sh --action export --sync-tables off`）→ `table_sync.py --env "$SERVER_ENV"`（`MODE=apply` 才真推，`RESTART` 可选） | `--env` 映射，见 `scripts/build_envs.json` 的 `tableTargets`：现网→`gs`、测试服→`local`、正式服→`gs`（用户口径：正式服就是 129.226.213.65） |
 | `TS-Resource-Build` 的导表环节 | `scripts/resource_build.sh --action export` → Unity 导表 → **同一脚本紧接着** `table_sync.py`（默认 `--sync-tables apply`） | 默认 `local,gs` 都推 |
 | `TS-Android-Release` 的 `②-3 服务端表一致性（只读提醒）` | 每次发包都跑，`table_sync.py --env "$SERVER_ENV"` **不带 `--apply`** | 同上；**只体检、不改任何服务端**，rc 恒 0（`--warn-ok` ⇒ 出问题只黄球） |
 

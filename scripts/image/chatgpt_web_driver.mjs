@@ -355,6 +355,16 @@ try {
 
   // 1) 上传参考图
   if (!grabExisting) {
+    // 🔴 2026-10-22 实测（就是这条把 02 的成品写成了 01 的图）：
+    //    复用已登录的 SunBrowser 时，切完「新对话」页面仍可能短暂渲染出**上一轮的生成图**；
+    //    而选图按「面积最大」挑，两张同尺寸时 reduce 保留第一个 ⇒ 拿回上一张旧图。
+    //    两张任务的 gen.png 因此逐字节相同，verify 还全绿（尺寸/墨迹量都对）。
+    //    现在：发送前先记下页面上已有的生成图（按 blob src），之后只认「新出现的」，并取最后一张。
+    try {
+      const pre = await page.evaluate(snapshot, { alts: GEN_ALT, quota: QUOTA_SRC, refusal: REFUSAL_SRC });
+      staleSrcs = new Set(pre.imgs.map((i) => i.src));
+      if (staleSrcs.size) log(`⚠ 发送前页面上已有 ${staleSrcs.size} 张旧生成图，本次只认新出现的`);
+    } catch { /* 取不到就退化成旧行为，保险由上层的内容去重兜 */ }
     await clearOverlays();
     log('上传参考图', imagePath);
     const fileInput = page.locator('input[type="file"]').first();
@@ -403,6 +413,8 @@ try {
   let stable = 0;
   let pollFails = 0;
   let lastSt = null;
+  // 发送前就在页面上的生成图（上一轮的），本次一律不认，见上传那段的注释
+  let staleSrcs = new Set();
 
   // 🔴 2026-10-20 实测：等图过程中整页偶发被关（Target page/context/browser has been closed），
   //    那一次图其实已经生成好了，只是再也取不到 ⇒ 白等 + 白烧额度。
@@ -435,23 +447,24 @@ try {
       if (pollFails > 3 || !(await recoverPage())) break;
       continue;
     }
-    const s = sig(st.imgs);
+    // 只认「本次新出现」的生成图：发送前就在页面上的那几张是上一轮的成果
+    const fresh = staleSrcs.size ? st.imgs.filter((i) => !staleSrcs.has(i.src)) : st.imgs;
+    const s = sig(fresh);
     // grab 模式不再看 busy：那一轮已经确认出过图（页面都写着「回答が完了しました」），
     // 只是 busy 判据被页面上某个 "NN%" 文本骗住 ⇒ 再等只会等到超时，等于白丢一张图。
-    if (st.imgs.length && (!st.busy || grabExisting) && s === lastSig) {
+    if (fresh.length && (!st.busy || grabExisting) && s === lastSig) {
       stable++;
     } else {
       stable = 0;
     }
     if (s !== lastSig) {
-      log('候选', st.imgs.length, s || '(无)', st.busy ? '生成中' : '空闲');
+      log('候选', fresh.length, s || '(无)', st.busy ? '生成中' : '空闲');
       lastSig = s;
     }
     if (stable >= 2) {
-      // grab 模式取「最后一张」（当前对话最新的结果）；正常模式取面积最大的那张
-      picked = grabExisting
-        ? st.imgs[st.imgs.length - 1]
-        : st.imgs.reduce((a, b) => (a.w * a.h >= b.w * b.h ? a : b));
+      // 🔴 一律取「最后一张」= 最新那一张。以前正常模式取「面积最大」，两张同尺寸时
+      //    reduce 会保留第一个（旧图），把上一张的成品当成本次的（2026-10-22 踩过）。
+      picked = fresh[fresh.length - 1];
       break;
     }
     // 🔴 站点已经明确说「额度用尽」了：这不是慢，是根本不会出图。

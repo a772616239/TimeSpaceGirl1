@@ -16,21 +16,39 @@
 3. **排英文**：Arial Bold 白字 + 蓝色辉光，层级与同目录已上线的 `pata_bg_en` /
    `shenyuan_bg_en` 一致（小标题 + 三行大标题）。
 
-为什么不用 AI 擦字/生图
-----------------------
-`connect_cloud_service` 拿不到临时凭证，图像处理 skill 的云端通道也不可用；
-本项目「翻译图片 skill」并不存在（市场搜索接口 404）。纯本地 OpenCV/PIL 可控、可重跑、
-可断言，比一次性的云端结果更适合进 CI。
+三个出图 provider（2026-10-22 新增 chatgpt_web）
+---------------------------------------------
+出图那一步不可复现、要花额度、还会因为登录态/网络失败 —— 所以它单独摘出来，其余
+（提示词、归位、掩膜、验收、写回）全部可断言。这与 `docs/art_restyle_pipeline.md` 的
+切法一致：**provider 只负责「把图给我」，不要它顺便决定尺寸、alpha 和落版位置。**
+
+| provider | 做什么 | 用在哪 |
+|---|---|---|
+| `local`（原行为，仍是默认） | OpenCV 擦字 + 补底板 + PIL 排 Arial 白字，像素断言 6 条 | 884×544 战令横幅；结果可复现、可回归 |
+| `chatgpt_web` | 调 `gen_chatgpt_web.py`（Chrome 登录态 / AdsPower 换号链）让 **GPT 重绘这张图**，再本地归位 | 小尺寸美术字块（`glyph` 族，如 180×96 的页签字）；版面/笔画本来就得靠模型画 |
+| `manual` | 人把图放进 `--gen-image`，跳过浏览器 | 额度空了、或要手工挑一张 |
+
+**为什么 glyph 族必须走模型**：那类图整张只有 1~3 种颜色（纯白字 + alpha），字身是
+手写/斜切的美术字。本地 PIL 能画 Arial，但画不出原图那笔手势 —— 换掉就等于换了画风。
+模型重绘能保住笔势，代价是必须回来做三件本地活：抠墨迹 → 归白 + alpha → 归位到原 bbox。
+
+🔴 **喂给模型的参考图既不能是原始透明 PNG，也不能是「深底白字」**：
+前者浏览器按白底预览 ⇒ 模型看到一张白纸；后者模型照样交回**白底白字**（2026-10-22 实测，
+整张几乎全白，只剩笔画描边，抠出来是一条噪点带）。现在统一给 `inbox/ref_flat.png`：
+**白底 + 黑字**，和要的输出同构；颜色无所谓 —— 归位时一律染成纯白，游戏侧靠 tint 上色。
 
 用法
 ----
     python scripts/image/banner_translate.py scan
-    python scripts/image/banner_translate.py run    --asset <zh 相对路径>
+    python scripts/image/banner_translate.py run    --asset <zh 相对路径> [--provider chatgpt_web]
+    python scripts/image/banner_translate.py run    --asset <zh> --provider manual --gen-image <png>
     python scripts/image/banner_translate.py verify --work <工作目录>
     python scripts/image/banner_translate.py publish --work <工作目录> --yes
-    python scripts/image/banner_translate.py batch  [--only a,b] [--no-write] [--force]
+    python scripts/image/banner_translate.py batch  [--stage run|verify|publish] [--only a,b] [--force]
+                                                   [--provider chatgpt_web] [--cdp-port N]
 
-退出码：0 全通过；3 有「需人看一眼」的项（缺译名 / 已存在跳过）；1 硬失败。
+退出码：0 全通过；3 有「需人看一眼」的项（缺译名 / 已存在跳过 / provider 环境不可用）；
+1 硬失败。
 """
 from __future__ import annotations
 
@@ -50,7 +68,9 @@ import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
+HERE = Path(__file__).resolve().parent
 ZH_DIR = ROOT / "Assets/ManagedResources/ArtFont_zh/OperatingPanelAtlas"
+ZH_ROOT = ROOT / "Assets/ManagedResources/ArtFont_zh"
 EN_DIR = ROOT / "Assets/ManagedResources/ArtFont_en/OperatingPanelAtlas"
 ATLAS_ROOT = ROOT / "Assets/ManagedResources/Atlas"
 EN_ROOT = ROOT / "Assets/ManagedResources/ArtFont_en"
@@ -58,6 +78,10 @@ MAP_FILE = ROOT / "scripts/image/banner_translate_map.json"
 WORK_ROOT = ROOT / "_output/art_translate"
 BACKUP_ROOT = ROOT / "ResBackpack/备份"
 REPORT = ROOT / ".jenkins/lib/stage_report.py"
+# 绘图管线（provider = chatgpt_web）的出图通道：Chrome 登录态 / AdsPower 换号链都在这支脚本里
+GEN_WEB = HERE / "gen_chatgpt_web.py"
+# 出图台账：sha256 → 哪个资源用的。专抓「同一条链把上一张图又交回来」
+GEN_LEDGER = WORK_ROOT / "_gen_ledger.json"
 
 FONT_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
@@ -89,6 +113,25 @@ BANNER_GLOB = "*_bg_zh.png"
 #          板内填纯色、板外条带从上方取样 —— 这套规则对同族的图都成立。
 FAMILY_ARTFONT = "artfont"
 FAMILY_ATLAS = "atlas"
+# glyph：ArtFont_zh 下的「小型单色美术字块」（页签/竖排标题，如 180x96 的原料收集）。
+#   整张只有 1~3 种颜色 = 纯白字 + 抗锯齿 alpha，字身是手写/斜切美术字。
+#   这类图**本地排 Arial 会换掉画风**，只能让模型重绘 ⇒ 只支持 provider=chatgpt_web。
+FAMILY_GLYPH = "glyph"
+
+# 出图 provider：local=本地像素工序（原行为）；chatgpt_web=Chrome/AdsPower 驱动 GPT 重绘；
+# manual=人交图（--gen-image），跳过浏览器。三者之后的归位/验收/写回完全同一条。
+PROVIDER_LOCAL = "local"
+PROVIDER_WEB = "chatgpt_web"
+PROVIDER_MANUAL = "manual"
+PROVIDERS = [PROVIDER_WEB, PROVIDER_LOCAL, PROVIDER_MANUAL]
+
+# glyph 家族的尺寸上限：超过就不再是「字块」而是整幅图。与 cmd_run 的横幅闸门（600x400）互补。
+GLYPH_MAX = (700, 500)
+# 「单色」判据：不同 RGB 数量。glyph 实测 2~3 种（254/255 白 + 半透明边），给到 8 仍安全。
+GLYPH_MAX_COLORS = 8
+# 墨迹强度 → alpha 的映射窗口（0~255）。低于 LO 当背景、高于 HI 当实心字，
+# 中间线性过渡就是抗锯齿边 —— 直接用阈值二值化会把笔画边缘啃成锯齿。
+GLYPH_INK_LO, GLYPH_INK_HI = 28, 110
 
 ATLAS_PLATE_TOL = 30       # 板体底色容差（实测 std≈1.5，留余量给 PNG 抖动）
 ATLAS_CORE_MIN = 190       # 白字核：三通道都不低于它才算字（青/品红描边不算）
@@ -115,13 +158,42 @@ def load_font(size: int) -> ImageFont.FreeTypeFont:
     raise SystemExit("找不到可用粗体字体，请把 Arial Bold.ttf 放到系统字体目录")
 
 
+def _is_glyph(path: Path) -> bool:
+    """小型 + 单色 = 美术字块。两个条件都要，缺一个都会误判。
+
+    只看尺寸会把 180x96 的彩色小图标也吃进来（它们的 alpha 是图标轮廓，不是字）；
+    只看颜色数会把 884x544 的纯色横幅吃进来（那批是「暗板 + 白字」，底板只有一个色）。
+    """
+    try:
+        with Image.open(path) as im:
+            w, h = im.size
+            if w > GLYPH_MAX[0] or h > GLYPH_MAX[1]:
+                return False
+            rgb = np.asarray(im.convert("RGB"))
+            opaque = np.asarray(im.convert("RGBA"))[..., 3] > 8
+            if not opaque.any():
+                return False
+            colors = np.unique(rgb[opaque].reshape(-1, 3), axis=0)
+            return len(colors) <= GLYPH_MAX_COLORS
+    except Exception:                                            # noqa: BLE001
+        return False
+
+
 def family_of(zh: Path) -> str:
-    """Atlas/<面板>/<名>.png 走 atlas 家族，其余按战令横幅处理。"""
+    """按源图自身特征分派（不看目录名，避免新增图集时忘了登记）。
+
+    Atlas/**            → atlas（中文压在一块纯色黑板上）
+    ArtFont_zh/** 小型单色 → glyph（美术字块，只能模型重绘）
+    其余                → artfont（884x544 三段横幅，版面锚点写死）
+    """
     try:
         Path(zh).resolve().relative_to(ATLAS_ROOT)
         return FAMILY_ATLAS
     except ValueError:
-        return FAMILY_ARTFONT
+        pass
+    if _is_glyph(Path(zh)):
+        return FAMILY_GLYPH
+    return FAMILY_ARTFONT
 
 
 def _pick_family(zh: Path, family: str | None) -> str:
@@ -133,10 +205,15 @@ def _pick_family(zh: Path, family: str | None) -> str:
 def en_path_for(zh: Path, family: str | None = None) -> Path:
     """中文源图 → 英文版目标路径。
 
-    artfont：…/ArtFont_zh/OperatingPanelAtlas/cn2-X1_zhanling_miwu_bg_zh.png
-          → …/ArtFont_en/OperatingPanelAtlas/cn2-X1_zhanling_miwu_bg_en.png
-    atlas  ：…/Atlas/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou.png
+    atlas ：…/Atlas/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou.png
           → …/ArtFont_en/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou_en.png
+    artfont / glyph：**整条相对路径镜像**到 ArtFont_en 下（2026-10-22 改）
+          …/ArtFont_zh/OperatingPanelAtlas/x_bg_zh.png  → …/ArtFont_en/OperatingPanelAtlas/x_bg_en.png
+          …/ArtFont_zh/DynamicActivityPanelAtlas/tab/y_zh.png → …/ArtFont_en/DynamicActivityPanelAtlas/tab/y_en.png
+
+    🔴 以前 artfont 把目标目录写死成 `ArtFont_en/OperatingPanelAtlas`，只因为当时那一族
+       恰好全在 OperatingPanelAtlas 下。子目录里的字块（tab/）会被写到错误的族目录里，
+       而客户端是按「同族目录 + GetPictureFont」找图的 ⇒ 图就位了也显示不出来。
     """
     fam = _pick_family(zh, family)
     if fam == FAMILY_ATLAS:
@@ -145,7 +222,12 @@ def en_path_for(zh: Path, family: str | None = None) -> Path:
     name = Path(zh).name
     if not name.endswith("_zh.png"):
         raise SystemExit(f"不是 _zh.png 命名：{name}")
-    return EN_DIR / (name[: -len("_zh.png")] + "_en.png")
+    new_name = name[: -len("_zh.png")] + "_en.png"
+    try:
+        rel_parent = Path(zh).resolve().relative_to(ZH_ROOT).parent
+    except ValueError:
+        return EN_DIR / new_name          # 不在 ArtFont_zh 下（手传的临时图）→ 落回横幅族
+    return EN_ROOT / rel_parent / new_name
 
 
 def load_map() -> dict:
@@ -576,6 +658,269 @@ def draw_atlas_text(img: Image.Image, lines: list[str], zone: tuple, skew: float
 
 
 # --------------------------------------------------------------------------- #
+# provider = chatgpt_web：提示词 → 出图 → 归位（glyph / artfont / atlas 共用）
+# --------------------------------------------------------------------------- #
+GLYPH_PROMPT = """\
+This is an image-edit task for a mobile-game UI asset. Take the reference image and redo its \
+lettering in English.
+
+What the reference shows: hand-drawn ART-FONT lettering, solid black strokes on a plain white \
+background, nothing else in the picture.
+
+Chinese text currently in the image: 「{zh}」
+
+Replace it with exactly these English words:
+{lines_block}
+Layout: {layout_line}
+
+Hard requirements — if any of these is broken the output is unusable:
+1. Solid black (#000000) lettering on a plain white (#FFFFFF) background. Exactly two values: \
+black strokes, white background. No colour, no gradient, no outline, no glow, no drop shadow, \
+no bevel, no emboss, no texture, no noise, no watermark.
+2. Keep the original brush style: same stroke weight, same slant/italic angle, same hand-drawn \
+feel, same letter shapes. Do NOT replace it with a clean geometric sans-serif.
+3. Keep the composition: the lettering covers the same area of the canvas, with the same \
+alignment and the same margins. Do not centre it differently, do not shrink it.
+4. The background must stay empty white. No frame, no border, no panel, no decoration, \
+no extra strokes, no signature.
+5. Canvas must keep the same aspect ratio as the reference image.
+6. Every Chinese character must be gone. No Chinese / Japanese / Korean glyphs anywhere.
+7. Do not add any word or number that is not listed above, and do not repeat the words.
+
+Output one single image.
+"""
+
+
+def _src_ink_bbox(src_im: Image.Image) -> tuple[int, int, int, int]:
+    a = np.asarray(src_im.convert("RGBA"))[..., 3]
+    ys, xs = np.nonzero(a > 8)
+    if not len(xs):
+        raise SystemExit("源图 alpha 全透明，量不出字块位置")
+    return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+
+
+def _flat_ref(src_im: Image.Image, work: Path) -> Path:
+    """透明底白字 → **白底黑字**的参考图（上传给模型的那一张）。
+
+    🔴 两个坑都实测过，才定成「黑字白底」：
+       ① 直接传原始透明 PNG：聊天窗口按白底预览 ⇒ 模型看到一张白纸，画出来是白底白字；
+       ② 传「深底白字」：模型仍然交回一张**白底白字**（2026-10-22 实测 01_zh，整张几乎全白，
+          只剩笔画描边的淡灰轮廓，抠出来是一条噪点带）。
+       ⇒ 参考图本身就和要的输出同构：白底 + 黑字。颜色不是问题 —— 归位时一律染成纯白，
+          游戏侧靠 tint 上色，图里本来就不该带颜色。
+    """
+    a = src_im.convert("RGBA").getchannel("A")
+    gray = a.point(lambda v: 255 - v)              # 不透明处 = 黑
+    ref = Image.merge("RGB", (gray, gray, gray))
+    ref = ref.resize((src_im.width * 4, src_im.height * 4), Image.LANCZOS)
+    out = work / "inbox" / "ref_flat.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    ref.save(out)
+    return out
+
+
+def build_prompt(zh: Path, entry: dict, lines: list[str], title: str, fam: str) -> str:
+    """提示词只描述「怎么翻」，不写死版面数值 —— 数值由本地归位负责。"""
+    if fam == FAMILY_GLYPH:
+        if len(lines) == 1:
+            lines_block = f"  - {lines[0]}  (single word, as large as the original)"
+        else:
+            rows = []
+            for i, t in enumerate(lines):
+                hint = "the large word" if i == 0 else "smaller, as in the original"
+                rows.append(f"  {i + 1}. {t}  ({hint})")
+            lines_block = "\n".join(rows)
+        layout_line = entry.get("gpt_layout") or (
+            "Keep the original arrangement of the letters relative to each other: the first word "
+            "is the big one, the following word(s) are smaller and sit on the same baseline / "
+            "direction as in the reference. Keep the same rotation/italic angle.")
+        return GLYPH_PROMPT.format(zh=entry.get("zh_text") or entry.get("note") or zh.stem,
+                                   lines_block=lines_block, layout_line=layout_line)
+
+    # 整幅图（横幅 / 图集大图）：只翻字，别动画面
+    text = title if (fam == FAMILY_ARTFONT and title) else ""
+    body = "\n".join(f"  - {t}" for t in lines)
+    return f"""\
+This is an image-edit task: translate the Chinese text baked into this game UI artwork into English.
+
+Rewrite these Chinese strings:
+{body}
+{("Small title above: " + text) if text else ""}
+
+Hard requirements:
+1. Replace ONLY the text. Keep the artwork, illustration, background, panel, decoration, framing, \
+glow and lighting untouched — pixel-identical where there is no text.
+2. Keep each line's position, size, weight, colour and effects (glow/gradient/shadow) exactly like \
+the original line it replaces. Same left alignment, same margins, same line count.
+3. All Chinese characters must be gone. No Chinese / Japanese / Korean glyphs anywhere.
+4. Use clean bold latin capitals, readable at small size, no decorative script that cannot be read.
+5. Do not add logos, watermarks, signatures, frames or any extra element.
+6. Canvas keeps the same aspect ratio as the reference image.
+
+Output one single image.
+"""
+
+
+def call_provider(args, work: Path, ref: Path, prompt_file: Path, out: Path) -> tuple[int, str]:
+    """把「出一张图」这件事交给绘图管线（Chrome/AdsPower + GPT）。
+
+    返回 (rc, 说明)：0=拿到图 / 3=环境不可用（黄，不阻断）/ 1=硬失败。
+    🔴 额度、换号、台账、登录态全在 gen_chatgpt_web.py 里，这里**不重复实现** ——
+       两套换号链必然漂移（同一件事写两遍，最后两边都不一样）。
+    """
+    gen = str(getattr(args, "gen_image", "") or "")
+    prov = (getattr(args, "provider", "") or PROVIDER_LOCAL).lower()
+    if prov == PROVIDER_MANUAL and not gen:
+        print("provider=manual 且没给 --gen-image：参考图与提示词已生成，等人出图后重跑"
+              "（或把图放进 inbox/gen.png 再用 --gen-image 指过来）", file=sys.stderr)
+        return 3, "manual 待出图"
+    if gen:
+        p = Path(gen)
+        if not p.is_file():
+            print(f"🔴 --gen-image 不存在：{p}", file=sys.stderr)
+            return 1, "gen-image 缺失"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(p, out)
+        print(f"provider=manual：直接用既有出图 {p.name}")
+        return 0, p.name
+    if not GEN_WEB.is_file():
+        print(f"🔴 找不到出图通道：{GEN_WEB}", file=sys.stderr)
+        return 1, "缺少 gen_chatgpt_web.py"
+
+    cmd = [sys.executable, str(GEN_WEB), "--image", str(ref),
+           "--prompt-file", str(prompt_file), "--out", str(out)]
+    if int(getattr(args, "cdp_port", 0) or 0):
+        cmd += ["--reuse-cdp", "--port", str(int(args.cdp_port))]
+    if getattr(args, "adspower_profiles", ""):
+        cmd += ["--adspower-profiles", str(args.adspower_profiles)]
+    if int(getattr(args, "provider_timeout", 0) or 0):
+        cmd += ["--timeout", str(int(args.provider_timeout))]
+    if getattr(args, "ignore_ledger", False):
+        cmd += ["--ignore-ledger"]
+    if getattr(args, "no_auto_fallback", False):
+        cmd += ["--no-auto-fallback"]
+
+    print("provider=chatgpt_web → " + " ".join(cmd))
+    # 外层超时留足余量：gen_chatgpt_web.py 内部有 --timeout 与 --fallback-budget，
+    # 这里只是防「脚本卡死不退」，不能比它还小，否则换号链永远走不完。
+    budget = int(getattr(args, "provider_timeout", 0) or 0)
+    outer = budget * 3 + 900 if budget else 3000
+    try:
+        r = subprocess.run(cmd, cwd=str(ROOT), timeout=outer)
+    except subprocess.TimeoutExpired:
+        print("🔴 出图通道超时", file=sys.stderr)
+        return 3, "provider 超时"
+    if r.returncode == 0 and out.is_file() and out.stat().st_size > 0:
+        print(f"✅ 出图：{out.relative_to(ROOT)}（{out.stat().st_size // 1024} KB）")
+        return 0, out.name
+    # 3 = 不可达 / 未登录 / 人机验证 / 额度用尽 → 这是环境问题，给黄不给红
+    print(f"🔴 出图通道失败 rc={r.returncode}（3=环境/额度，见上面 provider 日志）", file=sys.stderr)
+    return (3 if r.returncode == 3 else 1), f"provider rc={r.returncode}"
+
+
+def postprocess_glyph(src_im: Image.Image, gen_im: Image.Image) -> tuple[Image.Image, dict]:
+    """模型出的「白字 + 平底」→ 游戏要的「纯白 RGB + alpha」，并归位到源图字块 bbox。
+
+    为什么要归位：模型给的是新画布（常见 1024x1024），字块在里面的位置/大小跟原图无关。
+    游戏是拿这张图当 sprite 摆在固定锚点上的，位置一偏，页签就会错开或出框。
+    """
+    g = np.asarray(gen_im.convert("RGB")).astype(np.float32)
+    bg = np.median(g.reshape(-1, 3), axis=0)          # 字是少数派，整幅中位色就是底色
+    # 底色平不平：只在**边圈上「几乎等于底色」的像素**里看离散度。
+    # 直接把整圈都算进来会被「字贴到画布边」污染（实测纯白底也报 std 40，纯属假红）；
+    # 而渐变/纹理底即使挑出近底色的那批，离散度仍然很大 —— 这一条才是有信息量的。
+    pad = max(2, min(g.shape[0], g.shape[1]) // 40)
+    ring = np.concatenate([g[:pad].reshape(-1, 3), g[-pad:].reshape(-1, 3),
+                           g[:, :pad].reshape(-1, 3), g[:, -pad:].reshape(-1, 3)])
+    ring_ink = np.abs(ring - bg).max(axis=1)
+    near = ring[ring_ink < 12]
+    bg_std = float(near.std(axis=0).mean()) if len(near) >= 50 else 0.0
+    ink = np.abs(g - bg).max(axis=2)
+    alpha = np.clip((ink - GLYPH_INK_LO) / (GLYPH_INK_HI - GLYPH_INK_LO), 0, 1)
+    a8 = (alpha * 255).round().astype(np.uint8)
+
+    solid = a8 > 24
+    if solid.mean() < 0.01:
+        # 白底白字 / 模型只交了张空画布 —— 这种"成功出图"最坑，必须当场判死
+        raise SystemExit(f"出图里几乎没有墨迹（{(solid.mean()):.2%}，底色={bg.astype(int)}）："
+                         f"多半是白底白字或空画布，重出这张")
+    if solid.mean() > 0.6:
+        raise SystemExit(f"出图 60% 以上的像素都是墨迹（底色判定失败，底={bg.astype(int)}）")
+    ys, xs = np.nonzero(solid)
+    if not len(xs):
+        raise SystemExit("出图里抠不到墨迹（整张同色？）")
+    gb = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+    sx0, sy0, sx1, sy1 = _src_ink_bbox(src_im)
+
+    # 等比缩进源图 bbox（contain），不拉到满：模型改了比例时宁可小一圈，也别把字压扁
+    crop = Image.fromarray(a8[gb[1]:gb[3], gb[0]:gb[2]])
+    tw, th = sx1 - sx0, sy1 - sy0
+    s = min(tw / crop.width, th / crop.height)
+    nw, nh = max(1, round(crop.width * s)), max(1, round(crop.height * s))
+    crop = crop.resize((nw, nh), Image.LANCZOS)
+
+    W, H = src_im.size
+    a_out = np.zeros((H, W), np.uint8)
+    ox, oy = sx0 + (tw - nw) // 2, sy0 + (th - nh) // 2
+    a_out[oy:oy + nh, ox:ox + nw] = np.asarray(crop)
+
+    rgb = np.full((H, W, 3), 255, np.uint8)          # 🔴 一律纯白：颜色由游戏侧 tint 控制
+    out = Image.fromarray(np.dstack([rgb, a_out]), "RGBA")
+
+    src_mask = np.asarray(src_im.convert("RGBA"))[..., 3] > 24
+    new_mask = a_out > 24
+    inter = int((src_mask & new_mask).sum())
+    union = int((src_mask | new_mask).sum()) or 1
+    stat = {
+        "gen_size": list(gen_im.size),
+        "gen_bg_rgb": [int(v) for v in bg],
+        "gen_bg_std": round(bg_std, 2),
+        "gen_bbox": list(gb),
+        "src_bbox": [sx0, sy0, sx1, sy1],
+        # 主体在出图画布里的占比：太小说明模型只画了个小标记/角落水印，我们却把它放大满 bbox
+        "gen_subject_ratio": round(((gb[2] - gb[0]) * (gb[3] - gb[1]))
+                                   / float(gen_im.width * gen_im.height), 4),
+        "scale": round(s, 4),
+        "ink_px": int(new_mask.sum()),
+        "src_ink_px": int(src_mask.sum()),
+        # 🔴 只做记录，不当红：译文和原文本来就不是同一批字，字形重合度天然只有 0.3~0.5。
+        #    拿它当闸门只会天天假红（本地实测 MATERIAL COLLECT vs 原料收集 = 0.35）
+        "iou": round(inter / union, 3),
+    }
+    print(f"归位：出图 {gen_im.size[0]}x{gen_im.size[1]} → 字块 bbox {tw}x{th}（缩放 {s:.1%}）；"
+          f"墨迹 {stat['ink_px']} px，源图 {stat['src_ink_px']} px，IoU {stat['iou']}")
+    return out, stat
+
+
+def postprocess_photo(src_im: Image.Image, gen_im: Image.Image) -> tuple[Image.Image, dict]:
+    """整幅图（横幅 / 图集大图）：等比 cover 回源尺寸，alpha 与模式沿用源图。
+
+    🔴 不能用 contain：那批图是 full-bleed 的，留边会在面板上露出白框/黑框。
+    """
+    W, H = src_im.size
+    g = gen_im.convert("RGB")
+    s = max(W / g.width, H / g.height)
+    nw, nh = max(W, round(g.width * s)), max(H, round(g.height * s))
+    g = g.resize((nw, nh), Image.LANCZOS)
+    left, top = (nw - W) // 2, (nh - H) // 2
+    g = g.crop((left, top, left + W, top + H))
+    if src_im.mode == "RGBA":
+        g = g.convert("RGBA")
+        g.putalpha(src_im.getchannel("A"))
+    diff = np.abs(np.asarray(src_im.convert("RGB")).astype(int)
+                  - np.asarray(g.convert("RGB")).astype(int)).max(axis=2)
+    stat = {
+        "gen_size": list(gen_im.size),
+        "cover_scale": round(s, 4),
+        "changed_ratio": round(float((diff > 24).mean()), 4),
+        "mean_diff": round(float(diff.mean()), 2),
+    }
+    print(f"归位：出图 {gen_im.size[0]}x{gen_im.size[1]} → cover {s:.2f} → {W}x{H}；"
+          f"改动像素 {stat['changed_ratio']:.1%}，平均差 {stat['mean_diff']}")
+    return g, stat
+
+
+# --------------------------------------------------------------------------- #
 # 子命令：scan
 # --------------------------------------------------------------------------- #
 def cmd_scan(args) -> int:
@@ -584,8 +929,13 @@ def cmd_scan(args) -> int:
     pool: list[Path] = []
     if family in ("auto", FAMILY_ARTFONT):
         pool += sorted(ZH_DIR.glob(BANNER_GLOB))
+    if family in ("auto", FAMILY_GLYPH):
+        pool += glyph_targets(mapping)
     if family in ("auto", FAMILY_ATLAS):
         pool += atlas_targets(mapping)
+    # 同一张图可能同时被 BANNER_GLOB 与译名表命中（横幅也在表里），去重后再盘
+    seen: set[Path] = set()
+    pool = [p for p in pool if not (p in seen or seen.add(p))]
 
     rows, todo, notitle = [], [], []
     for zh in pool:
@@ -647,17 +997,62 @@ def work_dir_for(zh: Path, family: str | None = None) -> Path:
     return WORK_ROOT / stem
 
 
+def _flatten(im: Image.Image, bg=(28, 30, 44)) -> Image.Image:
+    """透明图先合成到深色底再看。
+
+    🔴 不能直接 paste 到浅色画布：RGBA→RGB 是「丢掉 alpha」，透明区的原始 RGB 是白色，
+       结果就是白底白字，构建页上什么都看不见（glyph 族 68% 的像素是透明的）。
+    """
+    im = im.convert("RGBA")
+    base = Image.new("RGBA", im.size, tuple(bg) + (255,))
+    return Image.alpha_composite(base, im).convert("RGB")
+
+
 def _compare_sheet(zh_im: Image.Image, en_im: Image.Image, work: Path) -> None:
     """中英对照图（构建页直接能看）。上下排：宽图横幅上下排比左右排更好认。"""
-    w, h = zh_im.size
+    zh, en = _flatten(zh_im), _flatten(en_im)
+    # 小图（字块 152x120）放大后再拼，否则构建页上只有指甲盖大一块
+    k = min(4, max(1, 360 // max(1, zh.width)))
+    if k > 1:
+        zh = zh.resize((zh.width * k, zh.height * k), Image.NEAREST)
+        en = en.resize((en.width * k, en.height * k), Image.NEAREST)
+    w, h = zh.size
     canvas = Image.new("RGB", (w, h * 2 + 40), (250, 250, 252))
-    canvas.paste(zh_im, (0, 24))
-    canvas.paste(en_im, (0, h + 32))
+    canvas.paste(zh, (0, 24))
+    canvas.paste(en, (0, h + 32))
     d = ImageDraw.Draw(canvas)
     f = load_font(16)
     d.text((8, 4), "ZH (source)", font=f, fill=(30, 30, 40))
     d.text((8, h + 28), "EN (generated)", font=f, fill=(30, 30, 40))
     canvas.save(work / "compare.png")
+
+
+def check_gen_reuse(gen_path: Path, asset: str) -> tuple[bool, str]:
+    """同一张出图被当成两个资源的成品 = driver 串了上一轮的图。
+
+    🔴 2026-10-22 实测：复用 SunBrowser 时第 02 张的 `gen.png` 与第 01 张**逐字节相同**
+       （driver 当时按「面积最大」选图，两张同尺寸就选中了上一张），而五条断言全绿 ——
+       尺寸对、墨迹量 65%、纯白也对，只有内容哈希能发现。所以这一层必须有：
+       断言量的是「图长什么样」，量不出「这张图是不是这次的」。
+    """
+    try:
+        ledger = json.loads(GEN_LEDGER.read_text(encoding="utf-8"))
+    except Exception:                                            # noqa: BLE001
+        ledger = {}
+    digest = sha256(gen_path)
+    prev = ledger.get(digest)
+    if prev and prev.get("asset") != asset:
+        return False, (f"这张出图与「{Path(prev['asset']).name}」那次的成品逐字节相同"
+                       f"（{prev.get('at', '?')}）—— 拿回的是上一轮的旧图，拒收")
+    ledger[digest] = {"asset": asset, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    if len(ledger) > 200:                                        # 只留最近 200 张
+        ledger = dict(sorted(ledger.items(), key=lambda kv: kv[1].get("at", ""))[-200:])
+    try:
+        WORK_ROOT.mkdir(parents=True, exist_ok=True)
+        GEN_LEDGER.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:                                       # noqa: BLE001
+        print(f"⚠ 出图台账写不进去（{e}），不影响本次", file=sys.stderr)
+    return True, ""
 
 
 def cmd_run(args) -> int:
@@ -667,6 +1062,11 @@ def cmd_run(args) -> int:
         return 1
 
     fam = _pick_family(zh, getattr(args, "family", None))
+    provider = (getattr(args, "provider", "") or PROVIDER_LOCAL).lower()
+    if provider not in PROVIDERS:
+        print(f"🔴 未知 provider：{provider}（可选 {'/'.join(PROVIDERS)}）", file=sys.stderr)
+        return 2
+
     entry = load_map().get(zh.name, {})
     title = args.title or entry.get("title") or ""
     lines = args.lines.split("|") if args.lines else entry.get("lines") or []
@@ -675,10 +1075,17 @@ def cmd_run(args) -> int:
               f"或用 --title/--lines 传", file=sys.stderr)
         return 3
 
-    # 尺寸闸门：工程里有几张同名占位图只有 100x100，直接跑会在补底板时炸出形状不匹配
     with Image.open(zh) as probe:
-        if probe.size[0] < 600 or probe.size[1] < 400:
-            print(f"⚠ {zh.name} 尺寸异常（{probe.size[0]}x{probe.size[1]}），不是可翻译的横幅，跳过",
+        size, mode = probe.size, probe.mode
+
+    if provider == PROVIDER_LOCAL:
+        if fam == FAMILY_GLYPH:
+            print(f"⚠ {zh.name} 是 glyph 族（{size[0]}x{size[1]} 单色美术字块）：本地只能排 Arial，"
+                  f"那等于把原图的笔画风格换掉 ⇒ 请用 --provider chatgpt_web", file=sys.stderr)
+            return 3
+        # 尺寸闸门：本地工序按 884x544 的版面锚点走；工程里几张 100x100 的占位图会在补底板时炸形状
+        if size[0] < 600 or size[1] < 400:
+            print(f"⚠ {zh.name} 尺寸异常（{size[0]}x{size[1]}），不是可翻译的横幅，跳过",
                   file=sys.stderr)
             return 3
 
@@ -688,43 +1095,74 @@ def cmd_run(args) -> int:
     shutil.copyfile(zh, src)
 
     src_im = Image.open(src)
-    alpha_orig = src_im.getchannel("A") if src_im.mode == "RGBA" else None
-    a = np.asarray(src_im.convert("RGB"))
-
     t0 = time.time()
-    extra = {}
-    if fam == FAMILY_ATLAS:
-        panel, zone, info = rebuild_atlas(a)
-        Image.fromarray(panel).save(work / "panel.png")
-        out, en_mask = draw_atlas_text(Image.fromarray(panel), lines, info["text_box"])
-        Image.fromarray((info["plate"] * 255).astype(np.uint8)).save(work / "plate_mask.png")
-        Image.fromarray((info["strip"] * 255).astype(np.uint8)).save(work / "strip_mask.png")
-        Image.fromarray((en_mask * 255).astype(np.uint8)).save(work / "en_mask.png")
-        extra = {"erase_px": int(info["ink"].sum()), "en_px": int(en_mask.sum()),
-                 "plate_rgb": [int(v) for v in info["color"]]}
+    zone = None
+    extra: dict = {"family": fam, "provider": provider}
+
+    if provider == PROVIDER_LOCAL:
+        alpha_orig = src_im.getchannel("A") if src_im.mode == "RGBA" else None
+        a = np.asarray(src_im.convert("RGB"))
+        if fam == FAMILY_ATLAS:
+            panel, zone, info = rebuild_atlas(a)
+            Image.fromarray(panel).save(work / "panel.png")
+            out, en_mask = draw_atlas_text(Image.fromarray(panel), lines, info["text_box"])
+            Image.fromarray((info["plate"] * 255).astype(np.uint8)).save(work / "plate_mask.png")
+            Image.fromarray((info["strip"] * 255).astype(np.uint8)).save(work / "strip_mask.png")
+            Image.fromarray((en_mask * 255).astype(np.uint8)).save(work / "en_mask.png")
+            extra.update({"erase_px": int(info["ink"].sum()), "en_px": int(en_mask.sum()),
+                          "plate_rgb": [int(v) for v in info["color"]]})
+        else:
+            panel, zone = rebuild_panel(a)
+            Image.fromarray(panel).save(work / "panel.png")
+            out = draw_text(Image.fromarray(panel), title, lines, zone)
+        if alpha_orig is not None:
+            out = out.convert("RGB")
+            out.putalpha(alpha_orig)
     else:
-        panel, zone = rebuild_panel(a)
-        Image.fromarray(panel).save(work / "panel.png")
-        out = draw_text(Image.fromarray(panel), title, lines, zone)
+        # ---- 绘图管线：模型只负责「画出来」，尺寸/alpha/落版位置全部由本地归位决定 ----
+        prompt = build_prompt(zh, entry, lines, title, fam)
+        prompt_file = work / "prompt.txt"
+        prompt_file.write_text(prompt, encoding="utf-8")
+        if fam == FAMILY_GLYPH:
+            ref = _flat_ref(src_im, work)
+        else:
+            ref = work / "inbox" / "ref.png"
+            ref.parent.mkdir(parents=True, exist_ok=True)
+            _flatten(src_im).save(ref)
+        gen_path = work / "inbox" / "gen.png"
+        rc, note = call_provider(args, work, ref, prompt_file, gen_path)
+        if rc != 0:
+            print(f"⚠ {zh.name}：没拿到出图（{note}），本轮跳过", file=sys.stderr)
+            return rc
+        ok, why = check_gen_reuse(gen_path, str(zh.relative_to(ROOT)))
+        if not ok:
+            print(f"🔴 {zh.name}：{why}", file=sys.stderr)
+            return 1
+        with Image.open(gen_path) as g:
+            g.load()
+            gen_im = g.copy()
+        if fam == FAMILY_GLYPH:
+            out, gstat = postprocess_glyph(src_im, gen_im)
+            Image.fromarray(np.asarray(out)[..., 3]).save(work / "ink_mask.png")
+        else:
+            out, gstat = postprocess_photo(src_im, gen_im)
+        extra.update({"provider_note": note, "gen": gstat,
+                      "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]})
 
-    if alpha_orig is not None:
-        out = out.convert("RGB")
-        out.putalpha(alpha_orig)
     out.save(work / "out.png")
-
-    _compare_sheet(Image.open(src).convert("RGB"),
-                   Image.open(work / "out.png").convert("RGB"), work)
+    _compare_sheet(Image.open(src), Image.open(work / "out.png"), work)
 
     en_path = en_path_for(zh, fam)
     state = {
         "family": fam,
+        "provider": provider,
         "asset": str(zh.relative_to(ROOT)),
         "en": str(en_path.relative_to(ROOT)),
         "title": title,
         "lines": lines,
-        "zone": list(zone),
-        "size": list(src_im.size),
-        "mode": src_im.mode,
+        "zone": list(zone) if zone else None,
+        "size": list(size),
+        "mode": mode,
         "src_sha256": sha256(src),
         "out_sha256": sha256(work / "out.png"),
         "elapsed": round(time.time() - t0, 2),
@@ -735,9 +1173,10 @@ def cmd_run(args) -> int:
     (work / "state.json").write_text(json.dumps(state, ensure_ascii=False, indent=2),
                                      encoding="utf-8")
 
-    print(f"家族   : {fam}")
+    print(f"家族   : {fam}   provider: {provider}")
     print(f"源图   : {state['asset']}  {state['size'][0]}x{state['size'][1]} {state['mode']}")
-    print(f"重建区 : y {zone[0]}..{zone[1]}  x {zone[2]}..{zone[3]}")
+    if zone:
+        print(f"重建区 : y {zone[0]}..{zone[1]}  x {zone[2]}..{zone[3]}")
     print(f"译名   : {' / '.join(filter(None, [title]))} {lines}")
     print(f"输出   : {work / 'out.png'}  ({state['elapsed']}s)")
     return 0
@@ -746,7 +1185,7 @@ def cmd_run(args) -> int:
 # --------------------------------------------------------------------------- #
 # 子命令：verify
 # --------------------------------------------------------------------------- #
-def verify_artfont(work: Path, state: dict) -> list[tuple[str, bool, str]]:
+def verify_artfont(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], list[str]]:
     src = Image.open(work / "src.png")
     out = Image.open(work / "out.png")
 
@@ -785,10 +1224,10 @@ def verify_artfont(work: Path, state: dict) -> list[tuple[str, bool, str]]:
     # 英文必须真的画上去了：重建区里要有成片的纯白
     white = int((zone_rgb.min(axis=2) > 245).sum())
     checks.append(("英文白字已落版", white > 2000, f"纯白像素 {white}"))
-    return checks
+    return checks, []
 
 
-def verify_atlas(work: Path, state: dict) -> list[tuple[str, bool, str]]:
+def verify_atlas(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], list[str]]:
     """atlas 家族的断言：板外一个像素都不能动、板内不许有残字、板底必须补得平整。"""
     src = Image.open(work / "src.png")
     out = Image.open(work / "out.png")
@@ -837,28 +1276,138 @@ def verify_atlas(work: Path, state: dict) -> list[tuple[str, bool, str]]:
         strip = np.asarray(Image.open(strip_f)) > 127
         left_white = int(((a_out.min(axis=2) > 235) & strip).sum())
         checks.append(("板外条带无残字", left_white < 30, f"条带内近白像素 {left_white}"))
-    return checks
+    return checks, []
+
+
+def verify_glyph(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], list[str]]:
+    """glyph 家族的断言：尺寸 / 透明边 / 墨迹量 / 纯白 / 落位。
+
+    🔴 这里**没有**「文字对不对」的闸门：OCR 在手写美术字上不可靠，拿它当红绿只会假红。
+       所以最后一条是 warns（构建标黄、提示人眼确认），而不是 checks。
+    """
+    src = Image.open(work / "src.png").convert("RGBA")
+    out = Image.open(work / "out.png").convert("RGBA")
+    checks: list[tuple[str, bool, str]] = []
+    warns: list[str] = []
+
+    checks.append(("尺寸与源图一致", src.size == out.size,
+                   f"{src.size[0]}x{src.size[1]} vs {out.size[0]}x{out.size[1]}"))
+
+    sa = np.asarray(src)[..., 3]
+    oa = np.asarray(out)[..., 3]
+
+    # 透明边：源图字块可能贴到画布边缘（152x120 那张底部就贴着），所以不能量整条边环，
+    # 改量四角方块 —— 那里在源图里一定是空的，模型若把底画满/加框，四角立刻变实。
+    c = max(4, min(out.width, out.height) // 10)
+    corners_src = [sa[:c, :c], sa[:c, -c:], sa[-c:, :c], sa[-c:, -c:]]
+    corners_out = [oa[:c, :c], oa[:c, -c:], oa[-c:, :c], oa[-c:, -c:]]
+    cmax_out = max(int(x.max()) for x in corners_out)
+    cmax_src = max(int(x.max()) for x in corners_src)
+    checks.append(("四角仍是透明的", cmax_out <= max(16, cmax_src + 16),
+                   f"出图四角最大 alpha {cmax_out}（源图 {cmax_src}）—— 变实说明模型把底/框画进来了"))
+
+    n_src, n_out = int((sa > 24).sum()), int((oa > 24).sum())
+    ratio = n_out / max(1, n_src)
+    checks.append(("字块墨迹量合理", 0.35 <= ratio <= 2.0,
+                   f"{n_out} px = 源图的 {ratio:.0%}（源 {n_src} px）"))
+
+    a_out = np.asarray(out)
+    op = a_out[..., :3][oa > 10]
+    checks.append(("字色为纯白 RGB255", bool(len(op)) and not (op != 255).any(),
+                   "颜色由游戏侧 tint 控制，图里不许带彩色/渐变"))
+
+    gen = state.get("gen") or {}
+    subject = float(gen.get("gen_subject_ratio") or 0.0)
+    checks.append(("出图主体不是一个小标记", subject >= 0.05,
+                   f"主体占出图画布 {subject:.1%}（太小 = 模型只画了个角标，放大后就是一团糊）"))
+
+    if gen.get("gen_size") and state.get("size"):
+        gw, gh = gen["gen_size"]
+        sw, sh = state["size"]
+        dev = abs((gw / max(1, gh)) - (sw / max(1, sh))) / max(1e-3, sw / max(1, sh))
+        if dev > 0.25:
+            warns.append(f"模型改了画布比例（出图 {gw}x{gh} vs 源 {sw}x{sh}）：字块按 bbox 等比缩回，"
+                         f"版面可能已经不是原样")
+    if gen.get("gen_bg_std") and gen["gen_bg_std"] > 25:
+        warns.append(f"出图底色不平（边圈 std {gen['gen_bg_std']}）：墨迹是按「与底色的差」抠的，"
+                     f"渐变/纹理底会把一层灰雾一起抠成字，务必看图")
+    if gen.get("iou") is not None:
+        warns.append(f"字形重合度 IoU {gen['iou']}（只记录，不当红：译文与原文不是同一批字）")
+    warns.append("译文需人眼确认（手写美术字没有可靠的 OCR 闸门）")
+    return checks, warns
+
+
+def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], list[str]]:
+    """整幅图走模型重绘时的口径：尺寸 / alpha / 「确实改了字」/ 「没被整幅重画」。"""
+    src = Image.open(work / "src.png")
+    out = Image.open(work / "out.png")
+    checks: list[tuple[str, bool, str]] = []
+    warns: list[str] = []
+
+    checks.append(("尺寸与源图一致", src.size == out.size,
+                   f"{src.size[0]}x{src.size[1]} vs {out.size[0]}x{out.size[1]}"))
+    if src.mode == "RGBA":
+        same = out.mode == "RGBA" and np.array_equal(np.asarray(src.getchannel("A")),
+                                                    np.asarray(out.getchannel("A")))
+        checks.append(("alpha 与源图逐像素一致", same, "透明边沿用源图（lock 语义）"))
+    else:
+        checks.append(("alpha 与源图逐像素一致", True, "源图无 alpha，跳过"))
+
+    a_src = np.asarray(src.convert("RGB")).astype(int)
+    a_out = np.asarray(out.convert("RGB")).astype(int)
+    diff = np.abs(a_src - a_out).max(axis=2)
+    changed = float((diff > 24).mean())
+    mean_diff = float(diff.mean())
+    checks.append(("文字区域确实重画过", changed >= 0.02,
+                   f"改动像素 {changed:.1%}（原样返回说明模型没动手）"))
+    checks.append(("没有整幅重画", changed <= 0.75, f"改动像素 {changed:.1%}（翻译不该重绘背景）"))
+    checks.append(("整体色差可控", mean_diff <= 45, f"平均通道差 {mean_diff:.1f}"))
+    if changed > 0.40:
+        warns.append(f"改动像素 {changed:.0%} 偏大：模型可能顺手改了画面，务必看图")
+    warns.append("英文是否正确、有没有被裁掉需人眼确认（无 OCR 闸门）")
+    return checks, warns
+
+
+def run_verify(work: Path, state: dict):
+    """按 provider / family 选口径。provider 决定「谁画的」，family 决定「画的是什么」。"""
+    fam = state.get("family") or FAMILY_ARTFONT
+    provider = state.get("provider") or PROVIDER_LOCAL
+    if provider == PROVIDER_LOCAL:
+        return verify_atlas(work, state) if fam == FAMILY_ATLAS else verify_artfont(work, state)
+    if fam == FAMILY_GLYPH:
+        return verify_glyph(work, state)
+    return verify_photo_gpt(work, state)
 
 
 def cmd_verify(args) -> int:
     work = Path(args.work)
     state = json.loads((work / "state.json").read_text(encoding="utf-8"))
     fam = state.get("family") or FAMILY_ARTFONT
-    checks = verify_atlas(work, state) if fam == FAMILY_ATLAS else verify_artfont(work, state)
+    provider = state.get("provider") or PROVIDER_LOCAL
+    checks, warns = run_verify(work, state)
 
     ok = all(c[1] for c in checks)
-    print(f"验收（{fam}）：{state['asset']}")
+    print(f"验收（{fam} / {provider}）：{state['asset']}")
     for name, passed, detail in checks:
         print(f"  {'✅' if passed else '❌'} {name}  —— {detail}")
+    for w in warns:
+        print(f"  ⚠ {w}")
 
-    state["verified"] = {"ok": ok, "checks": [{"name": n, "pass": p, "detail": d}
-                                              for n, p, d in checks]}
+    state["verified"] = {"ok": ok,
+                         "checks": [{"name": n, "pass": p, "detail": d} for n, p, d in checks],
+                         "warns": warns}
     (work / "state.json").write_text(json.dumps(state, ensure_ascii=False, indent=2),
                                      encoding="utf-8")
     if args.run:
         failed = [n for n, p, _ in checks if not p]
-        register(args.run, f"验收·{Path(state['asset']).stem}", "pass" if ok else "fail",
-                 "美术翻译链", "全部通过" if ok else "未过：" + "、".join(failed))
+        if not ok:
+            status, detail = "fail", "未过：" + "、".join(failed)
+        elif warns:
+            # 硬项全过但有「得人看一眼」的项 ⇒ 黄（不是绿）。绿=机器已经能担保，这里担保不了。
+            status, detail = "warn", "硬项全过；待人工确认：" + "；".join(warns)
+        else:
+            status, detail = "pass", "全部通过"
+        register(args.run, f"验收·{Path(state['asset']).stem}", status, "美术翻译链", detail)
     return 0 if ok else 1
 
 
@@ -935,10 +1484,14 @@ def cmd_publish(args) -> int:
 
     shutil.copyfile(work / "out.png", target)
     fam = state.get("family") or FAMILY_ARTFONT
-    meta_note = ensure_meta(target, ROOT / state["asset"] if fam == FAMILY_ATLAS else None)
+    # atlas / glyph：目标目录与源图同一套族结构，中文源图自己的 .meta 就是最准的模板
+    # （同一个图集、同一份导入设置）；artfont 横幅仍按「同族 bg_en」挑，见 ensure_meta 注释。
+    meta_hint = ROOT / state["asset"] if fam in (FAMILY_ATLAS, FAMILY_GLYPH) else None
+    meta_note = ensure_meta(target, meta_hint)
 
     state["published"] = {
         "target": state["en"],
+        "provider": state.get("provider") or PROVIDER_LOCAL,
         "backup": str(backup.relative_to(ROOT)) if backup else None,
         "sha256": sha256(target),
         "size": target.stat().st_size,
@@ -969,6 +1522,22 @@ def atlas_targets(mapping: dict) -> list[Path]:
             continue
         for hit in ATLAS_ROOT.rglob(name):
             out.append(hit)
+    return sorted(out)
+
+
+def glyph_targets(mapping: dict) -> list[Path]:
+    """glyph 家族的候选：译名表里给了 title/lines 的条目，到 ArtFont_zh 下找同名文件。
+
+    理由和 atlas 一样：ArtFont_zh 下几千张图，绝大多数是纯图或别族资源，**不能扫全目录**
+    （`_is_glyph` 要逐张开图判色，扫全目录要几分钟）。译名表就是白名单。
+    """
+    out: list[Path] = []
+    for name, entry in mapping.items():
+        if name.startswith("_") or not (entry.get("lines") or entry.get("title")):
+            continue
+        for hit in ZH_ROOT.rglob(name):
+            if hit.name.endswith("_zh.png") and _is_glyph(hit):
+                out.append(hit)
     return sorted(out)
 
 
@@ -1018,8 +1587,12 @@ def cmd_batch(args) -> int:
         pool: list[Path] = []
         if family in ("auto", FAMILY_ARTFONT):
             pool += sorted(ZH_DIR.glob(BANNER_GLOB))
+        if family in ("auto", FAMILY_GLYPH):
+            pool += glyph_targets(mapping)
         if family in ("auto", FAMILY_ATLAS):
             pool += atlas_targets(mapping)
+        seen: set[Path] = set()
+        pool = [p for p in pool if not (p in seen or seen.add(p))]
         for zh in pool:
             if not wanted(zh):
                 continue
@@ -1069,17 +1642,24 @@ def cmd_batch(args) -> int:
         stem = zh.stem if fam == FAMILY_ATLAS else zh.name[: -len("_zh.png")]
         print(f"\n── [{stage}] {zh.name}（{fam}）──")
         if stage == "run":
-            rc = cmd_run(argparse.Namespace(asset=str(zh), title=None, lines=None,
-                                            work=None, family=fam))
+            rc = cmd_run(argparse.Namespace(
+                asset=str(zh), title=None, lines=None, work=None, family=fam,
+                provider=getattr(args, "provider", PROVIDER_LOCAL),
+                gen_image=getattr(args, "gen_image", ""),
+                cdp_port=getattr(args, "cdp_port", 0),
+                adspower_profiles=getattr(args, "adspower_profiles", ""),
+                provider_timeout=getattr(args, "provider_timeout", 0),
+                ignore_ledger=getattr(args, "ignore_ledger", False),
+                no_auto_fallback=getattr(args, "no_auto_fallback", False)))
             if rc == 3:
                 if args.run:
                     register(args.run, f"生成·{stem}", "warn", "美术翻译链",
-                             "缺译名或尺寸异常，已跳过")
+                             "缺译名 / 尺寸异常 / 出图环境不可用，已跳过")
             elif rc != 0:
                 failures += 1
                 if args.run:
                     register(args.run, f"生成·{stem}", "fail", "美术翻译链",
-                             "没有译名或源图不可用")
+                             "没有译名、源图不可用或出图通道硬失败")
         elif stage == "verify":
             rc = cmd_verify(argparse.Namespace(work=str(work), run=args.run))
             if rc != 0:
@@ -1110,18 +1690,34 @@ def register(run_dir: str, name: str, status: str, group: str, detail: str) -> N
         pass
 
 
+def _add_provider_args(p: argparse.ArgumentParser) -> None:
+    """出图 provider 的公共参数（run / batch 共用，免得两处漂移）。"""
+    p.add_argument("--provider", default=PROVIDER_LOCAL, choices=PROVIDERS,
+                   help="chatgpt_web=Chrome/AdsPower 驱动 GPT 重绘（绘图管线，glyph 族必需）；"
+                        "local=本地像素工序（原行为）；manual=用 --gen-image 交现成图")
+    p.add_argument("--gen-image", default="", help="provider=manual 时直接用的出图（跳过浏览器）")
+    p.add_argument("--cdp-port", type=int, default=0,
+                   help="复用已登录浏览器的 CDP 端口（find_browser_cdp.py 反查）")
+    p.add_argument("--adspower-profiles", default="",
+                   help="换号顺序（逗号分隔的 AdsPower user_id），留空=按台账自动排")
+    p.add_argument("--provider-timeout", type=int, default=0,
+                   help="等图上限（秒）；0=用 gen_chatgpt_web.py 的默认值")
+    p.add_argument("--ignore-ledger", action="store_true", help="忽略额度台账（验证某个号时用）")
+    p.add_argument("--no-auto-fallback", action="store_true", help="额度用尽不自动换号")
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="中文美术字 → 英文版（战令横幅 / 图集大图）")
+    ap = argparse.ArgumentParser(description="中文美术字 → 英文版（战令横幅 / 图集大图 / 美术字块）")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    fam_help = "auto=按路径判断（Atlas/ 下走 atlas，其余走 artfont）"
+    fam_help = "auto=按源图特征判断（Atlas/→atlas；小型单色字块→glyph；其余 artfont）"
 
     p = sub.add_parser("scan", help="列出缺英文版的资源")
     p.add_argument("--json", action="store_true")
     p.add_argument("--quiet", action="store_true", help="只打一行汇总（收尾复核用）")
     p.add_argument("--run", default="", help="Jenkins 证据目录（登记环节结论用）")
     p.add_argument("--strict-ok", action="store_true", help="即使有缺失也返回 0")
-    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_ATLAS],
+    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_GLYPH, FAMILY_ATLAS],
                    help=fam_help)
     p.set_defaults(func=cmd_scan)
 
@@ -1130,8 +1726,9 @@ def main() -> int:
     p.add_argument("--title", default="")
     p.add_argument("--lines", default="", help='用 | 分隔，如 "UNLOCK|ADVANCED|BATTLE PASS"')
     p.add_argument("--work", default="")
-    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_ATLAS],
+    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_GLYPH, FAMILY_ATLAS],
                    help=fam_help)
+    _add_provider_args(p)
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("verify", help="像素级验收")
@@ -1152,8 +1749,9 @@ def main() -> int:
     p.add_argument("--asset", default="", help="只跑这一张（相对工程根，MODE=one 用）")
     p.add_argument("--force", action="store_true", help="已有英文版 / 已验收过也重做")
     p.add_argument("--run", default="")
-    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_ATLAS],
+    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_GLYPH, FAMILY_ATLAS],
                    help=fam_help)
+    _add_provider_args(p)
     p.set_defaults(func=cmd_batch)
 
     args = ap.parse_args()

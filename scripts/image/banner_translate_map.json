@@ -4,6 +4,8 @@
     "artfont 族：key 是 ArtFont_zh/OperatingPanelAtlas 下的文件名（*_bg_zh.png），title = 小标题、lines = 下方大标题按数组逐行排（最多 4 行）。",
     "atlas 族：key 是 Atlas/<面板>/ 下的文件名（没有 _zh 后缀，如 cn2-X1_kuafu_rukou.png），图上本来就只有一块大标语 ⇒ 只写 lines，不写 title。",
     "atlas 族没有「扫全目录」的余地（图集里绝大多数图没有中文），所以本表就是白名单：有 lines 的才做。",
+    "glyph 族（2026-10-22）：ArtFont_zh 下「小型 + 单色」的美术字块（页签/竖排标题），也只支持白名单。",
+    "  额外字段：zh_text = 图上那句中文原文（提示词里要写给它看）；gpt_layout = 版面怎么摆（人话描述，只对 glyph 生效）。",
     "译名口径以 Assets/ManagedResources/~Lua/Config/Data/Language.lua 为准；",
     "已上线英文图（pata_bg_en / shenyuan_bg_en）的用词与之不完全一致时，以已上线图为准，别自己另造。",
     "第三行「累计返利 __ 倍」在 pata_bg_en / shenyuan_bg_en 里都是被删掉的（留给 UI 动态数字），这里同样不排。"
@@ -41,5 +43,17 @@
   "cn2-X1_kuafu_rukou.png": {
     "lines": ["REIGN OF", "CHAOS"],
     "note": "跨服入口「混乱之治」（Atlas/LaddersTypePanelAtlas，1080x488，标题烘在右侧纯色板上）"
+  },
+  "cn2-X1_zhutihuodong_yuanliaoshouji_01_zh.png": {
+    "zh_text": "原料收集",
+    "lines": ["MATERIAL", "COLLECT"],
+    "gpt_layout": "One single diagonal line, italic, leaning up to the right like the reference. 'MATERIAL' is the big word on the left; 'COLLECT' is noticeably smaller and continues to its right along the same baseline.",
+    "note": "主题活动页签「原料收集」横版（ArtFont_zh/DynamicActivityPanelAtlas/tab，180x96 单色字块）。语言表里没有这条文案，译名待产品确认"
+  },
+  "cn2-X1_zhutihuodong_yuanliaoshouji_02_zh.png": {
+    "zh_text": "原料收集",
+    "lines": ["MATERIAL", "COLLECT"],
+    "gpt_layout": "Two stacked rows: 'MATERIAL' large on the top row, 'COLLECT' smaller and centred underneath it, same italic slant. Keep the two small solid triangular arrows sitting at the left and right end of the bottom row exactly where they are — reproduce them as identical solid shapes, they are part of the asset.",
+    "note": "主题活动页签「原料收集」竖版（ArtFont_zh/DynamicActivityPanelAtlas/tab，152x120 单色字块，底部两侧带三角箭头）。译名待产品确认"
   }
 }

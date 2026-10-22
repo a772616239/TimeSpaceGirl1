@@ -209,9 +209,50 @@ private void maybeWake() {          // 每 15s tick 一次
 
 首启给一次「1~5 分钟后」的预热活动，避免新服开起来半小时没人说话；之后才进入 20~240 分钟的正态节奏。
 
-**玩家说话不会立刻触发回复**：`onWorldChat` 只更新 `lastHumanMsgId/lastHumanText/lastHumanAt`，
-`schedulePendingReply()` 在醒来那一刻才检查 `lastHumanMsgId > lastBotMsgId`。
-这就是「躺平挂机的人上线才看到你昨天说的话」的效果。
+**玩家说话不会立刻触发回复**：`onWorldChat` 只更新 `lastHumanMsgId/lastHumanText/lastHumanAt/lastHumanCountry`，
+`schedulePendingReply()` 在醒来那一刻才检查「这条真人消息有没有被认领过」（见下面 §4.2 的账本）。
+
+### 4.1 提示词里带了什么（2026-10-22 加）
+
+模型只看得到「你叫 Nova」，就会问「这游戏怎么玩」或者吹「我全英雄满级」——玩家点开面板立刻穿帮。
+现在 `BotManager.buildPrompt()` 固定喂四块：
+
+| 块 | 内容 | 解决什么 |
+|---|---|---|
+| 人设 | `bots[].persona` / `config.persona` | 说话像谁 |
+| **自己的账号** | `level / VIP / power / heroCount / cleared story stage X-Y / playing from 国家` | 回复里的进度和自己的面板对得上，不会一会儿萌新一会儿大佬 |
+| **对方国籍 + 说话风格** | `The LAST MESSAGE is from Sakuya, a player from Japan (jp). Match how players from there usually text: ...` | 各国玩家的语气不同（日本人客气、巴西人外放、美国人懒散），不再全体「lol fr」 |
+| **`(you)` 标注** | 上下文里自己之前发过的消息前缀 `(you)`，规则明令「不许回自己」 | 杜绝顺着自己的话往下接（自问自答） |
+
+- 账号数据来自 `refreshProfiles()`：每 10 分钟在调度线程读一次 Mongo（走 GM 同一条 `AyyncWorker` 通道，不占 15s tick），
+  读回 `playerManager.level/vipLevel/maxForce/country` + `alameinBattleManager.curFightId` + 英雄数。
+  跑完 `UserManager.removeUser()`，不会让 3MB 的号一直挂在内存里。
+- 关卡 id → `章-关` 的换算在 `BotText.formatStage()`（10101 → 1-1）。
+- 国籍文案表在 `BotText.COUNTRY_STYLE`（45 国），查不到就用 ISO 码 + 中性兜底。
+- 🔴 **语言永远跟随对方那条消息**，国籍只改语气/口癖。否则会出现「日本人用日语回英文玩家」的鸡同鸭讲。
+
+### 4.2 「自己回复自己」是怎么修的（2026-10-22）
+
+现象：世界频道里机器人连着刷 4 条，看着像它在自问自答，还白烧 token。根因是判重账本不对：
+
+| 洞 | 后果 |
+|---|---|
+| 判据是 `lastHumanMsgId > lastBotMsgId` | 跨服频道 `sendBotChat` 返回 0（消息号由 chatserver 分配）⇒ `lastBotMsgId` 推不上去 ⇒ **同一条玩家消息每醒来一次就回一遍**（4 小时新鲜期内最多十几次） |
+| 闲聊 / 晒卡 / 手动发言从不 push `lastBotMsgId` | 账面永远「有欠账」 |
+| 只按 `bots.containsKey(uid)` 判机器人 | 别的服的机器人 uid 也是 9xxxxxxx 但不在本服名单 ⇒ 被当真人 |
+| 上下文不区分「自己说的」 | 模型顺着自己的话接 |
+
+修法（`ChannelState.repliedHumanMsgId` 认领账本）：
+
+```java
+// 接单那一刻就记账，不等发送成功 —— DSH 超时 / 发送失败 / 跨服没回包都不会再回同一条
+st.repliedHumanMsgId.set(claimed);
+// 发送后即使 msgId==0（跨服）也把 lastBotMsgId 推到位，看板不再显示「没回过」
+st.lastBotMsgId.set(Math.max(msgId, claimed));
+```
+
+另外三道硬防护：`isBotUid()` 按号段兜底（9xxxxxxx，`fakeSenderUid` 例外）、
+`isBotName()` 认名字（跨服 uid 被改写时兜底）、`fireReply()` 开头再判一次名字，是机器人就直接记账不发。
 
 ### 防刷屏的四道闸
 
@@ -222,10 +263,10 @@ private void maybeWake() {          // 每 15s tick 一次
    这是最粗也是最有效的一道 —— 频率根本高不起来。
 2. `minSpeakGapSec`（45s）：`sendBotChat` 统一更新 `lastSpeakAt`，喊话和晒卡在动手前先看这个值，
    不够就顺延；`replyCooldownSec`（25s）管同一频道两次回复，`replyMinGapSec`（20 分钟）管全局。
-3. `isBotUid()`：机器人自己的消息进 `onWorldChat` 只 bump `lastBotMsgId`，不更新 `lastHumanMsgId`，
-   不触发回复。
-4. **回调二次校验**：DSH 要等 10~15 秒，回来时若 `lastHumanMsgId <= lastBotMsgId`（期间已经被回过），
-   这次回复直接丢弃，不会对着自己的话再说一遍。
+3. `isBotUid()` / `isBotName()`：机器人自己的消息进 `onWorldChat` 只 bump `lastBotMsgId`，
+   不更新 `lastHumanMsgId`，不触发回复。号段兜底是为了**别的服**的机器人（uid 同样是 9xxxxxxx）。
+4. **认领账本 + 回调二次校验**：接单立刻写 `repliedHumanMsgId`，DSH 回来时若这个值已经不是自己认领的那个
+   （期间被别的机器人重新认领过），这次回复直接丢弃 —— 不会对着自己的话再说一遍，也不会为同一条消息二次付费。
 
 实测（临时把醒来间隔压到 60~120 秒验证链路）：
 
@@ -439,6 +480,9 @@ DSH_TIMEOUT=60 python3 scripts/bot/dsh_bridge.py --once "say hi"   # 单次直�
 7. **跨服频道（chatType=16）需要 `isOpenCross`**；没开跨服时机器人只在本服世界频道活动。
 8. **别把 `activeMin/MaxSec` 调太小当压测**：临时调 60~120 秒验链路可以，验完必须改回
    `1200/14400` 重新部署，否则测试服会变成刷屏现场。
+9. **账号快照是 10 分钟一刷的**：`refreshProfiles()` 读一次是 3MB 的库文档，不能跟着 15s tick 跑。
+   机器人刚升完级、聊天里还按旧等级说话是正常现象。当前快照看 `BOT_STATUS.bots[]` 的
+   `stageText / power / heroCount / profileAt`（`profileAt=0` = 还没读到，提示词里会省略这几项）。
 
 ---
 

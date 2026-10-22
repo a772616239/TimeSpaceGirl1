@@ -6,16 +6,26 @@ local ItemConfig = ConfigManager.GetConfig(ConfigName.ItemConfig)
 local lineupList = {}--阵容列表
 local receivedList = {}--奖励领取信息
 
--- 入场：卡从右往左依次快速滑回原位（配方见 docs/ui_item_slide_in_skill.md）
--- 🔴 Content 上挂着 VerticalLayoutGroup + ContentSizeFitter，每次重建都会重写**卡的根节点**
---    anchoredPosition => 位移只写卡的子节点 iconPanel（卡下唯一；descPanel 是点开才显示的详情，
---    默认隐藏，不参与）。
--- 🔴 没有淡入通道：iconPanel 下三个 Image 同名（1080x885 / 1040x423 x2），Util.GetGameObject
---    按名字 DFS 会命中第一个 => 只做位移，别按名字找底板。
-local kSlideFrom     = 240    -- 起点位移（px）：卡宽 1060、视口 1080，再大就被 RectMask2D 裁掉一截
-local kSlideDuration = 0.22   -- 单卡时长
-local kSlideStep     = 0.055  -- 相邻卡错开
+-- 入场：卡从右往左依次滑入，卡内英雄再逐张往左跟进（配方见 docs/ui_item_slide_in_skill.md）
+-- 🔴 位移必须写到「被布局组管的那一层」的**直接子节点**上，写布局组直接管的那个节点会被抹回：
+--    ① Content 上是 VerticalLayoutGroup => 卡的根节点 anchoredPosition 每次重建都被重写；
+--    ② **卡根自己也是 VerticalLayoutGroup**（padding-left 20 / ChildForceExpandHeight=1，guid 与
+--       Content 上那个完全相同）=> 连 iconPanel 的 anchoredPosition 也会被重写。写 iconPanel 的
+--       现象正是「第一次打开只有第一张卡滑动」：第 1 张 delay=0 被 tween 立刻接管（每帧覆盖布局
+--       结果），第 2..N 张在 delay 等待期间被布局拉回原位，位移归零，看起来根本没播；
+--    ③ grid 上是 HorizontalLayoutGroup（spacing -80）=> 英雄卡实例的根节点同理。
+--    => 统一做法：遍历目标节点的**所有直接子节点**做位移（它们自己不被任何布局组管）。
+-- 🔴 卡层没有淡入：iconPanel 下三个 Image 同名（1080x885 装饰层 / 1040x423 x2），
+--    Util.GetGameObject 按名字 DFS 会命中装饰层，所以这里按 childCount/GetChild 走索引。
+local kSlideFrom     = 240    -- 卡：起点位移（px）
+local kSlideDuration = 0.22   -- 卡：单卡时长
+local kSlideStep     = 0.055  -- 卡：相邻卡错开
 local kSlideNode     = "iconPanel"
+local kItemFrom      = 80     -- 卡内英雄：起点位移（英雄卡宽 267，80 明显又不飞出视口）
+local kItemDuration  = 0.18   -- 卡内英雄：单张时长
+local kItemStep      = 0.04   -- 卡内英雄：同一张卡内相邻错开
+local kItemBaseDelay = 0.06   -- 卡内英雄：相对「自己的卡开始滑」的延迟
+local kAnimCards     = 4      -- 只给前几张卡赋入场（一屏约 3.7 张），屏幕外的不白跑 tween
 
 local slideItems   = {}     -- { rect, x, y, tween }
 local slidePlaying = false  -- 这一轮还没播完（连点靠它挡住叠播）
@@ -59,19 +69,29 @@ function this.StopSlideIn()
     end
 end
 
--- 列表顺序 = lineupList 的顺序（1..N），已 SetActive 的才参与
-local function CollectCards()
-    local cards = {}
+-- 列表顺序 = lineupList 的下标；entry.cards[k] 是该卡里的英雄实例（SetPrefabData 里建的）
+local function CollectEntries()
+    local entries = {}
     for i = 1, #lineupList do
-        local card = lineupList[i] and lineupList[i].prefab
+        local entry = lineupList[i]
+        local card = entry and entry.prefab
         if Alive(card) and card.activeSelf then
-            cards[#cards + 1] = card
+            local items = {}
+            if entry.cards then
+                for k = 1, #entry.cards do
+                    local hero = entry.cards[k]
+                    if Alive(hero) then
+                        items[#items + 1] = hero
+                    end
+                end
+            end
+            entries[#entries + 1] = { go = card, items = items }
         end
     end
-    return cards
+    return entries
 end
 
--- 起播：第 i 张卡从右侧 kSlideFrom 处滑回原位，相邻错开 kSlideStep
+-- 起播：卡从右侧 kSlideFrom 滑回原位（相邻错开 kSlideStep），卡内英雄再从更右侧跟进
 function this.PlaySlideIn()
     local interrupted = slidePlaying
     this.StopSlideIn()
@@ -79,8 +99,8 @@ function this.PlaySlideIn()
         -- 连点：上一轮没播完就只复位、不重播（复位到终值本身就是「立刻到位」）
         return 0
     end
-    local cards = CollectCards()
-    if #cards <= 0 then
+    local entries = CollectEntries()
+    if #entries <= 0 then
         return 0
     end
     local function Done()
@@ -90,33 +110,62 @@ function this.PlaySlideIn()
             slidePlaying = false
         end
     end
+    -- 单条位移：先跳到起点，再回归基准值；OnComplete 里再钉一次终值（防浮点残差）
+    local function AddSlide(rect, from, duration, delay)
+        local pos = rect.anchoredPosition
+        -- 从右侧滑入：起点在右，向左归位（改左侧只需把 + 改成 -）
+        rect.anchoredPosition = Vector2.New(pos.x + from, pos.y)
+        local tween = rect:DOAnchorPosX(pos.x, duration)
+        tween:SetDelay(delay)
+        SetEaseSafe(tween, "OutQuad")
+        slidePending = slidePending + 1
+        tween:OnComplete(function()
+            if Alive(rect) then
+                rect.anchoredPosition = Vector2.New(pos.x, pos.y)
+            end
+            Done()
+        end)
+        slideItems[#slideItems + 1] = { rect = rect, x = pos.x, y = pos.y, tween = tween }
+    end
+    -- 一个节点的所有直接子节点一起平移（不判 activeSelf：漏动会错位，动到隐藏节点由 tween 归位）
+    local function SlideChildren(go, from, duration, delay)
+        if not Alive(go) then
+            return
+        end
+        local tf = go.transform
+        if not Alive(tf) then
+            return
+        end
+        for i = 0, tf.childCount - 1 do
+            local child = tf:GetChild(i)
+            if Alive(child) then
+                local rect = child:GetComponent("RectTransform")
+                if Alive(rect) then
+                    AddSlide(rect, from, duration, delay)
+                end
+            end
+        end
+    end
+    local limit = #entries
+    if limit > kAnimCards then
+        limit = kAnimCards
+    end
     slidePlaying = true
     local ok, err = pcall(function()
-        for ci = 1, #cards do
-            local go = Util.GetGameObject(cards[ci], kSlideNode)
-            if Alive(go) and go.activeSelf then
-                local rect = go:GetComponent("RectTransform")
-                if Alive(rect) then
-                    local pos = rect.anchoredPosition
-                    local delay = (ci - 1) * kSlideStep
-                    -- 从右侧滑入：起点在右，向左归位（改左侧只需把 + 改成 -）
-                    rect.anchoredPosition = Vector2.New(pos.x + kSlideFrom, pos.y)
-                    local tween = rect:DOAnchorPosX(pos.x, kSlideDuration)
-                    tween:SetDelay(delay)
-                    SetEaseSafe(tween, "OutQuad")
-                    slidePending = slidePending + 1
-                    tween:OnComplete(function()
-                        if Alive(rect) then
-                            rect.anchoredPosition = Vector2.New(pos.x, pos.y)
-                        end
-                        Done()
-                    end)
-                    slideItems[#slideItems + 1] = { rect = rect, x = pos.x, y = pos.y, tween = tween }
-                end
+        for ci = 1, limit do
+            local entry = entries[ci]
+            local cardDelay = (ci - 1) * kSlideStep
+            -- 卡：iconPanel 的所有直接子节点一起走
+            SlideChildren(Util.GetGameObject(entry.go, kSlideNode), kSlideFrom, kSlideDuration, cardDelay)
+            -- 卡内英雄：hero 的所有直接子节点（card / location）一起走，逐张错开
+            for k = 1, #entry.items do
+                local itemDelay = cardDelay + kItemBaseDelay + (k - 1) * kItemStep
+                SlideChildren(entry.items[k], kItemFrom, kItemDuration, itemDelay)
             end
         end
     end)
     if not ok then
+        -- DOTween 侧任何异常都不能把卡留在半截位置
         LogError("LineupRecommend: 阵容卡入场失败 " .. tostring(err))
         this.StopSlideIn()
         return 0
@@ -124,7 +173,7 @@ function this.PlaySlideIn()
     if slidePending == 0 then
         slidePlaying = false
     end
-    return #cards
+    return limit
 end
 
 -- 播 / 不播的唯一入口：只有「主动打开」那一次播

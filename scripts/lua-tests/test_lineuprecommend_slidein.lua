@@ -1,14 +1,13 @@
--- 离线验证 LineupRecommend（阵容推荐）列表的**入场滑入**动画（不依赖 Unity）：
--- 目标节点 UIRoot/UIRoot/UINode/LineupRecommend/Scroll View/Viewport/Content
---   ① 首次打开          OnOpen 置标记 -> OnShow 网络回调建好列表后，每张卡的 iconPanel 从右侧 +240 滑回原位
---                       （0.22s / 相邻错开 0.055 / OutQuad）
---   ② 完成恢复          anchoredPosition 精确回到基准值（== 而不是约等于）
---   ③ 中途 Stop         Kill 后全复位，不留半截位置
---   ④ 卡根节点不动      Content 上挂着 VerticalLayoutGroup，写根节点必被抹回 => 只许写子节点
---   ⑤ 从弹窗返回不播    只走 OnShow（IsBackOpen）时不播，位置保持在终值
---   ⑥ 关闭时停止        OnClose 里 Stop + 清标记（网络回调可能晚到，不能播在已隐藏的面板上）
---   ⑦ 连点保护          上一轮没播完时只复位、不重播；Stop / 播完之后能再触发
---   ⑧ 空数据            0 张卡返回 0，不报错
+-- 离线验证 LineupRecommend（阵容推荐）的两层入场动画（不依赖 Unity）：
+--   目标：UIRoot/UIRoot/UINode/LineupRecommend/Scroll View/Viewport/Content
+--   ① 卡层   iconPanel 的**所有直接子节点**从右侧 +240 滑回原位（0.22s / 相邻卡错开 0.055）
+--   ② item 层 hero 实例的所有直接子节点（card / location）从右侧 +80 跟进
+--            （0.18s / 同卡内错开 0.04 / 相对自己的卡晚 0.06）
+--   ③ 🔴 回归：iconPanel 的 anchoredPosition 必须一动不动 —— 卡根挂着 VerticalLayoutGroup，
+--      写它会被布局抹回，现象是「第一次打开只有第一张卡滑动」（第 2..N 张在 delay 期间被拉回原位）
+--   ④ 回归：卡根 / grid / hero 根节点也不动（分别由 Content、grid 的布局组管）
+--   ⑤ 完成精确复位 / 中途 Stop 全复位 / 卡数超过 kAnimCards 时后面几张不起 tween
+--   ⑥ 从弹窗返回（只走 OnShow）不播；OnClose 停并清标记；连点不叠播；无可见卡返回 0
 --
 -- 用法（与其他 lua-tests 一致）：
 --   cd LuaEncoder/luajit_mac/64
@@ -36,7 +35,7 @@ local function newTween(tf, endv, dur)
     return t
 end
 
--- 万能节点：GetGameObject 找不到就按路径自动建（真 prefab 里的节点比测试需要多得多）
+-- 万能节点：GetGameObject 找不到就按路径自动建（真 prefab 里的节点比这里需要的多得多）
 local function newRect(name, active)
     local o = { name = name, activeSelf = active ~= false, childCount = 0,
                 anchoredPosition = { x = 0, y = 0 },
@@ -72,13 +71,20 @@ local function newRect(name, active)
         self.childCount = #self.order
         return c
     end
+    function o:GetChild(i) return self.order[i + 1] end
     function o:Find(path)
         local cur = self
-        for name in path:gmatch("[^/]+") do
-            local nxt = cur.children and cur.children[name]
+        for nm in path:gmatch("[^/]+") do
+            local nxt = cur.children and cur.children[nm]
             if not nxt then
-                nxt = newRect(name, true)
+                nxt = newRect(nm, true)
                 cur:AddChild(nxt)
+                if nm == "hero" then          -- 英雄卡模板（prefab 里是 INACTIVE）+ card/location 两个孩子
+                    nxt:SetActive(false)
+                    nxt:AddChild(newRect("card", true))
+                    local loc = nxt:AddChild(newRect("location", true))
+                    loc.anchoredPosition = { x = 0, y = -215 }
+                end
             end
             cur = nxt
         end
@@ -96,13 +102,29 @@ local function deepCopy(node)
     return c
 end
 
--- iconPanel 在 prefab 里的基准（卡根 pivot 0.5/0.5，iconPanel 锚点左上）
+-- 真 prefab 实测：iconPanel(1040x423) 的 7 个直接子节点
+local CARD_CHILDREN = {
+    { "imgDeco", 0, 36, false },        -- 1080x885 装饰层，INACTIVE
+    { "imgBg", 0, 0, true },
+    { "imgFrame", 0, 0, true },
+    { "imgTitleBg", 0, 206, true },
+    { "title", 0, 205.5, true },
+    { "btnPreview", 440, 206, true },
+    { "grid", -2.4, -29.3, true },
+}
+local HERO_CHILDREN = { { "card", 0, 0 }, { "location", 0, -215 } }
 local ICON_POS = { x = 540, y = -211.5 }
+local CARD_NODE_COUNT = #CARD_CHILDREN     -- 7
+local HERO_NODE_COUNT = #HERO_CHILDREN     -- 2
 
 local function buildTemplate()
     local tpl = newRect("prefab", false)
     local icon = tpl:AddChild(newRect("iconPanel", true))
     icon.anchoredPosition = { x = ICON_POS.x, y = ICON_POS.y }
+    for _, c in ipairs(CARD_CHILDREN) do
+        local n = icon:AddChild(newRect(c[1], c[4]))
+        n.anchoredPosition = { x = c[2], y = c[3] }
+    end
     tpl:AddChild(newRect("descPanel", false))
     return tpl
 end
@@ -140,11 +162,11 @@ Util = {
     LoadSprite = function() return nil end,
 }
 
-local HERO = { Quality = 1, Star = 1, Painting = 1, PropertyName = 1, HeroValue = 0, HeroLocationDesc1 = 1 }
-local heroConfig = setmetatable({}, { __index = function() return HERO end })
+local HERO_CFG = { Quality = 1, Star = 1, Painting = 1, PropertyName = 1, HeroValue = 0, HeroLocationDesc1 = 1 }
+local heroConfig = setmetatable({}, { __index = function() return HERO_CFG end })
 ConfigManager = {
     GetConfig = function() return heroConfig end,
-    GetAllConfigsDataByKey = function() return {} end,   -- 由用例按需替换
+    GetAllConfigsDataByKey = function() return {} end,
 }
 ConfigName = { HeroConfig = 1, ItemConfig = 2, BeStronger = 3 }
 GetLanguageStrById = function() return "" end
@@ -158,14 +180,8 @@ PlayerManager = { heroHandBook = {} }
 UIManager = { OpenPanel = function() end }
 UIName = { RoleGetInfoPopup = 1, RewardItemPopup = 2 }
 
--- 网络桩：同步回调，模拟「打开面板 -> 拉数据 -> 建卡」这条真实链路
-local netInfos = {}
-local netCallbacks = 0
 NetManager = {
-    HeroCollectRewardInfo = function(cb)
-        netCallbacks = netCallbacks + 1
-        cb({ infos = netInfos })
-    end,
+    HeroCollectRewardInfo = function(cb) cb({ infos = {} }) end,
     HeroCollectRewardRequest = function() end,
 }
 
@@ -176,14 +192,17 @@ local root = newRect("LineupRecommend", true)
 root:Find("btnBack")
 local content = root:Find("Scroll View/Viewport/Content")
 local tpl = buildTemplate()
-content:AddChild(tpl)          -- 先挂好模板，InitComponent 才找得到它
+content:AddChild(tpl)
 Panel.gameObject = root
 Panel.InitComponent(Panel)
 
-local function setLineupCount(n)
+local function setLineupCount(n, heroCount)
+    heroCount = heroCount or 3
     local list = {}
     for i = 1, n do
-        list[i] = { Id = i, DescFirst = 1, ItemId = { 101, 102, 103 } }
+        local ids = {}
+        for k = 1, heroCount do ids[k] = 100 + k end
+        list[i] = { Id = i, DescFirst = 1, ItemId = ids }
     end
     ConfigManager.GetAllConfigsDataByKey = function() return list end
     return list
@@ -204,113 +223,184 @@ local function liveTweens()
     return n
 end
 
-local function iconOf(card)
-    return Util.GetGameObject(card, "iconPanel")
+local function cardNodes(card)
+    local icon = Util.GetGameObject(card, "iconPanel")
+    local out = {}
+    for i = 1, icon.childCount do out[#out + 1] = icon:GetChild(i - 1) end
+    return out, icon
 end
 
-local function assertBase(card, tag)
-    local icon = iconOf(card)
-    assert(icon.anchoredPosition.x == ICON_POS.x and icon.anchoredPosition.y == ICON_POS.y,
-           ("%s: iconPanel 应回 (%.1f,%.1f)，实际 (%.2f,%.2f)"):format(tag, ICON_POS.x, ICON_POS.y,
-               icon.anchoredPosition.x, icon.anchoredPosition.y))
-    assert(card.anchoredPosition.x == 0 and card.anchoredPosition.y == 0,
-           tag .. ": 卡根节点不该被动（VerticalLayoutGroup 会抹回）")
+local function heroNodes(card)
+    local grid = Util.GetGameObject(card, "iconPanel/grid")
+    local out = {}
+    for i = 1, grid.childCount do
+        local hero = grid:GetChild(i - 1)
+        if not hero.activeSelf then goto continue end   -- 跳过 hero 模板
+        local hs = {}
+        for j = 1, hero.childCount do hs[#hs + 1] = hero:GetChild(j - 1) end
+        out[#out + 1] = { hero = hero, nodes = hs }
+        ::continue::
+    end
+    return out, grid
 end
 
--- ---------------- case 1: 首次打开，逐张从右滑入 ----------------
-print("== case1 首次打开：OnOpen -> OnShow 建卡后逐张滑入 ==")
+local function delayOf(rect)
+    for _, t in ipairs(tweens) do
+        if t.tf == rect then return t.delay end
+    end
+    return nil
+end
+
+-- ---------------- case 1: 首次打开，卡层 + item 层同时编排 ----------------
+print("== case1 首次打开：每张卡都滑（不只是第一张）+ 卡内英雄逐张跟进 ==")
 tweens = {}
-setLineupCount(3)
+setLineupCount(3, 3)
 Panel:OnOpen()
-assert(netCallbacks == 0, "OnOpen 不该自己去拉数据")
 Panel:OnShow()
-assert(netCallbacks == 1, "OnShow 应拉一次奖励信息")
 local cs = cards()
 assert(#cs == 3, "应建 3 张卡，实际 " .. #cs)
-assert(#tweens == 3, "3 张卡各 1 条位移 tween，实际 " .. #tweens)
-for i, card in ipairs(cs) do
-    local icon = iconOf(card)
-    assert(icon.anchoredPosition.x == ICON_POS.x + 240,
-           ("第 %d 张起点应为 x+240 = %.1f，实际 %.2f"):format(i, ICON_POS.x + 240, icon.anchoredPosition.x))
-    assert(icon.anchoredPosition.y == ICON_POS.y, "y 不该被动（竖向列表上下滑会读成列表在跳）")
-    assert(card.anchoredPosition.x == 0, "卡根节点不能被动")
+
+for ci, card in ipairs(cs) do
+    local cn, icon = cardNodes(card)
+    assert(#cn == CARD_NODE_COUNT, "卡下应有 " .. CARD_NODE_COUNT .. " 个可视子节点，实际 " .. #cn)
+    for i, node in ipairs(cn) do
+        local base = CARD_CHILDREN[i]
+        assert(node.anchoredPosition.x == base[2] + 240,
+               ("第 %d 张卡 %s 起点应为 %.1f，实际 %.2f（只有第一张滑动 = 位移写到了被布局组管的 iconPanel）")
+                   :format(ci, node.name, base[2] + 240, node.anchoredPosition.x))
+        assert(node.anchoredPosition.y == base[3], node.name .. " 的 y 不该被动")
+        assert(delayOf(node) and math.abs(delayOf(node) - (ci - 1) * 0.055) < 1e-9,
+               ("第 %d 张卡 %s 的 delay 应为 %.3f"):format(ci, node.name, (ci - 1) * 0.055))
+    end
+    -- 🔴 回归断言：iconPanel 自己（布局组直接管的那层）一动都不能动
+    assert(icon.anchoredPosition.x == ICON_POS.x and icon.anchoredPosition.y == ICON_POS.y,
+           "第 " .. ci .. " 张卡的 iconPanel 根节点被动了 —— 布局组会把它抹回，必须写子节点")
+    -- 卡根同理
+    assert(card.anchoredPosition.x == 0 and card.anchoredPosition.y == 0,
+           "第 " .. ci .. " 张卡的根节点被动了（Content 的 VerticalLayoutGroup 会抹回）")
+
+    local hs, grid = heroNodes(card)
+    assert(#hs == 3, "第 " .. ci .. " 张卡应有 3 个英雄，实际 " .. #hs)
+    -- grid 本身是 iconPanel 的子节点，跟着卡层走（-2.4 + 240）；它的布局组只影响 hero 根节点
+    assert(grid.anchoredPosition.x == -2.4 + 240, "grid 应随卡层一起右移 240")
+    for k, h in ipairs(hs) do
+        assert(h.hero.anchoredPosition.x == 0, "hero 根节点不该被动（grid 的布局组会抹回）")
+        for j, node in ipairs(h.nodes) do
+            local base = HERO_CHILDREN[j]
+            assert(node.anchoredPosition.x == base[2] + 80,
+                   ("第 %d 张卡第 %d 个英雄 %s 起点应为 x+80，实际 %.2f"):format(ci, k, node.name, node.anchoredPosition.x))
+            local want = (ci - 1) * 0.055 + 0.06 + (k - 1) * 0.04
+            assert(math.abs(delayOf(node) - want) < 1e-9,
+                   ("第 %d 张卡第 %d 个英雄 delay 应为 %.3f，实际 %s"):format(ci, k, want, tostring(delayOf(node))))
+        end
+    end
 end
-assert(math.abs(tweens[1].delay - 0) < 1e-9, "第 1 张 delay 应为 0")
-assert(math.abs(tweens[2].delay - 0.055) < 1e-9, "第 2 张 delay 应为 0.055")
-assert(math.abs(tweens[3].delay - 0.11) < 1e-9, "第 3 张 delay 应为 0.11")
 for _, t in ipairs(tweens) do
-    assert(t.dur == 0.22, "单卡时长应为 0.22，实际 " .. tostring(t.dur))
     assert(t.ease == Ease.OutQuad, "ease 应为 OutQuad")
 end
-print("  3 张卡 x+240 / 0.22s / 延迟 0 / 0.055 / 0.11")
+print(("  3 卡 x (%d 卡节点 + 3x%d 英雄节点) = %d 条 tween"):format(CARD_NODE_COUNT, HERO_NODE_COUNT, #tweens))
+print("  iconPanel / 卡根 / grid / hero 根全部没动（回归）")
 
 -- ---------------- case 2: 完成精确复位 ----------------
 print("== case2 完成后精确回基准值 ==")
 for _, t in ipairs(tweens) do t:Complete() end
-for i, card in ipairs(cs) do assertBase(card, "完成后 card" .. i) end
-print("  位置全复位，卡根节点始终没动")
+for ci, card in ipairs(cs) do
+    local cn = cardNodes(card)
+    for i, node in ipairs(cn) do
+        local base = CARD_CHILDREN[i]
+        assert(node.anchoredPosition.x == base[2] and node.anchoredPosition.y == base[3],
+               ("完成后第 %d 张卡 %s 应回 (%.1f,%.1f)"):format(ci, node.name, base[2], base[3]))
+    end
+    local hs = heroNodes(card)
+    for k, h in ipairs(hs) do
+        for j, node in ipairs(h.nodes) do
+            local base = HERO_CHILDREN[j]
+            assert(node.anchoredPosition.x == base[2] and node.anchoredPosition.y == base[3],
+                   ("完成后第 %d 张卡第 %d 英雄 %s 应回基准"):format(ci, k, node.name))
+        end
+    end
+end
+print("  卡层 + item 层全部精确复位")
 
 -- ---------------- case 3: 中途 Stop ----------------
 print("== case3 中途 Stop 全复位 ==")
 tweens = {}
-Panel:OnOpen()
-Panel:OnShow()
-assert(#tweens == 3, "重播应重新起 3 条")
-assert(iconOf(cs[1]).anchoredPosition.x == ICON_POS.x + 240, "重播应从起点起")
+Panel:OnOpen(); Panel:OnShow()
+assert(#tweens == 3 * (CARD_NODE_COUNT + 3 * HERO_NODE_COUNT), "重播应重建满额 tween，实际 " .. #tweens)
 Panel.StopSlideIn()
 assert(liveTweens() == 0, "Stop 后不该有存活 tween，实际 " .. liveTweens())
-for i, card in ipairs(cs) do assertBase(card, "Stop 后 card" .. i) end
-print("  Kill + 位置全复位")
+for ci, card in ipairs(cs) do
+    local cn = cardNodes(card)
+    assert(cn[1].anchoredPosition.x == CARD_CHILDREN[1][2], "Stop 后第 " .. ci .. " 张卡应复位")
+    local hs = heroNodes(card)
+    assert(hs[1].nodes[1].anchoredPosition.x == 0, "Stop 后第 " .. ci .. " 张卡英雄应复位")
+end
+print("  Kill + 两层全复位")
 
--- ---------------- case 4: 从弹窗返回（只 OnShow）不播 ----------------
+-- ---------------- case 4: 从弹窗返回不播 ----------------
 print("== case4 只走 OnShow（IsBackOpen）不播 ==")
 tweens = {}
-Panel:OnShow()   -- 玩家从英雄信息弹窗返回：框架走 OpenUI(true) -> 只 OnShow
-assert(#tweens == 0, "从弹窗返回不该重播入场，实际起了 " .. #tweens .. " 条")
-for i, card in ipairs(cs) do assertBase(card, "back-open 后 card" .. i) end
-print("  0 条 tween，位置保持在终值")
+Panel:OnShow()
+assert(#tweens == 0, "从弹窗返回不该重播，实际起了 " .. #tweens .. " 条")
+local cn1 = cardNodes(cs[1])
+assert(cn1[1].anchoredPosition.x == CARD_CHILDREN[1][2], "位置应保持在终值")
+print("  0 条 tween")
 
--- ---------------- case 5: 关闭时停止 + 清标记 ----------------
-print("== case5 OnClose 里 Stop 并清标记 ==")
+-- ---------------- case 5: OnClose 停 + 晚到的 OnShow 不播 ----------------
+print("== case5 OnClose 停并清标记 ==")
 tweens = {}
-Panel:OnOpen()
-Panel:OnShow()                       -- 播起来
-assert(#tweens == 3, "应播 3 条")
-Panel:OnClose()                      -- 播到一半玩家关掉
+Panel:OnOpen(); Panel:OnShow()
+assert(#tweens > 0, "应播起来")
+Panel:OnClose()
 assert(liveTweens() == 0, "OnClose 后不该有存活 tween")
-for i, card in ipairs(cs) do assertBase(card, "OnClose 后 card" .. i) end
 tweens = {}
-Panel:OnShow()                       -- 关掉后网络回调才到 / 面板被复用再次 OnShow
-assert(#tweens == 0, "关闭后残留的 OnShow 不该播，实际 " .. #tweens .. " 条")
-print("  关闭即停，之后晚到的 OnShow 不播")
+Panel:OnShow()
+assert(#tweens == 0, "关闭后晚到的 OnShow 不该播")
+print("  关闭即停，晚到不播")
 
--- ---------------- case 6: 连点保护 ----------------
+-- ---------------- case 6: 连点不叠播 ----------------
 print("== case6 连点不叠播 ==")
 tweens = {}
 Panel:OnOpen(); Panel:OnShow()
-assert(#tweens == 3, "应播 3 条")
 local before = #tweens
 assert(Panel.PlaySlideIn() == 0, "上一轮没播完时不该重播")
-assert(#tweens == before, "不该新建 tween，实际新增 " .. (#tweens - before))
-for i, card in ipairs(cs) do assertBase(card, "连点中断后 card" .. i) end
-print("  返回 0，直接复位到终值，0 条新 tween")
+assert(#tweens == before, "不该新建 tween")
+print("  返回 0，0 条新 tween")
 
--- ---------------- case 7: 自然播完后能再触发 / OnDestroy 回收 ----------------
+-- ---------------- case 7: 播完再播 + OnDestroy ----------------
 print("== case7 播完后能再播 + OnDestroy 回收 ==")
 for _, t in ipairs(tweens) do t:Complete() end
 tweens = {}
 assert(Panel.PlaySlideIn() == 3, "自然播完之后应能重新播")
-assert(#tweens == 3, "应新建 3 条")
 Panel:OnDestroy()
 assert(liveTweens() == 0, "OnDestroy 后不该有存活 tween")
-for i, card in ipairs(cs) do assertBase(card, "OnDestroy 后 card" .. i) end
 print("  重播正常；OnDestroy 回收干净")
 
--- ---------------- case 8: 没有可见卡 ----------------
-print("== case8 没有可见卡时不报错 ==")
+-- ---------------- case 8: 卡数超过 kAnimCards ----------------
+print("== case8 超过 4 张时只给前 4 张赋入场 ==")
+tweens = {}
+-- 模拟「面板被真销毁后重开」：旧卡的 GameObject 随面板一起没了（harness 手动清 Content）
+content.order, content.children, content.childCount = {}, {}, 0
+content:AddChild(tpl)
+setLineupCount(6, 3)
+Panel:OnOpen(); Panel:OnShow()
+cs = cards()
+assert(#cs == 6, "应建 6 张卡，实际 " .. #cs)
+local per = CARD_NODE_COUNT + 3 * HERO_NODE_COUNT
+assert(#tweens == 4 * per, ("只应给前 4 张起 tween = %d，实际 %d"):format(4 * per, #tweens))
+for ci = 5, 6 do
+    local cn = cardNodes(cs[ci])
+    assert(cn[1].anchoredPosition.x == CARD_CHILDREN[1][2], "第 " .. ci .. " 张卡不该被动")
+    assert(delayOf(cn[1]) == nil, "第 " .. ci .. " 张卡不该有 tween")
+end
+print("  前 4 张 " .. #tweens .. " 条，第 5/6 张 0 条")
+Panel.StopSlideIn()
+
+-- ---------------- case 9: 没有可见卡 ----------------
+print("== case9 没有可见卡时不报错 ==")
 tweens = {}
 for _, c in ipairs(cs) do c:SetActive(false) end
-assert(Panel.PlaySlideIn() == 0, "没有可见卡应返回 0，实际 " .. tostring(Panel.PlaySlideIn()))
+assert(Panel.PlaySlideIn() == 0, "没有可见卡应返回 0")
 assert(#tweens == 0, "不该起 tween")
 for _, c in ipairs(cs) do c:SetActive(true) end
 print("  返回 0，不报错")

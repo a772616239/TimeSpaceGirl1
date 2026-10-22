@@ -231,6 +231,18 @@ for i = 0, box.childCount - 1 do ...
     **只复位、不重播** —— 复位到终值本来就是「立刻到位」，观感不比重播差。
     🔴 `Kill` 不会回调 `OnComplete`，所以播中标记只能在 `Stop` 里清 + 每条 `OnComplete` 计数减到 0 时清，
     两处都要有；漏一处会让后续所有入场被「当成播中」永久跳过。
+12. 🔴 **布局组会套娃，"写子节点"要写到"被布局组管的那一层的子节点"**。`LineupRecommend` 里三层
+    布局组叠在一起：`Content`（VerticalLayoutGroup）管卡的根 → **卡根自己又是一个
+    VerticalLayoutGroup**（padding-left 20 / ChildForceExpandHeight）管 `iconPanel` → `grid`
+    （HorizontalLayoutGroup）管每个英雄实例的根。第一版位移写在 `iconPanel` 上，现象是
+    **「只有第一张卡有滑动」**：第 1 张 `delay = 0` 被 tween 立刻接管（每帧覆盖布局结果），
+    第 2..N 张在 `delay` 等待期间被布局组拉回原位、位移归零。
+    判断方法：`dump_prefab_tree.py` 只给尺寸，组件要去 prefab 里数 `114 MonoBehaviour` 的
+    `m_Script.guid` —— **同一个 guid 就是同一个组件类型**（卡根和 Content 的布局组 guid 完全相同，
+    一眼就能看出是同一个 VerticalLayoutGroup）。
+    可复用的写法：`SlideChildren(go, ...)` 遍历 `go.transform.childCount` + `GetChild(i)`，
+    对每个子节点 `GetComponent("RectTransform")` 起一条 tween；**不要判 `activeSelf`**
+    （漏动会错位，动到隐藏节点由 tween 归位）。
 
 ---
 
@@ -300,7 +312,7 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 | `MissionDailyPanel_Daily` | 任务卡 `rewardPre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | 打开 +260 / 0.26s / 错开 0.055；切页签 +170 / 0.30s / 错开 0.05 / 整批 +0.05 |
 | `CourtesyDressPanel` | 奖励卡 `item` → `item1..itemN`（一屏 ~6 张） | **右 → 左** | 同上（打开 +260 / 0.26s / 0.055；切页签 +170 / 0.30s / 0.05 / 整批 +0.05） |
 | `FindTreasureMainPanel` | 寻宝任务卡 `rewardPre1..N`（一屏 ~5 张，grid 挂 VerticalLayoutGroup） | **右 → 左** | 打开 +260 / 0.26s / 0.055（无页签，只有打开那一套） |
-| `LineupRecommend` | 阵容卡 `prefab` → 1..N（一屏 ~3.7 张） | **右 → 左** | 打开 +240 / 0.22s / 错开 0.055（无页签，只此一套） |
+| `LineupRecommend` | 阵容卡 `prefab` → 1..N（一屏 ~3.7 张）**+ 卡内英雄两层** | **右 → 左** | 卡 +240 / 0.22s / 错开 0.055；卡内英雄 +80 / 0.18s / 错开 0.04 / 相对自己的卡晚 0.06（无页签，只此一套） |
 
 `MissionDailyPanel_Daily` 有一处和前三处不同，值得先看一眼：**任务卡没有 `bg` 子节点**，
 整卡底板就是卡根节点自己那张 `Image`（`cn2-X1_chongzhi_goumaixiangdiban`，1080×275 满幅）。
@@ -413,17 +425,19 @@ prefab 一行没动。
   harness 走**真实接线**（InitComponent → AddListener → OnOpen → OnShow → 事件总线刷新）
   9 case：`scripts/lua-tests/test_findtreasure_cardslide.lua`。
 
-- 2026-10-22 第六个落地：`LineupRecommend`（阵容推荐卡，一屏 ~3.7 张，从右往左逐张滑入）。
-  三点和前面几个都不同：① 列表**不是** `ScrollCycleView`，是 `OnShow` 的网络回调里手工 `newObject`
-  挂到 Content 下的固定 N 格，Content 上挂着 `VerticalLayoutGroup + ContentSizeFitter`（spacing 50 /
-  padding 37,20）⇒ 布局组重写的是**卡的根节点**，位移只能写 `iconPanel`；卡顺序直接取 `lineupList`
-  的下标，不用遍历 Content 子节点（模板与 `prefab(Clone)` 同名，按名字筛会连模板一起算）。
-  ② 面板没有页签，只有**打开**一套节奏（+240 / 0.22 / 0.055）；闸门放 `OnOpen` —— 从英雄信息弹窗
-  返回走的是 `OpenUI(true)` 只调 `OnShow`，此时不能重播。③ **没有淡入通道**：`iconPanel` 下三个
-  Image 同名（1080×885 装饰层 / 1040×423 ×2），`GetGameObject` 按名字 DFS 会命中装饰层 ⇒ 只做位移。
-  播放点必须落在网络回调末尾（列表是异步建出来的），`OnClose` 里 `StopSlideIn` + 清 `needSlideIn`，
-  防止「关掉之后回调才到」把动画播在已隐藏的面板上。harness 8 case：
-  `scripts/lua-tests/test_lineuprecommend_slidein.lua`；调参预览 `_output/lineuprecommend_slidein_preview.html`。
+- 2026-10-22 第六个落地：`LineupRecommend`（阵容推荐卡 + 卡内英雄**两层**入场，从右往左）。
+  ① 列表**不是** `ScrollCycleView`，是 `OnShow` 的网络回调里手工 `newObject` 挂到 Content 下的固定 N 格，
+  卡顺序直接取 `lineupList` 的下标（模板与实例同名，按名字筛会连模板一起算）。
+  ② 面板没有页签，只有**打开**一套节奏；闸门放 `OnOpen` —— 从英雄信息弹窗返回走 `OpenUI(true)`
+  只调 `OnShow`，此时不能重播。播放点必须落在网络回调末尾（列表是异步建出来的），`OnClose` 里
+  `StopSlideIn` + 清 `needSlideIn`，防「关掉之后回调才到」播在已隐藏的面板上。
+  ③ **布局组三层套娃**（Content → 卡根 → grid），位移一律写到「被管的那个节点的子节点」，
+  详见 §7 第 12 条：第一版写在 `iconPanel` 上，实测**只有第一张卡有滑动**。
+  ④ 卡层没有淡入通道（`iconPanel` 下三个 Image 同名，按名字 DFS 会命中 1080×885 装饰层）⇒ 只做位移，
+  子节点用 `childCount/GetChild(i)` 走索引。
+  ⑤ 只给前 `kAnimCards = 4` 张（一屏约 3.7 张）赋入场，屏幕外的不白跑 tween。
+  harness 9 case：`scripts/lua-tests/test_lineuprecommend_slidein.lua`（含「iconPanel / 卡根 / grid /
+  hero 根一动都不能动」四条回归断言）；调参预览 `_output/lineuprecommend_slidein_preview.html`（两层各有滑杆）。
 
 - 2026-10-22 第五个落地：`CourtesyDressPanel`（奖励卡，一屏 ~6 张，页签是 3 个手写按钮而不是 TabBox）。
   新增：**底板第三种形态**（没有 bg 子节点、根也没有 Image，满幅底板是名为 `Image` 的直接子节点，

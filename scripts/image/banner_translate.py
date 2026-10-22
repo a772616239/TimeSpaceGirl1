@@ -67,8 +67,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-from text_fit import (OCR_FAIL, OCR_PASS, ocr_read, refit_covered,
-                      text_score)
+from text_fit import (OCR_FAIL, OCR_PASS, ink_mask, norm_text, ocr_read_all,
+                      refit_covered, text_score)
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -1519,8 +1519,12 @@ def verify_atlas(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], 
 def verify_glyph(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], list[str]]:
     """glyph 家族的断言：尺寸 / 透明边 / 墨迹量 / 纯白 / 落位。
 
-    🔴 这里**没有**「文字对不对」的闸门：OCR 在手写美术字上不可靠，拿它当红绿只会假红。
-       所以最后一条是 warns（构建标黄、提示人眼确认），而不是 checks。
+    🔴 这里**没有**「文字对不对」的闸门，但这是**故意留的例外**，不是全链都没闸门：
+       artfont / poster 族自 2026-10-22 起有 OCR 硬闸门（`verify_photo_gpt` 里的
+       「译文与译名表一致（OCR）」）。glyph 族为什么没接：它出的是 152x120 这种纯白
+       alpha 字块，模型只画字、不画背景，flatten 到黑底后笔画是实心白，OCR 理论上更干净，
+       但样本只有个位数、还没标定 PASS/FAIL 分界 —— 先攒够数据再上，别拿未标定的阈值
+       制造假红。所以最后一条是 warns（构建标黄、提示人眼确认），而不是 checks。
     """
     src = Image.open(work / "src.png").convert("RGBA")
     out = Image.open(work / "out.png").convert("RGBA")
@@ -1570,8 +1574,32 @@ def verify_glyph(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], 
                      f"渐变/纹理底会把一层灰雾一起抠成字，务必看图")
     if gen.get("iou") is not None:
         warns.append(f"字形重合度 IoU {gen['iou']}（只记录，不当红：译文与原文不是同一批字）")
-    warns.append("译文需人眼确认（手写美术字没有可靠的 OCR 闸门）")
+    warns.append("译文需人眼确认（glyph 族尚未标定 OCR 闸门；artfont / poster 族已自动验）")
     return checks, warns
+
+
+def _text_band(src_rgb: np.ndarray, vis, refit) -> tuple[int, int] | None:
+    """字带的**行区间**（含 ±6% 画布高的余量），只用于「改动有没有漏到字带以外」。
+
+    🔴 口径是「源图墨迹行 ∪ refit 的 row_band」，**不能只用 refit 的**：`row_band` 是
+       「真越界、真被压过的那几行」，比字带窄得多。mozhate 实测 row_band [66,171]，
+       而源图墨迹实际到 row 206 ⇒ 拿它当字带，band 外只剩 1558 个可见像素（rows 48~63
+       与 188~209），随便有点噪声就是 43%，又是一条假警报。
+    """
+    h = src_rgb.shape[0]
+    rows: list[int] = []
+    ink = ink_mask(src_rgb)
+    if vis is not None:
+        ink &= vis                          # 透明区的 RGB 是导出残留，不算墨迹
+    r = np.where(ink.any(axis=1))[0]
+    if len(r):
+        rows += [int(r[0]), int(r[-1])]
+    if isinstance(refit, dict) and refit.get("row_band"):
+        rows += [int(refit["row_band"][0]), int(refit["row_band"][1])]
+    if not rows:
+        return None
+    m = max(4, int(h * 0.06))
+    return max(0, min(rows) - m), min(h, max(rows) + m + 1)
 
 
 def _visible_mask(src: Image.Image):
@@ -1651,7 +1679,22 @@ def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str
     #    改动 2%~75% + 人眼看 compare.png（下面必有 warn）。
     warns.append(f"整幅平均通道差 {mean_diff:.1f}{scope}（只作参考：美术字占大半可见区，"
                  f"只换字也会到 70 上下；合格品实测 73~77）")
-    if changed > 0.40:
+    # 🔴 「改动像素 >40% ⇒ 模型顺手改了画面」这条 warn 原来是按整幅可见区量的，对
+    #    512x256 特写横幅**每次都亮**：可见区只有 28.8%，而字带占掉 rows 66~171，
+    #    光换字就是 40%~45%（#41 mozhate 实测 44.8%，人眼合格）。一条永远亮的警告
+    #    等于教人忽略警告，所以改成只统计「字带以外」的改动 —— 那才是「重绘了背景」。
+    #    poster 族不走这条：它本来就该整幅重绘，字带口径对它没意义，保留原来的绝对值。
+    fam = state.get("family") or FAMILY_ARTFONT
+    band = None if fam == FAMILY_POSTER else _text_band(a_src, vis, state.get("refit"))
+    if band:
+        ry0, ry1 = band
+        outside = (np.ones(diff.shape, bool) if vis is None else vis.copy())
+        outside[ry0:ry1, :] = False
+        ch_out = float((diff[outside] > 24).mean()) if outside.any() else 0.0
+        if ch_out > 0.10:
+            warns.append(f"字带（rows {ry0}~{ry1}）以外改了 {ch_out:.1%}：模型顺手动了背景，"
+                         f"务必看图（字带内改动 {changed:.0%} 属正常，不计）")
+    elif changed > 0.40:
         warns.append(f"改动像素 {changed:.0%} 偏大：模型可能顺手改了画面，务必看图")
     # ---- 字完整性 / 译文一致性（2026-10-22 复盘新增的两个闸门）----------------
     # 🔴 原来这里只有「英文是否正确、有没有被裁掉需人眼确认」，等于把两次最贵的失败
@@ -1661,24 +1704,42 @@ def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str
         checks.append(("笔画全部落在可见区内（lock 前量）", bool(fit.get("ok")),
                        fit.get("detail") or f"越界 {fit.get('lost_px')} px"))
     lines = state.get("lines") or ([state["title"]] if state.get("title") else [])
-    fam = state.get("family") or FAMILY_ARTFONT
     if lines and fam in (FAMILY_ARTFONT, FAMILY_POSTER) \
             and (state.get("provider") or "") != PROVIDER_LOCAL:
-        read = ocr_read(Image.open(work / "out.png"), workdir=work)
-        if read is None:
+        reads = ocr_read_all(Image.open(work / "out.png"), workdir=work)
+        label = "译文与译名表一致（OCR）"
+        if reads is None:
             warns.append("OCR 闸门这次没跑起来（原因见上一行：没装 tesseract / 环境不认 / "
                          "临时目录打不开）⇒ 英文是否正确仍需人眼确认")
+        elif not reads or max(len(norm_text(r)) for r in reads) < 3:
+            # 🔴 「读不出字」≠「译文是错的」。混为一谈就是假红：`jingyinghuodong_banner_12`
+            #    （金色彩带 + 透视斜排的深色描边字，人眼清清楚楚 LIFETIME PACK /
+            #    PERMANENT PURCHASE LIMIT）原先在这里被判 0.00 标红。证据不足就诚实降级。
+            got = max((len(norm_text(r)) for r in reads), default=0)
+            warns.append(f"OCR 闸门这次不适用：最多只读出 {got} 个字母"
+                         f"（原样输出 `{(reads[0] if reads else '')[:48]}`）—— 文字带透视斜排/"
+                         f"强描边，tesseract 啃不动，这条不算数，英文仍需人眼看 compare.png")
         else:
-            score, detail = text_score(lines, read)
+            # 多份候选读法（polarity × psm）里取「与译名表最像」的那份，不能按长度取。
+            score, detail, read = max(((*text_score(lines, r), r) for r in reads),
+                                      key=lambda x: x[0])
             msg = f"相似度 {score:.2f}；{detail}"
-            if score >= OCR_PASS:
-                checks.append(("译文与译名表一致（OCR）", True, msg))
+            if fam == FAMILY_POSTER:
+                # 🔴 poster 只做**旁证**、不判红（2026-10-22 标定）：那族文字是整幅重绘出来的，
+                #    透视/弧排/描边叠在彩带上，同一张人眼合格的图 `--psm 6` 读 0 字、
+                #    `--psm 11` 只读对 6/12 个字母（UFETIME）。在这种信噪比上判红，
+                #    等于把「OCR 读不动」当成「模型翻错了」，是 10-22 之前的假红来源。
+                #    分数仍然打出来，攒够样本再决定能不能升级成硬闸门。
+                warns.append(f"译文旁证（OCR，poster 族只记录不判红）：{msg}"
+                             f" —— 合格样本 0.23~0.77 都会出现，别只据此判死活")
+            elif score >= OCR_PASS:
+                checks.append((label, True, msg))
             elif score >= OCR_FAIL:
-                # 美术字（发光/描边/压扁）本来就读不准：合格品实测 0.78~1.00，
+                # 美术字（发光/描边/压扁）本来就读不准：artfont 合格品实测 0.78~1.00，
                 # 落到中间档多半是 OCR 误读，只给黄。
                 warns.append(f"译文相似度偏低（{score:.2f}），美术字易误读，人眼确认；{detail}")
             else:
-                checks.append(("译文与译名表一致（OCR）", False,
+                checks.append((label, False,
                                f"相似度 {score:.2f}，疑似模型自造译名，不是译名表里的字；{detail}"))
     else:
         warns.append("译文是否正确需人眼确认（local 排字 / 无译名，OCR 不适用）")

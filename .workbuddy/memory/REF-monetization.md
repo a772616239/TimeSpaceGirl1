@@ -52,6 +52,13 @@
   设 1100 时别忘 base 的 60（设 660 实际是 720）。
 - 🔴 **12 元 / 30 元月卡 SKU（id=9 / id=10）`OnSaleRule=1#999#999` 已关停**，往这两个 SKU 上
   写 `FirstMultiple` 是**空改**（玩家买不到，赠礼永不到账）。月卡只能靠「累充 12 元白送」通道。
+- 🔴 **首充角标口径（R17）**：`ShopView.lua:RechargeShopItemAdapter` 的 `first/Image/num` 现已显示
+  **「首充可得」= 钻石(BaseReward) + 钻石(FirstMultiple)**，不再是 `FirstMultiple[1][2]` 单值。
+  原因：只显示赠礼时，6 元（赠 600/基础 60）会和 30 元（赠 330）在同屏倒挂，而两者合计都是 660。
+  **纯配置无解**（降 6 元赠礼 ⇒ 只剩 1 抽；抬 30 元 ⇒ 0.141 抽/元 破直充窄带；挪进首充活动 ⇒
+  `FirstRechargeManager.GetDayItemRedPoint` 判 `AccumRecharge >= 阈值` 是**累加**，买 30 元也能领 6 元档 ⇒ 泄漏）。
+  改角标前先确认 `Type=3` 是否仍只有这 6 个 SKU（新加档位会被一起显示成合计）。
+- 角标标签走语言表 `91001211`（原预制体硬编码「首充赠钻」⇒ en/jp 漏中文；R17 改为 Lua 写入，**不必重打 AB**）。
 
 ## 🔴 价值口径必须三源合并（R12）
 一个 SKU 的抽等值 = SKU 行 `BaseReward`/`ExtraReward` + `LuxuryFund` 日领

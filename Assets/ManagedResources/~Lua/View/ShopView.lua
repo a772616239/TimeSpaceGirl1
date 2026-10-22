@@ -8,6 +8,24 @@ this.sortingOrder = 0
 local _GoodsItemList = {}
 local _GoodsItemListBlack = {}
 
+-- 货币 id：钻石（与 LocalDefine 的 ItemId 一致）
+local DIAMOND_ITEM_ID = 16
+-- 首充角标标签的语言 id（原来预制体里是硬编码中文，en/jp 会漏出中文）
+local FIRST_BADGE_LANG_ID = 91001211
+
+-- 从 {{itemId, count}, ...} 里累加钻石数量
+local function SumDiamond(pairsList)
+    local n = 0
+    if pairsList then
+        for _, p in ipairs(pairsList) do
+            if p[1] == DIAMOND_ITEM_ID then
+                n = n + (p[2] or 0)
+            end
+        end
+    end
+    return n
+end
+
 ---===============================生命周期函数================================
 function this:New(gameObject)
     local o = {}
@@ -738,7 +756,8 @@ end
 function this:RechargeShopItemAdapter(shopItem, itemData)
     -- 获取对象
     local first = Util.GetGameObject(shopItem, "first")
-    local firstNum = Util.GetGameObject(shopItem, "first/Image/num"):GetComponent("Text")
+    local firstNumGo = Util.GetGameObject(shopItem, "first/Image/num")
+    local firstNum = firstNumGo:GetComponent("Text")
     local icon = Util.GetGameObject(shopItem, "icon"):GetComponent("Image")
     local num = Util.GetGameObject(shopItem, "itemName"):GetComponent("Text")
     local price = Util.GetGameObject(shopItem, "price/Text"):GetComponent("Text")
@@ -752,9 +771,23 @@ function this:RechargeShopItemAdapter(shopItem, itemData)
     price.text = MoneyUtil.GetMoney(itemInfo.Price)
     GP.text = "+" .. GetLanguageStrById(itemInfo.Desc) * 1--数量读取商品表的Desc字段
     -- 判断首充赠送
+    -- 角标显示「首充可得」= 基础钻石 + 首购赠礼，不能只显示 FirstMultiple：
+    -- 6 元档首购赠 600 而基础只有 60（11 倍），只显示赠礼会和 30 元档的 330 倒挂
+    -- （两档合计都是 660 钻），玩家会当成配置填错。合计值 660/660/2254/4752/8200/16848
+    -- 按价格单调不减，不会再出现倒挂。
     local curBuyCount = itemData.buyTimes
-    first:SetActive(curBuyCount < 1)
-    firstNum.text = itemInfo.FirstMultiple[1][2]
+    local firstGift = SumDiamond(itemInfo.FirstMultiple)
+    first:SetActive(curBuyCount < 1 and firstGift > 0)
+    firstNum.text = tostring(SumDiamond(itemInfo.BaseReward) + firstGift)
+
+    -- 角标标签走语言表（预制体里原来是硬编码「首充赠钻」，en/jp 包会显示中文）
+    local firstLabel = Util.GetGameObject(firstNumGo, "Image/Text")
+    if firstLabel and not IsNull(firstLabel) then
+        local firstLabelText = firstLabel:GetComponent("Text")
+        if firstLabelText then
+            firstLabelText.text = GetLanguageStrById(FIRST_BADGE_LANG_ID)
+        end
+    end
 
     -- 购买事件
     Util.AddOnceClick(shopItem, function()

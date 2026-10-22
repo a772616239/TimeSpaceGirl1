@@ -227,7 +227,7 @@ def cmd_seq(args):
             else:
                 prev = p
             continue
-        elif "wait" in st:
+        elif "wait" in st and "shot" not in st:
             time.sleep(float(st["wait"]))
             continue
 

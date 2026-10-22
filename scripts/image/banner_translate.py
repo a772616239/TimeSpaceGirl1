@@ -927,8 +927,13 @@ def call_provider(args, work: Path, ref: Path, prompt_file: Path, out: Path) -> 
             print(f"🔴 --gen-image 不存在：{p}", file=sys.stderr)
             return 1, "gen-image 缺失"
         out.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(p, out)
-        print(f"provider=manual：直接用既有出图 {p.name}")
+        # 复用上一次出图重跑验收/写回时，GEN_IMAGE 常常就指向 work/inbox/gen.png 本身
+        # —— 同文件拷贝会 SameFileError（#11 实测），指向一致就原地用。
+        if p.resolve() == out.resolve():
+            print(f"provider=manual：出图即目标文件，原地使用 {p.name}")
+        else:
+            shutil.copyfile(p, out)
+            print(f"provider=manual：直接用既有出图 {p.name}")
         return 0, p.name
     if not GEN_WEB.is_file():
         print(f"🔴 找不到出图通道：{GEN_WEB}", file=sys.stderr)

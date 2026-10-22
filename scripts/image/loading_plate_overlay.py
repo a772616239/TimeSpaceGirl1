@@ -126,6 +126,7 @@ NAME_BLEED = 17       # 大字擦除外扩：白描边 ≈8px + 青/品红错位
 NAME_HEADROOM = 92    # 名字区上沿到 name_box 顶边的余量：斜排大字越宽抬得越高，这条是硬上限
 NAME_LIFT = 14        # 英文大字整体上移，躲开斜条右端（斜条右端比左端高 100+px）
 PLATE_PAD = 6         # 贴片边界相对「几何区 ∪ 墨迹」再外扩的像素，别让字贴着裁切线
+QUOTE_LIFT = 2        # 台词行整体上移的像素（包裹模式下离条芯下缘的微调）
 
 # 实测版面（cn2-X1_loading_04_zh，684×2048）。红条是平行四边形：
 #   上边线 y = top_y_at_x_left + slope*(x - x_left)，高恒为 bar_h。
@@ -652,25 +653,34 @@ def tagbg_geom(im: Image.Image) -> dict:
     cols = np.unique(xs)
     mid = [(c, (ys[xs == c].min() + ys[xs == c].max()) / 2) for c in cols[::8]]
     k, _ = np.polyfit(np.array([p[0] for p in mid]), np.array([p[1] for p in mid]), 1)
+    ext = np.array([ys[xs == c].max() - ys[xs == c].min() for c in cols[::5]])
     return {"cx": float(cent[mx][0]), "cy": float(cent[mx][1]),
-            "angle": float(np.degrees(np.arctan(-k)))}
+            "angle": float(np.degrees(np.arctan(-k))),
+            "T": float(np.median(ext))}   # 条芯竖向厚度（含倾角的列高中位数）
 
 
 def place_tagbg(layout: dict, tilt: float, W: int, H: int):
     """缩放/旋转/摆位 tagbg，返回 (图, 左上角落点, 覆盖四边形)。
 
-    - 宽度 = 条长 × tagbg_scale（默认 1.30）：左端箭头尾、右端故障碎块都在条长
-      之外，只按条长缩会让装饰挤进条芯、字没地方落。
+    - 🔴 缩放取「宽度需求」和「厚度需求」的较大者：
+      宽度 = 条长 × tagbg_scale（默认 1.30），保证左端箭头尾、右端故障碎块在条长之外；
+      厚度 = 条芯半厚 ≥ tagbg_wrap_half（默认 64px）——台词行中心在条带中心线下方
+      47px、半高 18px，条芯必须同时包住标签行和台词行（用户要求 tagbg「包裹住
+      下面的文字」），不够厚就横向等比放大。四张图原生厚度差很多（283~347px），
+      按宽度统一缩会让最扁的 tag1 包不住台词。
     - 角度 = 条带倾角 − 贴图自带倾角：四张贴图倾角 8.5°~13.6° 各不同，不补这个
       差值，条芯和字会差出 2°~6.5°。
     - 摆位 = 主成分质心对准条带中心线中点（tagbg_dx/dy 可逐张微调）。
-      dy 默认 -8：贴图下缘的故障刺会扎进台词带（刺尖比条芯低 40px+），整体上移
-      让刺尖只轻擦台词上沿；上缘离大字还有 30px+ 余量，不会顶到名字。
+      dy 默认 +14：带心下移让台词行落进条芯、标签行留在上半段；再往下会顶到
+      台词带下缘外，再往上条芯上沿会吃到大字底部。
     - 覆盖四边形交给 plate_box 并入贴片 bbox，否则贴图超出贴片被裁。
     """
     im = load_tagbg(layout["tagbg"])
+    g0 = tagbg_geom(im)
     bar_len = layout["x_right"] - layout["x_left"]
-    scale = bar_len * float(layout.get("tagbg_scale", 1.30)) / im.width
+    scale_w = bar_len * float(layout.get("tagbg_scale", 1.30)) / im.width
+    scale_t = 2 * float(layout.get("tagbg_wrap_half", 64)) / max(g0["T"], 1.0)
+    scale = max(scale_w, scale_t)
     im = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))),
                    Image.LANCZOS)
     delta = tilt - tagbg_geom(im)["angle"]
@@ -680,7 +690,7 @@ def place_tagbg(layout: dict, tilt: float, W: int, H: int):
     bar_cx = (layout["x_left"] + layout["x_right"]) / 2
     bar_cy = top_y(layout, bar_cx) + layout["bar_h"] / 2
     px = int(round(bar_cx - g["cx"] + float(layout.get("tagbg_dx", 0))))
-    py = int(round(bar_cy - g["cy"] + float(layout.get("tagbg_dy", -8))))
+    py = int(round(bar_cy - g["cy"] + float(layout.get("tagbg_dy", 14))))
     quad = np.array([[px, py], [px + im.width, py],
                      [px + im.width, py + im.height], [px, py + im.height]],
                     np.float32)
@@ -759,9 +769,10 @@ def build_lines(asset: str, lang: str, layout: dict, W: int, H: int,
         # 描边只给 1px：描边过粗会把 20px 的字芯整个包住、看起来变成白字。
         lay, bb, ink_c = line_layer(quote, font, fill=tuple(q_fill) + (255,), stroke=1,
                                     stroke_fill=tuple(q_stroke) + (255,))
-        # 左中点对齐（见 paste_rotated 注释）：台词左端钉在带子左端的中心线上
+        # 左中点对齐（见 paste_rotated 注释）：台词左端钉在带子左端的中心线上。
+        # QUOTE_LIFT=2：包裹模式下台词贴着条芯下缘，用户微调整体上移 2px。
         items.append((lay, (bb[0], ink_c[1]), tilt,
-                      (qx_left, bot_y(layout, qx_left) + layout["quote_h"] / 2)))
+                      (qx_left, bot_y(layout, qx_left) + layout["quote_h"] / 2 - QUOTE_LIFT)))
     return items
 
 
@@ -896,6 +907,11 @@ def render(asset: str, lang: str, layout: dict) -> dict:
         q_fill, q_stroke = (44, 26, 30), (250, 246, 240)      # 亮底：深字浅描边
     else:
         q_fill, q_stroke = (252, 250, 246), (24, 14, 20)      # 暗底：白字深描边
+    if use_tagbg:
+        # 台词行落进 tagbg 条芯里（包裹模式）：字色跟条芯走，不再按底图亮度自适应——
+        # 04 这类亮底图换了 tag3 深红条芯后，深棕字会直接消失
+        st = TAGBG_STYLE[layout["tagbg"]]
+        q_fill, q_stroke = st["fill"], st["stroke"]
 
     # --- 3) 排版：先在**底图坐标**里算三条线的落点，拿到各自的墨迹范围 ----- #
     tilt = float(np.degrees(np.arctan(-layout["slope"])))
@@ -1190,9 +1206,9 @@ def verify(asset: str, lang: str) -> int:
     checks = [
         ("底图尺寸与登记一致", (W, H) == (sw, sh)),
         ("贴片宽高与 bbox 一致", plate.size == (bw, bh)),
-        # 贴片现在由「几何 ∪ 墨迹」反推，斜排大字会把上沿撑高（05/07 顶到 y=0），
-        # 面积上限从 15% 放到 25%：这条只是防呆（别退化成整图覆盖），不是设计约束。
-        ("贴片占底图 < 25% 面积", (bw * bh) / (W * H) < 0.25),
+        # 贴片由「几何 ∪ 墨迹 ∪ tagbg 覆盖」反推：包裹模式（tagbg 同时包住标签行和
+        # 台词行）后实测 17~27%。这条只是防呆（别退化成整图覆盖），不是设计约束。
+        ("贴片占底图 < 30% 面积", (bw * bh) / (W * H) < 0.30),
         ("贴片体积 < 底图 30%", os.path.getsize(pp) < os.path.getsize(src) * 0.30),
         ("anchor 落在底图内", 0 <= geom["anchor_min"][0] < geom["anchor_max"][0] <= 1),
         # 🔴 最重要的一条：三条线的墨迹必须完整落在画板内。>0 说明字被裁了，

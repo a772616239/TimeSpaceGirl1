@@ -164,6 +164,14 @@ function PatFacePanel:OnClose()
         timerDown:Stop()
         timerDown = nil
     end
+    -- 🔴 关键修复：原先挂在 callBackEvent 上的 0.5s 推进逻辑从未被调用，
+    --    导致多张拍脸只弹第一张、且收尾的 PatFaceSendFinish 永不触发（连锁卡死）。
+    --    这里在面板关闭时主动推进队列：弹下一张 / 触发收尾事件。
+    if callBackEvent then
+        local cb = callBackEvent
+        callBackEvent = nil
+        cb()
+    end
 end
 
 --界面销毁时调用（用于子类重写）

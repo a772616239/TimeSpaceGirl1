@@ -4,6 +4,7 @@ this.CurTabIndex = 0
 this.curIsShowDoGuessPopup = false
 this.HasReqedTopMatchData = false
 this.HasReqedArenaData = false
+this.lastChampPatFaceState = nil  -- 巅峰战拍脸去重：记录上次已派发拍脸的 battleState
 
 local isChange = false
 local stageNameTable = {
@@ -188,31 +189,39 @@ function this.RefreshBaseInfo()
         this.baseInfo.battleStage = TOP_MATCH_STAGE.CLOSE
         this.baseInfo.battleTurn = -1
         this.baseInfo.battleState = TOP_MATCH_TIME_STATE.CLOSE
+        this.lastChampPatFaceState = nil  -- 赛季未开始，清空拍脸去重标记
 
     elseif this.baseInfo.progress == -2 then    -- 已结束
         this.baseInfo.battleStage = TOP_MATCH_STAGE.OVER
         this.baseInfo.battleTurn = -2
         this.baseInfo.battleState = TOP_MATCH_TIME_STATE.OVER
+        this.lastChampPatFaceState = nil  -- 赛季结束，清空拍脸去重标记
 
     elseif this.baseInfo.progress > 0 then
         local oldState = this.baseInfo.battleState
         this.baseInfo.battleStage = tonumber(string.sub(this.baseInfo.progress, 1, 1))
         this.baseInfo.battleTurn = tonumber(string.sub(this.baseInfo.progress, 2, 2))
         this.baseInfo.battleState = tonumber(string.sub(this.baseInfo.progress, 3, 3))
-        
+
 
         -- 判断阶段切换，并检测是否需要弹窗提示
         if UIManager.IsOpen(UIName.ArenaTopMatchPanel) then return end
         if not this.IsTopMatchActive() then return end
         if oldState ~= this.baseInfo.battleState then
-            if this.baseInfo.battleState == TOP_MATCH_TIME_STATE.OPEN_IN_READY and this.baseInfo.joinState == 1 then
-                --检测拍脸
-
-                Game.GlobalEvent:DispatchEvent(GameEvent.PatFace.PatFaceSend,FacePanelType.Championship)
-            elseif this.baseInfo.battleState == TOP_MATCH_TIME_STATE.OPEN_IN_GUESS then
-                --检测拍脸
-
-                Game.GlobalEvent:DispatchEvent(GameEvent.PatFace.PatFaceSend,FacePanelType.Championship)
+            local ns = this.baseInfo.battleState
+            -- 🔴 去重：巅峰战拍脸（ShowType==2 不写「已弹」标记）在「服务端 push 与拉取响应短暂状态不一致」
+            --    或同一状态被反复刷新时会被反复派发 PatFaceSend，导致界面一直弹。
+            --    按当前 battleState 去重：同一状态只弹一次；状态真正切换（含赛季重置后重新进入）才再弹。
+            if this.lastChampPatFaceState ~= ns then
+                if ns == TOP_MATCH_TIME_STATE.OPEN_IN_READY and this.baseInfo.joinState == 1 then
+                    --检测拍脸
+                    this.lastChampPatFaceState = ns
+                    Game.GlobalEvent:DispatchEvent(GameEvent.PatFace.PatFaceSend,FacePanelType.Championship)
+                elseif ns == TOP_MATCH_TIME_STATE.OPEN_IN_GUESS then
+                    --检测拍脸
+                    this.lastChampPatFaceState = ns
+                    Game.GlobalEvent:DispatchEvent(GameEvent.PatFace.PatFaceSend,FacePanelType.Championship)
+                end
             end
         end
     end

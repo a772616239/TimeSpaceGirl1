@@ -1354,9 +1354,12 @@ def cmd_run(args) -> int:
         # 🔴 必须在 lock 之前：`putalpha(源图 A)` 是逐像素 lock，笔画画出轮廓就只剩
         #    半截字母，而 lock 之后既量不出来也补不回来（#14 末字母 S / #27 末字母 N）。
         #    这里先 cover 到源尺寸、把越界的字带横向压回可见区，再交给 postprocess_photo。
-        gen_im, _fit = refit_covered(src_im, gen_im)
-        if _fit:
-            extra["refit"] = _fit
+        #    🔴 glyph 族不碰：它由 postprocess_glyph 自己按墨迹 bbox 归位，
+        #       先 cover 一次会把字形压变形。
+        if fam != FAMILY_GLYPH:
+            gen_im, _fit = refit_covered(src_im, gen_im)
+            if _fit:
+                extra["refit"] = _fit
         if fam == FAMILY_GLYPH:
             out, gstat = postprocess_glyph(src_im, gen_im)
             Image.fromarray(np.asarray(out)[..., 3]).save(work / "ink_mask.png")

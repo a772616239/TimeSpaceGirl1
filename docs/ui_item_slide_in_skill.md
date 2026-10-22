@@ -299,6 +299,7 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 | `MapPanel` | HUD 贴边容器 9 个（见 §10） | **各自就近的那条边** | 56~96px / 0.26s / 错开 0.05（总 0.61s） |
 | `MissionDailyPanel_Daily` | 任务卡 `rewardPre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | 打开 +260 / 0.26s / 错开 0.055；切页签 +170 / 0.30s / 错开 0.05 / 整批 +0.05 |
 | `CourtesyDressPanel` | 奖励卡 `item` → `item1..itemN`（一屏 ~6 张） | **右 → 左** | 同上（打开 +260 / 0.26s / 0.055；切页签 +170 / 0.30s / 0.05 / 整批 +0.05） |
+| `LineupRecommend` | 阵容卡 `prefab` → 1..N（一屏 ~3.7 张） | **右 → 左** | 打开 +240 / 0.22s / 错开 0.055（无页签，只此一套） |
 
 `MissionDailyPanel_Daily` 有一处和前三处不同，值得先看一眼：**任务卡没有 `bg` 子节点**，
 整卡底板就是卡根节点自己那张 `Image`（`cn2-X1_chongzhi_goumaixiangdiban`，1080×275 满幅）。
@@ -396,6 +397,18 @@ prefab 一行没动。
 ---
 
 ## 11. 变更记录
+
+- 2026-10-22 第六个落地：`LineupRecommend`（阵容推荐卡，一屏 ~3.7 张，从右往左逐张滑入）。
+  三点和前面几个都不同：① 列表**不是** `ScrollCycleView`，是 `OnShow` 的网络回调里手工 `newObject`
+  挂到 Content 下的固定 N 格，Content 上挂着 `VerticalLayoutGroup + ContentSizeFitter`（spacing 50 /
+  padding 37,20）⇒ 布局组重写的是**卡的根节点**，位移只能写 `iconPanel`；卡顺序直接取 `lineupList`
+  的下标，不用遍历 Content 子节点（模板与 `prefab(Clone)` 同名，按名字筛会连模板一起算）。
+  ② 面板没有页签，只有**打开**一套节奏（+240 / 0.22 / 0.055）；闸门放 `OnOpen` —— 从英雄信息弹窗
+  返回走的是 `OpenUI(true)` 只调 `OnShow`，此时不能重播。③ **没有淡入通道**：`iconPanel` 下三个
+  Image 同名（1080×885 装饰层 / 1040×423 ×2），`GetGameObject` 按名字 DFS 会命中装饰层 ⇒ 只做位移。
+  播放点必须落在网络回调末尾（列表是异步建出来的），`OnClose` 里 `StopSlideIn` + 清 `needSlideIn`，
+  防止「关掉之后回调才到」把动画播在已隐藏的面板上。harness 8 case：
+  `scripts/lua-tests/test_lineuprecommend_slidein.lua`；调参预览 `_output/lineuprecommend_slidein_preview.html`。
 
 - 2026-10-22 第五个落地：`CourtesyDressPanel`（奖励卡，一屏 ~6 张，页签是 3 个手写按钮而不是 TabBox）。
   新增：**底板第三种形态**（没有 bg 子节点、根也没有 Image，满幅底板是名为 `Image` 的直接子节点，

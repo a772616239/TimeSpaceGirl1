@@ -28,11 +28,39 @@ public class CLIBuilder
     }
 
     /// <summary>
-    /// 命令行出包默认口径：最小改动 —— 只关 GM（isOpenGM/isDebug=0），
-    /// 其余开关与线上包逐位一致（用户 2026-10-12 明确选择，避免给现有玩家推新手引导/热更）。
-    /// 需要与编辑器「是否正式包」完全一致时改用 ReleaseProfile.FullTemplate。
+    /// 命令行出包口径。**由环境变量 TS_RELEASE_PROFILE 决定**（release / minimal / dev / full），
+    /// 下发方：scripts/aab_release.sh --profile、.jenkins/lib/build_apk.sh --profile。
+    ///
+    /// 口径语义（2026-10-22 用户定调：正式服分正式包与测试包）：
+    ///   release  = 正式包：关 GM + 关日志（logLevel=Error，Log/LogWarning 静默，仅 LogError 输出）
+    ///   minimal  = 测试包：关 GM，**保留全部日志**
+    ///   dev/full = 历史口径，仅供对照/排查
+    ///
+    /// 🔴 默认取 release：漏传时宁可打出「没日志」的正式包，也不能把日志随正式包发出去。
+    ///    测试包 job 必须显式传 minimal —— 漏传的后果（测试包没日志）当场就能发现，
+    ///    而正式包带日志发出去则几乎不可能被发现。
     /// </summary>
-    static readonly ReleaseBuildSettings.ReleaseProfile kProfile = ReleaseBuildSettings.ReleaseProfile.MinimalGmOff;
+    static ReleaseBuildSettings.ReleaseProfile ResolveProfile()
+    {
+        const ReleaseBuildSettings.ReleaseProfile kDefault = ReleaseBuildSettings.ReleaseProfile.Release;
+        string raw = System.Environment.GetEnvironmentVariable("TS_RELEASE_PROFILE");
+        if (string.IsNullOrEmpty(raw))
+        {
+            UnityEngine.Debug.Log($"[CLIBuilder] 未设置 TS_RELEASE_PROFILE，使用默认口径 {kDefault}");
+            return kDefault;
+        }
+
+        ReleaseBuildSettings.ReleaseProfile parsed;
+        if (System.Enum.TryParse(raw, true, out parsed)
+            && System.Enum.IsDefined(typeof(ReleaseBuildSettings.ReleaseProfile), parsed))
+        {
+            UnityEngine.Debug.Log($"[CLIBuilder] 出包口径 = {parsed}（来自 TS_RELEASE_PROFILE={raw}）");
+            return parsed;
+        }
+
+        UnityEngine.Debug.LogWarning($"[CLIBuilder] TS_RELEASE_PROFILE=\"{raw}\" 不是合法口径，回落 {kDefault}");
+        return kDefault;
+    }
 
     /// <summary>
     /// 命令行出包共用流程：套用正式包配置 → 打 AAB/APK → 还原场景。
@@ -46,6 +74,8 @@ public class CLIBuilder
 
         PrepareAndroid();
         EditorUserBuildSettings.buildAppBundle = buildAppBundle;
+
+        ReleaseBuildSettings.ReleaseProfile kProfile = ResolveProfile();
 
         string version = PlayerSettings.bundleVersion;
         int versionCode = PlayerSettings.Android.bundleVersionCode;

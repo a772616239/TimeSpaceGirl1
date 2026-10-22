@@ -4,7 +4,7 @@
   "concurrent": false,
   "params": [
     {"name":"SERVER_ENV","type":"choice","choices":["正式服","测试服","现网-129.226.213.65"],"default":"正式服","description":"🔴 这个包连哪个服务器（地址表 scripts/build_envs.json：正式服=103.151.173.99 / 测试服=本机 127.0.0.1:8081 / 现网=历史包用的 129.226.213.65）。构建前注入 Assets/Resources/version.txt，EXIT 时（含失败）自动还原；打包后**解包核验**，包里连的不是所选环境就拒绝上传。要回滚/对照旧包选「现网」"},
-    {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","dev","full"],"default":"minimal","description":"核验口径（包内 12 位开关应等于哪一档）。⚠️ CLI 构建固定 minimal（CLIBuilder.kProfile 硬编码），选 dev/full 只应用于配合 REUSE_AAB 核验 GUI/手工出的包"},
+    {"name":"EXPECT_PROFILE","type":"choice","choices":["release","minimal","dev","full"],"default":"release","description":"🔴 出包口径 **同时是构建口径**（2026-10-22 起下发为 TS_RELEASE_PROFILE）：release=正式包（关 GM + 关日志 logLevel=Error，默认）/ minimal=测试包（关 GM，保留全部日志）/ dev、full=历史口径仅供对照。打包后按同一值解包核验，包里口径不符即拒绝上传"},
     {"name":"BUMP_VERSION","type":"bool","default":true,"description":"构建前把 versionCode +1。CLI 打包不自增；Play 各轨道共享 versionCode 空间，重复号一律被拒"},
     {"name":"BUILD_APK","type":"bool","default":true,"description":"**默认是**：打完 AAB 后接着出一份同 versionCode 的 universal APK（upload key 签名），方便直接装手机测试。APK 失败不阻断 AAB 发版，但会标成关注"},
     {"name":"REUSE_AAB","type":"string","default":"","description":"复用已有 AAB 的路径（填了就跳过 Unity 构建，只做校验/上传）"},
@@ -206,6 +206,9 @@ fi
 [[ "$TS_ALLOWNOLUA" == "true" ]] && BUILD_ARGS+=(--allow-no-lua)
 # 🔴 出包环境：注入 + 打包后解包核验都由 aab_release.sh 负责（--skip-build 复用旧包时只核验）
 [[ -n "${TS_SERVER_ENV:-}" ]] && BUILD_ARGS+=(--server-env "$TS_SERVER_ENV")
+# 🔴 出包口径：正式包默认 release（关 GM + 关日志）。必须显式下发，
+#    否则 CLIBuilder 会走它自己的默认值 —— 参数就白设了（与 --server-env 同理）。
+[[ -n "${TS_PROFILE:-}" ]] && BUILD_ARGS+=(--profile "$TS_PROFILE")
 
 echo "→ scripts/aab_release.sh ${BUILD_ARGS[*]}"
 # 🔴 纳入 unity 锁：同一 Unity 工程不能有第二个 batchmode 实例，
@@ -238,6 +241,8 @@ echo "→ build_apk.sh --no-bump（复用 ④ 已提的版本号，与 AAB 保�
 #    若只给 AAB 注入，APK 会打回工程默认环境 ⇒ 发出去的装机包连错服。
 APK_ARGS=(--no-bump)
 [[ -n "${TS_SERVER_ENV:-}" ]] && APK_ARGS+=(--server-env "$TS_SERVER_ENV")
+# 🔴 口径也必须一致：AAB 是正式包（关日志）、APK 却留日志 = 同一个版本两个口径。
+[[ -n "${TS_PROFILE:-}" ]] && APK_ARGS+=(--profile "$TS_PROFILE")
 "$BASH" .jenkins/lib/run_stage.sh --name "Unity 构建 APK" \
   --group "构建" --slug build-apk --timeout 7000 \
   -- "$BASH" .jenkins/lib/build_apk.sh "${APK_ARGS[@]}" --who "$JOB_NAME #$BUILD_NUMBER"

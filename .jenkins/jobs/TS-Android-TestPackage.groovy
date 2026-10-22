@@ -9,7 +9,7 @@
   "params": [
     {"name":"SERVER_ENV","type":"choice","choices":["测试服","正式服","现网-129.226.213.65"],"default":"现网-129.226.213.65","description":"🔴 这个包连哪个服务器（地址表 scripts/build_envs.json：测试服=本机 127.0.0.1:8081 / 正式服=103.151.173.99 / 现网=历史包用的 129.226.213.65）。**默认现网=柯测试服**：夜里出的包早上直接装真机就能连，不用人守着起本机测试服。构建前注入 Assets/Resources/version.txt，EXIT 时（含失败）自动还原；打包后解包核验，不符则本环节失败。⚠️ 选「测试服」时包连 127.0.0.1，真机必须先 adb reverse tcp:8081 tcp:8081 与 tcp:16081 tcp:16081（构建日志会提示）"},
     {"name":"BUMP_VERSION","type":"bool","default":false,"description":"是否把 versionCode +1。测试包一般不用，保持与线上同号便于对照"},
-    {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","dev","full"],"default":"minimal","description":"核验口径。CLI/CLIBuilder 固定 minimal（只关 GM）"},
+    {"name":"EXPECT_PROFILE","type":"choice","choices":["minimal","release","dev","full"],"default":"minimal","description":"出包口径（**同时是构建口径**，2026-10-22 起下发为 --profile → TS_RELEASE_PROFILE）：minimal=测试包（关 GM，**保留全部日志**，默认）/ release=正式包（关 GM + 关日志）。打包后按同一值解包核验"},
     {"name":"SEND_MAIL","type":"bool","default":true,"description":"出完（或失败）发一封结果邮件：版本号 / 连服 / 下载地址（稳定地址 + 本次构建地址）/ 失败环节。夜间定时靠它把结果送到手上；手动跑不想收信就取消勾选"},
     {"name":"MAIL_TO","type":"string","default":"","description":"收件人（逗号分隔）。留空 = 共享库默认收件人（jenkins-shared/lib/notify.py 的 NOTIFY_TO，当前是 772616239@qq.com）"}
   ]
@@ -57,7 +57,7 @@ mkdir -p "$TS_RUN_DIR/logs"
   echo "运行：$JOB_NAME #$BUILD_NUMBER"
   echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
-  echo "口径：$TS_PROFILE（CLIBuilder 固定 minimal）提版本号：$TS_BUMP"
+  echo "口径：$TS_PROFILE（测试包默认 minimal=保留日志；正式包走 release=关日志） 提版本号：$TS_BUMP"
   echo "出包环境：$TS_SERVER_ENV（连哪个服，见 scripts/build_envs.json）"
   echo "用途：出测试 APK（侧载前须先卸载 Play 版 —— 签名不同）"
   echo "定时：每天 03:00（cron 0 3 * * *）；本链路上传动作一律没有，不传 Play"
@@ -130,7 +130,10 @@ BUMP_ARG=""
 # 🔴 连服环境由 build_apk.sh 在 Unity 启动前注入、EXIT 时还原（测试服=本机 127.0.0.1）
 ENV_ARGS=()
 [[ -n "${TS_SERVER_ENV:-}" ]] && ENV_ARGS=(--server-env "$TS_SERVER_ENV")
-"$BASH" .jenkins/lib/build_apk.sh $BUMP_ARG "${ENV_ARGS[@]}" --who "$JOB_NAME #$BUILD_NUMBER"
+# 🔴 口径：测试包默认 minimal（关 GM，**保留全部日志**，方便在真机上看 trace）。
+#    ⚠️ build_apk.sh 自身默认是 release（关日志），所以这里必须显式下发，不能靠默认值。
+PROFILE_ARGS=(--profile "${TS_PROFILE:-minimal}")
+"$BASH" .jenkins/lib/build_apk.sh $BUMP_ARG "${ENV_ARGS[@]}" "${PROFILE_ARGS[@]}" --who "$JOB_NAME #$BUILD_NUMBER"
 ''')
       }
     }

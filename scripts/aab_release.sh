@@ -35,6 +35,12 @@
 #    --skip-build 复用旧产物时不做注入，只核验；若包内环境与 --server-env 不符则
 #    拒绝（这时想强行继续加 --allow-env-mismatch）。
 #
+# 🔴 --profile <口径>：这个包是「正式包」还是「测试包」（2026-10-22 用户定调）
+#    release  正式包（默认）：关 GM + **关日志**（logLevel=Error，Log/LogWarning 静默）
+#    minimal  测试包：关 GM，**保留全部日志**
+#    dev/full 历史口径，仅供对照/排查
+#    下发方式 = 环境变量 TS_RELEASE_PROFILE → CLIBuilder.ResolveProfile()；漏传按 release 处理。
+#
 # 说明：
 #   - 默认会先把 AndroidBundleVersionCode +1、bundleVersion 末位 +1（CLI 打包本身
 #     不自增，详见 scripts/bump_version.py 头部注释）。产物名形如
@@ -79,6 +85,10 @@ ALLOW_NO_LUA=0
 SERVER_ENV=""
 ALLOW_ENV_MISMATCH=0    # --skip-build 复用旧包时，允许包内环境与 --server-env 不一致
 
+# 🔴 出包口径（--profile）：release=正式包（关 GM + 关日志，默认）/ minimal=测试包（保留日志）
+#    / dev / full（历史口径，仅供对照）。通过环境变量 TS_RELEASE_PROFILE 传给 CLIBuilder。
+PROFILE="release"
+
 # --------------------------------------------------------------------------- #
 # 参数解析
 # --------------------------------------------------------------------------- #
@@ -102,6 +112,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run)        DRY_RUN=1; shift ;;
         --allow-no-lua)   ALLOW_NO_LUA=1; shift ;;
         --server-env)     SERVER_ENV="$2"; shift 2 ;;     # 正式服 / 测试服 / 现网-… （见 build_envs.json）
+        --profile)        PROFILE="$2"; shift 2 ;;        # release(正式包，关日志) / minimal(测试包，留日志)
         --allow-env-mismatch) ALLOW_ENV_MISMATCH=1; shift ;;
         --yes|-y)         ASSUME_YES=1; shift ;;
         # 用法段 = 从第 3 行到下一个 `# ===…` 分隔线之前（不要再写死行号）
@@ -374,6 +385,14 @@ else
     # ----------------------------------------------------------------------- #
     # 2. Unity batchmode 打包
     # ----------------------------------------------------------------------- #
+    case "$PROFILE" in
+        release|minimal|dev|full) ;;
+        *) fail "--profile 只接受 release|minimal|dev|full，收到：${PROFILE}" ;;
+    esac
+    # 🔴 必须在 Unity 启动之前 export：CLIBuilder.ResolveProfile() 读的是进程环境变量。
+    export TS_RELEASE_PROFILE="$PROFILE"
+    ok "出包口径：${PROFILE}（release=正式包·关日志 / minimal=测试包·留日志）"
+
     step "Unity batchmode 打包 AAB（约 10-15 分钟）"
     rm -f "${PROJECT_ROOT}/Library/SourceAssetDB-lock" 2>/dev/null || true
     # 🔴 清理 Unity 在 macOS 上残留的 atomic-write 临时文件（.filename.XXXXXX）：

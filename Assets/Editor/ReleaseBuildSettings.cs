@@ -33,6 +33,11 @@ public static class ReleaseBuildSettings
     public class Snapshot
     {
         public bool bundleMode, luaBundleMode, isSDK, isSDKLogin, isOpenGM, isGuide, isUpdate, isDebug;
+        /// <summary>
+        /// 🔴 必须一起快照：Release 口径会把 logLevel 改成 Error，漏了它就会在打完包后
+        /// 把「日志静默」永久留在工程场景里 —— 下次开发/测试包也跟着没日志，且极难发现。
+        /// </summary>
+        public GameCore.LogLevel logLevel;
 
         public static Snapshot Capture(GameSettings g)
         {
@@ -47,6 +52,7 @@ public static class ReleaseBuildSettings
                 isGuide = i.isGuide,
                 isUpdate = i.isUpdate,
                 isDebug = i.isDebug,
+                logLevel = i.logLevel,
             };
         }
 
@@ -61,6 +67,7 @@ public static class ReleaseBuildSettings
             i.isGuide = isGuide;
             i.isUpdate = isUpdate;
             i.isDebug = isDebug;
+            i.logLevel = logLevel;
         }
     }
 
@@ -100,6 +107,17 @@ public static class ReleaseBuildSettings
         MinimalGmOff = 1,
         /// <summary>完整「正式包」模板：与编辑器勾选「是否正式包」完全一致。</summary>
         FullTemplate = 2,
+        /// <summary>
+        /// 正式包（对外发布）= <see cref="MinimalGmOff"/> + **关日志**。
+        /// 与 MinimalGmOff 的唯一差别是把 logLevel 置为 Error：
+        ///   - 本工程里所有日志最终都汇到 <c>GameCore.BaseLogger</c>（C# 直调 + Lua 的
+        ///     Util.Log/LogWarning/LogError → XDebug.Log → BaseLogger），因此**只改这一位**
+        ///     就能同时关掉 C# 与 Lua 的 Log/LogWarning，不需要改 Lua 侧 define.lua。
+        ///   - 选 Error 而不是 Off：与线上「左下角→右上角」手势关日志后的状态完全一致
+        ///     （XDebug.Log.UpdateLog 里就是 SetLogLevel(4)），且保留 LogError 便于线上取证。
+        /// 测试包请继续用 <see cref="MinimalGmOff"/>（日志全开）。
+        /// </summary>
+        Release = 3,
     }
 
     /// <summary>
@@ -130,6 +148,14 @@ public static class ReleaseBuildSettings
                 // 以便与线上包逐位对齐。
                 i.isOpenGM = false;
                 i.isDebug = false;
+                break;
+
+            case ReleaseProfile.Release:
+                // 正式包：在最小改动口径上再关日志（logLevel=Error）。
+                // 不改 isGuide/isUpdate/isSDK —— 与 v64~v82 逐位一致，避免改变现有玩家行为。
+                i.isOpenGM = false;
+                i.isDebug = false;
+                i.logLevel = GameCore.LogLevel.Error;
                 break;
 
             case ReleaseProfile.FullTemplate:
@@ -194,6 +220,13 @@ public static class ReleaseBuildSettings
         if (i.isDebug)
         {
             error = "isDebug 仍为 true";
+            return false;
+        }
+        // 正式包的硬性要求：日志必须关到 Error 及以下（Log/LogWarning 静默）。
+        // 测试包（MinimalGmOff）不校验这一条，保留全量日志便于排查。
+        if (profile == ReleaseProfile.Release && i.logLevel < GameCore.LogLevel.Error)
+        {
+            error = "logLevel=" + i.logLevel + "（未关日志）—— 正式包要求 logLevel>=Error";
             return false;
         }
         if (!i.bundleMode || !i.luaBundleMode)

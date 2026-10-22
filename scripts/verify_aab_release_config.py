@@ -31,12 +31,13 @@ GameSettings.settingInfo 是 [System.Serializable]，在场景 level0 的 Serial
 ⇒ 现在特征只取**前 11 个 int32**（logLevel…isOpenBLog），第 12 个 originLan 仅解码出来**报告**。
 
   dev      = [0,0,1,1,0,0,1,0,1,0,0]  开发态，GM 面板开启（线上 v64 实测值）
-  minimal  = [0,0,1,1,0,0,1,0,0,0,0]  最小改动：只把 isOpenGM 置 0（与 dev 只差一位）
+  minimal  = [0,0,1,1,0,0,1,0,0,0,0]  测试包：只把 isOpenGM 置 0（与 dev 只差一位），**日志全开**
   full     = [0,0,1,1,1,0,0,1,0,0,0]  完整「正式包」模板（isGuide/isUpdate 也打开）
+  release  = [4,0,1,1,0,0,1,0,0,0,0]  正式包（2026-10-22 起）：minimal + logLevel=Error（关日志）
 
 用法
 ----
-  python3 scripts/verify_aab_release_config.py <aab|apk> [--expect dev|minimal|full]
+  python3 scripts/verify_aab_release_config.py <aab|apk> [--expect dev|minimal|release|full]
 
 退出码：0 = 通过；1 = 不符合期望；2 = 用法/结构错误。
 """
@@ -74,11 +75,15 @@ PROFILES = {
     "dev":     pattern(0, 1, 1, 0, 0, 1, 0, 1),
     "minimal": pattern(0, 1, 1, 0, 0, 1, 0, 0),
     "full":    pattern(0, 1, 1, 1, 0, 0, 1, 0),
+    # 2026-10-22 起「正式包」= minimal + 关日志：logLevel=4(Error)。
+    # 与 minimal 的唯一差别是第 1 个字段（logLevel 0→4），其余 10 位逐位相同。
+    "release": pattern(0, 1, 1, 0, 0, 1, 0, 0, log_level=4),
 }
 PROFILE_LABEL = {
     "dev": "开发态(带GM)",
-    "minimal": "最小改动(只关GM)",
+    "minimal": "测试包(只关GM，日志全开)",
     "full": "完整正式包模板",
+    "release": "正式包(关GM + 关日志 logLevel=Error)",
 }
 
 

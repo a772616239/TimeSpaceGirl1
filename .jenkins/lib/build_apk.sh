@@ -31,16 +31,29 @@ RUN_DIR="${TS_RUN_DIR:-$ROOT/.jenkins/run/$(date +%Y%m%d-%H%M%S)}"
 
 DO_BUMP=1
 SERVER_ENV=""   # 空 = 不干预（沿用 Assets/Resources/version.txt 现状）；非空 = build_envs.json 里的 key
+# 出包口径：release=正式包（关 GM + 关日志，默认）/ minimal=测试包（关 GM，保留日志）
+# 🔴 默认 release = 与 aab_release.sh 保持一致（漏传时宁可没日志，也不要把日志发出去）；
+#    测试包 job 必须显式传 --profile minimal。
+PROFILE="release"
 WHO="$(hostname -s)/$$"
 ORIGINAL_ARGS=("$@")
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-bump) DO_BUMP=0; shift ;;
     --server-env) SERVER_ENV="$2"; shift 2 ;;
+    --profile) PROFILE="$2"; shift 2 ;;
     --who)     WHO="$2"; shift 2 ;;
     *) echo "build_apk: 未知参数 $1" >&2; exit 2 ;;
   esac
 done
+
+case "$PROFILE" in
+  release|minimal|dev|full) ;;
+  *) echo "build_apk: --profile 只接受 release|minimal|dev|full，收到 $PROFILE" >&2; exit 2 ;;
+esac
+# 🔴 必须 export 到 Unity 进程环境（CLIBuilder.ResolveProfile 读它）
+export TS_RELEASE_PROFILE="$PROFILE"
+echo "出包口径：${PROFILE}（release=正式包·关日志 / minimal=测试包·留日志）"
 
 # 🔴 整个执行体（bump→注入→Unity→还原→定位产物）必须在 unity 锁内跑。
 #    锁原来只包 Unity 进程本身，注入/还原裸奔在锁外 —— 并行 job（TS-Resource-Build）
@@ -104,10 +117,10 @@ for d in "$GRADLE_UNITY/src/main/assets" "$GRADLE_UNITY/build/intermediates/asse
   fi
 done
 
-# 🔴 口径说明：CLIBuilder 里 `kProfile` 硬编码为 MinimalGmOff（只关 GM，其余与线上逐位一致）。
-#    这里不提供口径开关 —— 命令行产物必须与线上口径一致，出别的口径应当是显式改代码的决定，
-#    不该是一个手滑就能点出来的下拉框。
-echo "→ Unity batchmode 出 APK（CLIBuilder.BuildAndroidAPK / 口径 MinimalGmOff）"
+# 🔴 口径说明（2026-10-22 变更）：CLIBuilder 的 kProfile 不再是硬编码，改由
+#    TS_RELEASE_PROFILE 环境变量决定（本脚本 --profile 下发，默认 release）。
+#    release = 正式包：关 GM + 关日志（logLevel=Error）；minimal = 测试包：关 GM，保留日志。
+echo "→ Unity batchmode 出 APK（CLIBuilder.BuildAndroidAPK / 口径 ${PROFILE}）"
 echo "   🔒 需要 unity 锁（与 AAB 构建、手工 Unity 串行）"
 
 # 整个脚本已套在 unity 锁内（见头部 re-exec），这里直接起 Unity，不能再套锁（会死锁）。

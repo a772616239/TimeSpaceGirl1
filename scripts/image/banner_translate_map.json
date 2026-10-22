@@ -6,6 +6,7 @@
     "atlas 族没有「扫全目录」的余地（图集里绝大多数图没有中文），所以本表就是白名单：有 lines 的才做。",
     "glyph 族（2026-10-22）：ArtFont_zh 下「小型 + 单色」的美术字块（页签/竖排标题），也只支持白名单。",
     "  额外字段：zh_text = 图上那句中文原文（提示词里要写给它看）；gpt_layout = 版面怎么摆（人话描述，只对 glyph 生效）。",
+    "整幅族（artfont / atlas，2026-10-22 起）：gpt_layout 同样生效 —— 英文比中文长 3~4 倍时显式给宽度上限（像素坐标 + 「超了压字距降字高，绝不拉宽底板」），否则模型会把字铺到实心区外、被 alpha lock 直接啃掉。",
     "poster 族（2026-10-22）：ArtFont_zh/DynamicActivityPanelAtlas/banner 下的 884x856 全幅海报（插画+彩带+两行美术字）。",
     "  同样只走白名单；字段与 glyph 一致（zh_text / lines / gpt_layout），但 lines 按「第 1 行大、其后依次」排。",
     "译名口径以 Assets/ManagedResources/~Lua/Config/Data/Language.lua 为准；",
@@ -94,11 +95,17 @@
   "cn2-x1_texie_mozhate_01_zh.png": {
     "zh_text": "圣体颂",
     "lines": ["Ave Verum Corpus"],
-    "note": "莫扎特英雄特写技能横幅「HERO·SKILL 圣体颂」（ArtFont_zh/font，512x256 RGBA 透明底：黑色笔刷横幅底板 + 网点 + 蓝色渐变大字，左上小字 HERO·SKILL 本来就是英文不许动）。译名取语言表 38010065「Ave Verum Corpus」（jp 聖体賛美歌 同源；xlsx 与 Language.lua 技能名表逐位对齐双源核实：砍伐/Cut Down、圣体颂/Ave Verum Corpus、安魂曲/Requiem 相邻全对上）。同系列口径同 cn2-x1_texie_baiqi_01：512x256 落在 artfont 带但不是 884x544 三段版面、也不是单色 glyph（1000+ 种颜色）⇒ local 锚点与 600x400 闸门都不适用，必须 chatgpt_web；family=auto 判成 artfont 即走「整幅重绘 + alpha lock + 可见区改动 2%~75%」口径"
+    "gpt_layout": "WIDTH LIMIT (hard, measured on the 512x256 canvas): the Chinese 圣体颂 occupies x≈96..385 (about 290px wide, 71px tall, starting at y≈96). The single English line 'AVE VERUM CORPUS' is far wider than three Chinese characters, so it MUST be condensed to fit inside that same span — start at the same left edge (x≈96) and end no later than x≈385, keeping at least 5px clearance on the right. Tighten letter-spacing first, then reduce glyph height proportionally if still needed. No letter may cross x≈390: the banner's right side beyond that point is only a sparse dotted tail with no solid plate, and anything drawn there gets cut off by the artwork's own silhouette. Never widen, extend or re-shape the banner, and never drop or truncate the final 'S'.",
+    "note": "莫扎特英雄特写技能横幅「HERO·SKILL 圣体颂」（ArtFont_zh/font，512x256 RGBA 透明底：黑色笔刷横幅底板 + 网点 + 蓝色渐变大字，左上小字 HERO·SKILL 本来就是英文不许动）。译名取语言表 38010065「Ave Verum Corpus」（jp 聖体賛美歌 同源；xlsx 与 Language.lua 技能名表逐位对齐双源核实：砍伐/Cut Down、圣体颂/Ave Verum Corpus、安魂曲/Requiem 相邻全对上）。同系列口径同 cn2-x1_texie_baiqi_01：512x256 落在 artfont 带但不是 884x544 三段版面、也不是单色 glyph（1000+ 种颜色）⇒ local 锚点与 600x400 闸门都不适用，必须 chatgpt_web；family=auto 判成 artfont 即走「整幅重绘 + alpha lock + 可见区改动 2%~75%」口径。🔴 首跑（#14）英文铺太宽，末字母 S 越过实心区掉进网点稀疏带被 alpha lock 啃掉半边 ⇒ gpt_layout 补显式宽度上限（整幅族 2026-10-22 新增逐条目 gpt_layout 钩子）"
   },
   "cn2-x1_texie_shiba_01_zh.png": {
     "zh_text": "魔神的睿智",
     "lines": ["Devilish Wisdom"],
     "note": "英雄特写技能横幅「HERO-SKILL 魔神的睿智」（ArtFont_zh/font，512x256 RGBA 透明底：白色 HERO-SKILL 小标 + 紫色大标题 + 锯齿星爆 + 双黑箭头 + 网点；左上 HERO-SKILL 本来就是英文不许动）。译名取自 Language.lua 技能名表逐位对齐（毒针/三道谜语/魔神的睿智/猎杀时刻 ↔ Poison Needle/Three Riddles/Devilish Wisdom/The Hunt）。🔴 512x256 落在 artfont 带但不是 884x544 三段版面、也不是单色 glyph（1000+ 种颜色）⇒ local 锚点与 600x400 闸门都不适用，必须 chatgpt_web；family=auto 判成 artfont 即走「整幅重绘 + alpha lock + 可见区改动 2%~75%」口径"
+  },
+  "cn2-x1_texie_zhende_01_zh.png": {
+    "zh_text": "神圣审判",
+    "lines": ["Divine Judgment"],
+    "note": "真田英雄特写技能横幅「HERO-SKILL 神圣审判」（ArtFont_zh/font，512x256 RGBA 透明底：黑色笔刷横幅底板 + 橙金渐变大字，左上小字 HERO-SKILL 本来就是英文不许动）。译名取 Language.lua 技能名表「Divine Judgment」（同系列 Sacred Judgment 相邻对齐双源核实）。🔴 512x256 落在 artfont 带但不是 884x544 三段版面、也不是单色 glyph（橙金渐变 1000+ 种颜色）⇒ local 锚点与 600x400 闸门都不适用，必须 chatgpt_web；family=auto 判成 artfont 即走「整幅重绘 + alpha lock + 可见区改动 2%~75%」口径"
   }
 }

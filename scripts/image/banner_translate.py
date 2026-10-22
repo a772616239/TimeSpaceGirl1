@@ -883,6 +883,13 @@ def build_prompt(zh: Path, entry: dict, lines: list[str], title: str, fam: str) 
     zh_src = (entry.get("zh_text") or "").strip()
     src_block = (f"\nChinese text currently baked into the artwork: 「{zh_src}」\n"
                  if zh_src else "\n")
+    # 逐条目的版面约束（只对整幅族生效）：英文比中文长 3~4 倍时，光写「condense」不够 ——
+    # 模型会把字铺到底板外，而 alpha lock 按源图形状裁，超出实心区的部分直接被切掉
+    # （2026-10-22 莫扎特「Ave Verum Corpus」实测：末字母 S 被网点稀疏区啃掉一半）。
+    # 条目给了 gpt_layout 就显式写给它，和 glyph/poster 族同一个字段、同一套人话描述。
+    layout = (entry.get("gpt_layout") or "").strip()
+    layout_block = (f"\nLayout constraint for THIS image (overrides any guess above):\n{layout}\n"
+                    if layout else "")
     return f"""\
 This is an image-edit task: translate the Chinese text baked into this game UI artwork into English.
 {src_block}
@@ -908,7 +915,7 @@ ends. The last letter must be fully visible, not hidden behind or cut off by the
 5. Use clean bold latin capitals, readable at small size, no decorative script that cannot be read.
 6. Do not add logos, watermarks, signatures, frames or any extra element.
 7. Canvas keeps the same aspect ratio as the reference image.
-
+{layout_block}
 Output one single image.
 """
 

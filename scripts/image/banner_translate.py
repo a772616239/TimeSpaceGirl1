@@ -1541,7 +1541,14 @@ def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str
     checks.append(("文字区域确实重画过", changed >= 0.02,
                    f"改动像素 {changed:.1%}（原样返回说明模型没动手）{scope}"))
     checks.append(("没有整幅重画", changed <= 0.75, f"改动像素 {changed:.1%}（翻译不该重绘背景）{scope}"))
-    checks.append(("整体色差可控", mean_diff <= 45, f"平均通道差 {mean_diff:.1f}{scope}"))
+    # 🔴 「整体平均通道差 ≤45」对整幅重绘族没有判别力，降 warn（2026-10-22 实测）：
+    #    美术字占掉可见区大半，只换字也会把均值抬到 70 上下 —— ArtFont_zh/font 的 512x256
+    #    特写横幅两张人眼合格（背景/装饰/小字全保住，只有字母换了）的成品实测
+    #    baiqi 76.8 / aijiyanhou 73.0，与 poster 族 banner_12 的结论（57~60）同一条：
+    #    拿整幅均值当硬闸门，等于把「字够大」判成「重绘了背景」。真闸门是上面的
+    #    改动 2%~75% + 人眼看 compare.png（下面必有 warn）。
+    warns.append(f"整幅平均通道差 {mean_diff:.1f}{scope}（只作参考：美术字占大半可见区，"
+                 f"只换字也会到 70 上下；合格品实测 73~77）")
     if changed > 0.40:
         warns.append(f"改动像素 {changed:.0%} 偏大：模型可能顺手改了画面，务必看图")
     warns.append("英文是否正确、有没有被裁掉需人眼确认（无 OCR 闸门）")

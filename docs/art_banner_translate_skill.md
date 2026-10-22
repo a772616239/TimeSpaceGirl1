@@ -284,17 +284,28 @@ postprocess_photo()    → 等比 cover 回 884×856（🔴 不能 contain：海
 
 ## 6. 写回之后
 
-- 目标：**整条相对路径镜像** `ArtFont_zh → ArtFont_en`（2026-10-22 起）：
+- 目标：**平铺在族目录根下，丢掉 zh 侧的一切子目录**：
   - `ArtFont_zh/OperatingPanelAtlas/x_bg_zh.png` → `ArtFont_en/OperatingPanelAtlas/x_bg_en.png`
-  - `ArtFont_zh/DynamicActivityPanelAtlas/tab/y_zh.png` → `ArtFont_en/DynamicActivityPanelAtlas/tab/y_en.png`
+  - `ArtFont_zh/DynamicActivityPanelAtlas/tab/y_zh.png` → `ArtFont_en/DynamicActivityPanelAtlas/y_en.png`
+  - `ArtFont_zh/DynamicActivityPanelAtlas/banner/z_zh.png` → `ArtFont_en/DynamicActivityPanelAtlas/z_en.png`
   - `Atlas/LaddersTypePanelAtlas/z.png` → `ArtFont_en/LaddersTypePanelAtlas/z_en.png`
-  🔴 以前 artfont 把目标目录写死成 `ArtFont_en/OperatingPanelAtlas`，只因为当时那一族恰好全在那儿；
-  子目录里的字块会被写进错误的族目录 —— 图就位了客户端也找不到。
-- glyph / atlas 的 `.meta` 直接拿**中文源图自己的 `.meta`** 当模板（同一图集、同一导入设置），
-  只换 `guid`；artfont 横幅仍按「同族 bg_en → 同族 _en → 任意 _bg_en → zh 同族」挑。
+  （族目录 = `ArtFont_zh/` 或 `Atlas/` 之后的第一段。）
+
+  🔴 **不能按 zh 相对路径把 en 也镜像到子目录**（2026-10-22 第一版就是这么写的，已回退）：工程既有
+  60+ 张 en 图**全部平铺在族目录根**（`ArtFont_en/DynamicActivityPanelAtlas/cn2-X1_wmsr_yeqian_01_en.png`
+  的 zh 原件在 `tab/` 下）；更硬的理由是 `resPathList` 是**手工维护**的目录白名单
+  （868 条，一个目录 = 一个 AB），`ArtFont_en/DynamicActivityPanelAtlas/tab` **不在里面** ⇒
+  重扫整目录跳过 ⇒ resName 永不登记 ⇒ 真机白图，而 `verify` 全绿、人眼在工程里也看得见图。
+  现在 `publish` 有闸门 `check_target_registered`：目标父目录不在 `resPathList` 里直接 rc=1 拦下。
+- glyph / atlas / poster 的 `.meta` 直接拿**中文源图自己的 `.meta`** 当模板（同一图集、同一导入设置），
+  换 `guid` **和 `spriteID`**（只换 guid 会让两份资源共用 spriteID，SpriteAtlas 打包变体会互相顶掉）；
+  artfont 横幅仍按「同族 bg_en → 同族 _en → 任意 _bg_en → zh 同族」挑。
 - 已有同名文件时**默认跳过**（rc=3）；要覆盖必须 `FORCE=true`，旧图先进
   `ResBackpack/备份/ManagedResources/ArtFont_en/...`
-- 🔴 **写回 ≠ 进包**：真机生效还要重打该资源所在 AssetBundle（`FrameTool.BuildGameAssetBundles`）
+- `publish` **不信 `state.json` 里记的 `en` 路径**，按当前规则重算 —— 规则改过之后，旧 state 会把
+  人带回老位置，「图写了但目录没登记」这种错只有真机才发现。
+- 🔴 **写回 ≠ 进包**：真机生效还要重打该资源所在 AssetBundle（`FrameTool.BuildGameAssetBundles`）。
+  `publish` 会顺手查 `resName` 是否已在 `resInfoList` 里，没有就打印 `⏳ 未登记` + 该重打哪个目录的 AB。
 - 🔴 **写回 ≠ 生效**：客户端要显示英文还要求调用点走 `GetPictureFont(...)`，且该 `resName` 在
   `ResourcePathConfig.asset` 有登记。glyph 这批源图**名字带 `_zh` 后缀**，正好符合
   `GetPictureFont` 按 `GetLan()` 拼 `_en` 的规则；万一以后遇到**不带后缀**的中文原图，

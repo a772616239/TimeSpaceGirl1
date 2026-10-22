@@ -228,31 +228,89 @@ def _pick_family(zh: Path, family: str | None) -> str:
 
 
 def en_path_for(zh: Path, family: str | None = None) -> Path:
-    """中文源图 → 英文版目标路径。
+    """中文源图 → 英文版目标路径：**平铺在族目录根下，丢掉 zh 侧的一切子目录**。
 
     atlas ：…/Atlas/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou.png
           → …/ArtFont_en/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou_en.png
-    artfont / glyph：**整条相对路径镜像**到 ArtFont_en 下（2026-10-22 改）
-          …/ArtFont_zh/OperatingPanelAtlas/x_bg_zh.png  → …/ArtFont_en/OperatingPanelAtlas/x_bg_en.png
-          …/ArtFont_zh/DynamicActivityPanelAtlas/tab/y_zh.png → …/ArtFont_en/DynamicActivityPanelAtlas/tab/y_en.png
+    artfont / glyph / poster（族目录 = ArtFont_zh 后第一段，子目录一律压平）
+          …/ArtFont_zh/OperatingPanelAtlas/x_bg_zh.png        → …/ArtFont_en/OperatingPanelAtlas/x_bg_en.png
+          …/ArtFont_zh/DynamicActivityPanelAtlas/tab/y_zh.png → …/ArtFont_en/DynamicActivityPanelAtlas/y_en.png
+          …/ArtFont_zh/DynamicActivityPanelAtlas/banner/z_zh.png → …/ArtFont_en/DynamicActivityPanelAtlas/z_en.png
 
-    🔴 以前 artfont 把目标目录写死成 `ArtFont_en/OperatingPanelAtlas`，只因为当时那一族
-       恰好全在 OperatingPanelAtlas 下。子目录里的字块（tab/）会被写到错误的族目录里，
-       而客户端是按「同族目录 + GetPictureFont」找图的 ⇒ 图就位了也显示不出来。
+    🔴 **不能再按 zh 相对路径镜像到 en 的子目录**（2026-10-22 的第一版就是这么写的，错的）。
+       两条独立原因：
+       1) 工程既有 60+ 张 en 图**全部平铺在族目录根**（`ArtFont_en/DynamicActivityPanelAtlas/
+          cn2-X1_wmsr_yeqian_01_en.png` 的 zh 原件在 `tab/` 下）—— 客户端按 resName 找图，
+          路径只影响 AB 归属，平铺是这条链既定惯例；
+       2) 🔴 `resPathList`（ResourcePathConfig）是**手工维护**的目录白名单，`ArtFont_en/
+          DynamicActivityPanelAtlas/tab` 根本不在里面 ⇒ 重扫整目录跳过 ⇒ resName 永远不登记
+          ⇒ 真机白图。`publish` 现在有闸门拦这种路径（见 `check_target_registered`）。
     """
     fam = _pick_family(zh, family)
+    stem = Path(zh).stem
     if fam == FAMILY_ATLAS:
         rel = Path(zh).resolve().relative_to(ATLAS_ROOT)   # LaddersTypePanelAtlas/x.png
-        return EN_ROOT / rel.parent / (Path(zh).stem + "_en.png")
-    name = Path(zh).name
-    if not name.endswith("_zh.png"):
-        raise SystemExit(f"不是 _zh.png 命名：{name}")
-    new_name = name[: -len("_zh.png")] + "_en.png"
+        return EN_ROOT / rel.parts[0] / (stem + "_en.png")
+    if not Path(zh).name.endswith("_zh.png"):
+        raise SystemExit(f"不是 _zh.png 命名：{Path(zh).name}")
+    new_name = stem[: -len("_zh")] + "_en.png"
     try:
-        rel_parent = Path(zh).resolve().relative_to(ZH_ROOT).parent
+        rel = Path(zh).resolve().relative_to(ZH_ROOT)      # 族目录/…/x_zh.png
     except ValueError:
         return EN_DIR / new_name          # 不在 ArtFont_zh 下（手传的临时图）→ 落回横幅族
-    return EN_ROOT / rel_parent / new_name
+    return EN_ROOT / rel.parts[0] / new_name
+
+
+def res_path_list() -> list[str]:
+    """读 `ResourcePathConfig.asset` 的 `resPathList`（目录白名单，手工维护）。"""
+    cfg = ROOT / "Assets/ManagedResources/ResConfigs/ResourcePathConfig.asset"
+    if not cfg.exists():
+        return []
+    text = cfg.read_text(encoding="utf-8", errors="replace")
+    i = text.find("resPathList:")
+    if i < 0:
+        return []
+    out: list[str] = []
+    for line in text[i:].splitlines()[1:]:
+        s = line.strip()
+        if s.startswith("- Assets/"):
+            out.append(s[2:].strip())
+        elif s and not s.startswith("-"):
+            break
+    return out
+
+
+def res_name_registered(res_name: str) -> bool:
+    """resName 是否已进 `resInfoList`。只表示「上一次重扫时它存在」，不代表 AB 是最新的。"""
+    cfg = ROOT / "Assets/ManagedResources/ResConfigs/ResourcePathConfig.asset"
+    if not cfg.exists():
+        return False
+    text = cfg.read_text(encoding="utf-8", errors="replace")
+    return f"resName: {res_name}\n" in text or f"resName: {res_name}\r" in text
+
+
+def check_target_registered(target: Path) -> tuple[bool, str]:
+    """写回目录必须在 `resPathList` 里，否则这次写回等于白干（重扫跳过整个目录）。
+
+    这是把「静默白图」变成「当场红」的闸门：白图只能靠人眼在真机发现，代价太高。
+
+    🔴 必须**父目录精确匹配**，不能拿前缀/祖先判：`resPathList` 是「一个目录 = 一个 AB」的
+       平铺白名单（868 条，`ArtFont_en` 和 `ArtFont_en/DynamicActivityPanelAtlas/tab` 是两条
+       独立记录），按祖先判会把 `.../DynamicActivityPanelAtlas/tab` 误判成「已登记」，
+       闸门就失效了 —— 第一版就是这么写的，测出来旧错误路径照样放行。
+    """
+    try:
+        rel = target.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return False, f"写回路径不在工程内：{target}"
+    want = Path(rel).parent.as_posix()
+    if want in res_path_list():
+        return True, f"目录已登记：{want}"
+    return False, (f"🔴 目标目录 `{want}` 不在 ResourcePathConfig.resPathList 里 —— "
+                   f"重扫会整目录跳过，resName 不会登记，真机必然白图。\n"
+                   f"   首选修法：别新建子目录，en 图一律平铺在族目录根（`en_path_for` 已经这么算）。\n"
+                   f"   确实要新目录：把 `{want}` 加进 resPathList 末尾（别插中间，"
+                   f"否则会平移后面所有 resAbNameIndex），再重打 AB。")
 
 
 def load_map() -> dict:
@@ -1573,7 +1631,19 @@ def cmd_publish(args) -> int:
         print("验收没过，拒绝写回（--force 可强写）", file=sys.stderr)
         return 1
 
-    target = ROOT / state["en"]
+    # 🔴 目标路径**按当前规则重算**，不信 state.json 里的旧值：
+    #    规则改过（比如 en 侧改成平铺）之后，旧 state 会把人带回老位置，
+    #    出现「图写进去了、但目录不在 resPathList ⇒ 白图」这种只有真机才能发现的错。
+    fam = state.get("family") or FAMILY_ARTFONT
+    zh = ROOT / state["asset"]
+    target = en_path_for(zh, fam)
+    state["en"] = str(target.relative_to(ROOT))
+
+    ok_reg, note_reg = check_target_registered(target)
+    if not ok_reg:
+        print(note_reg, file=sys.stderr)
+        return 1
+
     target.parent.mkdir(parents=True, exist_ok=True)
 
     backup = None
@@ -1586,15 +1656,17 @@ def cmd_publish(args) -> int:
         shutil.copy2(target, backup)
 
     shutil.copyfile(work / "out.png", target)
-    fam = state.get("family") or FAMILY_ARTFONT
-    # atlas / glyph / poster：目标目录与源图同一套族结构，中文源图自己的 .meta 就是最准的模板
+    # atlas / glyph / poster：中文源图自己的 .meta 就是最准的模板
     # （同一张图、同一份导入设置）；artfont 横幅仍按「同族 bg_en」挑，见 ensure_meta 注释。
     meta_hint = ROOT / state["asset"] if fam in (FAMILY_ATLAS, FAMILY_GLYPH,
                                                  FAMILY_POSTER) else None
     meta_note = ensure_meta(target, meta_hint)
 
+    res_name = target.stem
     state["published"] = {
         "target": state["en"],
+        "res_name": res_name,
+        "res_name_registered": res_name_registered(res_name),
         "provider": state.get("provider") or PROVIDER_LOCAL,
         "backup": str(backup.relative_to(ROOT)) if backup else None,
         "sha256": sha256(target),
@@ -1605,7 +1677,14 @@ def cmd_publish(args) -> int:
                                      encoding="utf-8")
 
     print(f"写回 : {state['en']}  ({state['published']['size']} bytes)")
+    print(f"目录 : {note_reg}")
     print(f"meta : {meta_note}")
+    if not state["published"]["res_name_registered"]:
+        print(f"⏳ resName `{res_name}` 还没进 ResourcePathConfig —— 图就位但**客户端找不到**。")
+        print(f"   生效动作：重打 `{Path(state['en']).parent.as_posix()}` 所在 AB"
+              f"（TS-Resource-Build，REBUILD_AB=true），重扫时 CreateResourcePathConfig 会登记它。")
+    else:
+        print(f"resName `{res_name}` 已登记（仍需重打 AB 才能把新图打进包）")
     if backup:
         print(f"原图 : 已备份到 {state['published']['backup']}")
     if args.run:

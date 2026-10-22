@@ -1,6 +1,6 @@
 /**@META
 {
-  "description": "中文美术字 → 英文版流水线，四族资源共用一条链。① 战令横幅（ArtFont_zh/OperatingPanelAtlas/*_bg_zh.png，884x544）：标题+两行文案烘进图里，走写死的三段版面锚点；② 图集大图（Atlas/<面板>/*.png）：中文标题烘在一块纯色黑板上，走白字核+纯色板自动定位；③ 美术字块（ArtFont_zh/** 小型单色图，如 180x96 的页签）：只有纯白字 + alpha，本地排字会换掉笔画风格 ⇒ 必须交给模型重绘；④ 活动海报（**/banner/*_zh.png，884x856 不透明）：插画+斜切彩带+两行美术字，没有纯色底板可补也没锚点可写死 ⇒ 整幅交给模型重绘，再等比 cover 回原尺寸。出图方式由 PROVIDER 决定：chatgpt_web（默认，Chrome 登录态 / AdsPower 换号链驱动 chatgpt.com 出图）/ local（纯 OpenCV+PIL，可复现）/ manual（人交图）。无论谁画的，归位（尺寸/alpha/字块 bbox）、验收（尺寸/透明边/墨迹量/纯白/落位）、写回 ArtFont_en + .meta 都是同一套本地硬断言。缺哪张补哪张，已存在的不动。译文对不对需要人眼看：glyph 与整幅图重绘都会把验收标黄（硬项全过但无 OCR 闸门）。",
+  "description": "中文美术字 → 英文版流水线，四族资源共用一条链。① 战令横幅（ArtFont_zh/OperatingPanelAtlas/*_bg_zh.png，884x544）：标题+两行文案烘进图里，走写死的三段版面锚点；② 图集大图（Atlas/<面板>/*.png）：中文标题烘在一块纯色黑板上，走白字核+纯色板自动定位；③ 美术字块（ArtFont_zh/** 小型单色图，如 180x96 的页签）：只有纯白字 + alpha，本地排字会换掉笔画风格 ⇒ 必须交给模型重绘；④ 活动海报（**/banner/*_zh.png，884x856 不透明）：插画+斜切彩带+两行美术字，没有纯色底板可补也没锚点可写死 ⇒ 整幅交给模型重绘，再等比 cover 回原尺寸。出图方式由 PROVIDER 决定：chatgpt_web（默认，Chrome 登录态 / AdsPower 换号链驱动 chatgpt.com 出图）/ local（纯 OpenCV+PIL，可复现）/ manual（人交图）。无论谁画的，归位（尺寸/alpha/字块 bbox）、验收（尺寸/透明边/墨迹量/纯白/落位）、写回 ArtFont_en + .meta 都是同一套本地硬断言（写回一律平铺在族目录根，且校验目标目录在 resPathList 白名单里，否则当场 rc=1 —— 未登记的目录重扫会整目录跳过，是「图就位但真机白图」的唯一成因）。缺哪张补哪张，已存在的不动。译文对不对需要人眼看：glyph 与整幅图重绘都会把验收标黄（硬项全过但无 OCR 闸门）。",
   "concurrent": false,
   "params": [
     {"name":"MODE","type":"choice","choices":["batch","one"],"default":"batch","description":"batch=扫描全量（ArtFont_zh 横幅全目录 + 译名表里的 Atlas/glyph/poster 白名单），只补缺英文版且译名表里有条目的；one=只做 ASSET 指定的那一张"},
@@ -80,7 +80,12 @@ mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
   echo "🔴 模型出的图要**归位**：等比缩进源图字块 bbox（不是拉伸、不是整幅 cover），再抠墨迹 → 纯白 + alpha。"
   echo "🔴 擦字一律按像素判据圈区域，不按矩形硬切 —— 硬切会把暗板/图集装饰切出直边。"
   echo "🔴 artfont 族第三行「累计返利 __ 倍」不排：已上线的 pata_bg_en / shenyuan_bg_en 都把它删了，留给 UI 动态数字。"
+  echo "🔴 写回路径：**平铺在族目录根**（ArtFont_en/<族目录>/<名>_en.png），zh 侧的 tab/ banner/ 子目录一律压平。"
+  echo "     既有 60+ 张 en 图全是这个布局；而 ArtFont_en/DynamicActivityPanelAtlas/tab 这种子目录"
+  echo "     根本不在 ResourcePathConfig.resPathList（868 条手工白名单，一个目录=一个 AB）里 ⇒"
+  echo "     重扫整目录跳过 ⇒ resName 不登记 ⇒ 图就位了也白图。publish 现在会当场拦下这种路径。"
   echo "🔴 写回 ≠ 进包：真机生效还要重打该资源所在 AssetBundle（FrameTool.BuildGameAssetBundles）。"
+  echo "     publish 会顺手查 resName 是否已在 resInfoList，没登记就打 ⏳ 提示该重打哪个目录。"
   echo "🔴 字块写回只是「英文图就位」；客户端真显示英文还要求调用点走 GetPictureFont(...)"
   echo "     ＋ 该 resName 在 ResourcePathConfig.asset 有登记 —— 缺一步都是白图。"
   echo "🔴 译文对不对没有自动闸门（手写美术字 OCR 不可靠）⇒ 出图族的验收会标黄，必须人眼看 compare.png。"

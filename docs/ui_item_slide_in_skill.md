@@ -250,6 +250,12 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_b
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_dailycarbon_cardslide.lua
 ```
 
+第四个落地 `MissionDailyPanel_Daily`（一屏 ~5 张、底板在根节点上、打开/切页签两套节奏）12 case：
+
+```bash
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_missiondaily_cardslide.lua
+```
+
 必测的 8 条：
 
 | # | 断言 |
@@ -285,6 +291,13 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 | `BattlePassPanel_Mission` | 任务卡 `itempre`（一屏 1 张） | **右 → 左**（按要求反向） | +260 / 0.22s |
 | `DailyCarbonPanel` | 副本卡 `Pre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | 打开 +260 / 0.26s / 错开 0.055；切页签 +170 / 0.30s / 错开 0.05 / 整批 +0.05 |
 | `MapPanel` | HUD 贴边容器 9 个（见 §10） | **各自就近的那条边** | 56~96px / 0.26s / 错开 0.05（总 0.61s） |
+| `MissionDailyPanel_Daily` | 任务卡 `rewardPre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | 打开 +260 / 0.26s / 错开 0.055；切页签 +170 / 0.30s / 错开 0.05 / 整批 +0.05 |
+
+`MissionDailyPanel_Daily` 有一处和前三处不同，值得先看一眼：**任务卡没有 `bg` 子节点**，
+整卡底板就是卡根节点自己那张 `Image`（`cn2-X1_chongzhi_goumaixiangdiban`，1080×275 满幅）。
+所以 `kCardFadeNode` 那条查找换成了 `card:GetComponent("Image")` —— 淡 alpha 不动位置，
+写在根节点的 **Image 组件**上不会被 `ScrollCycleView` 的 `anchoredPosition` 重写波及。
+判据：`prefab` 里卡根有 `CanvasRenderer + Image` 且该 Image 铺满卡面 ⇒ 就走根节点 Image。
 
 ---
 
@@ -362,6 +375,14 @@ prefab 一行没动。
 ---
 
 ## 11. 变更记录
+
+- 2026-10-22 第四个落地：`MissionDailyPanel_Daily`（任务卡，一屏 ~5 张）。两点新增：
+  ① 底板不在子节点上 —— 卡根节点自己的 `Image` 就是满幅底板，淡 alpha 走
+  `card:GetComponent("Image")`，不受 `anchoredPosition` 重写影响；
+  ② 数据刷新入口不止一处（单领 / 一键领 / 宝箱计时器 / `OnMissionDailyChanged` 共 4 条），
+  统一收口成 `RefreshDailySilently()`（`pcall` + 标记复位），播放判定收口成 `ApplyCardSlideIn()`，
+  `OnShow` 里用 `shownOnce` 判「打开 / 切页签」，不新加状态字段。
+  harness 12 case：`scripts/lua-tests/test_missiondaily_cardslide.lua`。
 
 - 2026-10-21 补一版节奏：`kHudDuration/kHudFromScale` 单档拆成 `kHudWeight` 两档（big 0.30/0.90、
   small 0.22/0.96）—— 全部同速同幅时读起来仍像「prefab 自带入场」，没有编排感。

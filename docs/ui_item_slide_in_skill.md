@@ -315,6 +315,7 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 | `FindTreasureMainPanel` | 寻宝任务卡 `rewardPre1..N`（一屏 ~5 张，grid 挂 VerticalLayoutGroup） | **右 → 左** | 打开 +260 / 0.26s / 0.055（无页签，只有打开那一套） |
 | `LineupRecommend` | 阵容卡 `prefab` → 1..N（一屏 ~3.7 张）**+ 卡内英雄两层** | **右 → 左** | 卡 +240 / 0.22s / 错开 0.055；卡内英雄 +80 / 0.18s / 错开 0.04 / 相对自己的卡晚 0.06（无页签，只此一套） |
 | `LaddersTypePanel` | 入场卡 `rewardPre` → itemN（ScrollCycleView 一屏 2~3 张） | **右 → 左**（左滑入右） | 打开 +260 / 0.26s / 错开 0.055（无页签，只此一套） |
+| `MissionDailyPanel_Achievement` | 成就卡 `rewardPre` → itemN（ScrollCycleView 一屏 ~5 张，与 Daily 卡**完全同构**） | **右 → 左** | 同 Daily（打开 +260 / 0.26s / 0.055；切页签 +170 / 0.30s / 0.05 / 整批 +0.05） |
 
 `MissionDailyPanel_Daily` 有一处和前三处不同，值得先看一眼：**任务卡没有 `bg` 子节点**，
 整卡底板就是卡根节点自己那张 `Image`（`cn2-X1_chongzhi_goumaixiangdiban`，1080×275 满幅）。
@@ -413,6 +414,15 @@ prefab 一行没动。
 ---
 
 ## 11. 变更记录
+
+- 2026-10-22 第十二个落地：`MissionDailyPanel_Achievement`（成就卡，一屏 ~5 张）。
+  同面板姊妹页：prefab 取证成就 rewardPre（1078×275）与 Daily 的 rewardPre **完全同构**
+  （同一组 6 个可视子节点、卡根自己是满幅 Image＝形态二）⇒ 常量与节点名单直接镜像
+  `MissionDailyPanel_Daily.lua`。差异只有接线：数据刷新三条路径（receiveAllBtn /
+  receiveBtn / `GameEvent.Task.Achievement`）全部收口 `RefreshAchievementSilently`，
+  事件监听改挂 `OnAchievementChanged` 包装（🔴 `AddListener`/`RemoveListener` 必须引用
+  同一个函数字段，否则移除不掉、切页签后会双刷）。harness 12 case：
+  `scripts/lua-tests/test_missiondaily_achv_cardslide.lua`；LuaBytes 已重编同步。
 
 - 2026-10-22 第九个落地：`LaddersTypePanel`（无尽 PK/混乱之治入口卡，ScrollCycleView 一屏 2~3 张）。
   ① 需求原话「左滑入右」＝ 从右侧滑入向左归位（主流方向）。② 可见卡是 `rewardPre` 的直接子节点

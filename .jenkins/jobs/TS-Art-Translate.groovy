@@ -9,6 +9,8 @@
     {"name":"GEN_IMAGE","type":"string","default":"","description":"PROVIDER=manual 时显式指定出图（相对工程根或绝对路径）；留空则只生成参考图与提示词，不写回"},
     {"name":"CDP_PORT","type":"string","default":"","description":"复用已在运行的已登录浏览器（AdsPower/SunBrowser）的调试端口，find_browser_cdp.py 反查。留空=用本机 Chrome 的登录态副本"},
     {"name":"ADSPOWER_PROFILES","type":"string","default":"","description":"换号顺序（逗号分隔的 AdsPower user_id，排最前）。留空=按额度台账自动排。🔴 号池有 6 个但换号链默认只试 3 个，要覆盖就得显式写这里"},
+    {"name":"PROVIDER_TIMEOUT","type":"string","default":"240","description":"单次等图上限（秒）。默认 240 而不是 driver 自带的 360：实测第一次常撞 5 分钟超时、重试 60s 就成，把第一轮压短能让最坏耗时从 10 分钟降到 7 分钟"},
+    {"name":"BUDGET","type":"string","default":"","description":"本轮最多真出几张图（留空=不限）。batch 补图时给个上限，别一口气把包月额度烧完——额度用尽要等次日恢复"},
     {"name":"FORCE","type":"boolean","default":false,"description":"已有英文版的也重做（会先把旧图备份到 ResBackpack/备份 再覆盖）。改了口径/译名时才勾"},
     {"name":"WRITE","type":"boolean","default":true,"description":"验收通过后写回 Assets/ManagedResources/ArtFont_en/... 并补 .meta。传 false 则只出图、不动工程里的资源（构建页的 compare.png 照样能看）"}
   ]
@@ -42,6 +44,7 @@ pipeline {
           env.STAGE_PROJECT_ROOT = env.PROJ
           env.TS_RUN_DIR = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
           env.TR_ONLY = ''
+          env.TR_ASSET_NAME = ''
           if (params.MODE == 'one') {
             def asset = (params.ASSET ?: '').trim()
             if (!asset) {
@@ -58,7 +61,13 @@ pipeline {
               base = base.substring(0, base.length() - 3)
             }
             env.TR_ONLY = base
+            env.TR_ASSET_NAME = base
           }
+          // 🔴 构建描述里必须带资源名（2026-10-22）：原来只有「one · 7/8 环节通过」，
+          //   并行会话同时触发时，队列里几个构建长得一模一样，只能去 grep 控制台那行「模式：」
+          //   才知道哪个是自己的（这次为此确认错过两轮）。
+          currentBuild.description = (env.TR_ASSET_NAME
+            ? "one · ${env.TR_ASSET_NAME}".toString() : "batch".toString())
         }
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
@@ -103,6 +112,17 @@ cd "$PROJ"
 "$BASH" .jenkins/lib/run_stage.sh --name "开工盘点" \
   --group "美术翻译链" --slug tr-scan --timeout 120 \
   -- "$PY" scripts/image/banner_translate.py scan --strict-ok
+
+# 出图额度预检（2026-10-22 新增）：台账里所有号都在封锁中就直接红。
+# 不预检的代价是 driver 挨个号试一遍才肯退 —— 实测白等 5~9 分钟，而这件事上一轮就记在台账里了。
+if [[ "${PROVIDER:-chatgpt_web}" == "chatgpt_web" && -z "${GEN_IMAGE:-}" ]]; then
+  "$BASH" .jenkins/lib/run_stage.sh --name "出图额度" \
+    --group "美术翻译链" --slug tr-quota --timeout 120 --warn-rc 3 \
+    -- "$PY" scripts/image/banner_translate.py quota || {
+      echo "🔴 出图额度全封锁 ⇒ 本轮不出图（等台账里最早那个恢复时间再来）"
+      exit 1
+    }
+fi
 ''')
       }
     }
@@ -127,11 +147,14 @@ PROV_ARGS="--provider ${PROVIDER:-chatgpt_web}"
 [[ -n "${GEN_IMAGE:-}" ]] && PROV_ARGS="${PROV_ARGS} --gen-image ${GEN_IMAGE}"
 [[ -n "${CDP_PORT:-}" ]] && PROV_ARGS="${PROV_ARGS} --cdp-port ${CDP_PORT}"
 [[ -n "${ADSPOWER_PROFILES:-}" ]] && PROV_ARGS="${PROV_ARGS} --adspower-profiles ${ADSPOWER_PROFILES}"
+[[ -n "${PROVIDER_TIMEOUT:-}" ]] && PROV_ARGS="${PROV_ARGS} --provider-timeout ${PROVIDER_TIMEOUT}"
+BUDGET_ARG=""
+[[ -n "${BUDGET:-}" ]] && BUDGET_ARG="--budget ${BUDGET}"
 # shellcheck disable=SC2086
 "$BASH" .jenkins/lib/run_stage.sh --name "生成英文图" \
   --group "美术翻译链" --slug tr-run --timeout 2400 --warn-rc 3 \
   -- "$PY" scripts/image/banner_translate.py batch --stage run \
-       --run "$TS_RUN_DIR" $ASSET_ARG $ONLY $FORCE_ARG $PROV_ARGS
+       --run "$TS_RUN_DIR" $ASSET_ARG $ONLY $FORCE_ARG $PROV_ARGS $BUDGET_ARG
 ''')
       }
     }
@@ -153,7 +176,13 @@ FORCE_ARG=""
 #   chatgpt_web + glyph = 尺寸/四角仍透明/墨迹量/纯白 RGB255/主体不是小标记（字形 IoU 只记录）
 #   chatgpt_web + poster = 尺寸/alpha/确实重画过/没有整幅重画/色差可控/上 45% 彩带区动过
 #   chatgpt_web + 整幅图 = 尺寸/alpha/确实重画过/没有整幅重画/色差可控
-# 最后一条「译文对不对」没有自动闸门 ⇒ 出图族登记 warn，构建标黄，等人看 compare.png。
+#                        + 笔画全部落在可见区内（lock 前逐像素量）+ 译文与译名表一致（OCR）
+# 🔴 2026-10-22 补了两条硬闸门（原来只有「英文是否正确需人眼确认」一句话，等于把两次
+#    最贵的失败——字被 alpha 切掉、模型自造译名——全推给人眼；#14/#19/#27 就是这么白烧的）：
+#    · 笔画越界：lock 之前量 `ink & (alpha<=8)`，越界就先横向压窄字带，压不下去判红；
+#    · 译文一致性：tesseract --psm 6 读图，与译名表滑窗比对（合格品实测 0.78~1.00，
+#      #27 的 DIVINE JUDGMENT 只有 0.29）。
+#    剩下只有「观感/风格」需要人眼看 compare.png。
 # shellcheck disable=SC2086
 "$BASH" .jenkins/lib/run_stage.sh --name "像素级验收" \
   --group "美术翻译链" --slug tr-verify --timeout 300 \
@@ -246,7 +275,11 @@ cp -R "$TS_RUN_DIR/." "$WORKSPACE/evidence/" 2>/dev/null || true
 cd "$PROJ" 2>/dev/null || true
 "$PY" .jenkins/lib/stage_report.py desc --run "$TS_RUN_DIR" 2>/dev/null || true
 ''').trim()
-        if (desc) { currentBuild.description = "${params.MODE} · ${desc}".toString() }
+        if (desc) {
+          // 资源名放前面：队列/历史里一眼认领（原来只有「one · 7/8 环节通过」）
+          def who = (env.TR_ASSET_NAME ?: params.MODE).toString()
+          currentBuild.description = "${who} · ${desc}".toString()
+        }
 
         def st = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
 cd "$PROJ" 2>/dev/null || true

@@ -144,7 +144,12 @@ cd "$PROJ"
             booleanParam(name: 'SYNC_BYTES',    value: true),
             // 2026-10-23：REBUILD_AB(bool) → AB_MODE(choice)。AB_MODE=复用缓存 时
             // TS-Resource-Build ④ 只校验打包目录里上一轮的 AB 缓存、不启动 Unity（省 5-8 分钟）。
-            choice(name: 'AB_MODE',             choices: ['重建', '复用缓存'], value: params.AB_MODE),
+            // 🔴 传 choice 参数必须用 string()：build 步骤的 parameters 只认
+            //    booleanParam/file/password/run/string/text，写 choice(...) 会在
+            //    BuildTriggerStep 构造阶段直接抛
+            //    「Could not instantiate {…parameters=[…]}」（2026-10-23 #27 实测）。
+            //    Jenkins 会在真正触发时按目标 job 的 choices 校验取值。
+            string(name: 'AB_MODE',             value: params.AB_MODE),
             string(name: 'SERVER_ENV',          value: params.SERVER_ENV),
             string(name: 'LUA_FILES',           value: '')
           ]

@@ -11,7 +11,10 @@ local _GoodsItemListBlack = {}
 -- 货币 id：钻石（与 LocalDefine 的 ItemId 一致）
 local DIAMOND_ITEM_ID = 16
 -- 首充角标标签的语言 id（原来预制体里是硬编码中文，en/jp 会漏出中文）
+--   91001211 首充可得 —— 用于非双倍档（显示绝对值，如 6 元档 660）
+--   91000465 首充赠礼 —— 用于 2.0x 双倍档（显示 +100%）
 local FIRST_BADGE_LANG_ID = 91001211
+local FIRST_BADGE_LANG_ID_DOUBLE = 91000465
 
 -- 从 {{itemId, count}, ...} 里累加钻石数量
 local function SumDiamond(pairsList)
@@ -771,21 +774,30 @@ function this:RechargeShopItemAdapter(shopItem, itemData)
     price.text = MoneyUtil.GetMoney(itemInfo.Price)
     GP.text = "+" .. GetLanguageStrById(itemInfo.Desc) * 1--数量读取商品表的Desc字段
     -- 判断首充赠送
-    -- 角标显示「首充可得」= 基础钻石 + 首购赠礼，不能只显示 FirstMultiple：
-    -- 6 元档首购赠 600 而基础只有 60（11 倍），只显示赠礼会和 30 元档的 330 倒挂
-    -- （两档合计都是 660 钻），玩家会当成配置填错。合计值 660/660/2254/4752/8200/16848
-    -- 按价格单调不减，不会再出现倒挂。
+    -- 角标走两种口径，按「首购倍数」分派，不要写死档位：
+    --   1) 首购赠礼 == 基础钻石（2.0x，即真正的「首充双倍」）→ 显示「+100%」。
+    --      原来显示绝对值，648 档会写出 16848，玩家第一眼以为数值膨胀（实际到手量没变）；
+    --      双倍档用百分比是行业常规表达，也天然不会随数值调整而失真。
+    --   2) 非 2.0x → 显示「基础 + 赠礼」的绝对值。目前只有 6 元档（60 + 600）：
+    --      它是 starter pack 语义，写百分比会变成 +1000%，反而错。
+    --      6 元档只显示赠礼 600 会和 30 元档的 330 倒挂（两档合计都是 660），故取合计。
     local curBuyCount = itemData.buyTimes
     local firstGift = SumDiamond(itemInfo.FirstMultiple)
-    first:SetActive(curBuyCount < 1 and firstGift > 0)
-    firstNum.text = tostring(SumDiamond(itemInfo.BaseReward) + firstGift)
+    local baseDiamond = SumDiamond(itemInfo.BaseReward)
+    local isDouble = baseDiamond > 0 and firstGift == baseDiamond
+    local showBadge = curBuyCount < 1 and firstGift > 0
+    first:SetActive(showBadge)
+    if showBadge then
+        firstNum.text = isDouble and "+100%" or tostring(baseDiamond + firstGift)
+    end
 
     -- 角标标签走语言表（预制体里原来是硬编码「首充赠钻」，en/jp 包会显示中文）
     local firstLabel = Util.GetGameObject(firstNumGo, "Image/Text")
     if firstLabel and not IsNull(firstLabel) then
         local firstLabelText = firstLabel:GetComponent("Text")
         if firstLabelText then
-            firstLabelText.text = GetLanguageStrById(FIRST_BADGE_LANG_ID)
+            firstLabelText.text = GetLanguageStrById(
+                isDouble and FIRST_BADGE_LANG_ID_DOUBLE or FIRST_BADGE_LANG_ID)
         end
     end
 

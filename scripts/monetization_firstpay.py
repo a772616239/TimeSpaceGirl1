@@ -96,7 +96,15 @@ TEN_PULL_DIAMONDS = 2000
 #           ① 与 30 元档首购合计 660 钻**持平**（1100 时是 1160，倒挂 1.76x，同屏角标一眼可见）
 #           ② 正好被 3 张紫晶卡吃完（3×220=660），不多不少，零死券
 #     月卡 id=9 已永久关停（OnSaleRule=1#999#999），不放进来 —— 那条改动永远不会到账
+#
+# 🔴 首购倍数契约：**id>=2 的直充档必须是 2.0x（FirstMultiple == BaseReward）**，
+#    id=1（6 元）是唯一白名单例外 —— 60+600 = 11.0x，语义是 starter pack（配平 3 张券），
+#    不是「双倍」。所以：写校验/做美术文案/做角标时，2x 只覆盖 id>=2；
+#    6 元档按「可得绝对值」表达（客户端 ShopView 里也是按 firstGift == baseDiamond 自动分派）。
+#    verify() 的 2c 段在守这条契约，改数值会直接报红。
 SKU_FIRST_MULTIPLE = {1: 600}
+# 首购倍数的白名单例外（id -> 允许的倍数区间），不在表里的都按 2.0x 严格校验
+FIRST_MULTIPLE_EXCEPTIONS = {1: (9.0, 13.0)}
 
 # R9 星级成长礼阶梯：目标钻/元 = 直充同价档 + BONUS_BASE + BONUS_STAR × (星级-5)
 BONUS_BASE = 0.5
@@ -432,6 +440,38 @@ def verify(check_star=True):
                 % ("✓" if not drop else "✗", len(drop), drop[:4] if drop else ""))
     if drop:
         ok = False
+
+    # 2c) 首购倍数契约：id>=2 必须严格 2.0x，id=1 是白名单例外（starter pack）
+    #     目的：以后任何人按「首购=2x」写校验/美术文案，都能在这里看到契约边界，
+    #     而不是在客户端或美术稿里踩到 6 元档的 11 倍。
+    strict, exceptions = [], []
+    for r, v in iter_rows(ws):
+        if get(v, c_type) != 3:
+            continue
+        sid = get(v, c_id)
+        base_d = diamonds(parse_pairs(get(v, c_base)))
+        fm_d = diamonds(parse_pairs(get(v, c_fm)))
+        if not base_d:
+            continue
+        if sid in FIRST_MULTIPLE_EXCEPTIONS:
+            exceptions.append((sid, base_d, fm_d, fm_d / float(base_d)))
+        else:
+            strict.append((sid, fm_d == base_d, fm_d, base_d))
+    bad_strict = [(s, f, b) for s, good, f, b in strict if not good]
+    msgs.append("%s 首购 2.0x 契约（id>=2 共 %d 档，非 2x %d 档）%s"
+                % ("✓" if not bad_strict else "✗", len(strict), len(bad_strict),
+                   bad_strict if bad_strict else ""))
+    if bad_strict:
+        ok = False
+    for sid, base_d, fm_d, ratio in exceptions:
+        lo, hi = FIRST_MULTIPLE_EXCEPTIONS[sid]
+        need = SINGLE_PULLS_6YUAN * SINGLE_PULL_DIAMONDS
+        good = (base_d + fm_d == need) and lo <= ratio <= hi
+        msgs.append("%s 首购白名单 id=%d：%d + %d = %d 钻（张数 %d 配平 %d，倍数 %.1fx，允许 %.0f–%.0fx）"
+                    % ("✓" if good else "✗", sid, base_d, fm_d, base_d + fm_d,
+                       SINGLE_PULLS_6YUAN, need, ratio, lo, hi))
+        if not good:
+            ok = False
 
     # 3) 首购赠礼写入一致
     per_sku = {}

@@ -19,7 +19,7 @@
   5. 签名（APK 且本机有 apksigner 时）
 
 用法：
-    verify_apk_delivery.py <apk|aab> [--expect dev|minimal|full] [--no-sidecar]
+    verify_apk_delivery.py <apk|aab> [--expect release|minimal|dev|full] [--no-sidecar]
 
 退出码：0 = 可交付；1 = 有阻断项；2 = 用法/工具错误。
 """
@@ -96,8 +96,8 @@ def run(cmd):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("artifact")
-    ap.add_argument("--expect", default=None, choices=["dev", "minimal", "full"],
-                    help="期望的出包口径（默认不校验，只打印实际命中）")
+    ap.add_argument("--expect", default=None, choices=["release", "minimal", "dev", "full"],
+                    help="期望的出包口径（默认不校验，只打印实际命中）。release=正式包(关GM+关日志) / minimal=测试包(留日志)")
     ap.add_argument("--no-sidecar", action="store_true", help="不写 .delivery.json")
     args = ap.parse_args()
 

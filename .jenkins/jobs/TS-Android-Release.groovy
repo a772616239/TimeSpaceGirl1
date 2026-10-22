@@ -16,6 +16,7 @@
     {"name":"TRACK","type":"choice","choices":["internal","alpha","beta","production"],"default":"internal","description":"上传轨道。默认 internal=内部测试（不面向公众、免常规审核、几分钟可装）；选 production/beta/alpha 会「上传并发布」，其 completed/inProgress 仍要求勾 PUBLISH"},
     {"name":"STATUS","type":"choice","choices":["completed","draft","inProgress"],"default":"completed","description":"发布状态。默认 completed=上传即发布（internal 测试员可装；线上轨道配合 PUBLISH 即送审上线）。只存草稿不发布才选 draft"},
     {"name":"PUBLISH","type":"bool","default":false,"description":"🔴 线上轨道（production/beta/alpha）的放行旗标：选这些轨道 + STATUS=completed/inProgress 时必须勾选，表示已知晓「会送审 / 上线」。internal 轨道不需要"},
+    {"name":"ALSO_INTERNAL","type":"bool","default":true,"description":"选 production 轨道时，把**同一个版本**同时挂到 internal 内部测试轨道（同一个 Play edit 内写两条轨道、一次 commit 原子生效，不重复上传、不占新号）。默认开 —— 测试员装到的就是线上那个包；不想挂内部测试才取消勾选"},
     {"name":"AUTO_APPROVE","type":"bool","default":true,"description":"上传前的审批闸门是否自动放行。**默认是**（无人值守跑通整条链路）。设为 False 则停下来等人在 Jenkins 页面点「确认上传」"},
     {"name":"NOTES","type":"string","default":"","description":"更新说明（Play 发布说明）"}
   ]
@@ -56,6 +57,7 @@ pipeline {
           env.TS_TRACK     = params.TRACK
           env.TS_STATUS    = params.STATUS
           env.TS_PUBLISH   = params.PUBLISH.toString()
+          env.TS_ALSO_INTERNAL = params.ALSO_INTERNAL.toString()
           env.TS_AUTOAPPROVE = params.AUTO_APPROVE.toString()
           env.TS_NOTES     = params.NOTES
           env.TS_REBUILD_RES = params.REBUILD_RESOURCES.toString()
@@ -76,6 +78,9 @@ mkdir -p "$TS_RUN_DIR/logs"
   echo "资源准备：${TS_REBUILD_RES}   AB 处理：${TS_AB_MODE}（复用缓存 = 不重打 AB，直接用打包目录上一轮的）"
   echo "服务端表：本 job 只做只读体检；改表请跑独立 job TS-Table-Sync"
   echo "上传：$UPLOAD  轨道：$TS_TRACK  状态：$TS_STATUS  PUBLISH：$TS_PUBLISH  自动放行审批：$TS_AUTOAPPROVE"
+  if [[ "$TS_TRACK" == "production" && "${TS_ALSO_INTERNAL:-false}" == "true" ]]; then
+    echo "同时挂：internal 内部测试（同一个包、同一个 edit 原子提交）"
+  fi
   echo "取证：$TS_RUN_DIR"
 } | tee "$TS_RUN_DIR/context.txt"
 ''')
@@ -458,11 +463,15 @@ cat "$TS_RUN_DIR/aab.path" 2>/dev/null || true
           def trackNote = params.TRACK == 'internal'
               ? '（内部测试，不面向公众、免常规审核，测试员几分钟内可装）'
               : (params.STATUS == 'draft' ? '（草稿，不会送审）' : '  🔴 会提交审核 / 上线')
+          // production 同时挂 internal：同一个版本、同一个 edit，一次 commit 两条轨道都生效
+          def alsoNote = (params.TRACK == 'production' && params.ALSO_INTERNAL)
+              ? '\n  同时挂   : internal 内部测试（同一版本、原子提交；测试员装到的就是线上这个包）'
+              : ''
           def msg = """即将上传到 Google Play，请确认：
   AAB      : ${aab}
   口径     : ${params.PROFILE}
   轨道     : ${params.TRACK}
-  状态     : ${params.STATUS} ${trackNote}
+  状态     : ${params.STATUS} ${trackNote}${alsoNote}
   送审旗标 : ${params.PUBLISH}${params.TRACK == 'internal' ? '（internal 轨道不需要）' : ''}
   更新说明 : ${params.NOTES ?: '（空）'}
 
@@ -491,7 +500,14 @@ UPLOAD_ARGS=(--aab "$AAB" --track "$TS_TRACK" --status "$TS_STATUS" --yes)
 if [[ "$TS_TRACK" != "internal" && ( "$TS_STATUS" == "completed" || "$TS_STATUS" == "inProgress" ) ]]; then
   UPLOAD_ARGS+=(--allow-publish)
 fi
+# 🔁 发正式版时把**同一个版本**也挂到 internal 内部测试轨道（2026-10-23 用户要求）。
+#    🔴 必须是"同一个 edit 里写两条轨道"，不能"再传一次到 internal"：
+#    Play 的 versionCode 是 app 级全局的，同一个号第二次 bundles.upload 必被拒。
 [[ -n "${TS_NOTES:-}" ]] && UPLOAD_ARGS+=(--release-notes "$TS_NOTES")
+if [[ "$TS_TRACK" == "production" && "${TS_ALSO_INTERNAL:-false}" == "true" ]]; then
+  UPLOAD_ARGS+=(--also-track internal)
+  echo "[also] 同一版本同时挂 internal（原子提交，不重复上传）"
+fi
 
 echo "→ scripts/play_upload.py ${UPLOAD_ARGS[*]}"
 # Play 的 edits 全局排他：并发上传会把对方的 edit 判成 deleted（实测 85% 处 HTTP 400）。
@@ -513,6 +529,11 @@ echo "→ scripts/play_upload.py ${UPLOAD_ARGS[*]}"
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
+# 邮件里把「这次除了主轨道还挂了谁」写清楚（production + ALSO_INTERNAL ⇒ internal）
+ALSO_TRACK=""
+if [[ "$TS_TRACK" == "production" && "${TS_ALSO_INTERNAL:-false}" == "true" ]]; then
+  ALSO_TRACK="internal（同一版本）"
+fi
 # --warn-rc 4：投递失败（凭据/网络/SMTP 拒收）只标黄，不把已经成功的发版判红。
 # 这是 2026-10-18 巡检那条 job 踩过的教训：发信抖一下就把整次构建判红，得不偿失。
 # 取证目录用 TS_RUN_DIR（与其他环节一致）；🔴 别写 $STAGE_RUN_DIR —— 本 job 从不定义它，
@@ -523,7 +544,8 @@ cd "$PROJ"
   -- "$PY" "$SHARED/lib/notify.py" release \
        --run-dir "$TS_RUN_DIR" --job "$JOB_NAME" --build "$BUILD_NUMBER" \
        --url "$BUILD_URL" --result SUCCESS \
-       --field 轨道 "$TS_TRACK" --field 状态 "$TS_STATUS"
+       --field 轨道 "$TS_TRACK" --field 状态 "$TS_STATUS" \
+       --field 同步轨道 "${ALSO_TRACK:-（无）}"
 ''')
       }
     }

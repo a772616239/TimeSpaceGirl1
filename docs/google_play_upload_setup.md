@@ -163,6 +163,14 @@ scripts/aab_release.sh --skip-build --upload --production --status draft --yes
 # 🔴 正式版送审 / 上线 —— 须先获批，再抬 --publish
 scripts/aab_release.sh --skip-build --upload --production --publish --yes
 
+# ★ 发正式版的同时把同一个版本挂到 internal 内部测试（2026-10-23 起）
+#   同一个 edit 内写两条轨道、一次 commit 原子生效，不重复上传、不额外占号
+python3 scripts/play_upload.py --aab <path>.aab --track production --status completed \
+    --also-track internal --allow-production-write --allow-publish --yes
+
+# 只想补挂内部测试（包已经在别的轨道上发过了）：复用版本号，不传文件
+python3 scripts/play_upload.py --reuse-version-code 83 --track internal --status completed --yes
+
 # 正式版分阶段放量 10%
 scripts/aab_release.sh --upload --production --status inProgress --user-fraction 0.1 --publish
 
@@ -213,6 +221,11 @@ scripts/aab_release.sh --notes "修复卡顿；优化新手引导"
    **共享同一个 versionCode 空间**，一个号上传过一次就永久占用，换轨道重传同号同样被拒。
    `aab_release.sh` 默认帮你在打包前 `+1`（`scripts/bump_version.py`）。
    脚本还会在上传前查询轨道现有最大 versionCode 做比对，撞车会**在上传前就拦住并返回退出码 5**。
+
+   ⚠️ 由此推出：「同一个包也要挂到 internal」**不能**靠再传一次实现 —— 同号第二次
+   `bundles.upload` 必被拒。两条正确做法：
+   - `--also-track internal`（和主轨道在**同一个 edit** 里一起写，一次 commit 原子生效）；
+   - `--reuse-version-code <N> --track internal`（包已经发过了，只补写轨道、不传文件）。
 
 4. **「应用内容」问卷 / 数据安全表单必须已完成**
    否则正式版发布会被 Play 拦下。

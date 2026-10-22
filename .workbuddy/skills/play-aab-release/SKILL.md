@@ -47,6 +47,9 @@ scripts/aab_release.sh --skip-build --upload --production --status draft --yes
 
 # 🔴 送审 / 上线 —— 必须先取得用户明确同意
 scripts/aab_release.sh --skip-build --upload --production --publish --yes
+
+# 正式发布 + 同一版本顺带挂 internal（Jenkins 的 TS-Android-Release 默认就这么做）
+scripts/aab_release.sh --skip-build --upload --production --publish --also-track internal --yes
 ```
 
 ## 参数
@@ -58,6 +61,7 @@ scripts/aab_release.sh --skip-build --upload --production --publish --yes
 | `--production` | 🔴 才允许写 production 轨道 |
 | `--publish` | 🔴 才允许**非 internal 轨道**用 `status=completed/inProgress`（= 送审 / 上线） |
 | `--track` | `internal`(**默认**) / `alpha` / `beta` / `production` |
+| `--also-track <T>` | 同一版本**同时**挂到另一条轨道（如 `internal`）：同一个 Play edit 内原子提交，**不重复上传、不占新号**（Play 的 versionCode 是 app 级全局的，同号不能传第二遍） |
 | `--status` | 不传则按轨道推导：`internal` ⇒ `completed`（立即可测），其余 ⇒ `draft`；可显式 `completed` / `inProgress` / `halted` |
 | `--user-fraction` | 灰度比例，仅 `inProgress` 有效 |
 | `--notes` | 更新说明 |

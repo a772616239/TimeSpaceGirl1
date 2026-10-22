@@ -21,6 +21,8 @@
 #   例：scripts/aab_release.sh --upload                             # 传 internal（默认，立即可测）
 #       scripts/aab_release.sh --upload --production --status draft  # 传 production 草稿
 #       scripts/aab_release.sh --upload --production --publish       # 正式发布（需先获批准！）
+#       scripts/aab_release.sh --upload --production --publish \
+#                              --also-track internal                   # 正式发布 + 同版本挂内部测试
 #
 # 前置检查里有一道 AssetBundle 闸门：若 StreamingAssets 里找不到任何 Lua bundle
 # 会直接中止（因为这样打出的 AAB 真机起不来）。确认要发不含 Lua 的包时加
@@ -65,6 +67,7 @@ BUILD_LOG="${PROJECT_ROOT}/build_log_aab_main.txt"
 PACKAGE_NAME="com.Warera.timespace"
 
 TRACK="internal"        # 🔴 默认 internal（内部测试轨道）；production 需 --production 显式抬旗
+ALSO_TRACK=""           # 同一版本同时挂到这条轨道（如 --also-track internal），空=不挂
 STATUS=""               # 🔴 空 = 按轨道推导，见下方「默认发布状态」
 STATUS_FOR_INTERNAL="completed"  # internal：传完测试员即可装（内部测试不面向公众 ⇒ 免 --publish）
 STATUS_FOR_OTHER="draft"         # 其余轨道：只存草稿（不送审）；送审另需 --publish
@@ -95,6 +98,7 @@ PROFILE="release"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --track)          TRACK="$2"; shift 2 ;;
+        --also-track)     ALSO_TRACK="$2"; shift 2 ;;   # 同一版本同时挂到该轨道（如 internal）
         --status)         STATUS="$2"; shift 2 ;;
         --user-fraction)  USER_FRACTION="$2"; shift 2 ;;
         --notes)          NOTES="$2"; shift 2 ;;
@@ -564,6 +568,9 @@ step "上传 Google Play（track=${TRACK}, status=${STATUS}）"
 UPLOAD_ARGS=(--aab "$AAB" --package "$PACKAGE_NAME" --track "$TRACK" --status "$STATUS")
 [[ -n "$USER_FRACTION" ]] && UPLOAD_ARGS+=(--user-fraction "$USER_FRACTION")
 [[ -n "$NOTES" ]]         && UPLOAD_ARGS+=(--release-notes "$NOTES")
+# 同一版本同时挂到另一条轨道（如 production 顺带 internal）：同一个 edit 内原子提交，
+# 不重复上传文件 —— Play 的 versionCode 是 app 级全局的，同一个号不能传第二遍。
+[[ -n "$ALSO_TRACK" ]]    && UPLOAD_ARGS+=(--also-track "$ALSO_TRACK")
 [[ -n "$KEY" ]]           && UPLOAD_ARGS+=(--service-account "$KEY")
 [[ "$DRY_RUN" -eq 1 ]]    && UPLOAD_ARGS+=(--dry-run)
 [[ "$ASSUME_YES" -eq 1 ]] && UPLOAD_ARGS+=(--yes)

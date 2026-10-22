@@ -48,6 +48,12 @@ Google Play AAB 上传器 —— 走 Play Developer API v3（androidpublisher）
     #    该号本来就是已用过的，正常上传必然被 Play 拒。
     python3 scripts/play_upload.py --reuse-version-code 69 --track internal --yes
 
+    # ★ 发正式版的同时挂内部测试（2026-10-23 起 TS-Android-Release 默认这么做）：
+    #    同一个 edit 里写两条轨道、一次 commit 原子生效，**不重复上传文件**
+    #    （Play 的 versionCode 是 app 级全局的，同一个号不能传第二遍）。
+    python3 scripts/play_upload.py --aab <path>.aab --track production --status completed \
+        --also-track internal --allow-production-write --allow-publish --yes
+
 退出码：
     0 成功 / 2 参数或环境错误（含被发布闸门拒绝）/ 3 认证失败 / 4 API 业务错误 / 5 版本号校验失败
 """
@@ -89,6 +95,8 @@ DEFAULT_SA_CANDIDATES = [
 ]
 # 允许的 release status
 VALID_STATUS = {"draft", "inProgress", "halted", "completed"}
+# 允许的轨道
+VALID_TRACKS = {"internal", "alpha", "beta", "production"}
 
 # --------------------------------------------------------------------------- #
 # 大包上传健壮性参数（2026-10-12 实测踩坑后加入）
@@ -510,6 +518,11 @@ def main() -> int:
     ap.add_argument("--package", default=DEFAULT_PACKAGE, help=f"应用包名（默认 {DEFAULT_PACKAGE}）")
     ap.add_argument("--track", default="internal",
                     help="目标轨道：internal（内部测试，默认）/ alpha / beta / production")
+    ap.add_argument("--also-track", action="append", default=None, metavar="T[,T2]",
+                    help="🔁 额外把**同一个版本**同时挂到这些轨道（可重复/逗号分隔）。"
+                         "在**同一个 edit 内**完成、一次 commit 原子生效，不重复上传文件。"
+                         "用途：发 production 的同时挂 internal，让测试员装到与线上同一个包"
+                         "（Play 的 versionCode 是 app 级全局的，同一个号不能传第二遍）。")
     ap.add_argument("--status", default=None, choices=sorted(VALID_STATUS),
                     help="发布状态。不传则按轨道推导：internal ⇒ completed（内部测试免常规审核、"
                          "可随时 halt/替换）；其余轨道 ⇒ draft（不送审）")
@@ -550,6 +563,17 @@ def main() -> int:
     if reuse_vc is not None and args.aab:
         die("--reuse-version-code 与 --aab 互斥：复用模式不上传任何文件，只写轨道。", 2)
 
+    # 额外轨道：同一次 edit 里一起写，原子提交（--also-track internal[,beta]）
+    also_tracks: list[str] = []
+    for raw in (args.also_track or []):
+        for t in str(raw).split(","):
+            t = t.strip()
+            if not t or t == args.track or t in also_tracks:
+                continue
+            if t not in VALID_TRACKS:
+                die(f"--also-track 不认识的轨道：{t}（可选 {sorted(VALID_TRACKS)}）", 2)
+            also_tracks.append(t)
+
     aab = None
     size_mb = 0.0
     if reuse_vc is None:
@@ -577,8 +601,14 @@ def main() -> int:
     #   并让 internal 豁免 --allow-publish —— 它天生就是给内部测试员装的，不面向公众。
     #   --dry-run 是只读，不受限。
     # ----------------------------------------------------------------------- #
+    # (轨道, 状态) 计划：主轨道用 --status；额外轨道里 internal 一律 completed
+    # （草稿在内部测试轨道上等于「没传」，测试员根本看不到）。
+    track_plan: list[tuple[str, str]] = [(args.track, args.status)]
+    for t in also_tracks:
+        track_plan.append((t, "completed" if t == "internal" else args.status))
+
     if not args.dry_run:
-        if args.track == "production" and not args.allow_production_write:
+        if "production" in {t for t, _ in track_plan} and not args.allow_production_write:
             die(
                 "拒绝对 production 轨道做写操作。\n"
                 "   本脚本默认只传 internal（内部测试轨道）。若确实要写 production\n"
@@ -589,18 +619,15 @@ def main() -> int:
         # internal 轨道 = 内部测试：不面向公众、免常规审核、可随时 halt/替换 ⇒ 豁免。
         # 其余轨道（production / beta / alpha）的 completed/inProgress 属「对外生效、
         # 不可轻易撤回」的动作，必须先取得用户明确同意再显式加 --allow-publish。
-        if (
-            args.track != "internal"
-            and args.status in ("completed", "inProgress")
-            and not args.allow_publish
-        ):
-            die(
-                f"拒绝把包置为 status={args.status}（= 提交 Google 审核 / 上线）。\n"
-                "   这属于「对外生效、不可轻易撤回」的动作，必须先取得用户明确同意，\n"
-                "   再显式加 --allow-publish。只上传成草稿请用 --status draft。\n"
-                "   （internal 内部测试轨道不受此限 —— 它不面向公众。）",
-                2,
-            )
+        for _t, _s in track_plan:
+            if _t != "internal" and _s in ("completed", "inProgress") and not args.allow_publish:
+                die(
+                    f"拒绝把轨道 {_t} 的包置为 status={_s}（= 提交 Google 审核 / 上线）。\n"
+                    "   这属于「对外生效、不可轻易撤回」的动作，必须先取得用户明确同意，\n"
+                    "   再显式加 --allow-publish。只上传成草稿请用 --status draft。\n"
+                    "   （internal 内部测试轨道不受此限 —— 它不面向公众。）",
+                    2,
+                )
 
     sa_path = resolve_service_account(args.service_account)
     log(f"[env] package      : {args.package}")
@@ -609,6 +636,8 @@ def main() -> int:
     else:
         log(f"[env] mode         : reuse —— 不上传文件，复用已上传的 versionCode {reuse_vc}")
     log(f"[env] track        : {args.track}")
+    if also_tracks:
+        log(f"[env] also-track   : {','.join(also_tracks)}（同一个 edit 内一起写，原子提交）")
     log(f"[env] status       : {args.status}" + (f"  userFraction={args.user_fraction}" if args.user_fraction else ""))
     log(f"[env] key          : {sa_path}")
     log("")
@@ -686,6 +715,9 @@ def main() -> int:
 
         if args.dry_run:
             log("")
+            log("[dry-run] 计划写入的轨道："
+                + "、".join(f"{t}({s})" for t, s in track_plan)
+                + "  —— 同一个 edit 内原子提交")
             log("[dry-run] 未上传、未提交。删除 edit 后退出。")
             try:
                 service.edits().delete(packageName=args.package, editId=edit_id).execute()
@@ -773,24 +805,26 @@ def main() -> int:
                 5,
             )
 
-        # ---------------- 绑定到轨道 ----------------
+        # ---------------- 绑定到轨道（主轨道 + 额外轨道，同一个 edit）----------------
         notes_text = args.release_notes or "问题修复与体验优化。"
-        release = {
-            "status": args.status,
-            "versionCodes": [str(uploaded_vc)],
-            "releaseNotes": [{"language": args.release_notes_lang, "text": notes_text}],
-        }
-        if args.status == "inProgress" and args.user_fraction is not None:
-            release["userFraction"] = args.user_fraction
+        for _t, _s in track_plan:
+            release = {
+                "status": _s,
+                "versionCodes": [str(uploaded_vc)],
+                "releaseNotes": [{"language": args.release_notes_lang, "text": notes_text}],
+            }
+            if _s == "inProgress" and args.user_fraction is not None:
+                release["userFraction"] = args.user_fraction
 
-        track_body = {"track": args.track, "releases": [release]}
-        log(f"[track] 写入轨道 {args.track}：status={args.status} versionCodes={release['versionCodes']}")
-        execute_with_retry(
-            lambda: service.edits().tracks().update(
-                packageName=args.package, editId=edit_id, track=args.track, body=track_body
-            ),
-            "track",
-        )
+            track_body = {"track": _t, "releases": [release]}
+            tag = "" if _t == args.track else "（额外轨道，同一个包）"
+            log(f"[track] 写入轨道 {_t}{tag}：status={_s} versionCodes={release['versionCodes']}")
+            execute_with_retry(
+                lambda _t=_t, _body=track_body: service.edits().tracks().update(
+                    packageName=args.package, editId=edit_id, track=_t, body=_body
+                ),
+                f"track:{_t}",
+            )
 
         # ---------------- 提交 ----------------
         # 2026-10-17 起 Play 对**所有**轨道（含 internal）的 edits.commit 都强制要求
@@ -803,7 +837,7 @@ def main() -> int:
         # ⇒ 现在 status 会自动送审的一律先带上该参数；万一 Play 仍要求，
         #    再原地补参数重试 commit（**不重传**，edit 在 400 后依然有效）。
         commit_kwargs = {"packageName": args.package, "editId": edit_id}
-        gate = is_status_completing(args.status)
+        gate = any(is_status_completing(_s) for _t, _s in track_plan)
         commit_changes_not_sent = gate
         if args.changes_not_sent_for_review:
             if args.track not in NON_PROD_TRACKS and not args.allow_production_write:
@@ -845,6 +879,9 @@ def main() -> int:
                 raise
         log("")
         log(f"✅ 提交成功：{args.package} -> {args.track} / versionCode {uploaded_vc}")
+        if also_tracks:
+            log(f"   ↳ 同一版本同时挂到：{', '.join(also_tracks)}"
+                "（同一个 edit 原子提交，无需再传一次包）")
         if args.track == "internal":
             log("   内部测试轨道：测试员打开内部测试链接即可安装"
                 "（首次发布后商店名称/商品详情的展示可能有最长 48h 延迟）。")

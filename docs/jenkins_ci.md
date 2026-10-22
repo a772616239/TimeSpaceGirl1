@@ -104,7 +104,15 @@
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
 | **TS-Pipeline-Overview** | 只读总览：一次看完 8 个环节，失败互不阻断 | `SKIP_PLAY=False` `SKIP_HEALTH=False` | — | 允许 |
-| **TS-Android-Release** | **AAB + APK** 全链路，默认打包 + 上传发布。**只管客户端**：服务端表只做 `②-3` 只读一致性体检（只提醒不改），改表走独立 job `TS-Table-Sync` | `SERVER_ENV=正式服` `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
+| **TS-Android-Release** | **AAB + APK** 全链路，默认打包 + 上传发布。**只管客户端**：服务端表只做 `②-3` 只读一致性体检（只提醒不改），改表走独立 job `TS-Table-Sync` | `SERVER_ENV=正式服` `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `ALSO_INTERNAL=True` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
+
+> **`ALSO_INTERNAL`（默认 True，2026-10-23 新增）**：`TRACK=production` 时，**同一个版本**
+> 同时挂到 `internal` 内部测试轨道 —— 测试员装到的就是线上那个包，不用另出一个号。
+> 实现是 `play_upload.py --also-track internal`：**在同一个 Play edit 里写两条轨道、一次 commit
+> 原子提交**，不重复上传文件。
+> 🔴 **不能"再传一次到 internal"**：Play 的 versionCode 是 **app 级全局**的，同一个号第二次
+> `bundles.upload` 必被拒。也正因如此，这条不影响 `BUMP_VERSION`，不多占号。
+> 不想挂内部测试就取消勾选（`ALSO_INTERNAL=False`）。
 
 > **`BUILD_APK`（默认 True）**：打完 AAB 立刻在同一把 `unity` 锁下再出 **同 versionCode** 的 universal APK
 > （`--no-bump`，绝不二次提号），供直接装机测试。
@@ -186,6 +194,13 @@
 另有 `play_gate.sh` 做**行为断言**：真跑 `aab_release.sh --skip-build --upload --track production`、
 `--upload --production --status completed` 等组合，必须被拒绝且输出含「拒绝」；同时断言
 `--upload`（默认 internal + completed）**不被拦** —— 防止哪天有人把默认值改松了而没人发现。
+
+**发正式版时同时挂内部测试**（`ALSO_INTERNAL=True`，默认开）：`TRACK=production` 的构建
+会在**同一个 Play edit 内**多写一条 `internal` 轨道，一次 commit 两条轨道同时生效
+（`play_upload.py --also-track internal`）。三条不变：
+- 闸门不变：`production` 仍要 `PUBLISH`，`--allow-production-write` / `--allow-publish` 仍由 job 显式传；
+- 号不变：复用同一个 versionCode，**不额外占号**（同号第二次上传会被 Play 拒）；
+- 失败原子：两条轨道在同一个 edit 里，任一条被拒 ⇒ 两条都不提交，不会出现「线上发了、内部没发」。
 
 ### 3.2 跨 job 互斥：为什么不用 `disableConcurrentBuilds`
 

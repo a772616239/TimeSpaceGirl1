@@ -1,11 +1,12 @@
 # 导表服务端同步 skill（table_sync）
 
 > 适用范围：`data_execl/base_data/*.xlsx` 改完之后，要让**测试服和线上服读到的配置**都和客户端 lua 对齐。
-> 更新时间：2026-10-22
+> 更新时间：2026-10-23
 > 关联文档：`导表实跑与三处断点-20261020.md`（导出链路本身的三处断点）、
 > `测试服导表部署与角标核查-20261021.md`（nil→null 那次事故）、
 > `线上配置表语义diff-20261022.md`（37 张差异表的审计底稿）、`client_build_chain.md`
-> 实现：`scripts/table_sync.py`｜接入点：`scripts/resource_build.sh --sync-tables`
+> 实现：`scripts/table_sync.py`（`--env` 按打包环境选目标）｜接入点：`scripts/resource_build.sh --sync-tables`、
+> `TS-Android-Release` 的 `③-1 服务端表同步`（`SYNC_TABLES` / `SYNC_RESTART`）
 
 ---
 
@@ -58,6 +59,11 @@ python3 scripts/table_sync.py --apply
 python3 scripts/table_sync.py --apply --targets local   # 只推本机测试服
 python3 scripts/table_sync.py --apply --targets gs      # 只推线上服
 
+# ③' 按「打包环境」推（Jenkins 用的就是这条：目标来自 scripts/build_envs.json 的 tableTargets）
+python3 scripts/table_sync.py --env 现网-129.226.213.65 --apply --yes   # → gs
+python3 scripts/table_sync.py --env 测试服                              # → local，只体检
+python3 scripts/table_sync.py --env 正式服                              # → []，直接跳过 rc=0
+
 # ④ 只推指定几张（表名可省 .txt）
 python3 scripts/table_sync.py --apply --only StoreConfig,VipLevelConfig
 
@@ -94,22 +100,25 @@ scripts/resource_build.sh --action export --sync-strict       # 同步失败算�
 
 ### 2.1 🔴 它到底跑在哪个目录（Jenkins 链路实情）
 
-链路：`TS-Resource-Build`（或 `TS-Android-Release` 的「资源准备」）
-→ `scripts/resource_build.sh --action export`
-→ Unity batchmode 导表
-→ **同一个脚本里紧接着** `scripts/table_sync.py --apply`（默认 `--sync-tables apply`）
-→ 推 `local` + `gs` 两套服务端（各 `conf/server` + `assets/conf/server`）。
+两条入口，**都在独立打包 clone 里跑**，都不在开发目录：
 
-关键是**它不在开发目录里跑**，而在独立的打包 clone 里：
+| 入口 | 触发 | 目标怎么定 |
+|---|---|---|
+| `TS-Resource-Build` 的导表环节 | `scripts/resource_build.sh --action export` → Unity 导表 → **同一脚本紧接着** `table_sync.py`（默认 `--sync-tables apply`） | 默认 `local,gs` 都推 |
+| `TS-Android-Release` 的 `③-1 服务端表同步`（2026-10-23 新增） | 参数 `SYNC_TABLES=apply/check/off`（默认 apply）+ `SYNC_RESTART`（默认关） | `table_sync.py --env "$SERVER_ENV"`，映射见 `scripts/build_envs.json` 的 `tableTargets`：现网→`gs`、测试服→`local`、正式服→`[]`（跳过） |
+
+> 🔴 为什么单独加 ③-1、而不是指望导表环节：**发线上包默认 `EXPORT_TABLES=false`**
+> （`--action ab` 只重建 AB），导表环节根本不跑 ⇒ 同步也不跑。2026-10-22 之前的线上包
+> 全是这么出去的：客户端 lua 是新的、服务端 txt 还是旧的。
 
 | 项 | 值 |
 |---|---|
 | 打包目录 | `/Users/wangxufeng/Documents/TimeSpaceGirl1-build`（job 里的 `PROJ`） |
 | 代码从哪来 | `.jenkins/ci_sync.sh`：`fetch` → `stash` → `reset --hard origin/release` |
 | **服务端表从哪来** | **同一脚本第③步 `rsync -a --inplace "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/"`** |
-| 基线文件 | 各 clone 自己的 `build/table_sync/state.json`（gitignore，互不相通） |
+| **基线从哪来** | **同一脚本第④步 `rsync -a --update` 开发目录的 `build/table_sync/state.json`**（2026-10-23 新增） |
 
-由此得出三条必须知道的结论：
+由此得出四条必须知道的结论：
 
 1. **`TimeSpaceServer/` 的真源是开发目录，不是 git。** `ci_sync.sh` 每跑一次就把开发目录的
    `TimeSpaceServer/` 整个 rsync 过去（因为它是独立仓，主仓拉不到）。所以「开发机手工推」
@@ -119,9 +128,18 @@ scripts/resource_build.sh --action export --sync-strict       # 同步失败算�
    `resource_build.sh` 也还没有 `--sync-tables`。这种状态下跑 job 只会导表、不同步。
    ⇒ 改了同步逻辑后，必须先让 `ci_sync.sh` 跑过（job 第①-1 步会做），或手工在打包目录
    `git fetch && git reset --hard origin/release`。
-3. **两个 clone 的基线互不相通。** 开发机推过 23 张，打包 clone 的 `state.json` 里没有记录，
-   但它第一次跑是「首次运行」：先按 `git status` 的工作区差异（= 这次导出相对已提交版本
-   改动的表）当候选，没有差异就只建基线。**不会重复推**（`SAME` 的表本来也不推）。
+3. **基线必须跟着镜像过去，否则 clone 永远是「首次运行」。** `build/table_sync/state.json`
+   是 gitignore 的，clone 里没有；`table_sync` 首次运行只建基线、**一张都不推**
+   ⇒ 「job 跑了但表没动」。所以 `ci_sync.sh` 第④步把开发目录的基线 rsync 过去
+   （`--update`：只前移不回退，CI 自己推过的那次更可信）。基线只是账本，和 txt 一样以开发目录为真源。
+4. **两个 clone 的基线互不相通，但共享同一份语义。** 开发机推过 23 张后，clone 拿到这份基线，
+   看到的是「已经同步过」，不会重复推；之后开发机再改表、提交、打包，clone 才会看到差异。
+   `SAME` 的表本来也不推，所以重复执行是幂等的。
+
+> ⚠️ 一个反直觉的后果：CI 导表用的是**打包 clone 里的 xlsx（git 版本）**，
+> 而 `TimeSpaceServer/` 是 rsync 来的开发目录版本。如果开发目录的 xlsx 有**未提交**改动，
+> rsync 过去的新 txt 会被 CI 的旧 xlsx 重新导一遍覆盖掉，然后被当成「改动」推回服务端
+> —— 等于把线上**回滚**成 git 版本。所以：**要发版的表改动，xlsx 和 txt 必须一起提交**。
 
 > ⚠️ 一个反直觉的后果：CI 导表用的是**打包 clone 里的 xlsx（git 版本）**，
 > 而 `TimeSpaceServer/` 是 rsync 来的开发目录版本。如果开发目录的 xlsx 有**未提交**改动，

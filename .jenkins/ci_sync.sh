@@ -12,7 +12,8 @@
 #   2) 工作区若有改动（上次构建/导表的残留），先 git stash 快照（可恢复，不丢弃）
 #      再 reset --hard —— 打包目录的本地改动一律不是真源，真源在 origin 与开发目录
 #   3) 从开发目录镜像不入库资产：.secrets/ keystore/ TimeSpaceServer/
-#      （凭据与独立服务端仓 git 拉不到；开发目录是真源，镜像保持同状态）
+#      build/table_sync/state.json（表同步基线）
+#      （凭据、独立服务端仓、同步账本 git 都拉不到；开发目录是真源，镜像保持同状态）
 #
 # 🔴 防呆：只允许在打包目录里跑（.jenkins/run/.CI_BUILD_DIR 标记 + origin 必须是 GitHub）。
 #    误在开发目录执行会 reset --hard 掉未提交工作 —— 必须挡死。
@@ -83,5 +84,19 @@ rsync -a --delete "$DEV_PROJ/keystore/"  "$CI/keystore/"  && echo "   ✓ keysto
 rsync -a --inplace "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/" \
   && echo "   ✓ TimeSpaceServer/（独立服务端仓，随开发目录同状态；--inplace 直写，
             不带 --delete：CI 目录不是真源，残留旧文件无害且沙箱拦 unlink）"
+
+# ---- ④ 镜像「表同步基线」（否则打包 clone 永远是首次运行、一张表都推不出去） ----
+# 🔴 2026-10-23 实测：build/table_sync/state.json 是 gitignore 的，打包 clone 里没有；
+#    table_sync 首次运行只建基线不推表，于是「Jenkins 发线上包」这条路上表永远同步不出去
+#    （客户端是新表、服务端还是旧表）。基线只是「上次同步到哪个指纹」的账本，
+#    和 txt 一样以开发目录为真源；--update 保证只前移不回退（CI 自己推过的那次更可信）。
+if [[ -f "$DEV_PROJ/build/table_sync/state.json" ]]; then
+  mkdir -p "$CI/build/table_sync"
+  rsync -a --update "$DEV_PROJ/build/table_sync/state.json" "$CI/build/table_sync/state.json" \
+    && echo "   ✓ build/table_sync/state.json（表同步基线）"
+else
+  echo "   ⚠ 开发目录没有表同步基线（${DEV_PROJ}/build/table_sync/state.json），
+       打包目录首次跑 table_sync 只会建基线、不推表" >&2
+fi
 
 echo "✅ 同步完成：$(git -C "$CI" log -1 --format='%h %s (%ci)')"

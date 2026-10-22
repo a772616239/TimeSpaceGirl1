@@ -104,7 +104,7 @@
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
 | **TS-Pipeline-Overview** | 只读总览：一次看完 8 个环节，失败互不阻断 | `SKIP_PLAY=False` `SKIP_HEALTH=False` | — | 允许 |
-| **TS-Android-Release** | **AAB + APK** 全链路（10 stage），默认打包 + 上传发布 | `SERVER_ENV=正式服` `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
+| **TS-Android-Release** | **AAB + APK** 全链路（10 stage），默认打包 + 上传发布；**③-1 把服务端表同步到本包所连的服**（目标见 `build_envs.json` 的 `tableTargets`） | `SERVER_ENV=正式服` `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `SYNC_TABLES=apply` `SYNC_RESTART=False` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
 
 > **`BUILD_APK`（默认 True）**：打完 AAB 立刻在同一把 `unity` 锁下再出 **同 versionCode** 的 universal APK
 > （`--no-bump`，绝不二次提号），供直接装机测试。

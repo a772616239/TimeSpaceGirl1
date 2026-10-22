@@ -95,6 +95,10 @@ GS_RESTART_SCRIPT = '/home/java/gameserver/RESTART-GAMESERVER.sh'
 # 本地真实服务端仓（打 jar 用），默认同步过去，避免仓库继续落后
 DEFAULT_MIRROR_DIR = PROJECT_ROOT / 'TimeSpaceServer/Server_x1tag1.2.2/server_game/conf/server'
 
+# 打包环境地址表（Jenkins SERVER_ENV 下拉框的 key 就是这里的 envs key）：
+#   环境 → 该环境的服务端表同步目标。正式服（103.151.173.99）实测已死，tableTargets 为空。
+ENVS_FILE = BASE_DIR / 'build_envs.json'
+
 WORK_DIR = PROJECT_ROOT / 'build/table_sync'
 STATE_FILE = WORK_DIR / 'state.json'
 BACKUP_DIR = WORK_DIR / 'backups'
@@ -737,6 +741,29 @@ def _ssh_snapshot(target: Target, rdir: str, md5map: dict, refresh: bool):
     return snap
 
 
+def env_table_targets(env_name: str) -> list:
+    """把 Jenkins 的 SERVER_ENV（如「现网-129.226.213.65」）映射成同步目标。
+
+    🔴 映射写在 scripts/build_envs.json 的 tableTargets 里，不写死在 job / 脚本：
+       出包环境与「表该推给谁」是同一件事，分两处写迟早会漂。
+    返回 [] 表示该环境没有可推的服务端（例如正式服 103.151.173.99 已下线）——
+    这是**正常跳过**，不是错误。
+    """
+    try:
+        data = json.loads(ENVS_FILE.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError) as e:
+        raise SystemExit('✗ 读不到环境表 %s：%s' % (ENVS_FILE, e))
+    envs = data.get('envs') or {}
+    if env_name not in envs:
+        raise SystemExit('✗ build_envs.json 里没有环境「%s」（可选：%s）'
+                         % (env_name, ' / '.join(envs)))
+    if 'tableTargets' not in envs[env_name]:
+        raise SystemExit('✗ 环境「%s」缺 tableTargets 字段（在 scripts/build_envs.json 里补上，'
+                         '例如 ["gs"]；没有可推的服务端就写 []）' % env_name)
+    out = [t.strip() for t in envs[env_name]['tableTargets'] if t.strip()]
+    return out
+
+
 def build_targets(names: list, dirs: list, local_base: str, gs_base: str) -> list:
     out = []
     for n in names:
@@ -812,8 +839,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description='导表服务端同步（增量 + 结构体检，多目标）',
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--local-dir', default=str(DEFAULT_LOCAL_DIR), help='导表产物目录（默认影子目录）')
-    ap.add_argument('--targets', default='local,gs',
+    ap.add_argument('--targets', default=None,
                     help='同步目标，逗号分隔：local（本机测试服）/ gs（线上服），默认两个都做')
+    ap.add_argument('--env', default='',
+                    help='按打包环境决定目标（取 scripts/build_envs.json 的 tableTargets），'
+                         '例如「现网-129.226.213.65」→ gs、「测试服」→ local。'
+                         '给了 --env 就忽略 --targets；该环境没有可推服务端时直接跳过（rc=0）')
     ap.add_argument('--dirs', default=','.join(DEFAULT_DIRS),
                     help='目标里的子目录，逗号分隔（默认 conf/server,assets/conf/server）')
     ap.add_argument('--local-base', default=str(LOCAL_BASE), help='本机测试服根目录')
@@ -844,11 +875,26 @@ def main() -> int:
     local_dir = Path(args.local_dir).resolve()
     mirror_dir = Path(args.mirror_dir).resolve()
     dirs = [d.strip() for d in args.dirs.split(',') if d.strip()]
-    targets = build_targets([t.strip() for t in args.targets.split(',') if t.strip()],
-                            dirs, args.local_base, args.gs_base)
+
+    if args.env:
+        names = env_table_targets(args.env)
+        if not names:
+            log('=' * 88)
+            log('导表服务端同步  环境：%s' % args.env)
+            log('该环境没有配置同步目标（build_envs.json 的 tableTargets 为空）⇒ 跳过，不动任何服务端')
+            log('=' * 88)
+            return 0
+        if args.targets:
+            log('⚠ 同时给了 --env 与 --targets，按 --env 走（%s → %s）'
+                % (args.env, ','.join(names)))
+    else:
+        names = [t.strip() for t in (args.targets or 'local,gs').split(',') if t.strip()]
+    targets = build_targets(names, dirs, args.local_base, args.gs_base)
 
     log('=' * 88)
     log('导表服务端同步  %s' % time.strftime('%Y-%m-%d %H:%M:%S'))
+    if args.env:
+        log('  打包环境：%s ⇒ 目标 %s' % (args.env, ','.join(names)))
     log('  本地导出：%s' % local_dir)
     for t in targets:
         log('  目标 %-6s：%s  (%s)' % (t.name, t.where(dirs[0]), ', '.join(dirs)))

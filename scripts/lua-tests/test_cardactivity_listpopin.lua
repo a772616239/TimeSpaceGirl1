@@ -6,6 +6,7 @@
 --   ④ DrawCardPanel：弹窗打开（btnChange 点击）播、OnShow 不播（列表看不见）、
 --      OnClose / OnDestroy 回收
 --   ⑤ 四个列表页的数据刷新路径（this.Refresh / 领奖回调 / 计时器）里不播
+--   ⑥ 点号/冒号调用与定义风格一致（10-22 崩过：this:PlayContentPopIn(index) 把 this 顶成 index）
 --
 -- 用法：
 --   cd LuaEncoder/luajit_mac/64
@@ -54,6 +55,27 @@ local function countCalls(src, call)
     return n
 end
 
+-- 🔴 调用风格一致性（10-22 真机崩过：`LuaException: CardActivityPanel:109: attempt to index
+-- field '?'`）。点号定义 function this.X(...) 却用 this:X(...) 调 ⇒ 隐形 self 顶到第一个
+-- 形参上、其余实参整体右移 ⇒ contents[this] = nil。反向（冒号定义 / 点号调用）同样错，
+-- 报 nil 参数调用。文本断言数「播了几次」量不出这类错，必须按名字对一遍定义与调用。
+local function badCallStyles(src)
+    -- 先剥掉行注释：防御性注释里会写出「错误写法」本身（this:PlayContentPopIn(index)），
+    -- 不剥就会被当成真调用误报
+    src = src:gsub("%-%-[^\n]*", "")
+    local defs = {}
+    for style, name in src:gmatch("function%s+this([.:])([%w_]+)%s*%(") do
+        defs[name] = style
+    end
+    local bad = {}
+    for style, name in src:gmatch("this([.:])([%w_]+)%s*%(") do
+        if defs[name] and defs[name] ~= style then
+            bad[#bad + 1] = "this" .. style .. name .. "（定义是 function this" .. defs[name] .. name .. "）"
+        end
+    end
+    return bad
+end
+
 -- ---------------- 面板：页面级批量接入 ----------------
 print("== CardActivityPanel ==")
 local src = readSource(PANEL)
@@ -79,8 +101,12 @@ Check(onClose ~= nil and onClose:find("StopContentPopIn", 1, true) ~= nil, "OnCl
 local onDestroy = bodyOf(src, "function CardActivityPanel:OnDestroy()")
 Check(onDestroy ~= nil and onDestroy:find("StopContentPopIn", 1, true) ~= nil, "OnDestroy 里回收")
 
-Check(countCalls(src, "this:PlayContentPopIn(") == 1,
-    "播的调用只有 OnPageTabChange 一处（其它路径 = 数据刷新，不播），实际 " .. countCalls(src, "this:PlayContentPopIn("))
+Check(countCalls(src, "this.PlayContentPopIn(") == 1,
+    "播的调用只有 OnPageTabChange 一处（其它路径 = 数据刷新，不播），实际 " .. countCalls(src, "this.PlayContentPopIn("))
+
+local bad = badCallStyles(src)
+Check(#bad == 0, "点号/冒号调用与定义一致（错位 = 「attempt to index field '?'」）"
+        .. (#bad > 0 and ("： " .. table.concat(bad, "; ")) or ""))
 
 -- ---------------- page_1：切换心愿弹窗（A 方案）----------------
 print("== DrawCardPanel（page_1 切换心愿弹窗）==")
@@ -100,6 +126,10 @@ local drawClose = bodyOf(draw, "function DrawCardPanel:OnClose()")
 Check(drawClose ~= nil and drawClose:find("popIn:Stop", 1, true) ~= nil, "OnClose 里回收")
 local drawDestroy = bodyOf(draw, "function DrawCardPanel:OnDestroy()")
 Check(drawDestroy ~= nil and drawDestroy:find("popIn:Stop", 1, true) ~= nil, "OnDestroy 里回收")
+
+local badDraw = badCallStyles(draw)
+Check(#badDraw == 0, "DrawCardPanel 点号/冒号调用与定义一致"
+        .. (#badDraw > 0 and ("： " .. table.concat(badDraw, "; ")) or ""))
 
 -- ---------------- 四个列表页：数据刷新路径不播 ----------------
 print("== 数据刷新路径不播 ==")

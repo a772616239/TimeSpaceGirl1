@@ -93,7 +93,9 @@ function this.OnPageTabChange(index)
         this.prefabs[i].gameObject:SetActive(i == index)--切换子模块预设显隐
     end
     this.contents[index].view:OnShow(this.sortingOrder,this)
-    this:PlayContentPopIn(index)--列表项逐格入场（必须在页内容 OnShow 的 SetData 之后）
+    --🔴 必须点号调用：PlayContentPopIn 是点号定义（首参就是 index），写成 this:PlayContentPopIn(index)
+    --  会把 this 当 index 传进去 ⇒ contents[this] = nil ⇒ "attempt to index field '?'"
+    this.PlayContentPopIn(index)--列表项逐格入场（必须在页内容 OnShow 的 SetData 之后）
     this.UpView:OnOpen({ showType = UpViewOpenType.ShowRight, panelType =  tabs[index].panelType })
 end
 
@@ -167,7 +169,7 @@ end
 
 --界面关闭时调用（用于子类重写）
 function CardActivityPanel:OnClose()
-    this:StopContentPopIn()
+    this.StopContentPopIn()
     for i = 1, #this.contents do
         this.contents[i].view:OnClose()
     end
@@ -176,7 +178,7 @@ end
 
 --界面销毁时调用（用于子类重写）
 function CardActivityPanel:OnDestroy()
-    this:StopContentPopIn()
+    this.StopContentPopIn()
     SubUIManager.Close(this.PlayerHeadFrameView)
     SubUIManager.Close(this.UpView)
     for i = 1, #this.contents do

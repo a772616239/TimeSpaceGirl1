@@ -77,6 +77,7 @@
 - job：`concurrent: true` + 去掉 `disableConcurrentBuilds()`，`environment { TSG_LEASE_OWNER = "art-translate-${BUILD_NUMBER}" }`，post 里再 `lease-release --owner` 兜底（构建中途红掉不放会占满 TTL）。
 - 测试：`scripts/image/tests/test_browser_pool.py`（跨进程互斥 / 换号 / 用完即关 / 8 进程写台账不丢更新 / 按 owner 钉号）、`test_fallback_rotation.py`（换号链离线仿真，打桩 fb+run_on_port，不烧额度）。
 - 🔴 沙箱 shell 打不开 `/tmp`、`/var/folders` ⇒ 测试临时目录必须落工程内（`_output/...`），否则 `save()` 静默失败、测试变「全都成功」的假绿。
+- **实跑验证（19:07，`scripts/image/tests/live_parallel_claim.py`）**：不满足于「离线打桩全绿」，起两个 owner（`live-A`/`live-B`）同时冲进换号链第 ② 步 —— 抢租约、`adspower_state/start/stop`、台账全是**真代码**，只把 `run_on_port`（真正画画）打桩成立刻 rc=3（不画画、不烧额度，且 rc=3 走「不可用」分支 ⇒ 浏览器当场关掉、收尾自净），台账指到 `TSG_LEDGER` 临时文件。实测 A=`k19wnpan`(CDP 64857)，B 撞到 A 的租约打印「正被 live-A 占用 … → 跳过，不抢别人的浏览器」后改用 `ktmrjhu`(CDP 64873) ⇒ **一人一台、端口不同**，用户手上那台 `k1hiv2p8` 全程没碰，真台账「可用 4 / 封锁 1」一字节未变。手工跑（需 AdsPower 客户端开着），不进 CI。
 - 仍未生效的老账：11 个 `_en` 的 resName 不在 `ResourcePathConfig`，要 `TS-Resource-Build`（REBUILD_AB=true）重扫登记。
 
 ## 「字看着发灰/透」——先量 alpha，别调 RGB（2026-10-22 zhitianxinzhang 定位）

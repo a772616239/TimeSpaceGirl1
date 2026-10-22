@@ -227,10 +227,6 @@ function this:InitComponent(gameObject)
     this.unlock = Util.GetGameObject(this.panel, "Poor/Unlock")
     this.unlockBtn = Util.GetGameObject(this.unlock, "Button")
     this.taskPanel = Util.GetGameObject(this.panel, "Poor/Panel")
-    this.TabCtrl = TabBox.New()
-    this.TabCtrl:SetTabAdapter(this.TabAdapter)
-    this.TabCtrl:SetChangeTabCallBack(this.SwitchView)
-    this.TabCtrl:Init(this.tabBox, this.tabBoxData, curIndex)
 
     this.btnTaskAllReceive = Util.GetGameObject(this.panel, "btnBg/taskAllReceive")
 end
@@ -316,6 +312,62 @@ function this:OnSortingOrderChange(_sortingOrder)
     this.goals:GetComponent("Canvas").sortingOrder = sortingOrder + 30
 end
 
+-- 找到第一个带红点的页签序号（box 下第 i 个子节点即第 i 个页签）；无红点返回 nil
+function this:GetFirstRedPointTab()
+    local box = Util.GetGameObject(this.tabBox, "box")
+    if not box or IsNull(box) then
+        return nil
+    end
+    local tf = box.transform
+    for i = 1, tf.childCount do
+        local child = tf:GetChild(i - 1)
+        if child and not IsNull(child) then
+            local red = Util.GetGameObject(child.gameObject, "Redpot")
+            if red and red.activeSelf then
+                return i
+            end
+        end
+    end
+    return nil
+end
+
+-- 把第 index 个页签滚动进可视区（TabBox 自带纵向 ScrollRect，content = box；
+-- tolua 下 ScrollRect 类成员未绑定，直接移动 box.anchoredPosition 实现，
+-- ScrollRect 会在下次交互时按 content 位置重新夹紧）
+function this:ScrollTabIntoView(index)
+    local box = Util.GetGameObject(this.tabBox, "box")
+    if not box or IsNull(box) then
+        return
+    end
+    local boxTf = box:GetComponent("RectTransform")
+    if not boxTf then
+        return
+    end
+    local tf = box.transform
+    if index < 1 or index > tf.childCount then
+        return
+    end
+    local child = tf:GetChild(index - 1)
+    if not child or IsNull(child) then
+        return
+    end
+    local childTf = child:GetComponent("RectTransform")
+    if not childTf then
+        return
+    end
+    local viewTf = this.tabBox:GetComponent("RectTransform")
+    local viewH = viewTf and viewTf.rect.height or 0
+    local contentH = boxTf.rect.height
+    -- 子节点在 content 局部空间里位于顶部之下（localPosition.y 为负），距内容顶 = -localPosition.y
+    -- 想让该页签顶部贴近视口顶部（留 20px 间距），content 需上移 topDist
+    local desired = childTf.localPosition.y + 20
+    -- 纵向滚动范围：anchoredPosition.y ∈ [-(contentH - viewH), 0]
+    local minY = (contentH > viewH) and -(contentH - viewH) or 0
+    if desired > 0 then desired = 0 end
+    if desired < minY then desired = minY end
+    boxTf.anchoredPosition = Vector2.New(boxTf.anchoredPosition.x, desired)
+end
+
 function this:OnShow(panel,_sortingOrder)
     sortingOrder = _sortingOrder
     this.battlePanel = panel
@@ -323,7 +375,14 @@ function this:OnShow(panel,_sortingOrder)
 
     -- tabIndex = 1
     this.RefreshAllTaskBtn()
+
+    -- 进入「有红点」的界面：自动把 tab 列表定位到第一个带红点的页签
+    local redIndex = this:GetFirstRedPointTab()
+    if redIndex then
+        tabIndex = redIndex
+    end
     this.TabCtrl:ChangeTab(tabIndex)
+    this:ScrollTabIntoView(tabIndex)
 
     -- 任务卡左滑入 + 底板淡入（RefreshAllTaskBtn 里已抑制过一轮，这里补播一次）
     this.PlayTaskSlideIn()

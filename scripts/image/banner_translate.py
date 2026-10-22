@@ -1835,12 +1835,48 @@ def run_verify(work: Path, state: dict):
     return verify_photo_gpt(work, state)
 
 
+def _stale_state(work: Path, state: dict) -> tuple[str | None, str | None]:
+    """`out.png` 是不是「这一轮的」？返回 `(必须跳过验收的原因, 只值得告警的疑点)`。
+
+    🔴 为什么必须挡（2026-10-22 #46 实测）：出图撞「额度已用尽」时 `cmd_run` 会带着
+       rc=4 退出、不动 `out.png`，但 job 的 ③ 验收是**独立阶段**，它只认磁盘上的
+       `out.png`/`state.json` ⇒ 照样把**上一轮的旧成品**量一遍并给出一个红
+       （#46 首轮就报「压到 80% 仍有笔画落在透明区 195px/1.38%」，那跟本轮无关）。
+       一个与本轮无关的红比没有闸门更坏：人会去修一个根本不存在的问题。
+    🔴 但 sha 不一致**不能**直接跳：手工修图（`--provider manual` / 人工补笔）之后
+       `out.png` 必然与 state 记录不同，那是合法流程。这一类降成 warn 照常验收。
+    """
+    out = work / "out.png"
+    if not out.is_file():
+        return "没有 out.png（本轮没跑 run）", None
+    fail = work / "inbox" / "gen.png.fail.json"
+    if fail.is_file() and fail.stat().st_mtime > out.stat().st_mtime:
+        return ("上一轮出图失败（inbox/gen.png.fail.json 比 out.png 新）"
+                "⇒ out.png 是旧产物，验收它只会给出与本轮无关的结论"), None
+    want = (state.get("out_sha256") or "").strip()
+    if want:
+        got = hashlib.sha256(out.read_bytes()).hexdigest()
+        if got != want:
+            return None, (f"out.png 与 state.json 记录的 sha 不一致"
+                          f"（现 {got[:12]} / 记 {want[:12]}）：手工改过图就忽略这条，"
+                          f"否则说明写入中断")
+    return None, None
+
+
 def cmd_verify(args) -> int:
     work = Path(args.work)
     state = json.loads((work / "state.json").read_text(encoding="utf-8"))
     fam = state.get("family") or FAMILY_ARTFONT
     provider = state.get("provider") or PROVIDER_LOCAL
+    skip, doubt = _stale_state(work, state)
+    if skip:
+        print(f"⏭ 跳过验收：{skip}")
+        if args.run:
+            register(args.run, f"验收·{Path(state['asset']).stem}", "skip", "美术翻译链", skip)
+        return 0
     checks, warns = run_verify(work, state)
+    if doubt:
+        warns.insert(0, doubt)
 
     ok = all(c[1] for c in checks)
     print(f"验收（{fam} / {provider}）：{state['asset']}")

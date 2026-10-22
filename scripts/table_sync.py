@@ -111,7 +111,8 @@ REVIEW_ONLY = {
 }
 
 OK_VERDICTS = {'VALUE_DIFF', 'ROW_ADD', 'COL_GAIN', 'NEW'}
-BLOCK_VERDICTS = {'COL_LOSS', 'ROW_LOSS', 'HEADER_DIFF', 'REMOTE_ONLY', 'REVIEW', 'PARSE_FAIL', 'NIL_CELLS'}
+BLOCK_VERDICTS = {'COL_LOSS', 'ROW_LOSS', 'HEADER_DIFF', 'REMOTE_ONLY', 'REVIEW', 'PARSE_FAIL',
+                  'NIL_CELLS', 'PARSE_BAD'}
 
 VERDICT_TEXT = {
     'SAME': '一致',
@@ -126,6 +127,7 @@ VERDICT_TEXT = {
     'REVIEW': '🔴 人工复核名单（语义需产品确认）',
     'PARSE_FAIL': '🔴 解析失败（列数不齐）',
     'NIL_CELLS': '🔴 数值列空值写成 nil（服务端解析会抛异常）',
+    'PARSE_BAD': '🔴 数值列有服务端解析不了的值（小数/超 int32/非数字）',
 }
 
 # 服务端 StringUtil.parseFiledInt 会 Integer.parseInt 的类型：这些列里出现 "nil" 必炸
@@ -280,6 +282,91 @@ def count_nil_numeric(t: Table) -> int:
     return n
 
 
+INT32_MIN, INT32_MAX = -2147483648, 2147483647
+_INT_RE = re.compile(r'^-?\d+$')
+
+
+def _base_type(ty: str):
+    """类型行 → (基础类型, 'scalar'|'list')；不认识的返回 (None, '')。"""
+    ty = ty.strip().lower()
+    if ty in ('int', 'long', 'float', 'double'):
+        return ty, 'scalar'
+    if ty.startswith('ref'):
+        return 'int', 'scalar'          # dealParams: startsWith("ref") → Integer.parseInt
+    if ty.startswith('mut'):
+        parts = ty.split(',')
+        if len(parts) > 1:
+            base = parts[1].split('#')[0].strip()
+            if base in ('int', 'float'):
+                return base, 'list'     # intField/floatField → parseFiledInt/2/3
+    return None, ''
+
+
+def server_parse_issues(t: Table, limit=3):
+    """找出服务端按类型解析会抛异常的单元格，返回 (count, samples)。
+
+    🔴 2026-10-22 实测：把导出表推到测试服后重启，3 张表直接抛 NumberFormatException，
+    整张表没加载进去 —— 全是 xlsx 里的脏数据，跟同步逻辑无关：
+      SupremacyLevelConfig.Hit = 740.000000000001（Excel 浮点误差，列是 int）
+      ChallengeConfig.MapTime   = 9999999999（超 int32）
+      RunesPoolConfig.Max       = 1.25（整数列写小数）
+    服务端 STableManager.dealParams 对 int 列直接 Integer.parseInt，没有任何容错，
+    抛了还会 throw e 把整张表的加载打断 ⇒ 必须在推之前拦下来。
+    """
+    if not t.types:
+        return 0, []
+    count, samples = 0, []
+    for i, ty in enumerate(t.types):
+        base, kind = _base_type(ty)
+        if base is None:
+            continue
+        for key, row in t.rows.items():
+            if i >= len(row):
+                continue
+            cell = row[i].strip()
+            if cell in NULL_TOKENS:
+                continue
+            bad = False
+            if base == 'int':
+                toks = [cell] if kind == 'scalar' else re.split(r'[|#,;]', cell)
+                for tok in toks:
+                    tok = tok.strip()
+                    if not tok:
+                        continue
+                    if not _INT_RE.match(tok):
+                        bad = True
+                        break
+                    v = int(tok)
+                    if not (INT32_MIN <= v <= INT32_MAX):
+                        bad = True
+                        break
+            elif base == 'long':
+                if not _INT_RE.match(cell):
+                    bad = True
+                else:
+                    try:
+                        int(cell)
+                    except ValueError:
+                        bad = True
+            else:                       # float / double
+                toks = [cell] if kind == 'scalar' else re.split(r'[|#,;]', cell)
+                for tok in toks:
+                    tok = tok.strip()
+                    if not tok:
+                        continue
+                    try:
+                        float(tok)
+                    except ValueError:
+                        bad = True
+                        break
+            if bad:
+                count += 1
+                if len(samples) < limit:
+                    name = t.header[i] if i < len(t.header) else str(i)
+                    samples.append('%s(id=%s)=%s' % (name, key, cell[:24]))
+    return count, samples
+
+
 def rewrite_nil(path: Path, t: Table) -> int:
     """把数值列里的 `nil` 就地改写成 `null`，返回改写个数。
 
@@ -386,6 +473,12 @@ def classify(local: Table, target: Table, name: str):
                         '⇒ NumberFormatException，整表加载中断（2026-10-21 实测）。'
                         '这份产物是导出器修复前的旧表，先重跑导表再同步' % nil)
         return 'NIL_CELLS', notes
+    bad, samples = server_parse_issues(local)
+    if bad:
+        notes.insert(0, '本地有 %d 个单元格服务端解析不了（int 列写了小数/超 int32/非数字）：%s。'
+                        '推上去会 NumberFormatException 并中断整表加载（2026-10-22 实测），'
+                        '先在 xlsx 里改掉' % (bad, '；'.join(samples)))
+        return 'PARSE_BAD', notes
     return verdict, notes
 
 
@@ -716,9 +809,17 @@ def main() -> int:
 
     # ---- 基线 ------------------------------------------------------------
     state = load_state()
-    state.setdefault('version', 2)
+    state.setdefault('version', 3)
     sig = state.setdefault('sig', {})
     first_run = not sig
+
+    # 每个目标记一份「上次同步到哪个指纹」。第一次接触某目标时，以它**当前内容**建基线，
+    # 这样「历史漂移」不会被当成「本次改动」自动推上去（要推必须显式 --include-drift）。
+    for t in targets:
+        rec = state.setdefault('targets', {}).setdefault(t.name, {})
+        if 'sig' not in rec:
+            rec['sig'] = {n: tb.sig for n, tb in tgt_tables[t.name].items()}
+            log('  %s 首次接触：以其当前内容建基线（%d 张）' % (t.name, len(rec['sig'])))
 
     changed, src = set(), ''
     if args.only:
@@ -728,6 +829,12 @@ def main() -> int:
         for name, lt in local_tables.items():
             if sig.get(name) != lt.sig:
                 changed.add(name)
+        # 已推过某个目标、但另一个目标还停在旧指纹的表，也要重新纳入
+        for t in targets:
+            tsig = state['targets'][t.name].get('sig', {})
+            for name, lt in local_tables.items():
+                if name in tsig and tsig[name] != lt.sig:
+                    changed.add(name)
         src = '基线差异'
     else:
         git_set = git_changed_tables(local_dir)
@@ -755,11 +862,16 @@ def main() -> int:
             rt = tgt_tables[t.name].get(name)
             if rt is None:
                 nil = count_nil_numeric(lt)
-                result[name][t.name] = {
-                    'verdict': 'NIL_CELLS' if nil else 'NEW',
-                    'notes': (['本地数值列有 %d 个 "nil" 空值，先重跑导表' % nil] if nil
-                              else ['目标没有这张表（新增）']),
-                    'rows': '', 'pushable': not nil}
+                bad, samples = server_parse_issues(lt)
+                if nil:
+                    v, nt = 'NIL_CELLS', ['本地数值列有 %d 个 "nil" 空值，先重跑导表' % nil]
+                elif bad:
+                    v, nt = 'PARSE_BAD', ['本地有 %d 个单元格服务端解析不了：%s'
+                                          % (bad, '；'.join(samples))]
+                else:
+                    v, nt = 'NEW', ['目标没有这张表（新增）']
+                result[name][t.name] = {'verdict': v, 'notes': nt, 'rows': '',
+                                        'pushable': v == 'NEW'}
                 continue
             verdict, notes = classify(lt, rt, name)
             result[name][t.name] = {'verdict': verdict, 'notes': notes,
@@ -950,29 +1062,38 @@ def main() -> int:
     elif not args.no_mirror_repo and not mirror_dir.is_dir():
         log('⚠ 本地服务端仓目录不存在，跳过：%s' % mirror_dir)
 
-    # ---- 基线：只有「所有选中目标都到位」的表才前移 ----------------------
+    # ---- 基线：只有「所有已知目标都到位」的表才前移 ----------------------
     now_ts = time.strftime('%Y-%m-%d %H:%M:%S')
-    done = []
-    for name in plan:
-        statuses = []
-        for t in targets:
-            if name in pushed.get(t.name, []):
-                statuses.append('pushed')
-            elif result[name].get(t.name, {}).get('verdict') == 'SAME':
-                statuses.append('same')
-            else:
-                statuses.append('pending')
-        if all(s in ('pushed', 'same') for s in statuses):
-            sig[name] = local_tables[name].sig
-            done.append(name)
-    for name, lt in local_tables.items():
-        sig.setdefault(name, lt.sig)      # 没进候选的表直接记基线
     for t in targets:
         rec = state.setdefault('targets', {}).setdefault(t.name, {})
         rec['base'] = t.where(dirs[0])
         if pushed.get(t.name):
             rec['last_sync_at'] = now_ts
-    state['version'] = 2
+        for name in pushed.get(t.name, []):
+            rec.setdefault('sig', {})[name] = local_tables[name].sig
+
+    # 全局指纹只在「每个已知目标都已经到这个版本」时才前移。
+    # 否则「只推了测试服」会让线上服永远漏掉这批表（本次就是要修的坑）。
+    done = []
+    for name, lt in local_tables.items():
+        if name in plan and not (name in pushed.get(targets[0].name, []) or
+                                 result[name].get(targets[0].name, {}).get('verdict') == 'SAME'):
+            continue      # 第一个目标都没到位，别急着前移
+        all_ok = True
+        for tname, rec in state['targets'].items():
+            tsig = rec.get('sig')
+            if tsig is None:
+                continue
+            if tsig.get(name) != lt.sig:
+                all_ok = False
+                break
+        if all_ok:
+            if sig.get(name) != lt.sig:
+                done.append(name)
+            sig[name] = lt.sig
+        else:
+            sig.setdefault(name, lt.sig)
+    state['version'] = 3
     state['last_sync_at'] = now_ts
     save_state(state)
     log('')

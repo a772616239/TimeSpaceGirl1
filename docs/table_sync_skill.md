@@ -129,7 +129,8 @@ scripts/resource_build.sh --action export --sync-strict       # 同步失败算�
 | `REMOTE_ONLY` | 目标有、本地导出没有 | 🔴 永不删（可能纯后端表/已下线表） |
 | `REVIEW` | 人工复核名单 | 🔴 拦（`Language` / `MultiLanguage` / `Encourage*` / `RewardItemConfig`） |
 | `PARSE_FAIL` | 某行列数超过表头（串列风险） | 🔴 拦 |
-| `NIL_CELLS` | **数值列里是 `nil`** | 🔴 拦（见第 5 节，这条最重要） |
+| `NIL_CELLS` | **数值列里是 `nil`** | 🔴 拦（见 5.1） |
+| `PARSE_BAD` | **int 列写了小数 / 超 int32 / 非数字** | 🔴 拦（见 5.2，2026-10-22 实测炸过） |
 
 ---
 
@@ -155,7 +156,28 @@ if ("null".equals(value) || isEmpty(value) || " ".equals(value)) return new int[
    （逐单元格验证过：5009 个单元格，零其他改动，行尾风格不变），等价于重跑导表。
    ⚠️ 它会改 git 工作区里的 txt，记得和导表产物一起提交。
 
-### 5.2 推完不重启等于没推（两边重启姿势不同）
+### 5.2 🔴 int 列里的脏数据会打断整张表的加载（2026-10-22 实测）
+
+服务端 `STableManager.dealParams` 对 `int` 列直接 `Integer.parseInt`，**没有任何容错**，
+而且 `catch (Exception e) { LOGGER.error(...); throw e; }` —— 抛了还会往外扔，
+把整张表的加载打断。
+
+2026-10-22 23:24 把 24 张表推到测试服后重启，实际炸了 3 张：
+
+| 表 | 单元格 | 值 | 问题 |
+|---|---|---|---|
+| `SupremacyLevelConfig` | `Hit` id=658…（1896 处） | `740.000000000001` | Excel 浮点误差，列是 `int` |
+| `ChallengeConfig` | `MapTime` id=100/4001/4002/4003 | `9999999999` | 超 int32（2147483647） |
+| `RunesPoolConfig` | `Max` id=270055/280056/310055/320056 | `1.25` / `3.75` / `2.5` | 整数列写小数 |
+
+日志里就三行 `NumberFormatException`，其余全绿 —— 很容易漏。已回滚这 3 张表，
+并给工具加了 `PARSE_BAD` 拦截：按类型行判 `int`/`ref*`/`mut,int#…`/`long`/`float`/`double`，
+逐单元格验（`mut` 按 `|#,;` 拆子值），越界或类型不符一律拦下。
+
+> 这几张表的根因在 xlsx，**不是同步工具能修的**：要么把 `740.000000000001` 改成 740、
+> `1.25` 改成整数、`9999999999` 换成一个 int32 内的哨兵值，要么把服务端列类型改成 `long`/`float`。
+
+### 5.3 推完不重启等于没推（两边重启姿势不同）
 
 `STableManager` 只在启动时 `initMap`。推完表不重启，服务端还是旧数值。
 
@@ -169,27 +191,27 @@ ssh gs "bash /home/java/gameserver/RESTART-GAMESERVER.sh"
 
 `--restart` 两个目标都重启；线上那条在非交互环境需要 `--yes`，否则只提示不执行。
 
-### 5.3 两个目录都要写
+### 5.4 两个目录都要写
 
 `conf/server`（运行时读）和 `assets/conf/server`（资源目录）**不是软链**，
 2026-10-21 实测是两份独立文件（407 / 408 个）。只写一份 = 下次打包/热更又变回旧值。
 工具默认两份都推、两份都校验。
 
-### 5.4 ssh 每次握手 2~3 秒，别逐目录调
+### 5.5 ssh 每次握手 2~3 秒，别逐目录调
 
 `md5sum` 清单用一次 ssh 拿两个目录（`Target.md5s`），逐目录调会把 20 秒的活干成 1 分钟。
 
-### 5.5 远端快照缓存的键必须带 base
+### 5.6 远端快照缓存的键必须带 base
 
 用 `--gs-base` 指向测试目录跑一次，如果缓存键只用目录名（`snap_conf_server`），
 会把生产快照缓存覆盖成测试内容，下次比对直接 `EOFError: Compressed file ended...`。
 已改成 `snap_<base 的 md5 前 8 位>_<dir>`。
 
-### 5.6 `--include-drift` 是给审计用的，不是日常同步
+### 5.7 `--include-drift` 是给审计用的，不是日常同步
 
 它会把所有漂移表全纳入候选（含未发布内容）。日常同步永远用默认的基线增量。
 
-### 5.7 两套服务端本来就不是一个版本，别假设「推一边就够」
+### 5.8 两套服务端本来就不是一个版本，别假设「推一边就够」
 
 2026-10-22 实测：同一批表，`local` 漂移 30 张、`gs` 漂移 31 张，**有 3 张判定不同**：
 
@@ -201,9 +223,22 @@ ssh gs "bash /home/java/gameserver/RESTART-GAMESERVER.sh"
 
 ---
 
-## 6. 本次实测数据（2026-10-22 22:25，双目标）
+## 6. 本次实测数据（2026-10-22 23:30，测试服已同步后）
 
 本地影子目录 406 张 txt：
+
+测试服 23:24 已推 21 张（24 张通过体检，其中 3 张 `PARSE_BAD` 回滚，见 5.2），
+推完重启后 280 张表全部加载、零异常。剩下 9 张仍拦着：
+
+| 表 | 判定 | 原因 |
+|---|---|---|
+| `SupremacyLevelConfig` / `ChallengeConfig` / `RunesPoolConfig` | `PARSE_BAD` | xlsx 脏数据（见 5.2） |
+| `EncourageTaskConfig` / `EncouragePlanConfig` / `MultiLanguage` | `ROW_LOSS` | 覆盖会删目标行 |
+| `Language` | `COL_LOSS` | 导出缺 `Korean` 列 |
+| `ChannelRechargeIdConfig` | `HEADER_DIFF` | 表头少一列 |
+| `RewardItemConfig` | `REVIEW` | 未发布道具 |
+
+同步**前**的双目标全量体检（406 张）：
 
 | 结果 | 本机测试服 local | 线上服 gs |
 |---|---|---|

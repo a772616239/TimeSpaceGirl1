@@ -104,7 +104,7 @@
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
 | **TS-Pipeline-Overview** | 只读总览：一次看完 8 个环节，失败互不阻断 | `SKIP_PLAY=False` `SKIP_HEALTH=False` | — | 允许 |
-| **TS-Android-Release** | **AAB + APK** 全链路（10 stage），默认打包 + 上传发布；**③-1 把服务端表同步到本包所连的服**（目标见 `build_envs.json` 的 `tableTargets`） | `SERVER_ENV=正式服` `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `SYNC_TABLES=apply` `SYNC_RESTART=False` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
+| **TS-Android-Release** | **AAB + APK** 全链路，默认打包 + 上传发布。**只管客户端**：服务端表只做 `②-3` 只读一致性体检（只提醒不改），改表走独立 job `TS-Table-Sync` | `SERVER_ENV=正式服` `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
 
 > **`BUILD_APK`（默认 True）**：打完 AAB 立刻在同一把 `unity` 锁下再出 **同 versionCode** 的 universal APK
 > （`--no-bump`，绝不二次提号），供直接装机测试。
@@ -149,6 +149,7 @@
 >   见 **`docs/android_emulator_smoke.md`**；无设备时可跑 `jenkins-shared/lib/android/selftest.sh` 自测。
 
 | **TS-Resource-Build** | **包内资源构建**：导表（xlsx→客户端 Lua + 服务端 txt）→ 同步 Lua 字节码 → 重建 AB 并复制到 StreamingAssets → 新鲜度硬闸门 + 就绪体检 | `EXPORT_TABLES=True` `SYNC_BYTES=True` `REBUILD_AB=True` `SERVER_ENV=正式服` `LUA_FILES=` | — | **禁止** |
+| **TS-Table-Sync** | **服务器配置表发版**（2026-10-23 拆出，只碰服务端不出包）：代码同步 → 导表 → int 列归一化（可选）→ **把服务端 txt 增量推到指定环境**（逐表结构体检 + 推前备份 + 推后双向 md5）→ 可选重启。目标按 `build_envs.json` 的 `tableTargets`：现网→gs、测试服→local、正式服→跳过 | `SERVER_ENV=现网-129.226.213.65` `MODE=apply` `EXPORT=True` `FIX_NUMERIC=False` `RESTART=False` | — | **禁止** |
 | **TS-Client-Resources** | Lua 源码 → LuaBytes 字节码 同步/复核 | `ACTION=check` `LUA_FILES=` | — | 允许 |
 | **TS-Art-Restyle** | **美术资源换节日风格**（登录底板 → 圣诞版等）：生图交给 provider → 去水印 → 等比归位（绝不拉伸）→ 出不透明版 + 沿用原 alpha 的浮层版 → 像素级验收 → 可选写回 | `ASSET=` `THEME=christmas` `PROVIDER=chatgpt_web` `CDP_PORT=` `GEN_IMAGE=` `COMPOSITION=lock` `POSE=` `FRAME=auto` `WATERMARK=auto` `WRITE_BACK=True` `BACKUP_ROOT=` | — | **禁止** |
 | **TS-Art-Translate** | **战令横幅中文美术字 → 英文版**：圈污染区擦字 → 逐行中位色 + 六边形纹理补底板 → 按已上线英文图层级排白字 → 六项像素验收 → 写回 `ArtFont_en` 并补 `.meta`。缺哪张补哪张 | `MODE=batch` `ASSET=` `FORCE=False` `WRITE=True` | — | **禁止** |

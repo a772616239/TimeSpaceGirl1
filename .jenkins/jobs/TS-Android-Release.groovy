@@ -8,10 +8,9 @@
     {"name":"BUMP_VERSION","type":"bool","default":true,"description":"构建前把 versionCode +1。CLI 打包不自增；Play 各轨道共享 versionCode 空间，重复号一律被拒"},
     {"name":"BUILD_APK","type":"bool","default":true,"description":"**默认是**：打完 AAB 后接着出一份同 versionCode 的 universal APK（upload key 签名），方便直接装手机测试。APK 失败不阻断 AAB 发版，但会标成关注"},
     {"name":"REUSE_AAB","type":"string","default":"","description":"复用已有 AAB 的路径（填了就跳过 Unity 构建，只做校验/上传）"},
-    {"name":"REBUILD_RESOURCES","type":"bool","default":true,"description":"打包前先调 TS-Resource-Build：同步 Lua 字节码 + **重建 AB 并复制到 StreamingAssets**（约 5-8 分钟）。默认开 —— 少了这步，改了配置或 Lua 后打出来的包还是旧资源。只改 C# 代码 / 纯热修可关掉"},
+    {"name":"REBUILD_RESOURCES","type":"bool","default":true,"description":"打包前先调 TS-Resource-Build：同步 Lua 字节码 + 处理 AB（按下面的 AB_MODE）。默认开 —— 少了这步，改了配置或 Lua 后打出来的包还是旧资源。只改 C# 代码 / 纯热修可关掉"},
+    {"name":"AB_MODE","type":"choice","choices":["重建","复用缓存"],"default":"重建","description":"🔴 资源准备时 AB 怎么处理。**重建**（默认）= 在打包目录重新打一遍 AB（约 5-8 分钟，改了 prefab/图/lua 必须选它）。**复用缓存** = 直接用打包目录上一轮重建的 AB（秒级，省 5-8 分钟）—— 只适用于「资源没动、只改了 C# 或打包参数」，改了资源却选它会被 ④ 的内容哈希闸门判红"},
     {"name":"EXPORT_TABLES","type":"bool","default":false,"description":"调 TS-Resource-Build 时是否**连导表一起做**（xlsx → 客户端 Lua + 服务端 txt）。默认关：导表会用 xlsx 覆盖手改过的 lua，确认改过配置表才勾。改过 xlsx 却忘了导表时，② 的「配置表是否已导」会黄球提醒"},
-    {"name":"SYNC_TABLES","type":"choice","choices":["apply","check","off"],"default":"apply","description":"🔴 出包后把服务端表同步到**本包所连的服**（目标见 scripts/build_envs.json 的 tableTargets：现网→gs、测试服→local、正式服已下线→跳过）。apply=真推（推前整目录备份、逐表结构体检、推后双向 md5 校验，只推自上次同步以来的差异）；check=只体检不动服务端；off=不管。2026-10-23 之前这条链路不存在 ⇒ 包是新表、服务端还是旧表"},
-    {"name":"SYNC_RESTART","type":"bool","default":false,"description":"表推完后重启该环境的游戏服让表生效（**线上会踢线**，默认关）。关着的话表只落盘不生效，要生效得另跑 TS-Server-Ops 重启或等维护窗口"},
     {"name":"ALLOW_NO_LUA","type":"bool","default":false,"description":"强行跳过「未发现 Lua bundle」闸门（风险自负，会打出没有 Lua 的废包）"},
     {"name":"UPLOAD","type":"bool","default":true,"description":"是否上传到 Google Play。**默认是**。只出包不传时才取消勾选"},
     {"name":"TRACK","type":"choice","choices":["internal","alpha","beta","production"],"default":"internal","description":"上传轨道。默认 internal=内部测试（不面向公众、免常规审核、几分钟可装）；选 production/beta/alpha 会「上传并发布」，其 completed/inProgress 仍要求勾 PUBLISH"},
@@ -60,9 +59,8 @@ pipeline {
           env.TS_AUTOAPPROVE = params.AUTO_APPROVE.toString()
           env.TS_NOTES     = params.NOTES
           env.TS_REBUILD_RES = params.REBUILD_RESOURCES.toString()
+          env.TS_AB_MODE   = params.AB_MODE
           env.TS_EXPORT_TABLES = params.EXPORT_TABLES.toString()
-          env.TS_SYNC_TABLES = params.SYNC_TABLES
-          env.TS_SYNC_RESTART = params.SYNC_RESTART.toString()
           env.TS_BUILD_START = (System.currentTimeMillis() / 1000L).toString()
         }
         sh(script: '''#!/usr/local/bin/bash
@@ -75,7 +73,8 @@ mkdir -p "$TS_RUN_DIR/logs"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
   echo "口径：$TS_PROFILE  提版本号：$TS_BUMP  复用 AAB：${TS_REUSE:-（无，将构建）}"
   echo "出包环境：$TS_SERVER_ENV（连哪个服，见 scripts/build_envs.json）"
-  echo "服务端表同步：$TS_SYNC_TABLES  推完重启：$TS_SYNC_RESTART"
+  echo "资源准备：${TS_REBUILD_RES}   AB 处理：${TS_AB_MODE}（复用缓存 = 不重打 AB，直接用打包目录上一轮的）"
+  echo "服务端表：本 job 只做只读体检；改表请跑独立 job TS-Table-Sync"
   echo "上传：$UPLOAD  轨道：$TS_TRACK  状态：$TS_STATUS  PUBLISH：$TS_PUBLISH  自动放行审批：$TS_AUTOAPPROVE"
   echo "取证：$TS_RUN_DIR"
 } | tee "$TS_RUN_DIR/context.txt"
@@ -143,7 +142,9 @@ cd "$PROJ"
           def rb = build job: 'TS-Resource-Build', wait: true, propagate: true, parameters: [
             booleanParam(name: 'EXPORT_TABLES', value: params.EXPORT_TABLES),
             booleanParam(name: 'SYNC_BYTES',    value: true),
-            booleanParam(name: 'REBUILD_AB',    value: true),
+            // 2026-10-23：REBUILD_AB(bool) → AB_MODE(choice)。AB_MODE=复用缓存 时
+            // TS-Resource-Build ④ 只校验打包目录里上一轮的 AB 缓存、不启动 Unity（省 5-8 分钟）。
+            choice(name: 'AB_MODE',             choices: ['重建', '复用缓存'], value: params.AB_MODE),
             string(name: 'SERVER_ENV',          value: params.SERVER_ENV),
             string(name: 'LUA_FILES',           value: '')
           ]
@@ -152,29 +153,19 @@ cd "$PROJ"
       }
     }
 
-    stage('③-1 服务端表同步（包服一致）') {
+    // 🔴 2026-10-23 用户口径：**发包 job 不碰服务端表**。
+    //    出包与改线上数值是两件事，耦合在一次构建里风险不可控（推表会踢线/改价格）。
+    //    表由独立 job `TS-Table-Sync` 发（导表 + 增量同步 + 可选重启）。
+    //    这里只留一条**只读**体检：包里连的那套服，其 conf/server 与导出产物差多少张，
+    //    差得多就黄球提醒「先跑 TS-Table-Sync」——只提醒，不改任何服务端（rc 恒 0）。
+    stage('②-3 服务端表一致性（只读提醒）') {
       steps {
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
-# 🔴 为什么单独一节、而且不依赖 EXPORT_TABLES：
-#    客户端表（lua/AB）走 git，服务端表（conf/server txt）走 TimeSpaceServer 影子目录，
-#    两条路本来就没打通。2026-10-22 前发线上包只更新客户端 ⇒ 包是新表、服务端还是旧表
-#    （「显示 0 还能领」这类显示/校验错位就是它的症状）。
-#    同步目标按 SERVER_ENV 从 scripts/build_envs.json 的 tableTargets 取，不写死在这里。
-if [[ "$TS_SYNC_TABLES" == "off" ]]; then
-  echo "SYNC_TABLES=off：按参数跳过服务端表同步（包与服可能不一致）"
-  exit 0
-fi
-MODE_ARGS=""
-if [[ "$TS_SYNC_TABLES" == "apply" ]]; then
-  MODE_ARGS="--apply --yes"
-  [[ "$TS_SYNC_RESTART" == "true" ]] && MODE_ARGS="$MODE_ARGS --restart"
-fi
-# shellcheck disable=SC2086  # MODE_ARGS 不含空格，按词拆分正是本意
-"$BASH" .jenkins/lib/run_stage.sh --name "服务端表同步（$TS_SERVER_ENV）" \
-  --group "发布安全" --slug table-sync --timeout 1800 \
-  -- "$PY" scripts/table_sync.py --env "$TS_SERVER_ENV" $MODE_ARGS
+"$BASH" .jenkins/lib/run_stage.sh --name "服务端表一致性（只读）" \
+  --group "发布安全" --slug table-parity --timeout 900 --warn-ok \
+  -- "$PY" scripts/table_sync.py --env "$TS_SERVER_ENV"
 ''')
       }
     }

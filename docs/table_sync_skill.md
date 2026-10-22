@@ -5,8 +5,9 @@
 > 关联文档：`导表实跑与三处断点-20261020.md`（导出链路本身的三处断点）、
 > `测试服导表部署与角标核查-20261021.md`（nil→null 那次事故）、
 > `线上配置表语义diff-20261022.md`（37 张差异表的审计底稿）、`client_build_chain.md`
-> 实现：`scripts/table_sync.py`（`--env` 按打包环境选目标）｜接入点：`scripts/resource_build.sh --sync-tables`、
-> `TS-Android-Release` 的 `③-1 服务端表同步`（`SYNC_TABLES` / `SYNC_RESTART`）
+> 实现：`scripts/table_sync.py`（`--env` 按打包环境选目标）｜接入点：**独立 job `TS-Table-Sync`**
+> （服务器配置表发版：导表 → 增量同步 → 可选重启）、`scripts/resource_build.sh --sync-tables`、
+> `TS-Android-Release` 的 `②-3 服务端表一致性（只读提醒）`
 
 ---
 
@@ -100,22 +101,26 @@ scripts/resource_build.sh --action export --sync-strict       # 同步失败算�
 
 ### 2.1 🔴 它到底跑在哪个目录（Jenkins 链路实情）
 
-两条入口，**都在独立打包 clone 里跑**，都不在开发目录：
+**三条入口，都在独立打包 clone 里跑**，都不在开发目录：
 
 | 入口 | 触发 | 目标怎么定 |
 |---|---|---|
+| **`TS-Table-Sync`（服务器配置表发版，2026-10-23 拆出来的正路）** | `EXPORT=true` 先导表（`resource_build.sh --action export --sync-tables off`）→ `table_sync.py --env "$SERVER_ENV"`（`MODE=apply` 才真推，`RESTART` 可选） | `--env` 映射，见 `scripts/build_envs.json` 的 `tableTargets`：现网→`gs`、测试服→`local`、正式服→`[]`（跳过） |
 | `TS-Resource-Build` 的导表环节 | `scripts/resource_build.sh --action export` → Unity 导表 → **同一脚本紧接着** `table_sync.py`（默认 `--sync-tables apply`） | 默认 `local,gs` 都推 |
-| `TS-Android-Release` 的 `③-1 服务端表同步`（2026-10-23 新增） | 参数 `SYNC_TABLES=apply/check/off`（默认 apply）+ `SYNC_RESTART`（默认关） | `table_sync.py --env "$SERVER_ENV"`，映射见 `scripts/build_envs.json` 的 `tableTargets`：现网→`gs`、测试服→`local`、正式服→`[]`（跳过） |
+| `TS-Android-Release` 的 `②-3 服务端表一致性（只读提醒）` | 每次发包都跑，`table_sync.py --env "$SERVER_ENV"` **不带 `--apply`** | 同上；**只体检、不改任何服务端**，rc 恒 0（`--warn-ok` ⇒ 出问题只黄球） |
 
-> 🔴 为什么单独加 ③-1、而不是指望导表环节：**发线上包默认 `EXPORT_TABLES=false`**
-> （`--action ab` 只重建 AB），导表环节根本不跑 ⇒ 同步也不跑。2026-10-22 之前的线上包
-> 全是这么出去的：客户端 lua 是新的、服务端 txt 还是旧的。
+> 🔴 **为什么把推表从「发包」里拆出去（用户 2026-10-23 口径）**：
+> 出包和改线上数值是两件事。以前想让发版顺手把表带上去，结果一次构建同时干
+> 「重建 AB / 提版本号 / 推线上表 / 可能重启踢线」，风险不可控，而且发包默认
+> `EXPORT_TABLES=false`（`--action ab` 只重建 AB）⇒ 导表不跑、同步也不跑，
+> 2026-10-22 之前的线上包全是「客户端新表 + 服务端旧表」。
+> 现在：**发包只管客户端**（只留只读体检），**表由 `TS-Table-Sync` 单独发**。
 
 | 项 | 值 |
 |---|---|
 | 打包目录 | `/Users/wangxufeng/Documents/TimeSpaceGirl1-build`（job 里的 `PROJ`） |
 | 代码从哪来 | `.jenkins/ci_sync.sh`：`fetch` → `stash` → `reset --hard origin/release` |
-| **服务端表从哪来** | **同一脚本第③步 `rsync -a --inplace "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/"`** |
+| **服务端表从哪来** | **同一脚本第③步 `rsync -a --inplace "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/"`**（失败判红 rc=5，不再静默跳过） |
 | **基线从哪来** | **同一脚本第④步 `rsync -a --update` 开发目录的 `build/table_sync/state.json`**（2026-10-23 新增） |
 
 由此得出四条必须知道的结论：

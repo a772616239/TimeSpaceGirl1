@@ -8,6 +8,9 @@
 --   ④ 回归：卡根 / grid / hero 根节点也不动（分别由 Content、grid 的布局组管）
 --   ⑤ 完成精确复位 / 中途 Stop 全复位 / 卡数超过 kAnimCards 时后面几张不起 tween
 --   ⑥ 从弹窗返回（只走 OnShow）不播；OnClose 停并清标记；连点不叠播；无可见卡返回 0
+--   ⑦ 🔴 重开不闪原位：卡是缓存实例 + HeroCollectRewardInfo 异步回来才播 ⇒ 会先渲染若干帧
+--      终值位置的卡，然后才跳到屏幕外（「原地闪一帧再跳出去」）。现在起播收口在 OnOpen：
+--      case10 用「扣住网络回调」证明 OnOpen 那一帧就已经在起点，回调晚到不重播、不复位。
 --
 -- 用法（与其他 lua-tests 一致）：
 --   cd LuaEncoder/luajit_mac/64
@@ -18,8 +21,12 @@ local SRC = ROOT .. "Assets/ManagedResources/~Lua/Modules/Power/LineupRecommend.
 
 -- ---------------- stubs ----------------
 local tweens = {}
+local FAIL_AFTER = nil      -- 调试用：让第 N+1 条 tween 创建时抛错（验 pcall 兜底复位）
+local holdNet = false       -- 扣住 HeroCollectRewardInfo 回调（模拟网络延迟）
+local pendingNet = nil
 
 local function newTween(tf, endv, dur)
+    if FAIL_AFTER and #tweens >= FAIL_AFTER then error("boom: DOAnchorPosX 不可用") end
     local t = { tf = tf, endv = endv, dur = dur, delay = 0, ease = nil,
                 onComplete = nil, killed = false }
     function t:SetDelay(d) self.delay = d; return self end
@@ -116,6 +123,7 @@ local HERO_CHILDREN = { { "card", 0, 0 }, { "location", 0, -215 } }
 local ICON_POS = { x = 540, y = -211.5 }
 local CARD_NODE_COUNT = #CARD_CHILDREN     -- 7
 local HERO_NODE_COUNT = #HERO_CHILDREN     -- 2
+local KANIM = 4                            -- 面板的 kAnimCards：只前 4 张赋入场
 
 local function buildTemplate()
     local tpl = newRect("prefab", false)
@@ -181,7 +189,13 @@ UIManager = { OpenPanel = function() end }
 UIName = { RoleGetInfoPopup = 1, RewardItemPopup = 2 }
 
 NetManager = {
-    HeroCollectRewardInfo = function(cb) cb({ infos = {} }) end,
+    HeroCollectRewardInfo = function(cb)
+        if holdNet then
+            pendingNet = function(msg) pendingNet = nil; cb(msg) end
+        else
+            cb({ infos = {} })
+        end
+    end,
     HeroCollectRewardRequest = function() end,
 }
 
@@ -404,5 +418,85 @@ assert(Panel.PlaySlideIn() == 0, "没有可见卡应返回 0")
 assert(#tweens == 0, "不该起 tween")
 for _, c in ipairs(cs) do c:SetActive(true) end
 print("  返回 0，不报错")
+
+-- ---------------- case 10: 重开不闪原位（起播收口在 OnOpen） ----------------
+print("== case10 重开：数据回调迟到时，OnOpen 那一帧就已经在起点 ==")
+Panel.StopSlideIn()
+for ci, card in ipairs(cs) do
+    assert(cardNodes(card)[1].anchoredPosition.x == CARD_CHILDREN[1][2], "前置：第 " .. ci .. " 张卡应在终值")
+end
+tweens = {}
+holdNet = true
+Panel:OnOpen()                      -- 面板刚 SetActive，还没渲染：这一帧必须已经在起点
+assert(#tweens > 0, "重开应在 OnOpen 里就起播，实际 0 条（会先渲染一帧终值位置的卡）")
+for ci = 1, math.min(#cs, KANIM) do
+    local card = cs[ci]
+    local cn = cardNodes(card)
+    for i, node in ipairs(cn) do
+        assert(node.anchoredPosition.x == CARD_CHILDREN[i][2] + 240,
+               ("重开后第 %d 张卡 %s 应已在起点 %.1f，实际 %.2f"):format(ci, node.name, CARD_CHILDREN[i][2] + 240, node.anchoredPosition.x))
+    end
+end
+for ci = KANIM + 1, #cs do
+    assert(cardNodes(cs[ci])[1].anchoredPosition.x == CARD_CHILDREN[1][2],
+           "屏幕外第 " .. ci .. " 张卡不该被动")
+end
+Panel:OnShow()                      -- 发请求，回调被扣住
+assert(pendingNet ~= nil, "HeroCollectRewardInfo 应已被调用")
+local before10 = #tweens
+local pos10 = cardNodes(cs[1])[1].anchoredPosition.x
+pendingNet({ infos = {} })          -- 回调晚到
+assert(#tweens == before10, "回调晚到不该新建 tween，实际多 " .. (#tweens - before10) .. " 条")
+assert(cardNodes(cs[1])[1].anchoredPosition.x == pos10, "回调晚到不该复位位置（复位=瞬间跳到终值）")
+print("  OnOpen 即起播；回调晚到 0 条新 tween、位置不动")
+
+-- ---------------- case 11: 播完之后回调才到，不重播 ----------------
+print("== case11 播完之后回调才到 → 不重播 ==")
+for _, t in ipairs(tweens) do t:Complete() end
+tweens = {}
+Panel:OnOpen()                      -- 正常播一轮并播完
+for _, t in ipairs(tweens) do t:Complete() end
+tweens = {}
+holdNet = true
+Panel:OnShow()
+assert(pendingNet ~= nil)
+pendingNet({ infos = {} })
+assert(#tweens == 0, "播完之后回调到达不该再播，实际 " .. #tweens .. " 条")
+print("  0 条 tween")
+holdNet = false
+
+-- ---------------- case 12: 起播中途抛错 → 已挪位但没起 tween 的也要复位 ----------------
+print("== case12 tween 创建中途抛错 → 全部复位（含只挪位没起 tween 的） ==")
+tweens = {}
+FAIL_AFTER = 5
+Panel:OnOpen()
+FAIL_AFTER = nil
+assert(liveTweens() == 0, "失败后不该留存活 tween，实际 " .. liveTweens())
+for ci, card in ipairs(cs) do
+    local cn, icon = cardNodes(card)
+    for i, node in ipairs(cn) do
+        assert(node.anchoredPosition.x == CARD_CHILDREN[i][2] and node.anchoredPosition.y == CARD_CHILDREN[i][3],
+               ("失败后第 %d 张卡 %s 应回基准，实际 %.2f"):format(ci, node.name, node.anchoredPosition.x))
+    end
+    assert(icon.anchoredPosition.x == ICON_POS.x, "失败后 iconPanel 不该被动")
+end
+print("  抛错被 pcall 兜住，两层全部回基准")
+
+-- ---------------- case 13: 预挪后立刻关闭（回调没回来）也复位 ----------------
+print("== case13 起播中 OnClose → 复位，晚到回调不播 ==")
+tweens = {}
+holdNet = true
+Panel:OnOpen()
+Panel:OnShow()                      -- 请求已发出，回调被扣住
+Panel:OnClose()                     -- 回调还没回来就被关掉
+assert(liveTweens() == 0, "OnClose 后不该有存活 tween")
+for ci, card in ipairs(cs) do
+    assert(cardNodes(card)[1].anchoredPosition.x == CARD_CHILDREN[1][2], "OnClose 后第 " .. ci .. " 张卡应复位")
+end
+local before13 = #tweens
+pendingNet({ infos = {} })
+assert(#tweens == before13, "关闭后回调到达不该起 tween")
+holdNet = false
+print("  关闭即复位，晚到不播")
 
 print("ALL OK")

@@ -121,6 +121,12 @@ else
 end
 ```
 
+🔴 **列表靠异步数据建出来时，起播不能等数据回调**。首开看不出问题（卡是回调里 `newObject` 的，
+建卡+挪位同一帧，没有可渲染的终值帧），但**重开时卡是缓存实例**，`OpenUI` 那一帧已经在终值位置
+渲染出来了，等回调才挪到起点 ⇒ 「原位闪一帧，然后跳到屏幕外从头播」。
+起播放 `OnOpen`（与 `SetActive(true)` 同帧），回调只刷数据；基准位单独记一份、`ArmTarget` 幂等，
+避免回调里反复 `SetData` 把起点越叠越远。`LineupRecommend` 就是这条的标本。
+
 ---
 
 ## 6. 代码骨架（复制改路径即可）
@@ -415,6 +421,21 @@ prefab 一行没动。
 
 ## 11. 变更记录
 
+- 2026-10-22 复盘「**重开闪一帧，再跳到屏幕外从头播**」（`LineupRecommend`）：起播不能挂在
+  异步数据回调上。首次打开看不出问题（卡是在回调里 `newObject` 出来的，建卡和挪位同一帧，
+  没有可渲染的终值帧），但重开时卡是**缓存实例**、`OpenUI` 那一帧就已经在终值位置渲染出来了，
+  等 `HeroCollectRewardInfo` 回来才挪到起点 ⇒ 玩家先看到「原位闪一下」，然后卡跳出去再滑进来。
+  改法三条：
+  ① 起播收口到 **`OnOpen`**（`SetActive(true)` 与 `OnOpen` 同帧、还没渲染），回调只负责刷数据；
+  ② 基准位记在 `slideBase[rect]`（**同一个 rect 只记一次**），`ArmTarget(rect, from)` 幂等
+  —— 预挪和起播都走它，数据回调反复调 `SetPrefabData` 也不会把起点越叠越远；
+  ③ `StopSlideIn` 的复位改成**按 `slideArmed` 列表**走，不按 tween 列表走：已经挪过位但 tween
+  还没建出来（建 tween 中途抛错 / 刚挪完就被关掉）的那批 rect 没有 tween 可跟，漏掉会永久偏在屏幕外。
+  `PlaySlideIn` 里 `slidePlaying` 已经在播时**直接返回 0，不要 Stop 再播** —— Stop 会把位置复位到
+  终值，等于「动画播一半瞬间跳到位」，比不播更难看。
+  harness 补 4 个 case（`test_lineuprecommend_slidein.lua` 13 case）：扣住网络回调证明 OnOpen
+  那一帧已在起点、回调晚到不重播不复位、播完后回调到达不重播、建 tween 中途抛错全复位。
+
 - 2026-10-22 第十二个落地：`MissionDailyPanel_Achievement`（成就卡，一屏 ~5 张）。
   同面板姊妹页：prefab 取证成就 rewardPre（1078×275）与 Daily 的 rewardPre **完全同构**
   （同一组 6 个可视子节点、卡根自己是满幅 Image＝形态二）⇒ 常量与节点名单直接镜像
@@ -463,8 +484,9 @@ prefab 一行没动。
   ① 列表**不是** `ScrollCycleView`，是 `OnShow` 的网络回调里手工 `newObject` 挂到 Content 下的固定 N 格，
   卡顺序直接取 `lineupList` 的下标（模板与实例同名，按名字筛会连模板一起算）。
   ② 面板没有页签，只有**打开**一套节奏；闸门放 `OnOpen` —— 从英雄信息弹窗返回走 `OpenUI(true)`
-  只调 `OnShow`，此时不能重播。播放点必须落在网络回调末尾（列表是异步建出来的），`OnClose` 里
-  `StopSlideIn` + 清 `needSlideIn`，防「关掉之后回调才到」播在已隐藏的面板上。
+  只调 `OnShow`，此时不能重播。`OnClose` 里 `StopSlideIn` + 清 `needSlideIn`，防「关掉之后回调才到」
+  播在已隐藏的面板上。⚠️ 第一版把播放点放在网络回调末尾（列表是异步建出来的），**重开时会闪一帧原位**
+  ——见下面 2026-10-22 的复盘条：正确做法是 OnOpen 里就播，回调只刷数据。
   ③ **布局组三层套娃**（Content → 卡根 → grid），位移一律写到「被管的那个节点的子节点」，
   详见 §7 第 12 条：第一版写在 `iconPanel` 上，实测**只有第一张卡有滑动**。
   ④ 卡层没有淡入通道（`iconPanel` 下三个 Image 同名，按名字 DFS 会命中 1080×885 装饰层）⇒ 只做位移，

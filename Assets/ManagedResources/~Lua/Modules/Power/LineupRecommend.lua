@@ -17,6 +17,10 @@ local receivedList = {}--奖励领取信息
 --    => 统一做法：遍历目标节点的**所有直接子节点**做位移（它们自己不被任何布局组管）。
 -- 🔴 卡层没有淡入：iconPanel 下三个 Image 同名（1080x885 装饰层 / 1040x423 x2），
 --    Util.GetGameObject 按名字 DFS 会命中装饰层，所以这里按 childCount/GetChild 走索引。
+-- 🔴 起播时机：同步起播，在 OnOpen 里（ApplySlideIn），不等 OnShow 的网络回调。重开时卡是缓存实例，
+--    等回调回来才挪位 ⇒ 中间先渲染若干帧「终值位置」的卡 = 「原地闪一帧，然后跳到屏幕外从头播」。
+--    首开时一张卡都没有，OnOpen 返回 0 且不清 needSlideIn，由回调建完卡在同一帧内挪位起播。
+--    基准位记在 slideBase（同一个 rect 只记一次），所以预挪和起播都走 ArmTarget 不会二次叠加。
 local kSlideFrom     = 240    -- 卡：起点位移（px）
 local kSlideDuration = 0.22   -- 卡：单卡时长
 local kSlideStep     = 0.055  -- 卡：相邻卡错开
@@ -27,7 +31,9 @@ local kItemStep      = 0.04   -- 卡内英雄：同一张卡内相邻错开
 local kItemBaseDelay = 0.06   -- 卡内英雄：相对「自己的卡开始滑」的延迟
 local kAnimCards     = 4      -- 只给前几张卡赋入场（一屏约 3.7 张），屏幕外的不白跑 tween
 
-local slideItems   = {}     -- { rect, x, y, tween }
+local slideItems   = {}     -- { tween }：本轮起过的 tween
+local slideBase    = {}     -- rect -> {x, y}：本轮入场的终值（预挪时记下，起播直接复用）
+local slideArmed   = {}     -- 预挪过的 rect 列表：复位只认它，挪过的一定回得去
 local slidePlaying = false  -- 这一轮还没播完（连点靠它挡住叠播）
 local slidePending = 0      -- 还有几条 tween 没完成；减到 0 才算播完
 local needSlideIn  = false  -- 只有玩家主动打开（OnOpen）才播；从弹窗返回只走 OnShow，不播
@@ -62,10 +68,18 @@ function this.StopSlideIn()
         if Alive(item.tween) then
             item.tween:Kill(false)
         end
-        if item.rect and item.x and Alive(item.rect) then
-            item.rect.anchoredPosition = Vector2.New(item.x, item.y)
-        end
         slideItems[i] = nil
+    end
+    -- 🔴 复位按 slideArmed 走，不按 tween 走：OnOpen 预挪过、但数据回调还没回来就被关掉的那批
+    --    rect 没有 tween，漏掉它们会永久偏在屏幕外
+    for i = #slideArmed, 1, -1 do
+        local rect = slideArmed[i]
+        local base = slideBase[rect]
+        if base and Alive(rect) then
+            rect.anchoredPosition = Vector2.New(base.x, base.y)
+        end
+        slideBase[rect] = nil
+        slideArmed[i] = nil
     end
 end
 
@@ -91,44 +105,30 @@ local function CollectEntries()
     return entries
 end
 
--- 起播：卡从右侧 kSlideFrom 滑回原位（相邻错开 kSlideStep），卡内英雄再从更右侧跟进
-function this.PlaySlideIn()
-    local interrupted = slidePlaying
-    this.StopSlideIn()
-    if interrupted then
-        -- 连点：上一轮没播完就只复位、不重播（复位到终值本身就是「立刻到位」）
-        return 0
-    end
-    local entries = CollectEntries()
-    if #entries <= 0 then
-        return 0
-    end
-    local function Done()
-        slidePending = slidePending - 1
-        if slidePending <= 0 then
-            slidePending = 0
-            slidePlaying = false
-        end
-    end
-    -- 单条位移：先跳到起点，再回归基准值；OnComplete 里再钉一次终值（防浮点残差）
-    local function AddSlide(rect, from, duration, delay)
+-- 记基准位 + 立刻挪到起点。同一个 rect 只记一次基准（数据回调会反复调 SetPrefabData，
+-- 反复记会把起点越叠越远），返回的 base 就是它的终值
+local function ArmTarget(rect, from)
+    local base = slideBase[rect]
+    if base == nil then
         local pos = rect.anchoredPosition
-        -- 从右侧滑入：起点在右，向左归位（改左侧只需把 + 改成 -）
-        rect.anchoredPosition = Vector2.New(pos.x + from, pos.y)
-        local tween = rect:DOAnchorPosX(pos.x, duration)
-        tween:SetDelay(delay)
-        SetEaseSafe(tween, "OutQuad")
-        slidePending = slidePending + 1
-        tween:OnComplete(function()
-            if Alive(rect) then
-                rect.anchoredPosition = Vector2.New(pos.x, pos.y)
-            end
-            Done()
-        end)
-        slideItems[#slideItems + 1] = { rect = rect, x = pos.x, y = pos.y, tween = tween }
+        base = { x = pos.x, y = pos.y }
+        slideBase[rect] = base
+        slideArmed[#slideArmed + 1] = rect
     end
+    rect.anchoredPosition = Vector2.New(base.x + from, base.y)
+    return base
+end
+
+-- 本轮要入场的节点：前 kAnimCards 张卡的 iconPanel 子节点 + 卡内英雄的子节点
+-- 🔴 预挪（OnOpen）和起播（数据回调）必须走同一份，否则延迟/基准位两处对不上
+local function CollectTargets(entries)
+    local limit = #entries
+    if limit > kAnimCards then
+        limit = kAnimCards
+    end
+    local list = {}
     -- 一个节点的所有直接子节点一起平移（不判 activeSelf：漏动会错位，动到隐藏节点由 tween 归位）
-    local function SlideChildren(go, from, duration, delay)
+    local function Push(go, from, duration, delay)
         if not Alive(go) then
             return
         end
@@ -141,27 +141,65 @@ function this.PlaySlideIn()
             if Alive(child) then
                 local rect = child:GetComponent("RectTransform")
                 if Alive(rect) then
-                    AddSlide(rect, from, duration, delay)
+                    list[#list + 1] = { rect = rect, from = from, duration = duration, delay = delay }
                 end
             end
         end
     end
-    local limit = #entries
-    if limit > kAnimCards then
-        limit = kAnimCards
+    for ci = 1, limit do
+        local entry = entries[ci]
+        local cardDelay = (ci - 1) * kSlideStep
+        -- 卡：iconPanel 的所有直接子节点一起走
+        Push(Util.GetGameObject(entry.go, kSlideNode), kSlideFrom, kSlideDuration, cardDelay)
+        -- 卡内英雄：hero 的所有直接子节点（card / location）一起走，逐张错开
+        for k = 1, #entry.items do
+            Push(entry.items[k], kItemFrom, kItemDuration, cardDelay + kItemBaseDelay + (k - 1) * kItemStep)
+        end
+    end
+    return list, limit
+end
+
+-- 起播：卡从右侧 kSlideFrom 滑回原位（相邻错开 kSlideStep），卡内英雄再从更右侧跟进
+function this.PlaySlideIn()
+    if slidePlaying then
+        -- 这一轮还没播完：不重播，也不打断（打断＝瞬间跳到终值，比不播更难看）
+        return 0
+    end
+    local entries = CollectEntries()
+    if #entries <= 0 then
+        return 0
+    end
+    local targets, limit = CollectTargets(entries)
+    if #targets <= 0 then
+        return 0
+    end
+    local function Done()
+        slidePending = slidePending - 1
+        if slidePending <= 0 then
+            slidePending = 0
+            slidePlaying = false
+        end
     end
     slidePlaying = true
     local ok, err = pcall(function()
-        for ci = 1, limit do
-            local entry = entries[ci]
-            local cardDelay = (ci - 1) * kSlideStep
-            -- 卡：iconPanel 的所有直接子节点一起走
-            SlideChildren(Util.GetGameObject(entry.go, kSlideNode), kSlideFrom, kSlideDuration, cardDelay)
-            -- 卡内英雄：hero 的所有直接子节点（card / location）一起走，逐张错开
-            for k = 1, #entry.items do
-                local itemDelay = cardDelay + kItemBaseDelay + (k - 1) * kItemStep
-                SlideChildren(entry.items[k], kItemFrom, kItemDuration, itemDelay)
-            end
+        for i = 1, #targets do
+            local t = targets[i]
+            -- 先挪到起点（预挪过的直接复用记下的基准，不会二次叠加），再回归基准值。
+            -- 🔴 这条挪位必须和 DOAnchorPosX 在**同一帧**完成：中间隔一帧渲染就是「闪一下原位再跳出去」
+            local base = ArmTarget(t.rect, t.from)
+            local tween = t.rect:DOAnchorPosX(base.x, t.duration)
+            tween:SetDelay(t.delay)
+            SetEaseSafe(tween, "OutQuad")
+            slidePending = slidePending + 1
+            local rect, bx, by = t.rect, base.x, base.y
+            tween:OnComplete(function()
+                if Alive(rect) then
+                    -- 再钉一次终值（防浮点残差）
+                    rect.anchoredPosition = Vector2.New(bx, by)
+                end
+                Done()
+            end)
+            slideItems[#slideItems + 1] = { tween = tween }
         end
     end)
     if not ok then
@@ -178,15 +216,20 @@ end
 
 -- 播 / 不播的唯一入口：只有「主动打开」那一次播
 function this.ApplySlideIn()
-    if not needSlideIn then
-        -- 没有待播任务：上一轮还在播就让它播完，只清残留
-        if not slidePlaying then
-            this.StopSlideIn()
-        end
+    if slidePlaying then
+        -- 已经在播（OnOpen 抢先起播了）：数据回调晚到，不能复位重播
         return 0
     end
-    needSlideIn = false
-    return this.PlaySlideIn()
+    if not needSlideIn then
+        -- 没有待播任务：清掉可能残留的位移（正常路径 OnClose 已清）
+        this.StopSlideIn()
+        return 0
+    end
+    local limit = this.PlaySlideIn()
+    if limit > 0 then
+        needSlideIn = false
+    end
+    return limit
 end
 
 --初始化组件（用于子类重写）
@@ -215,6 +258,12 @@ end
 --界面打开时调用（用于子类重写）
 function LineupRecommend:OnOpen()
     needSlideIn = true
+    -- 🔴 重开时卡是缓存下来的（上一轮的数据还在）：必须在这一帧就起播 —— 此刻面板刚 SetActive、
+    --    还没渲染，所以「挪到起点」这一步看不见。
+    --    若等下面 OnShow 的 HeroCollectRewardInfo 回调回来再播，中间会渲染若干帧「终值位置」的卡，
+    --    肉眼就是「先原地闪一下，然后跳到屏幕外从头播」。
+    --    首开时一张卡都没有，这里返回 0 且不清 needSlideIn，由回调建完卡后在同一帧里挪位起播。
+    this.ApplySlideIn()
 end
 
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）

@@ -67,6 +67,9 @@ import cv2
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
+from text_fit import (OCR_FAIL, OCR_PASS, ocr_read, refit_covered,
+                      text_score)
+
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 ZH_DIR = ROOT / "Assets/ManagedResources/ArtFont_zh/OperatingPanelAtlas"
@@ -1166,6 +1169,7 @@ def cmd_scan(args) -> int:
             for n in notitle:
                 print("   -", n)
 
+    print_pending_rebuild()
     # 环节结论由 job 里的 run_stage.sh 统一登记（这里再登记一次会出现两行同名结论）
     return 3 if (todo and not args.strict_ok) else 0
 
@@ -1322,7 +1326,21 @@ def cmd_run(args) -> int:
             ref.parent.mkdir(parents=True, exist_ok=True)
             _flatten(src_im).save(ref)
         gen_path = work / "inbox" / "gen.png"
-        rc, note = call_provider(args, work, ref, prompt_file, gen_path)
+        # 幂等：源图 + 提示词 + provider 三者都没变 ⇒ 复用上一张出图，别再花一次额度。
+        # 真实场景是「改完验收/归位/写回的代码，重跑整条链」—— 那是唯一会白烧额度的地方。
+        gen_key = hashlib.sha256(
+            f"{sha256(src)}|{sha256(prompt_file)}|{provider}".encode()).hexdigest()[:16]
+        key_file = work / "gen_key.txt"
+        reuse = (not getattr(args, "force", False) and not getattr(args, "gen_image", "")
+                 and gen_path.is_file() and key_file.is_file()
+                 and key_file.read_text(encoding="utf-8").strip() == gen_key)
+        if reuse:
+            print(f"↩ 复用上一张出图（源图/提示词/provider 全没变，key={gen_key}）—— 不消耗额度")
+            rc, note = 0, "reuse"
+        else:
+            rc, note = call_provider(args, work, ref, prompt_file, gen_path)
+            if rc == 0:
+                key_file.write_text(gen_key, encoding="utf-8")
         if rc != 0:
             print(f"⚠ {zh.name}：没拿到出图（{note}），本轮跳过", file=sys.stderr)
             return rc
@@ -1333,6 +1351,12 @@ def cmd_run(args) -> int:
         with Image.open(gen_path) as g:
             g.load()
             gen_im = g.copy()
+        # 🔴 必须在 lock 之前：`putalpha(源图 A)` 是逐像素 lock，笔画画出轮廓就只剩
+        #    半截字母，而 lock 之后既量不出来也补不回来（#14 末字母 S / #27 末字母 N）。
+        #    这里先 cover 到源尺寸、把越界的字带横向压回可见区，再交给 postprocess_photo。
+        gen_im, _fit = refit_covered(src_im, gen_im)
+        if _fit:
+            extra["refit"] = _fit
         if fam == FAMILY_GLYPH:
             out, gstat = postprocess_glyph(src_im, gen_im)
             Image.fromarray(np.asarray(out)[..., 3]).save(work / "ink_mask.png")
@@ -1626,7 +1650,34 @@ def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str
                  f"只换字也会到 70 上下；合格品实测 73~77）")
     if changed > 0.40:
         warns.append(f"改动像素 {changed:.0%} 偏大：模型可能顺手改了画面，务必看图")
-    warns.append("英文是否正确、有没有被裁掉需人眼确认（无 OCR 闸门）")
+    # ---- 字完整性 / 译文一致性（2026-10-22 复盘新增的两个闸门）----------------
+    # 🔴 原来这里只有「英文是否正确、有没有被裁掉需人眼确认」，等于把两次最贵的失败
+    #    （字被 alpha 切掉、模型自造译名）全推给人眼；#14/#19/#27 就是这么白烧的。
+    fit = state.get("refit") or {}
+    if fit:
+        checks.append(("笔画全部落在可见区内（lock 前量）", bool(fit.get("ok")),
+                       fit.get("detail") or f"越界 {fit.get('lost_px')} px"))
+    lines = state.get("lines") or ([state["title"]] if state.get("title") else [])
+    fam = state.get("family") or FAMILY_ARTFONT
+    if lines and fam in (FAMILY_ARTFONT, FAMILY_POSTER) \
+            and (state.get("provider") or "") != PROVIDER_LOCAL:
+        read = ocr_read(Image.open(work / "out.png"))
+        if read is None:
+            warns.append("本机没装 tesseract，OCR 译文闸门跳过（英文是否正确仍需人眼确认）")
+        else:
+            score, detail = text_score(lines, read)
+            msg = f"相似度 {score:.2f}；{detail}"
+            if score >= OCR_PASS:
+                checks.append(("译文与译名表一致（OCR）", True, msg))
+            elif score >= OCR_FAIL:
+                # 美术字（发光/描边/压扁）本来就读不准：合格品实测 0.78~1.00，
+                # 落到中间档多半是 OCR 误读，只给黄。
+                warns.append(f"译文相似度偏低（{score:.2f}），美术字易误读，人眼确认；{detail}")
+            else:
+                checks.append(("译文与译名表一致（OCR）", False,
+                               f"相似度 {score:.2f}，疑似模型自造译名，不是译名表里的字；{detail}"))
+    else:
+        warns.append("译文是否正确需人眼确认（local 排字 / 无译名，OCR 不适用）")
     return checks, warns
 
 
@@ -1812,6 +1863,46 @@ def ensure_meta(target: Path, src_hint: Path | None = None) -> str:
     return f"按 {template.name} 模板生成（新 guid/spriteID）"
 
 
+PENDING_REBUILD = WORK_ROOT / "_pending_rebuild.txt"
+
+
+def _mark_pending_rebuild(res_name: str) -> None:
+    """把「图已就位、但 resName 还没登记」的资源记进待重扫清单。
+
+    这类资源在真机上是**静默回退中文版**（Util.cs 只打一行「回退加载精灵图」），
+    光靠构建页一句 ⏳ 极容易漏 ⇒ 落盘成清单，收尾阶段必须整块打出来。
+    """
+    seen: set[str] = set()
+    if PENDING_REBUILD.is_file():
+        seen = {ln.strip() for ln in PENDING_REBUILD.read_text(encoding="utf-8").splitlines()}
+    if res_name not in seen:
+        with PENDING_REBUILD.open("a", encoding="utf-8") as f:
+            f.write(res_name + "\n")
+
+
+def _clear_pending_rebuild(res_name: str) -> None:
+    if not PENDING_REBUILD.is_file():
+        return
+    rows = [ln.strip() for ln in PENDING_REBUILD.read_text(encoding="utf-8").splitlines()
+            if ln.strip() and ln.strip() != res_name]
+    PENDING_REBUILD.write_text("\n".join(rows) + ("\n" if rows else ""), encoding="utf-8")
+
+
+def print_pending_rebuild() -> None:
+    if not PENDING_REBUILD.is_file():
+        return
+    names = [ln.strip() for ln in PENDING_REBUILD.read_text(encoding="utf-8").splitlines()
+             if ln.strip()]
+    if not names:
+        return
+    print()
+    print(f"🔴 待重扫登记（{len(names)} 个）：图已在磁盘上，但 resName 不在 "
+          f"ResourcePathConfig ⇒ 真机静默回退 `_zh`：")
+    for n in names:
+        print(f"   - {n}")
+    print("   一次搞定：TS-Resource-Build（REBUILD_AB=true）会整体重写 ResourcePathConfig。")
+
+
 def cmd_publish(args) -> int:
     work = Path(args.work)
     state = json.loads((work / "state.json").read_text(encoding="utf-8"))
@@ -1843,7 +1934,11 @@ def cmd_publish(args) -> int:
         backup.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(target, backup)
 
-    shutil.copyfile(work / "out.png", target)
+    # 🔴 原子写：先落同目录 .tmp 再 replace。构建被打断（并行会话覆盖 job 配置、
+    #    或手动 abort）时不能留下半张图 —— 那会被后续环节当成「已交付」直接放行（#27）。
+    tmp = target.with_name(target.name + ".tmp")
+    shutil.copyfile(work / "out.png", tmp)
+    tmp.replace(target)
     # atlas / glyph / poster：中文源图自己的 .meta 就是最准的模板
     # （同一张图、同一份导入设置）；artfont 横幅仍按「同族 bg_en」挑，见 ensure_meta 注释。
     meta_hint = ROOT / state["asset"] if fam in (FAMILY_ATLAS, FAMILY_GLYPH,
@@ -1867,18 +1962,24 @@ def cmd_publish(args) -> int:
     print(f"写回 : {state['en']}  ({state['published']['size']} bytes)")
     print(f"目录 : {note_reg}")
     print(f"meta : {meta_note}")
+    pending = False
     if not state["published"]["res_name_registered"]:
-        print(f"⏳ resName `{res_name}` 还没进 ResourcePathConfig —— 图就位但**客户端找不到**。")
+        print(f"🔴 resName `{res_name}` 还没进 ResourcePathConfig —— 图就位但**客户端找不到**"
+              f"（Util.cs 会静默回退 `_zh`，只有一行日志）。")
         print(f"   生效动作：重打 `{Path(state['en']).parent.as_posix()}` 所在 AB"
               f"（TS-Resource-Build，REBUILD_AB=true），重扫时 CreateResourcePathConfig 会登记它。")
+        _mark_pending_rebuild(res_name)
+        pending = True
     else:
+        _clear_pending_rebuild(res_name)
         print(f"resName `{res_name}` 已登记（仍需重打 AB 才能把新图打进包）")
     if backup:
         print(f"原图 : 已备份到 {state['published']['backup']}")
     if args.run:
         register(args.run, f"写回·{Path(state['asset']).stem}", "pass", "交付",
                  state["en"])
-    return 0
+    # 图就位但真机看不见 ⇒ 必须是黄，不是绿：否则「构建全绿、线上白图」没人追。
+    return 3 if pending else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -2023,13 +2124,21 @@ def cmd_batch(args) -> int:
         register(args.run, "缺译名清单", "warn", "美术翻译链", "、".join(notitle))
 
     # ---- 逐张执行 -------------------------------------------------------- #
+    # 预算上限：batch 一轮最多真出 N 张（每张一份包月额度，跑飞了要等次日恢复）
+    budget = int(getattr(args, "budget", 0) or 0)
+    generated = 0
     failures = 0
     for zh in targets:
         fam = _pick_family(zh, family)
         work = work_dir_for(zh, fam)
         stem = zh.stem if fam == FAMILY_ATLAS else zh.name[: -len("_zh.png")]
         print(f"\n── [{stage}] {zh.name}（{fam}）──")
+        if stage == "run" and budget and generated >= budget:
+            print(f"⏹ 已达本轮预算 {budget} 张，剩下的下一轮再跑")
+            skipped.append(zh.name + "（超出本轮预算）")
+            break
         if stage == "run":
+            generated += 1
             rc = cmd_run(argparse.Namespace(
                 asset=str(zh), title=None, lines=None, work=None, family=fam,
                 provider=getattr(args, "provider", PROVIDER_LOCAL),
@@ -2078,6 +2187,40 @@ def register(run_dir: str, name: str, status: str, group: str, detail: str) -> N
         pass
 
 
+def cmd_quota(args) -> int:
+    """出图额度预检：开工前就说清「今天还能不能出图」。
+
+    🔴 为什么要单开一个环节：额度用尽时 driver 要挨个号试一遍才肯退，实测白等 9 分钟；
+       而「上一轮就已经记进台账」这件事，本来在第一分钟就能告诉人。
+    """
+    try:
+        import provider_ledger as pl
+    except Exception as e:                                        # noqa: BLE001
+        print(f"⚠ 台账模块不可用（{e}），跳过额度预检")
+        return 3
+    data = pl.load()
+    accts = data.get("accounts") or {}
+    if not accts:
+        print("台账还是空的（本机还没跑过出图）—— 认为有额度")
+        return 0
+    free, blocked = [], []
+    for key in sorted(accts):
+        kind, _, ident = key.partition(":")
+        if not kind or not ident:
+            continue
+        t = pl.blocked_until(kind, ident, data)
+        (blocked if t else free).append((kind, ident, t))
+    print(f"出图额度：可用 {len(free)} 个 / 封锁中 {len(blocked)} 个")
+    for kind, ident, t in free:
+        print(f"   ✅ {kind}:{ident}")
+    for kind, ident, t in blocked:
+        print(f"   ⏳ {kind}:{ident} 封锁到 {t:%m-%d %H:%M}（{pl.human_left(t)}）")
+    if not free:
+        print("🔴 所有号都在封锁中 ⇒ 现在触发只会白等，等上面最早那个时间点再跑")
+        return 1
+    return 0
+
+
 def _add_provider_args(p: argparse.ArgumentParser) -> None:
     """出图 provider 的公共参数（run / batch 共用，免得两处漂移）。"""
     p.add_argument("--provider", default=PROVIDER_LOCAL, choices=PROVIDERS,
@@ -2109,6 +2252,9 @@ def main() -> int:
                    help=fam_help)
     p.set_defaults(func=cmd_scan)
 
+    p = sub.add_parser("quota", help="出图额度预检（开工前先看还能不能出图）")
+    p.set_defaults(func=cmd_quota)
+
     p = sub.add_parser("run", help="生成一张英文版（不写回工程）")
     p.add_argument("--asset", required=True)
     p.add_argument("--title", default="")
@@ -2136,6 +2282,8 @@ def main() -> int:
     p.add_argument("--only", default="", help="只跑指定资源（逗号分隔，可不带 _zh.png）")
     p.add_argument("--asset", default="", help="只跑这一张（相对工程根，MODE=one 用）")
     p.add_argument("--force", action="store_true", help="已有英文版 / 已验收过也重做")
+    p.add_argument("--budget", type=int, default=0,
+                   help="本轮最多真出 N 张图（0=不限）；每张烧一份包月额度")
     p.add_argument("--run", default="")
     p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_GLYPH, FAMILY_POSTER, FAMILY_ATLAS],
                    help=fam_help)

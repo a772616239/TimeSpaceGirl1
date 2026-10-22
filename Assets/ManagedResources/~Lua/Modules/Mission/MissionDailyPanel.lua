@@ -90,6 +90,8 @@ function MissionDailyPanel:OnShow()
     this.TabCtrl:SetTabAdapter(this.TabAdapter)
     this.TabCtrl:SetChangeTabCallBack(this.SwitchView)
     this.TabCtrl:Init(this.tabBox, _TabData, index)
+    -- 打开页签选中底板滑动动画
+    this.TabCtrl:SetTabSlideAnim(true)
     redPointList = {}
     for i = 1, Util.GetGameObject(this.tabBox,"box").transform.childCount do
         redPointList[i] = Util.GetGameObject(Util.GetGameObject(this.tabBox,"box").transform:GetChild(i-1).gameObject,"Redpot")
@@ -140,6 +142,10 @@ function MissionDailyPanel:OnClose()
     for i = 1, #contentScripts do
         contentScripts[i].view:OnClose()
     end
+    -- 面板关了先把滑动动画收尾，防止 tween 继续操作已销毁节点
+    if this.TabCtrl and this.TabCtrl.KillTabSlide then
+        this.TabCtrl:KillTabSlide(false)
+    end
     ClearRedPointObject(RedPointType.DailyTask)
     ClearRedPointObject(RedPointType.Achievement_Main)
     PlaySoundWithoutClick(SoundConfig.Sound_UICancel)
@@ -147,6 +153,9 @@ end
 
 --界面销毁时调用（用于子类重写）
 function MissionDailyPanel:OnDestroy()
+    if this.TabCtrl and this.TabCtrl.KillTabSlide then
+        this.TabCtrl:KillTabSlide(false)
+    end
     SubUIManager.Close(this.HeadFrameView)
     SubUIManager.Close(this.upView)
 

@@ -45,6 +45,12 @@ function this.New()
     local o = {}
     this.__index = this
     setmetatable(o, this)
+    -- 切换页签时选中底板滑动动画（opt-in，默认关闭，需 SetTabSlideAnim(true) 打开）
+    o.SlideAnimEnabled = false
+    o.slideTweener = nil
+    o.slideClone = nil
+    o.slideTab = nil
+    o.boxGo = nil
     return o
 end
 
@@ -66,9 +72,12 @@ function this:Init_SetTabAndBox(gameObject, tabData, defaultSelect, tab, box)
     tab:SetActive(false)
     -- 获取存放节点
     if not box then
-       
+
         return
     end
+    self.boxGo = box
+    -- 重建页签前收掉未完成的滑动动画（box 下旧子节点即将被 ClearChild 销毁）
+    self:KillTabSlide(false)
 
     --- 判断默认tab是否被锁定，如果被锁定，则置为空在下面找到第一个可用的tab作为默认tab
     if self.TabIsLockCheck then
@@ -147,9 +156,12 @@ function this:Init(gameObject, tabData, defaultSelect)
     -- 获取存放节点
     local box = Util.GetGameObject(self.gameObject.transform, "box")
     if not box then
-       
+
         return
     end
+    self.boxGo = box
+    -- 重建页签前收掉未完成的滑动动画（box 下旧子节点即将被 ClearChild 销毁）
+    self:KillTabSlide(false)
 
     --- 判断默认tab是否被锁定，如果被锁定，则置为空在下面找到第一个可用的tab作为默认tab
     if self.TabIsLockCheck then
@@ -228,12 +240,86 @@ function this:SetChangeTabCallBack(func)
     self.ChangeTabCallBack = func
 end
 
+-- 设置切换页签时「选中底板」滑动动画开关（opt-in，默认关闭）
+function this:SetTabSlideAnim(enable)
+    self.SlideAnimEnabled = enable and true or false
+end
+
+-- 收尾滑动动画：kill tween + 销毁滑块克隆
+-- finish=true 时立即呈现最终选中态（把被隐藏的 select 重新显示）；调用方须保证目标 tab 节点仍存活
+function this:KillTabSlide(finish)
+    if self.slideTweener then
+        self.slideTweener:Kill()
+        self.slideTweener = nil
+    end
+    if self.slideClone then
+        if finish and self.slideTab then
+            local newSelect = Util.GetGameObject(self.slideTab, "select")
+            if newSelect then
+                newSelect:SetActive(true)
+            end
+        end
+        GameObject.Destroy(self.slideClone)
+        self.slideClone = nil
+        self.slideTab = nil
+    end
+end
+
+-- 选中底板从旧页签位置滑到新页签位置：克隆新 select 底板做滑块，到达后还原
+function this:PlayTabSlide(oldIndex, newIndex)
+    local newTab = self.TabList[newIndex]
+    local oldTab = self.TabList[oldIndex]
+    if not newTab or not oldTab or not self.boxGo then return end
+    local newSelect = Util.GetGameObject(newTab, "select")
+    local oldSelect = Util.GetGameObject(oldTab, "select")
+    if not newSelect or not oldSelect then return end
+    -- 上一次动画没结束先收尾，防连点叠播
+    self:KillTabSlide(true)
+    local box = self.boxGo.transform
+    local oldPos = box:InverseTransformPoint(oldSelect.transform.position)
+    local newPos = box:InverseTransformPoint(newSelect.transform.position)
+    if math.abs(oldPos.x - newPos.x) < 1 then return end
+    -- 克隆新选中底板当滑块；关掉射线，避免 0.15s 动画期间挡住页签点击
+    local clone = GameObject.Instantiate(newSelect)
+    clone.transform:SetParent(box)
+    clone.transform.localScale = Vector3.one
+    clone:SetActive(true)
+    local imgs = clone:GetComponentsInChildren(typeof(UnityEngine.UI.Image), true)
+    if imgs then
+        for i = 0, imgs.Length - 1 do
+            imgs[i].raycastTarget = false
+        end
+    end
+    local texts = clone:GetComponentsInChildren(typeof(UnityEngine.UI.Text), true)
+    if texts then
+        for i = 0, texts.Length - 1 do
+            texts[i].raycastTarget = false
+        end
+    end
+    clone.transform.localPosition = Vector3.New(oldPos.x, newPos.y, newPos.z)
+    newSelect:SetActive(false)
+    self.slideClone = clone
+    self.slideTab = newTab
+    self.slideTweener = DoTween.To(
+        DG.Tweening.Core.DOGetter_float(function() return clone.transform.localPosition.x end),
+        DG.Tweening.Core.DOSetter_float(function(x)
+            local lp = clone.transform.localPosition
+            clone.transform.localPosition = Vector3.New(x, lp.y, lp.z)
+        end),
+        newPos.x, 0.15
+    ):SetEase(Ease.OutQuad):OnComplete(function()
+        self.slideTweener = nil
+        self:KillTabSlide(true)
+    end)
+end
+
 -- 改变模块显示
 function this:ChangeTab(index)
     if #self.TabList == 0 then return end
     -- 原来选中的变成未选中
-    
+
     local curSelectTab = self.TabList[self.SelectIndex]
+    local oldIndex = self.SelectIndex
 
     if self.TabAdapter then
         self.TabAdapter(curSelectTab, self.SelectIndex, "default")
@@ -246,7 +332,12 @@ function this:ChangeTab(index)
 
     if self.TabAdapter then
         self.TabAdapter(curSelectTab, self.SelectIndex, "select")
-        
+
+    end
+
+    -- 选中底板滑动动画（opt-in）
+    if self.SlideAnimEnabled then
+        self:PlayTabSlide(oldIndex, index)
     end
 
     -- tab改变回调

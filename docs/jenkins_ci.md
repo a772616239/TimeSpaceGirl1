@@ -61,6 +61,7 @@
 │   ├── TS-Server-Health.groovy         生产服巡检（定时）
 │   ├── TS-Server-Ops.groovy            服务端/区服运维动作
 │   ├── TS-Server-Release.groovy        服务端代码发包正式服
+│   ├── TS-Api-Test.groovy              服务端全量接口测试（372 个协议逐个真发）
 │   ├── TS-Play-Watch.groovy            Play 轨道与 16KB（定时）
 │   ├── TS-Test-Lua.groovy              Lua 逻辑回归（headless luajit）
 │   ├── TS-Test-Login.groovy            登录链路设备用例
@@ -181,7 +182,8 @@
 | **TS-Art-Frame** | **套外框**（确定性像素工序，**不调 AI**）：亮边 + 墨带 + 菱形网纹 + 45° 切角，画面等比缩进框内、画布尺寸不变。紫框 = `RIM=violet`；像素级验收 11 条 → 可选写回 | `ASSET=` `STYLE=card` `RIM=violet` `RATIO=0.022` `HAIRLINE=False` `WRITE_BACK=True` `BACKUP_ROOT=` `COMPRESS=auto` `COMPRESS_MAX_DIFF=8` `FORCE=False` | — | **禁止** |
 | **TS-Server-Health** | 生产游戏服巡检（只读，默认不发信） | `SEND_MAIL=False` `TO=` | `H 10 * * *` | 允许 |
 | **TS-Server-Ops** | 服务端/区服运维动作统一入口 | `ACTION=health` `CONFIRM=` `REASON=` | — | 允许 |
-| **TS-Server-Release** | **服务端发包正式服（代码 + 配置表一次发完）**：切 release 分支 → JDK8 编译 → 与线上逐条目 CRC 比对 → 审批 → 备份 → **配置表一起发（调 TS-Table-Sync）** → 注入差异类 → 重启（新代码+新表同时生效）→ 上线自检 → **协议连通自检** → 回写发布记录 → 发布看板 → **异步触发 TS-Server-Health** | `ACTION=release` `SOURCE_BRANCH=x1-tag-1.2.2` `RELEASE_BRANCH=` `DEPLOY=False` `CONFIRM=` `AUTO_APPROVE=False` `ONLY_CLASSES=` `EXCLUDE_CLASSES=` `RESTART=gameserver` `SYNC_TABLES=True` `PROTO_CHECK=True` `PROTO_LOGIN=False` `PROTO_OPERATOR=` `HEALTH_AFTER=True` `ALLOW_DIRTY=False` `PUSH_BRANCH=True` `ROLLBACK_DIR=` `NOTES=` `SEND_MAIL=False` | — | **禁止** |
+| **TS-Server-Release** | **服务端发包正式服（代码 + 配置表一次发完）**：切 release 分支 → JDK8 编译 → 与线上逐条目 CRC 比对 → 审批 → 备份 → **配置表一起发（调 TS-Table-Sync）** → 注入差异类 → 重启（新代码+新表同时生效）→ 上线自检 → **协议连通自检** → 回写发布记录 → 发布看板 → **异步触发 TS-Server-Health** → **异步触发 TS-Api-Test** | `ACTION=release` `SOURCE_BRANCH=x1-tag-1.2.2` `RELEASE_BRANCH=` `DEPLOY=False` `CONFIRM=` `AUTO_APPROVE=False` `ONLY_CLASSES=` `EXCLUDE_CLASSES=` `RESTART=gameserver` `SYNC_TABLES=True` `PROTO_CHECK=True` `PROTO_LOGIN=False` `PROTO_OPERATOR=` `HEALTH_AFTER=True` `API_TEST_AFTER=True` `API_TEST_SCOPE=全量` `ALLOW_DIRTY=False` `PUSH_BRANCH=True` `ROLLBACK_DIR=` `NOTES=` `SEND_MAIL=False` | — | **禁止** |
+| **TS-Api-Test** | **服务端全量接口测试**：proto 里 372 个 `*_REQUEST` 逐个真发一遍（空 payload），用**服务端日志**判定「接口在不在、进没进 handler」，另查服务端进程有没有被搞挂。每个接口一条 JUnit（有趋势）+ HTML 看板。判红只有一种：日志明确 `request unknow commond` | `TARGET=现网-129.226.213.65` `SCOPE=全量` `UID=` `TIMEOUT=1.5` `BUDGET=900` `ONLY=` `SKIP=` | — | 允许（只发空参数，但用专用测试号） |
 | **TS-Play-Watch** | Play 轨道 + 16KB 合规巡检 | `DRY_RUN=True` `NO_MAIL=False` `AAB=` `TO=` | `H 9 * * *` | 允许 |
 | **TS-Test-Lua** | **客户端 Lua 逻辑回归**（headless luajit，**不需要设备**）：15 个 `test_*.lua`，429 条断言，约 1 秒 | `ONLY=` `GROUP=全部` | `H 4 * * *` | 允许 |
 | **TS-Test-Login** | 登录链路设备用例（`tests/cases/login/*.json`） | `APK=` `TARGET=auto` `SERIAL=` `CASES=` `CALIBRATE=False` `CASE_SCALE=1` `REVERSE_PORTS=8081:8081,16081:16081` `UNINSTALL_FIRST=False` `KEEP_DEVICE=False` `ALLOW_NO_DEVICE=True` | — | **禁止** |
@@ -318,6 +320,7 @@ scripts/build_envs.json ──┴─→ scripts/apply_build_env.py apply <env>  
 | ⑪ | 回写发布记录 | 发布记录 | 写 `server_game/deploy/releases/<stamp>.{md,json}` + 重建 `INDEX.md` → 提交 release 分支 → 打 tag `rel-<stamp>` → （真上线时）push | 黄（`--warn-ok`） |
 | ⑫ | 发布看板 | 交付 | 生成自包含 HTML，归档 + 拷到 `userContent` 固定地址 | 红 |
 | **⑬** | **触发生产巡检** | 交付 | `build job: TS-Server-Health`（`wait:false`，异步，`SEND_MAIL=false`）——巡检另开一个 job，不阻塞发布 | 不阻塞（`HEALTH_AFTER`） |
+| **⑬-2** | **触发全量接口测试** | 交付 | `build job: TS-Api-Test`（`wait:false`，异步，`SCOPE=全量`）——372 个协议逐个真发一遍，坏在发版当场 | 不阻塞（`API_TEST_AFTER`） |
 
 > ⑭「完成通知」只在 `SEND_MAIL=true` 时出现，默认不发信，所以不计入上表。
 

@@ -92,6 +92,42 @@ scripts/resource_build.sh --action export --sync-strict       # 同步失败算�
 > 判定是按「表 × 目标」算的：同一张表可能线上能推、测试服不能推（或反过来）。
 > 基线只在**所有选中目标都到位**之后才前移，所以某一边失败不会让下次漏推。
 
+### 2.1 🔴 它到底跑在哪个目录（Jenkins 链路实情）
+
+链路：`TS-Resource-Build`（或 `TS-Android-Release` 的「资源准备」）
+→ `scripts/resource_build.sh --action export`
+→ Unity batchmode 导表
+→ **同一个脚本里紧接着** `scripts/table_sync.py --apply`（默认 `--sync-tables apply`）
+→ 推 `local` + `gs` 两套服务端（各 `conf/server` + `assets/conf/server`）。
+
+关键是**它不在开发目录里跑**，而在独立的打包 clone 里：
+
+| 项 | 值 |
+|---|---|
+| 打包目录 | `/Users/wangxufeng/Documents/TimeSpaceGirl1-build`（job 里的 `PROJ`） |
+| 代码从哪来 | `.jenkins/ci_sync.sh`：`fetch` → `stash` → `reset --hard origin/release` |
+| **服务端表从哪来** | **同一脚本第③步 `rsync -a --inplace "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/"`** |
+| 基线文件 | 各 clone 自己的 `build/table_sync/state.json`（gitignore，互不相通） |
+
+由此得出三条必须知道的结论：
+
+1. **`TimeSpaceServer/` 的真源是开发目录，不是 git。** `ci_sync.sh` 每跑一次就把开发目录的
+   `TimeSpaceServer/` 整个 rsync 过去（因为它是独立仓，主仓拉不到）。所以「开发机手工推」
+   和「Jenkins 推」用的是**同一份 txt**，不会各推一套。
+2. **打包 clone 落后时，job 推不出任何表。** 2026-10-23 实测：clone 停在 `a93b955d9`
+   （落后 `origin/release` 27 个提交），里面**连 `scripts/table_sync.py` 都没有**，
+   `resource_build.sh` 也还没有 `--sync-tables`。这种状态下跑 job 只会导表、不同步。
+   ⇒ 改了同步逻辑后，必须先让 `ci_sync.sh` 跑过（job 第①-1 步会做），或手工在打包目录
+   `git fetch && git reset --hard origin/release`。
+3. **两个 clone 的基线互不相通。** 开发机推过 23 张，打包 clone 的 `state.json` 里没有记录，
+   但它第一次跑是「首次运行」：先按 `git status` 的工作区差异（= 这次导出相对已提交版本
+   改动的表）当候选，没有差异就只建基线。**不会重复推**（`SAME` 的表本来也不推）。
+
+> ⚠️ 一个反直觉的后果：CI 导表用的是**打包 clone 里的 xlsx（git 版本）**，
+> 而 `TimeSpaceServer/` 是 rsync 来的开发目录版本。如果开发目录的 xlsx 有**未提交**改动，
+> rsync 过去的新 txt 会被 CI 的旧 xlsx 重新导一遍覆盖掉，然后被当成「改动」推回服务端
+> —— 等于把线上**回滚**成 git 版本。所以：**要发版的表改动，xlsx 和 txt 必须一起提交**。
+
 ---
 
 ## 3. 「本次改动」是怎么算出来的（基线机制）

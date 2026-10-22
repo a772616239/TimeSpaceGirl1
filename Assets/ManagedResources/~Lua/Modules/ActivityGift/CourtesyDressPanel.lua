@@ -209,7 +209,13 @@ end
 
 -- 数据刷新（领奖后刷新 / 在线奖励到点 / 倒计时推进）：只刷新列表，不重播入场。
 -- 用 pcall 只为保证复位 —— 标记卡在 true 会让后面所有入场永久失效。
-function this.RefreshActivityDataSilently(activityData, activityType, getRewardState, isCanReward)
+-- 🔴 必须用 `:` 定义（= 显式 self 参数）：3 个调用点全是 `this:RefreshActivityDataSilently(...)`，
+--    原来这里写成 `.`，于是第一个形参 activityData 收到的是 this（面板表），真正的数据被挤到
+--    activityType 上 ⇒ OnShowActivityData 里 SetData(面板表) ⇒ #面板表 == 0 ⇒ dataCount=0 ⇒
+--    ScrollCycleView 把池里每张卡 SetActive(false) ⇒「面板还在、rect/ScrollCycleView/grid 空了」。
+--    而且全程不抛错（SetData 自己吃 nil/空表，pcall 也不报），日志里一条错误都没有。
+--    凡是「领奖 / 0 点刷新 / 在线奖励到点」都会走到这里 —— 就是玩家报的那个清空。
+function this:RefreshActivityDataSilently(activityData, activityType, getRewardState, isCanReward)
     this.suppressCardAnim = true
     local ok, err = pcall(this.OnShowActivityData, this, activityData, activityType, getRewardState, isCanReward)
     this.suppressCardAnim = false
@@ -269,7 +275,12 @@ function CourtesyDressPanel:OnShow()
     this:IsGetRewardAll(ActivityGiftManager.sevenDayGetRewardState, ActivityTypeDef.EightDayGift, false)
     this:IsGetRewardAll(ActivityGiftManager.onlineGetRewardState, ActivityTypeDef.OnlineGift, false)
     this:IsGetRewardAll(ActivityGiftManager.chapterGetRewardState, ActivityTypeDef.ChapterAward, false)
-    this.SetDataSort()
+    -- 🔴 排序单独 pcall：OnShow 是 OpenUI 直接调的（没有 MyPCall），排序一旦抛错，
+    --    后面 JumpOpenActivity / OnShowActivityData / SetIndex 全部不执行 ⇒ 列表根本不重建。
+    local okSort, sortErr = pcall(this.SetDataSort)
+    if not okSort then
+        LogError("CourtesyDressPanel: 奖励数据排序失败 " .. tostring(sortErr))
+    end
     if this.ActivityId == nil then
         this:OpenActivityPage()
     else
@@ -393,6 +404,15 @@ end
 
 --展示活动数据
 function CourtesyDressPanel:OnShowActivityData(activityData, activityType, getRewardState, isCanReward)
+    -- 🔴 空列表不能往下走：ScrollCycleView:SetData 拿到 nil/空表会 `dataList or {}` ⇒ dataCount=0
+    --    ⇒ 池里每张卡 item.go:SetActive(false) ⇒ 「面板还在、rect/ScrollCycleView/grid 空了」，
+    --    而且全程不抛错（SetData 自己吃掉了 nil，EventManager 又 xpcall 静默吞异常），
+    --    日志里一条错误都看不到。数据没准备好时保持现状，等下一次有效刷新。
+    if type(activityData) ~= "table" or #activityData == 0 then
+        LogRed("CourtesyDressPanel: 活动数据为空，跳过列表刷新 activityType=" .. tostring(activityType)
+                .. " activityId=" .. tostring(this.ActivityId))
+        return
+    end
     -- if (activityType == ActivityTypeDef.EightDayGift) then
     --     this.titleBg.sprite = Util.LoadSprite("r_huodong_qitian")
     -- elseif (activityType == ActivityTypeDef.OnlineGift) then
@@ -635,25 +655,49 @@ function CourtesyDressPanel:OnlineCountDown(remainTime, activityData,onlineTime)
 end
 
 --领取奖励刷新页面数据
-function CourtesyDressPanel:OnRefreshPageDataShow(activityData)
-    local canRewardIndex = 0
-    local getRewardState = 0
+-- 🔴 不要用事件参数里的列表。GameEvent.Activity.GetRewardRefresh 有两处派发：
+--    ① ActivityGiftManager.GetActivityRewardRequest 带的是「刚领的那个页签」的列表
+--       （在章节页领在线奖励 ⇒ 塞进来的是 onlineData）；
+--    ② FiveAMRefreshActivityProgress（服务器 0 点刷新推送 RefreshUpdateIndication）**完全不带参数**。
+--    原来直接把参数转给 SetData：收到 ② 就是 SetData(nil) ⇒ dataCount=0 ⇒ grid 清空；
+--    收到 ① 则把别的页签的数据当章节数据画，字段对不上还会半途抛错。
+--    所以这里一律按当前页签 selectIndex 从 manager 重新取，事件参数直接忽略。
+function CourtesyDressPanel:OnRefreshPageDataShow()
+    if not this.isOpened then
+        return
+    end
+    local activityData, getRewardState, canRewardIndex
     if selectIndex == ActivityTypeDef.EightDayGift then
-        canRewardIndex = ActivityGiftManager.canRewardDay
+        activityData = ActivityGiftManager.sevenDayData
         getRewardState = ActivityGiftManager.sevenDayGetRewardState
+        canRewardIndex = ActivityGiftManager.canRewardDay
     elseif selectIndex == ActivityTypeDef.OnlineGift then
-        canRewardIndex = ActivityGiftManager.currentTimeIndex
+        activityData = ActivityGiftManager.onlineData
         getRewardState = ActivityGiftManager.onlineGetRewardState
+        canRewardIndex = ActivityGiftManager.currentTimeIndex
     elseif selectIndex == ActivityTypeDef.ChapterAward then
+        activityData = ActivityGiftManager.chapterGiftData
         getRewardState = ActivityGiftManager.chapterGetRewardState
+        canRewardIndex = 0
+    else
+        -- 还没确定页签：没有可信的「当前列表」，别动它
+        return
+    end
+    if type(activityData) ~= "table" or #activityData == 0 then
+        return
     end
     this:RefreshActivityDataSilently(activityData, selectIndex, getRewardState, canRewardIndex)
     this:IsGetRewardAll(getRewardState, selectIndex, true)
-
 end
 
 --判断奖励是否领取完毕
 function CourtesyDressPanel:IsGetRewardAll(getRewardState, activityType, isInActivityPage)
+    -- 🔴 状态表为空 = 「还不知道」，不是「全领完了」：空表 pairs 一次都不进 ⇒
+    --    isGetAllReward 保持 true ⇒ 页签被永久 SetActive(false) 且 xxxOpen=false，
+    --    之后 OpenActivityPage 再也选不中这个页签（用户看到的就是「页签也没有」）。
+    if type(getRewardState) ~= "table" or next(getRewardState) == nil then
+        return
+    end
     local isGetAllReward = true
     for i, v in pairs(getRewardState) do
         if v == 0 then
@@ -688,30 +732,34 @@ function this.RefreshScrollData()
         this:ScrollActivityDataShow(item, index, activityData[index], activityType, getRewardState, isCanReward)
     end)
 end
+--按领取状态排序：未领(0) 在前、已领(1) 在后，同状态按 Id
+-- 🔴 比较函数必须挡 nil：服务器只下发「当前活动实例」的 missionId，
+--    105 条章节里绝大多数 chapterGetRewardState[Id] 是 nil，
+--    `nil < 0` 会直接抛 attempt to compare nil with number。
+--    （Modules/ActivityGift/View/SevenDayGift.lua 的同名函数早就挡了，这里漏了。）
+local function SortByRewardState(list, state)
+    if type(list) ~= "table" or #list < 2 or type(state) ~= "table" then
+        return
+    end
+    table.sort(list, function(a, b)
+        local idA, idB = a.Id or 0, b.Id or 0
+        local sa, sb = state[idA], state[idB]
+        if sa == sb then
+            return idA < idB
+        elseif sa == nil then
+            return false          -- 没下发状态的排后面
+        elseif sb == nil then
+            return true
+        end
+        return sa < sb
+    end)
+end
+
 --进行数据排序
 function this.SetDataSort()
-    table.sort(ActivityGiftManager.onlineData, function(a, b)
-        if ActivityGiftManager.onlineGetRewardState[a.Id] == ActivityGiftManager.onlineGetRewardState[b.Id] then
-            return a.Id < b.Id
-        else
-            return ActivityGiftManager.onlineGetRewardState[a.Id] < ActivityGiftManager.onlineGetRewardState[b.Id]
-        end
-    end)
-
-    -- table.sort(ActivityGiftManager.sevenDayData, function(a, b)
-    --     if ActivityGiftManager.sevenDayGetRewardState[a.Id] == ActivityGiftManager.sevenDayGetRewardState[b.Id] then
-    --         return a.Id < b.Id
-    --     else
-    --         return ActivityGiftManager.sevenDayGetRewardState[a.Id] < ActivityGiftManager.sevenDayGetRewardState[b.Id]
-    --     end
-    -- end)
-    table.sort(ActivityGiftManager.chapterGiftData, function(a, b)
-        if ActivityGiftManager.chapterGetRewardState[a.Id] == ActivityGiftManager.chapterGetRewardState[b.Id] then
-            return a.Id < b.Id
-        else
-            return ActivityGiftManager.chapterGetRewardState[a.Id] < ActivityGiftManager.chapterGetRewardState[b.Id]
-        end
-    end)
+    SortByRewardState(ActivityGiftManager.onlineData, ActivityGiftManager.onlineGetRewardState)
+    -- table.sort(ActivityGiftManager.sevenDayData, ...) 原样保留注释（七日页签按 Id 固定顺序）
+    SortByRewardState(ActivityGiftManager.chapterGiftData, ActivityGiftManager.chapterGetRewardState)
 end
 
 --提供跳转的领取按钮

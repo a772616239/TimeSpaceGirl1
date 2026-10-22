@@ -66,6 +66,26 @@ def cover_to(gen_im: Image.Image, W: int, H: int) -> Image.Image:
     return g.crop((left, top, left + W, top + H))
 
 
+def _plate_texture(src_im: Image.Image, ry0: int, ry1: int, x0: int, x1: int) -> np.ndarray:
+    """取源图该字带**自己的底板纹理**（把中文笔画 inpaint 掉），用作擦除填充。
+
+    🔴 为什么不能用中位数纯色：texie / 海报这族的底板是「笔刷 + 网点晕散」，
+       贴一块纯色上去就是肉眼可见的矩形补丁（#52 第一次跑纵向 refit 的后果：
+       字带变成一块比四周更暗更平的方块，人眼一眼就看出是补丁）。
+       源图那块本来就是同一块底板，唯一的区别是上面压着中文 —— 把中文 inpaint 掉，
+       网点纹理就完整了，和四周天然衔接（IDENTITY LOCK 要求背景不变，所以两者本就接近）。
+    """
+    import cv2
+
+    band = np.asarray(src_im.convert("RGB"))[ry0:ry1 + 1, x0:x1 + 1].copy()
+    m = ink_mask(band).astype(np.uint8) * 255
+    if not m.any():
+        return band
+    m = cv2.dilate(m, np.ones((3, 3), np.uint8), iterations=1)
+    fixed = cv2.inpaint(cv2.cvtColor(band, cv2.COLOR_RGB2BGR), m, 4, cv2.INPAINT_TELEA)
+    return cv2.cvtColor(fixed, cv2.COLOR_BGR2RGB)
+
+
 def refit_covered(src_im: Image.Image, gen_im: Image.Image) -> tuple[Image.Image, dict]:
     """在 lock 之前把越界的字带横向压窄，让每根笔画都落在 alpha>8 的可见区内。
 
@@ -136,10 +156,59 @@ def refit_covered(src_im: Image.Image, gen_im: Image.Image) -> tuple[Image.Image
                   f"⇒ 字带横向压到 {k:.0%} 后落版（残余 {lost2} px）")
             return Image.fromarray(canvas), info
 
+    # 🔴 2) 纵向兜底：等比缩小 + 沿 y 平移（2026-10-22 #52 zhaoyun 定位的缺口）
+    #    上面的 `resize((nw, bh))` **只压宽度、高度原样不动** ⇒ 字一旦画得偏高/偏低，
+    #    上下缘的笔画永远掉在底板 alpha 的网点缺口里，压到 80% 一个像素都不会少
+    #    （#52 实测：322 px / 2.39% 全在字的下缘，压完仍是 2.39%；#48 是 202 px / 1.38%，
+    #    连「越界量」都不随缩比下降 ⇒ 说明根本不是宽度问题）。
+    #    texie 这族底板是「笔刷 + 网点晕散」的异形轮廓，上下边缘是锯齿状的，
+    #    所以纵向越界是常态、横向压窄是无效动作。唯一有效的做法：
+    #    整块字带**等比**缩小，再沿 y 滑到 alpha 最富裕的落点（x 取居中）。
+    #  擦除填充一律用源图自己的底板纹理（_plate_texture），不能用中位数纯色 ——
+    #  后者在网点/笔刷底板上就是一块可见的矩形补丁。
+    plate = _plate_texture(src_im, ry0, ry1, x0, x1)
+    for ky in (0.96, 0.94, 0.92, 0.88, 0.84, 0.80, 0.76, 0.72, 0.68, 0.64):
+        nh = max(1, int(round(bh * ky)))
+        nw2 = max(1, int(round(bw * ky)))
+        if nh > bh or nw2 > bw:
+            continue
+        small = np.asarray(Image.fromarray(band).resize((nw2, nh), Image.LANCZOS))
+        # 粗筛：这条字带里哪一段纵向位置的可见 alpha 最富裕（步长 2，几乎不花时间）
+        cand: list[tuple[float, int]] = []
+        for dy in range(0, bh - nh + 1, 2):
+            win = alpha[ry0 + dy:ry0 + dy + nh, x0:x0 + nw2]
+            cand.append((float((win > 8).mean()), dy))
+        cand.sort(reverse=True)
+        # 🔴 dx 必须一起搜，不能死钉在「原字带居中」（2026-10-22 #53 zhitianxinzhang 定位）：
+        #    实测 CONQUEST 字块 347px 宽、底板实心只到 x410，居中贴（dx=(bw-nw2)//2）时
+        #    右缘正好压线，差 7px 就永远判红；把 dx 往右挪 24px、ky 只缩到 0.90 就落版
+        #    （2.61% → 0.29%）。只搜 dy 不搜 dx ⇒ 明明差一点点也报「只能改 LAYOUT 重出」。
+        dxs = list(range(0, max(1, bw - nw2 + 1), 4))
+        mid = (bw - nw2) // 2
+        dxs.sort(key=lambda d: abs(d - mid))
+        for _cover, dy in cand[:4]:
+            for dx in dxs:
+                canvas = arr.copy()
+                # 先把整个原字带抹成「源图自己的底板纹理」（原字必须完全消失），再贴缩小的字块
+                canvas[ry0:ry1 + 1, x0:x1 + 1] = plate
+                canvas[ry0 + dy:ry0 + dy + nh, x0 + dx:x0 + dx + nw2] = small
+                ink2 = ink_mask(canvas)
+                lost2 = int((ink2 & (alpha <= 8)).sum())
+                tot2 = max(1, int(ink2.sum()))
+                if lost2 / tot2 <= LOST_INK_RATIO:
+                    info.update(applied=True, scale=round(ky, 2), mode="yshrink",
+                                lost_px_after=lost2, lost_ratio_after=round(lost2 / tot2, 4),
+                                row_band=[ry0, ry1], offset=[dy, dx], ok=True,
+                                detail=f"字带等比缩到 {ky:.0%} 并平移 (y{dy},x{dx}) 后完全落版"
+                                       f"（压前 {lost} px / {lost / total:.2%} 落在透明区）")
+                    print(f"🔧 文字越界 {lost} px（{lost / total:.2%} 落在透明区）⇒ 横向压窄无效，"
+                          f"改为等比缩到 {ky:.0%} + 平移 (y{dy},x{dx}) 后落版（残余 {lost2} px）")
+                    return Image.fromarray(canvas), info
+
     info.update(ok=False,
                 detail=f"压到 {REFIT_MIN_SCALE:.0%} 仍有笔画落在透明区"
                        f"（压前 {lost} px / {lost / total:.2%}，行带 y{ry0}..{ry1}）"
-                       f"⇒ 只能改 LAYOUT 重出")
+                       f"；等比缩到 64% 也没落版 ⇒ 只能改 LAYOUT 重出")
     print(f"🔴 文字越界 {lost} px（{lost / total:.2%} 落在透明区）；"
           f"压到 {REFIT_MIN_SCALE:.0%} 还进不去 ⇒ 判红，别硬压")
     return g, info

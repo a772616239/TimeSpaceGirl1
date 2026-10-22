@@ -1,0 +1,36 @@
+{
+  "_readme": [
+    "接口扫描的目标表 —— Jenkins 的 TARGET 下拉框、scripts/verify/api_full_sweep.py --target 都只读这一个文件。",
+    "🔴 改服务器地址只改这里，不要改 job、不要改脚本。",
+    "",
+    "字段：",
+    "  host/port   游戏服地址（16081 是游戏服，8080 是登录 HTTP，别混）",
+    "  ssh         SSH 别名；给了才能用「服务端日志」做判定 oracle，并能查进程是否重启",
+    "  redis       本地直连 Redis；不给则走 ssh 上的 redis-cli 取会话 token",
+    "  log_file    服务端 stdout 日志（判定 oracle 读它；/proc/<pid>/fd/1 指向这里）",
+    "  uid_hint    建议用哪个号跑；**必须是专用测试号**，空参数请求会改这个号的数据",
+    "  note        给人看的说明"
+  ],
+  "updated": "2026-10-23",
+  "default": "现网-129.226.213.65",
+  "targets": {
+    "现网-129.226.213.65": {
+      "host": "129.226.213.65",
+      "port": 16081,
+      "ssh": "gs",
+      "redis": "",
+      "log_file": "/data/srvlog/gameserver.log",
+      "uid_hint": 10000004,
+      "note": "线上服（用户 2026-10-23 口径：这条就是正式服）。uid 10000004 是 GM/测试号（见 conf/bot_config.json 的 ignoreUids）。"
+    },
+    "本地自测服-127.0.0.1": {
+      "host": "127.0.0.1",
+      "port": 16081,
+      "ssh": "",
+      "redis": "127.0.0.1:6379",
+      "log_file": "",
+      "uid_hint": 10000002,
+      "note": "本机 launchd 起的 gameserver（~/home/java/gameserver）。没有 ssh ⇒ 判定降级为「只看回包」，无回包不判红。"
+    }
+  }
+}

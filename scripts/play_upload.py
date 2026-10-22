@@ -534,7 +534,8 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="只认证并列出现状，不上传不提交")
     ap.add_argument("--yes", action="store_true", help="跳过交互确认（CI 用）")
     ap.add_argument("--changes-not-sent-for-review", action="store_true",
-                    help="提交但不送审（仅 internal/alpha/beta 有效）")
+                    help="提交但不送审（internal/alpha/beta 默认已带；production 需另抬 "
+                         "--allow-production-write，提交后要人工在 Console 点送审）")
     args = ap.parse_args()
 
     # 默认发布状态按轨道推导（与 aab_release.sh 的 STATUS_FOR_INTERNAL / STATUS_FOR_OTHER 对齐）：
@@ -796,14 +797,21 @@ def main() -> int:
         # changesNotSentForReview=true，否则 400 INVALID_ARGUMENT：
         #   "Changes cannot be sent for review automatically. Please set the query parameter
         #    changesNotSentForReview to true."
-        # ⇒ 内部测试轨道默认自动带上该参数（这样才符合「内部测试不送审」的语义）；
-        #    显式传 --changes-not-sent-for-review 则仍只允许 non-prod 轨道。
+        # 🔴 2026-10-23 实测 **production 同样如此**（本账号是托管式发布，API 无权自动送审）：
+        #    而且这个参数只能在 commit 时带，事后补不了 —— 第一次传 vc83 时 442MB 全部传完、
+        #    track 也写好了，就卡在 commit 上被判 400，edit 被回滚，只能整包重传。
+        # ⇒ 现在 status 会自动送审的一律先带上该参数；万一 Play 仍要求，
+        #    再原地补参数重试 commit（**不重传**，edit 在 400 后依然有效）。
         commit_kwargs = {"packageName": args.package, "editId": edit_id}
         gate = is_status_completing(args.status)
-        commit_changes_not_sent = gate and (args.track in NON_PROD_TRACKS)
+        commit_changes_not_sent = gate
         if args.changes_not_sent_for_review:
-            if args.track not in NON_PROD_TRACKS:
-                die("--changes-not-sent-for-review 仅对 internal/alpha/beta 轨道有效", 2)
+            if args.track not in NON_PROD_TRACKS and not args.allow_production_write:
+                die(
+                    "--changes-not-sent-for-review 对 production 轨道须同时抬 "
+                    "--allow-production-write（会提交但不送审，需人工在 Console 点送审）",
+                    2,
+                )
             commit_changes_not_sent = True
         if commit_changes_not_sent:
             commit_kwargs["changesNotSentForReview"] = True
@@ -821,6 +829,18 @@ def main() -> int:
             # 回查轨道确认版本确实挂上了就当成功，避免误判成失败去重传 421MB。
             if track_has_version(service, args.package, args.track, str(uploaded_vc)):
                 log("[commit] 回查确认版本已在轨道上 —— 视为提交成功（首次响应为 503）")
+            elif (
+                not commit_kwargs.get("changesNotSentForReview")
+                and "changesNotSentForReview" in format_http_error(exc)
+            ):
+                # Play 强制要求该参数：edit 在 400 之后仍然有效 ⇒ 原地补参数重试，
+                # 不用把 400+MB 的包再传一遍。
+                commit_kwargs["changesNotSentForReview"] = True
+                commit_changes_not_sent = True
+                log("[commit] Play 要求 changesNotSentForReview=true，原地补参数重试（不重传）")
+                execute_with_retry(
+                    lambda: service.edits().commit(**commit_kwargs), "commit"
+                )
             else:
                 raise
         log("")
@@ -829,7 +849,11 @@ def main() -> int:
             log("   内部测试轨道：测试员打开内部测试链接即可安装"
                 "（首次发布后商店名称/商品详情的展示可能有最长 48h 延迟）。")
         elif args.track == "production":
-            log("   提示：「会进入审核」仅适用于 status=completed；status=draft 只保存草稿，需人工在 Console 发布。")
+            if commit_changes_not_sent:
+                log("   🔴 已提交但**未送审**（Play 不允许 API 自动送审，本账号为托管式发布）：")
+                log("      需到 Play Console →「发布概览」点「送审」/「开始发布」才进入审核。")
+            else:
+                log("   提示：「会进入审核」仅适用于 status=completed；status=draft 只保存草稿，需人工在 Console 发布。")
         return 0
 
     except HttpError as exc:

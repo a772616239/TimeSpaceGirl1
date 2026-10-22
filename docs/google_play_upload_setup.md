@@ -221,6 +221,17 @@ scripts/aab_release.sh --notes "修复卡顿；优化新手引导"
    `edits.commit` 只是把 release 提交给 Google 审核。审核通过后才会真正对用户生效。
    如果账号开了「托管式发布」(managed publishing)，commit 之后还要在 Console 手动点「开始发布」。
 
+   🔴 **2026-10-23 实测：本账号就是托管式发布，API 根本无法「自动送审」**。
+   `status=completed` 提交 production 时 Play 会返回
+   `400 INVALID_ARGUMENT / Changes cannot be sent for review automatically. Please set the
+   query parameter changesNotSentForReview to true.`
+   ⇒ 现在 `play_upload.py` 对会送审的 status **一律先带 `changesNotSentForReview=true`**，
+   commit 能成功，但 release 只是挂在 production 轨道上**待送审**，
+   必须人工到 Console →「发布概览」点「送审」才进审核队列。
+   ⚠️ 这个参数**只能在 commit 时带**，事后补不了：第一次传 vc83 时 442MB 全传完、
+   轨道也写好了，才在 commit 被判 400、edit 被回滚，只能整包重传（4.5 min）。
+   脚本现在加了兜底：真撞上这个 400 会**原地补参数重试 commit**，不重传。
+
 6. **签名密钥**
    项目已有 `Assets/Scripts/Editor/AutoSignKeystore.cs`，在打包预处理阶段自动注入
    `beauty.keystore`（alias `xing`），无需手动配置。
@@ -246,6 +257,7 @@ scripts/aab_release.sh --notes "修复卡顿；优化新手引导"
 | HTTP 400 `APK/bundle targets ... ` | targetSdk 不足 | 本项目 targetSdk 36，正常不会遇到 |
 | HTTP 404 | 包名写错 | 应为 `com.Warera.timespace` |
 | HTTP 400 `FAILED_PRECONDITION` / `This Edit has been deleted`（常在上传到 80%+ 时突然出现） | edit 会话被作废。未提交的 edit 有生命周期；**同一 App 的并发 edit 会互相作废** | 上传期间不要并发调用 Play API（如 16KB 巡检脚本 `play_16kb_watch.py` 会开新 edit）。直接重跑上传脚本即可 —— 🔴 **不要用 `aab_release.sh` 重跑**，它会再提一次 versionCode |
+| HTTP 400 `Changes cannot be sent for review automatically. Please set ... changesNotSentForReview to true` | 账号开了托管式发布，API 无权自动送审；参数只能在 commit 时带 | 已在脚本里默认带上（见 §4-5）。若老版本脚本撞上：**别重跑整包**，直接补参数重试 commit（新脚本已自动做） |
 | 脚本报「找不到 service account 密钥」 | 密钥没放到默认位 | 见 §1.3 |
 | 脚本报「检测到 Unity 编辑器正在运行」 | GUI Unity 锁定工程 | `osascript -e 'tell application "Unity" to quit'` |
 | 打包日志 `:launcher:mergeExtDexRelease FAILED` | AndroidX 与 AGP 7.4.2 dexer 不兼容 | 见 `docs/unity_android_build_skill.md` 第 3 节（双模板 force 降级） |

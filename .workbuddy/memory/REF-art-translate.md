@@ -64,3 +64,23 @@
 - publish 有 `check_target_registered`（父目录**精确**匹配，别用祖先前缀，`ArtFont_en` 前缀会把任意子目录放行）与 `res_name_registered`（没登记就打印 ⏳ + 该重打哪个 AB）。
 - 覆盖前备份到 `ResBackpack/备份/ManagedResources/...`。
 - 🔴 写回 ≠ 进包：真机生效要重打该资源所在 AssetBundle（`FrameTool.BuildGameAssetBundles`）。客户端 `_en` 加载不到会**静默回退 `_zh`**（`Util.cs:1182-1224`，日志只有一行「回退加载精灵图」）⇒ 判断「写没写」看 resName 是否进 `resInfoList`，别看图。
+
+## 7. 并行绘制与浏览器租约（2026-10-22，用户三项要求）
+问题现场：① 额度用完浏览器留着，一排空号浏览器挂着；② 多个任务同时开跑会**挤进同一个 AdsPower profile**（`browser/start` 把同一个 debug 端口交回来）⇒ 互相覆盖提示词、拿回对方的图、**各报一次「额度用尽」**；③ 因此 job 只能 `disableConcurrentBuilds()`，一次画一张。
+
+改法（唯一防线是租约，不是串行）：
+- `provider_ledger` 新增：`locked()`（flock，所有读-改-写串行）、`lease_claim/lease_release/leases/lease_holders`、`note_event`（审计流水 `_output/art_restyle/browser_events.jsonl`）、`set_note`/`set_last_switch`。`pick/order` 会跳过「别人持有的通道」，**被占用的号不参与「全封锁赌一把」**（那是别人的浏览器）。
+- 租约种类：`adspower:<uid>` / `cdp:<port>` / `chrome:<profile>` / `asset:<源图相对路径>`。TTL 默认 1200s；带 tag 的 owner（`TSG_LEASE_OWNER`）只按 TTL 判活，无 tag 的按 pid 判活（命令行跑完立刻失效）。
+- `gen_chatgpt_web.py`：`--owner/--lease-ttl/--no-pin/--keep-browser-on-exhaust`；换号链改成 ⓪ 本轮钉住的 → ① 已开 SunBrowser（`cdp:<port>`）→ ② AdsPower 现开（`adspower:<uid>`，**先 claim 再 start**）。成功 ⇒ `mark_ok` + 写 pin（`_output/art_translate/_pins/<owner>.json`，第 2 张图直接接着这台上）；额度用尽 ⇒ `mark_exhausted`（解析恢复时间）+ **`adspower_stop` 关掉** + 放租约 + 清 pin，然后继续下一个号。`--cdp-port` 也 claim 端口，两轮指同一端口必有一轮被拒（rc=3）。
+- `banner_translate.py`：`_owner()` 读 `TSG_LEASE_OWNER`；`batch` 每张图（run/verify/publish 三阶段都）先抢 `asset:` 租约，抢不到 skip；run 结束 `lease_release(owner=)` 放掉自己全部租约（浏览器**故意留着**，下一轮直接接入）。
+- `quota` 现在报「可用 N / 占用中 M / 封锁中 K ⇒ 可并行 N 路」；全被占用返回 3（黄，不是没额度）。
+- job：`concurrent: true` + 去掉 `disableConcurrentBuilds()`，`environment { TSG_LEASE_OWNER = "art-translate-${BUILD_NUMBER}" }`，post 里再 `lease-release --owner` 兜底（构建中途红掉不放会占满 TTL）。
+- 测试：`scripts/image/tests/test_browser_pool.py`（跨进程互斥 / 换号 / 用完即关 / 8 进程写台账不丢更新 / 按 owner 钉号）、`test_fallback_rotation.py`（换号链离线仿真，打桩 fb+run_on_port，不烧额度）。
+- 🔴 沙箱 shell 打不开 `/tmp`、`/var/folders` ⇒ 测试临时目录必须落工程内（`_output/...`），否则 `save()` 静默失败、测试变「全都成功」的假绿。
+- 仍未生效的老账：11 个 `_en` 的 resName 不在 `ResourcePathConfig`，要 `TS-Resource-Build`（REBUILD_AB=true）重扫登记。
+
+## 「字看着发灰/透」——先量 alpha，别调 RGB（2026-10-22 zhitianxinzhang 定位）
+texie 这族底板是「笔刷 + 网点晕散」，**网点像素本身 alpha≈102**（不是 255）。模型把英文画进这块晕圈，文字像素就继承了底板 alpha ⇒ 交付图里 RGB 明明是 (252,100,107) 的亮红，合成到深底上却是暗红、网点透过来。`putalpha(源图 A)` 的 lock 语义会把这个缺陷**忠实保留**。
+判据（一条命令定性）：`sa = 源图 alpha[字块 ink]`，看 `frac<255`——本例 **39.7%**，中位 102。
+修法：`scripts/image/letter_alpha_fix.py --asset <zh 路径> --out <composed.png>`：字块（红墨迹膨胀 2px，含描边）alpha 置 255，其余原样；O/Q 的 counter 保持底板 alpha（仍读作洞）；顺带清 <150px 的碎红笔画。产 `{"alpha_band":[x0,y0,x1,y1]}` 边车 ⇒ 管线走「本地确定性合成」验收（**带外逐像素锁死、带内允许重建**）：带内 `alpha>250` 48.5%→73.3%、`alpha<100` 7.0%→5.6%，两条硬项都绿。
+🔴 别再走「把字块抹成 per-row 纯色」那条路（试过 5 版）：会把立体斜面和描边一起抹平，反而更差；缺陷在 alpha 不在 RGB。

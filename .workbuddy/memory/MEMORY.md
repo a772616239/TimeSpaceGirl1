@@ -42,7 +42,8 @@
 ## 美术管线 → 详见 `REF-art-translate.md`（翻译）/ `REF-art-restyle.md`（换皮）
 - 四族按源图特征自动分派（尺寸带互不重叠）：`ArtFont_zh/**` 884x544→artfont（锚点写死）；`Atlas/**`→atlas；≤700x500 且 ≤8 色→glyph；≥800x700→poster。**glyph / poster / 512x256 texie 只能 provider=chatgpt_web**（local 会 rc=3）。884x336 彩带满幅（`ExpertPanelAtlas/banner/`）落在 artfont 尺寸带但版面不同 ⇒ 显式 `--family poster`。
 - `MODE=one` 传 `--asset` 必指**真实存在的源文件名**（多数带 `_zh`，Atlas 图无后缀；口述名字常漏 `_zh`，先 `ls` 核）；用 `--only` 会让 ②③④「目标 0 张」全绿＝假绿球。
-- 出图串行（一份登录态 + 一份包月额度）：`disableConcurrentBuilds()` 别去。复用已登录浏览器用 `find_browser_cdp.py` 反查端口（常 62081）传 `CDP_PORT`；额度看 `banner_translate.py quota`。
+- 🔴 **出图已可并行（2026-10-22 起），正确性靠「浏览器租约」不靠串行**：`TS-Art-Translate` 去掉了 `disableConcurrentBuilds()`，改成开画前抢 `provider_ledger.lease_claim`（kind=`adspower:<uid>`/`cdp:<port>`/`chrome:<profile>`/`asset:<源图>`）。抢不到就换下一个号（并行路数 = 没封锁的号数）；额度用尽**立刻 `adspower_stop` + 记 `blocked_until` + 放租约**再换下一个。`TSG_LEASE_OWNER=$JOB_NAME-$BUILD_NUMBER` 必须传（一轮 batch 里每张图是独立进程，用 pid 认不出自己人）。同一张图被另一轮占着 ⇒ skip（不是失败）。详见 `REF-art-translate.md` §7。
+- 额度看 `banner_translate.py quota`（会报「可并行 N 路 / 占用中 / 封锁中」）；手工查占用 `provider_ledger.py lease-list`、审计流水 `provider_ledger.py events`。复用已登录浏览器用 `find_browser_cdp.py` 反查端口传 `CDP_PORT`（该端口也会被租约占住，两轮指同一端口必有一轮被拒）。
 - 🔴 `gpt_layout` 开头必写 `TARGET TEXT IS FIXED — copy it verbatim, do NOT translate anything yourself` + IDENTITY LOCK（禁止新增人物/插画/装饰，底板与 HERO-SKILL 小标不动）——模型会自造译名（mozhate 要 Ave Verum Corpus 出图是 DIVINE JUDGMENT；zhende #16 整幅画成角色插画）。硬参数（行数/字数/字面/宽度像素区间）它听，**行距/内缩不听**。
 - 🔴 字被切只有一个修法：**lock 之前 refit**（`putalpha` 才啃笔画）；判定量 `ink & (alpha<=8)`，只压有笔画越界的那几行字带，腾出列填底板背景中位数。别拿「越界比例」当闸门（零判别力）。详见 REF。
 - 🔴 透明图统计一律走 alpha 掩膜（`_visible_mask`），异形卡四边不是背景（`POSTER_EDGE_MIN_OPAQUE=0.50` 量边圈占比，低于判不适用）；OCR 闸门 `text_fit.py`（tesseract 三坑见 REF），**跑不起来降黄 + 说明原因，不许静默算 0**（本机未装 tesseract，当前必跳过）。

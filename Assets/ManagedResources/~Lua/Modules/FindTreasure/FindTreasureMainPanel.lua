@@ -1,4 +1,5 @@
 require("Base/BasePanel")
+local ItemPopIn = require("Modules/Common/ItemPopIn")
 FindTreasureMainPanel = Inherit(BasePanel)
 local this=FindTreasureMainPanel
 local findTreasureGrid = {}
@@ -8,6 +9,18 @@ local missionInfo = {}
 local refreshIsMaterial = true
 local isRefreshAddNum = false
 local orginLayer = 0
+--============================== 材料条（情报）溢出提示 ==============================
+-- 材料满**不进入口红点**（那颗只表示「有奖可领」，见 FindTreasureManager.RefreshFindTreasureRedPoint
+-- 上面的注释），改成面板内就地提示，两档口径分开：
+--   ① 事实：bagNum >= MazeTreasureMax ⇒ Slider 填充转橙（与 numText 的 #FF9725 同色）
+--   ② 提示：满 **且** 还有可立刻派遣的卡（idleCount > 0）⇒ 每次打开面板弹一下
+-- 为什么不合并成一档：满但四张卡全在跑时，玩家在面板里没有任何能做的事，
+-- 弹动只会重复「亮了但没东西点」的老问题（就是这次要修的那个观感）。
+local kMaterialFullColor = Color.New(255/255, 151/255, 37/255, 1)   -- #FF9725，与 numText 一致
+local materialFillColor = nil      -- 填充色原值，首次进面板快照；恢复时用
+local materialHintPopped = false   -- 本次打开是否已经弹过（OnClose 复位）
+local materialHintPop = nil        -- ItemPopIn 实例
+local materialHintOwner = nil      -- 实例属于哪个面板对象：面板重建后要重新绑，闭包不能留旧的
 local isFirstOpen
 local conFigData
 this.isjump = false
@@ -238,6 +251,24 @@ function FindTreasureMainPanel:InitComponent()
     self.materialImage = Util.GetGameObject(self.materialImageBg , "materialImage"):GetComponent("Image")
     self.materialImageNumText = Util.GetGameObject(self.materialImageBg, "Slider/numText"):GetComponent("Text")
     self.materialImageSlider = Util.GetGameObject(self.materialImageBg, "Slider"):GetComponent("Slider")
+    -- 填充条（Slider 默认层级 Slider/Fill Area/Fill）：材料满时转橙；取不到就只做数字变色。
+    -- 用 pcall 兜一层：美术改层级时不能让整个面板打开就崩。
+    local okFill, fillGo = pcall(function() return Util.GetGameObject(self.materialImageBg, "Slider/Fill Area/Fill") end)
+    self.materialFillImage = (okFill and Alive(fillGo)) and fillGo:GetComponent("Image") or nil
+    if materialHintPop == nil or materialHintOwner ~= self then
+        -- 只弹材料条本身（不弹整行/不弹卡片）。pivot 实测 (0.5,1) 顶中，按模板原点放大即可
+        -- ⇒ centerPivot=false，免得 ItemPopIn 再量内容中心把整条推歪。
+        -- 🔴 闭包捕获的是 self：面板销毁重建后 materialImageBg 是旧对象（Alive 失败 ⇒ 静默不弹），
+        -- 所以按 owner 判断重建，不能只判 nil。
+        if materialHintPop ~= nil then
+            materialHintPop:Stop()
+        end
+        materialHintOwner = self
+        local panel = self
+        materialHintPop = ItemPopIn.New(function() return { panel.materialImageBg } end,
+            { mode = "surge", from = 0.96, peak = 1.04, riseDuration = 0.16, fallDuration = 0.18,
+              step = 0, centerPivot = false })
+    end
 
     self.refreshObj = Util.GetGameObject(self.gameObject, "refreshObj")
     self.refreshNumText = Util.GetGameObject(self.refreshObj, "numText"):GetComponent("Text")
@@ -495,17 +526,7 @@ function FindTreasureMainPanel:OnShowPanelData(isSort)
             end
         end
     end
-    local mazeTreasureMax = ConfigManager.GetConfigData(ConfigName.PlayerLevelConfig,PlayerManager.level).MazeTreasureMax
-    local bagNum = BagManager.GetItemCountById(FindTreasureManager.materialItemId)
-    if bagNum >= mazeTreasureMax then
-        self.materialImageNumText.text = "<size=46><B><color=#FF9725>"..PrintWanNum3(bagNum).."</color></B></size>/"..mazeTreasureMax
-        self.materialImageSlider.value = bagNum/mazeTreasureMax
-    else
-        self.materialImageNumText.text = "<size=46><B><color=#FFD12B>"..PrintWanNum3(bagNum).."</color></B></size>/"..mazeTreasureMax
-        self.materialImageSlider.value = bagNum/mazeTreasureMax
-    end
-
-    self.materialImage.sprite = Util.LoadSprite(GetResourcePath(ConfigManager.GetConfigData(ConfigName.ItemConfig,FindTreasureManager.materialItemId).ResourceID))
+    self:RefreshMaterialBar()
 
     self.refreshNumText.text = RefreshItemNum
     self.refreshImage.sprite = Util.LoadSprite(GetResourcePath(ConfigManager.GetConfigData(ConfigName.ItemConfig,mazeTreasureSetting.RefreshItem[1]).ResourceID))
@@ -516,6 +537,48 @@ function FindTreasureMainPanel:OnShowPanelData(isSort)
         FindTreasureManager.SetShowFindTreasureVipRedPoint(false)
     end
     self.findTreasureVipBtnRedPoint:SetActive(FindTreasureManager.GetShowFindTreasureVipRedPoint())
+end
+
+--材料条（情报）：数字 + Slider + 「满」与「该去派遣了」两档口径。
+--所有刷新都走这里（OnShowPanelData 调一次），免得面板内改了、列表刷新又被还原。
+function FindTreasureMainPanel:RefreshMaterialBar()
+    local levelConfig = ConfigManager.GetConfigData(ConfigName.PlayerLevelConfig, PlayerManager.level)
+    local mazeTreasureMax = levelConfig and levelConfig.MazeTreasureMax or 0
+    local bagNum = BagManager.GetItemCountById(FindTreasureManager.materialItemId) or 0
+    local isFull, idleCount = FindTreasureManager.GetMaterialHintState()
+
+    local numColor = isFull and "#FF9725" or "#FFD12B"
+    self.materialImageNumText.text = "<size=46><B><color=" .. numColor .. ">" ..
+        PrintWanNum3(bagNum) .. "</color></B></size>/" .. mazeTreasureMax
+    self.materialImageSlider.value = (mazeTreasureMax > 0) and (bagNum / mazeTreasureMax) or 0
+    self.materialImage.sprite = Util.LoadSprite(GetResourcePath(
+        ConfigManager.GetConfigData(ConfigName.ItemConfig, FindTreasureManager.materialItemId).ResourceID))
+
+    --① 事实：满 ⇒ 填充条转橙（与数字同色）
+    local fill = self.materialFillImage
+    if fill ~= nil and Alive(fill) then
+        if materialFillColor == nil then
+            materialFillColor = fill.color
+        end
+        fill.color = isFull and kMaterialFullColor or materialFillColor
+    end
+
+    --② 提示：满 **且** 有可派遣的卡（卡上正显示「前往派遣」）⇒ 本次打开弹一下。
+    --不循环、不常驻闪动：满但全在派遣中时什么都不做，提示必须指向一个当场能做的动作。
+    if isFull and idleCount > 0 and not materialHintPopped then
+        materialHintPopped = true
+        if materialHintPop ~= nil then
+            materialHintPop:Play()
+        end
+    end
+end
+
+--回收：ItemPopIn 不 Stop 会把材料条永久停在半截缩放
+function FindTreasureMainPanel:StopMaterialHint()
+    if materialHintPop ~= nil then
+        materialHintPop:Stop()
+    end
+    materialHintPopped = false
 end
 
 --活动奖励2
@@ -660,6 +723,7 @@ end
 --界面关闭时调用（用于子类重写）
 function FindTreasureMainPanel:OnClose()
     this.StopCardSlideIn()
+    self:StopMaterialHint()
     if timer then
         timer:Stop()
         timer = nil
@@ -674,6 +738,7 @@ function FindTreasureMainPanel:OnDestroy()
      findTreasureGrid = {}
     -- DestroyPanel 不走 OnClose，面板还会被 openedList 缓存复用 ⇒ 两处都要收
     this.StopCardSlideIn()
+    self:StopMaterialHint()
     findTreasureItemsGrid = {}
     missionInfo = {}
     refreshIsMaterial = true

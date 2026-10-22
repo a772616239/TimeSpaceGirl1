@@ -49,6 +49,7 @@ ConfigName = {
 }
 
 local mazeTreasureSetting = { TakeOrder = { 83 }, RefreshVIP = 1, RefreshItem = { 80 } }
+local levelCfg = { MazeTreasureMax = 18000 } -- 可变：材料溢出用例要改上限 / 造「配置缺失」
 ConfigManager = {
     GetConfig = function(name)
         if name == ConfigName.AchievementConfig then return {} end
@@ -56,7 +57,7 @@ ConfigManager = {
     end,
     GetConfigData = function(name, id)
         if name == ConfigName.MazeTreasureSetting then return mazeTreasureSetting end
-        if name == ConfigName.PlayerLevelConfig then return { MazeTreasureMax = 18000 } end
+        if name == ConfigName.PlayerLevelConfig then return levelCfg end
         return nil
     end,
 }
@@ -223,6 +224,69 @@ dispatched = {}
 FTM.SetShowFindTreasureVipRedPoint(false)
 Check((dispatched[GameEvent.FindTreasure.RefreshFindTreasureRedPot] or 0) == 1,
     "DispatchEvent(RefreshFindTreasureRedPot) 被调用一次")
+
+----------------------------------------------------------------------
+-- 8) 材料溢出提示口径（GetMaterialHintState）：只给面板内材料条用，不进红点
+--    口径 = 满 且 有「可立刻派遣」的卡（state==0 且 heroId 为空），
+--    否则提示指向不了任何当场能做的动作（就是这次要修的那个观感）。
+----------------------------------------------------------------------
+print("[16] 情报满 + 有可派遣卡（state==0 且未派英雄）→ isFull=true, idleCount=1")
+bagNum = 20000
+SetTasks({
+    { missionId = 40001, progress = 0, state = 0, type = 1, takeTimes = 0, heroId = {} },
+    { missionId = 40002, progress = 0, state = 0, type = 1, takeTimes = 0, heroId = { 1 } },
+})
+local full16, idle16 = FTM.GetMaterialHintState()
+Check(full16 == true and idle16 == 1, "isFull=" .. tostring(full16) .. " idle=" .. tostring(idle16))
+
+print("[17] 情报满 + 四张卡全在派遣中 → isFull=true, idleCount=0（不提示）")
+SetTasks({
+    { missionId = 40001, progress = NOW + 600, state = 0, type = 1, takeTimes = 0, heroId = { 1 } },
+    { missionId = 40002, progress = NOW + 600, state = 0, type = 1, takeTimes = 0, heroId = { 2 } },
+})
+local full17, idle17 = FTM.GetMaterialHintState()
+Check(full17 == true and idle17 == 0, "isFull=" .. tostring(full17) .. " idle=" .. tostring(idle17))
+
+print("[18] 情报满 + 全部已领取 → idleCount=0（不提示）")
+SetTasks({
+    { missionId = 40001, progress = 0, state = 2, type = 1, takeTimes = 1, heroId = {} },
+})
+local full18, idle18 = FTM.GetMaterialHintState()
+Check(full18 == true and idle18 == 0, "isFull=" .. tostring(full18) .. " idle=" .. tostring(idle18))
+
+print("[19] 情报未满 + 有可派遣卡 → isFull=false（不够满就不提示）")
+bagNum = 17999
+SetTasks({
+    { missionId = 40001, progress = 0, state = 0, type = 1, takeTimes = 0, heroId = {} },
+})
+local full19, idle19 = FTM.GetMaterialHintState()
+Check(full19 == false and idle19 == 0, "isFull=" .. tostring(full19) .. " idle=" .. tostring(idle19))
+
+print("[20] 任务数据未下发 → 不抛错且 idleCount=0")
+bagNum = 20000
+local rawGet = TM.GetTypeTaskList
+TM.GetTypeTaskList = function() return nil end
+local ok20, full20, idle20 = pcall(FTM.GetMaterialHintState)
+TM.GetTypeTaskList = rawGet
+Check(ok20 and full20 == true and idle20 == 0,
+    "ok=" .. tostring(ok20) .. " isFull=" .. tostring(full20) .. " idle=" .. tostring(idle20))
+
+print("[21] 等级配置缺失（MazeTreasureMax=nil）→ isFull=false 且不除零")
+levelCfg = nil
+local ok21, full21, idle21 = pcall(FTM.GetMaterialHintState)
+levelCfg = { MazeTreasureMax = 18000 }
+Check(ok21 and full21 == false and idle21 == 0,
+    "ok=" .. tostring(ok21) .. " isFull=" .. tostring(full21) .. " idle=" .. tostring(idle21))
+
+print("[22] 材料溢出不影响入口红点（两套口径彻底分开）")
+bagNum = 20000
+levelCfg = { MazeTreasureMax = 18000 }
+SetTasks({
+    { missionId = 40001, progress = 0, state = 0, type = 1, takeTimes = 0, heroId = {} },
+})
+local full22, idle22 = FTM.GetMaterialHintState()
+Check(full22 == true and idle22 == 1 and FTM.RefreshFindTreasureRedPoint() == false,
+    "材料满+可派遣 但入口红点=false（红点只认 state==1）")
 
 ----------------------------------------------------------------------
 print("")

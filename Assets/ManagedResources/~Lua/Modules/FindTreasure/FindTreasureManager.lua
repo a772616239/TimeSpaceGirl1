@@ -60,6 +60,31 @@ function this.RefreshFindTreasureRedPoint()
     end
     return false
 end
+--材料（情报）溢出提示口径：**只给面板内的材料条用，不进红点**。
+--返回 isFull（是否已达 MazeTreasureMax）、idleCount（可立刻消耗材料的卡数：
+--state==0 且还没派英雄，也就是卡上正显示「前往派遣」的那几个）。
+--为什么要数 idleCount：材料满但四张卡全在派遣中时，提示指向的动作是「等」，玩家点哪儿都没用
+--⇒ 又变成「亮了但没东西点」。入口红点只表达「有奖可领」，材料溢出属于面板内提示。
+function this.GetMaterialHintState()
+    local levelConfig = ConfigManager.GetConfigData(ConfigName.PlayerLevelConfig, PlayerManager.level)
+    local mazeTreasureMax = levelConfig and levelConfig.MazeTreasureMax or 0
+    local bagNum = BagManager.GetItemCountById(this.materialItemId) or 0
+    if mazeTreasureMax <= 0 or bagNum < mazeTreasureMax then
+        return false, 0
+    end
+    local idleCount = 0
+    local missionInfo = TaskManager.GetTypeTaskList(TaskTypeDef.FindTreasure)
+    if missionInfo ~= nil then
+        for i = 1, #missionInfo do
+            local info = missionInfo[i]
+            local heroes = info and info.heroId
+            if info and info.state == 0 and type(heroes) == "table" and #heroes <= 0 then
+                idleCount = idleCount + 1
+            end
+        end
+    end
+    return true, idleCount
+end
 function this.SetShowFindTreasureVipRedPoint(isShow)
     if isShow then
         PlayerPrefs.DeleteKey(GetVipRedPrefKey())

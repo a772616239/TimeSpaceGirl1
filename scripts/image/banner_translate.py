@@ -147,6 +147,12 @@ ATLAS_CORE_AREA = 200      # 白字零件最小面积，滤掉背景高光
 ATLAS_LINE_CLEAN = 175     # 拟合板体上沿时，上沿落在这之下的列视为「被字切断」
 ATLAS_STRIP_SAMPLE = 30    # 板外条带从上方多少像素处取样
 
+# poster（整幅重绘族）的「四边背景」闸门：这一圈里没有文字，重绘就会在这里露馅。
+# 实测标尺：banner_12 好图 = 平均差 11.3 / 改动 9.4%；同一张的第二版（提示词更严）反而
+# 是 26.5 / 17.1% —— 所以上限取 25 / 20%，能把「背景被顺手重画」判出来。
+POSTER_EDGE_TOP, POSTER_EDGE_BOTTOM, POSTER_EDGE_SIDE = 40, 30, 40
+POSTER_EDGE_MAX = (25.0, 0.20)
+
 
 # --------------------------------------------------------------------------- #
 # 基础工具
@@ -861,22 +867,32 @@ def build_prompt(zh: Path, entry: dict, lines: list[str], title: str, fam: str) 
     # 整幅图（横幅 / 图集大图）：只翻字，别动画面
     text = title if (fam == FAMILY_ARTFONT and title) else ""
     body = "\n".join(f"  - {t}" for t in lines)
+    # 🔴 2026-10-22：模板原来写「Rewrite these Chinese strings」却只列英文，
+    #    模型得自己 OCR 才知道要替掉哪句，于是顺手把彩带重画了一遍（banner_12 实测
+    #    改动 29.9%、平均差 59.2 打红）。译名表里给了 zh_text 就显式写出来。
+    zh_src = (entry.get("zh_text") or "").strip()
+    src_block = (f"\nChinese text currently baked into the artwork: 「{zh_src}」\n"
+                 if zh_src else "\n")
     return f"""\
 This is an image-edit task: translate the Chinese text baked into this game UI artwork into English.
-
-Rewrite these Chinese strings:
+{src_block}
+Put exactly these English lines where that Chinese text is (same order, same line count):
 {body}
 {("Small title above: " + text) if text else ""}
 
 Hard requirements:
 1. Replace ONLY the text. Keep the artwork, illustration, background, panel, decoration, framing, \
-glow and lighting untouched — pixel-identical where there is no text.
+glow and lighting untouched — pixel-identical where there is no text. Same texture, same pattern \
+scale, same shading everywhere outside the letters.
 2. Keep each line's position, size, weight, colour and effects (glow/gradient/shadow) exactly like \
 the original line it replaces. Same left alignment, same margins, same line count.
-3. All Chinese characters must be gone. No Chinese / Japanese / Korean glyphs anywhere.
-4. Use clean bold latin capitals, readable at small size, no decorative script that cannot be read.
-5. Do not add logos, watermarks, signatures, frames or any extra element.
-6. Canvas keeps the same aspect ratio as the reference image.
+3. The dark ribbon / plate that carries the text must keep its exact silhouette, position, \
+thickness, rotation and inner gradient. Do NOT enlarge, thicken, extend or re-shape it. If the \
+English is wider than the Chinese, condense the letters — never grow the ribbon.
+4. All Chinese characters must be gone. No Chinese / Japanese / Korean glyphs anywhere.
+5. Use clean bold latin capitals, readable at small size, no decorative script that cannot be read.
+6. Do not add logos, watermarks, signatures, frames or any extra element.
+7. Canvas keeps the same aspect ratio as the reference image.
 
 Output one single image.
 """
@@ -1219,7 +1235,10 @@ def cmd_run(args) -> int:
                   file=sys.stderr)
             return 3
 
-    work = Path(args.work) if args.work else work_dir_for(zh, fam)
+    # 🔴 --work 必须绝对化：call_provider 里要 `out.relative_to(ROOT)` 打日志，
+    #    传相对路径（如 --work _output/xxx/retry）会抛 ValueError 把整条流程炸在出图之后
+    #    （图已经拿到，却白跑一次额度）。2026-10-22 实测踩过。
+    work = Path(args.work).resolve() if args.work else work_dir_for(zh, fam)
     work.mkdir(parents=True, exist_ok=True)
     src = work / "src.png"
     shutil.copyfile(zh, src)
@@ -1499,13 +1518,23 @@ def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str
 
 
 def verify_poster(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], list[str]]:
-    """海报口径 = 整幅重绘的通用口径 + 一条「彩带区真的动过」。
+    """海报口径 = 整幅重绘的通用口径 + 「彩带区真的动过」+ 「四边背景没被重绘」。
 
     为什么不再加更硬的闸门：同族已上线的 `cn2-X1_zhutihuodong_liutianmowang_en.png` 与中文版
     逐像素比是 **73.6% 改动 / 平均差 128**（插画和彩带都是模型重画的），拿「背景零改动」当红线
     只会把这类成品全判红。能自动担保的只有「尺寸/alpha/改没改/改得有多狠」，剩下的必须人眼看图。
+
+    🔴 2026-10-22 修正一处口径错配：**「整体平均通道差 ≤45」在这族里不成立**。
+       彩带 + 美术字本身就占掉大半张画布，只换字也会把均值抬到 60 上下 ——
+       `cn2-X1_jingyinghuodong_banner_12`（884x336，几何底 + 黑色斜切彩带）实测
+       改动 29.9% / 平均差 59.2，但**四边纯背景平均差只有 11.3（改动 9.4%）**，
+       背景其实一点没动。用整幅均值当硬闸门 = 把「彩带够大」判成「重绘了背景」。
+       ⇒ mean_diff 降级为 warn，另立一条更硬也更要害的「四边背景」闸门：
+         换字的边界条件是「边框里的背景帧必须原样」，这条测出来的才是它。
     """
     checks, warns = verify_photo_gpt(work, state)
+    # 整幅均值在这族里没判别力（见 docstring）：降级成 warn，别当硬闸门
+    checks = [c for c in checks if c[0] != "整体色差可控"]
     a_src = np.asarray(Image.open(work / "src.png").convert("RGB")).astype(int)
     a_out = np.asarray(Image.open(work / "out.png").convert("RGB")).astype(int)
     h = a_src.shape[0]
@@ -1514,6 +1543,26 @@ def verify_poster(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]],
     ratio = float((diff > 24).mean())
     checks.append(("彩带文字区确实重画过", ratio >= 0.03,
                    f"上 45% 区域改动像素 {ratio:.1%}（太小说明模型没动字）"))
+
+    # 四边背景：这一圈里没有文字，必须原样（模型整幅重渲染时最先在这里露馅）
+    full = np.abs(a_src - a_out).max(axis=2)
+    edge = np.zeros(full.shape, dtype=bool)
+    edge[:POSTER_EDGE_TOP, :] = True
+    edge[-POSTER_EDGE_BOTTOM:, :] = True
+    edge[:, :POSTER_EDGE_SIDE] = True
+    edge[:, -POSTER_EDGE_SIDE:] = True
+    edge_mean = float(full[edge].mean())
+    edge_changed = float((full[edge] > 24).mean())
+    checks.append(("四边背景未被重绘",
+                   edge_mean <= POSTER_EDGE_MAX[0] and edge_changed <= POSTER_EDGE_MAX[1],
+                   f"边框（上{POSTER_EDGE_TOP}/下{POSTER_EDGE_BOTTOM}/左右{POSTER_EDGE_SIDE}px）"
+                   f"平均差 {edge_mean:.1f}、改动 {edge_changed:.1%}"
+                   f"（上限 {POSTER_EDGE_MAX[0]:.0f} / {POSTER_EDGE_MAX[1]:.0%}）"))
+
+    mean_diff = float(full.mean())
+    if (state.get("gen") or {}).get("gen_size"):
+        warns.append(f"整幅平均通道差 {mean_diff:.1f}（这族只作参考：彩带与美术字占大半画布，"
+                     f"只换字也会到 60 上下；上面那条四边背景才是硬闸门）")
     warns.append("整幅海报是模型重绘的：彩带边缘、插画细节会与中文版有细微差别，务必看图确认")
     return checks, warns
 

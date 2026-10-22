@@ -25,8 +25,7 @@ ROOT = IMAGE_DIR.parents[1]
 sys.path.insert(0, str(IMAGE_DIR))
 
 TMP = ROOT / "_output/art_translate/_tests_fallback"
-shutil.rmtree(TMP, ignore_errors=True)
-TMP.mkdir(parents=True, exist_ok=True)
+# 破坏性准备放 main()：spawn 的子进程会重新导入本模块（同 test_browser_pool 的坑）
 os.environ["TSG_LEDGER"] = str(TMP / "ledger.json")
 os.environ["TSG_LEDGER_EVENTS"] = str(TMP / "events.jsonl")
 os.environ["TSG_LEASE_OWNER"] = "art-translate-58"
@@ -118,6 +117,8 @@ def run_case(name: str, quota_uids: set[str], pre_leased: list[str] | None = Non
 
 
 def main() -> int:
+    shutil.rmtree(TMP, ignore_errors=True)
+    TMP.mkdir(parents=True, exist_ok=True)
     # ── 场景 1：第一个号额度用尽 → 关掉、记账、接着开下一个 ──────────────────
     rc, fb = run_case("第一个号额度用尽 → 关掉换下一个", {"a1"})
     check(rc == gw.RC_OK, f"最终拿到图（rc={rc}）")

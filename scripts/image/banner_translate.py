@@ -2394,9 +2394,11 @@ def cmd_quota(args) -> int:
         return 0
     holders = pl.lease_holders(data)
     free, blocked, busy = [], [], []
+    # 只有「能画图的通道」算并行路数：asset: 是「这张图归哪一轮」的占位，不是浏览器。
+    CHANNEL_KINDS = {"adspower", "chrome", "cdp"}
     for key in sorted(accts):
         kind, _, ident = key.partition(":")
-        if not kind or not ident:
+        if not kind or not ident or kind not in CHANNEL_KINDS:
             continue
         t = pl.blocked_until(kind, ident, data)
         if t:

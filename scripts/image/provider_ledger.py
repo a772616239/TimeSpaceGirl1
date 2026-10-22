@@ -623,6 +623,8 @@ def render(data: dict | None = None, base: dt.datetime | None = None, live: bool
         t = _parse_iso(e.get("blocked_until"))
         t = t if t and t > base else None
         ident = e.get("id") or k.split(":", 1)[-1]
+        if (e.get("kind") == "asset"):        # 资源路径太长，表格里只显示文件名
+            ident = Path(str(ident)).name
         state = CN.get(e.get("state") or UNKNOWN, e.get("state") or UNKNOWN)
         if e.get("state") == EXHAUSTED and not t:
             state = "已到期(待验)"
@@ -637,11 +639,14 @@ def render(data: dict | None = None, base: dt.datetime | None = None, live: bool
         rows.append(f"{ident:<22}{e.get('kind',''):<10}{state:<10}{when:<22}"
                     f"{human_left(t, base):<9}{int(e.get('ok_count') or 0):<5}"
                     f"{int(e.get('fail_streak') or 0):<5}{who:<22}{note}")
-    held = sum(1 for k in accounts if holders.get(k))
-    free = sum(1 for k in accounts
+    # 只统计能画图的通道（adspower/chrome/cdp）；asset: 是「这张图归哪一轮」的占位，不算通道。
+    chan = {k: e for k, e in accounts.items()
+            if (e.get("kind") or k.split(":", 1)[0]) in ("adspower", "chrome", "cdp")}
+    held = sum(1 for k in chan if holders.get(k))
+    free = sum(1 for k, e in chan.items()
                if not holders.get(k) and not blocked_until(
-                   accounts[k].get("kind") or k.split(":", 1)[0],
-                   accounts[k].get("id") or k.split(":", 1)[-1], data, base))
+                   e.get("kind") or k.split(":", 1)[0],
+                   e.get("id") or k.split(":", 1)[-1], data, base))
     rows += ["", f"可并行绘制：{free} 路（{held} 个通道正被占用；一个通道同一时刻只允许一路）"]
     last = data.get("last_switch")
     if last:

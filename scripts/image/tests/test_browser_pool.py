@@ -30,8 +30,9 @@ sys.path.insert(0, str(IMAGE_DIR))
 # 🔴 临时目录必须落在工程内：沙箱 shell 打不开 /tmp（/var/folders 同理），
 #    写不进去时 save() 静默失败，测试会变成「全都成功」的假绿。
 TMP = ROOT / "_output/art_translate/_tests"
-shutil.rmtree(TMP, ignore_errors=True)
-TMP.mkdir(parents=True, exist_ok=True)
+# 🔴 这里**不能**做 rmtree/mkdir：macOS 上 multiprocessing 默认 spawn，子进程会重新导入
+#    本模块，模块级清目录会把父进程刚写的台账抹掉（表现成「8 个进程丢了 1 条」的假 bug）。
+#    清理与建目录一律放 main()。
 os.environ["TSG_LEDGER"] = str(TMP / "ledger.json")
 os.environ["TSG_LEDGER_EVENTS"] = str(TMP / "events.jsonl")
 os.environ.pop("TSG_LEASE_OWNER", None)
@@ -151,6 +152,8 @@ def test_pin_per_owner() -> None:
 
 
 def main() -> int:
+    shutil.rmtree(TMP, ignore_errors=True)
+    TMP.mkdir(parents=True, exist_ok=True)
     test_mutual_exclusion()
     test_pick_next()
     test_quota_closes_browser()

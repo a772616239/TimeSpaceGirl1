@@ -1,11 +1,11 @@
 /**@META
 {
-  "description": "中文美术字 → 英文版流水线，三族资源共用一条链。① 战令横幅（ArtFont_zh/OperatingPanelAtlas/*_bg_zh.png，884x544）：标题+两行文案烘进图里，走写死的三段版面锚点；② 图集大图（Atlas/<面板>/*.png）：中文标题烘在一块纯色黑板上，走白字核+纯色板自动定位；③ 美术字块（ArtFont_zh/** 小型单色图，如 180x96 的页签）：只有纯白字 + alpha，本地排字会换掉笔画风格 ⇒ 必须交给模型重绘。出图方式由 PROVIDER 决定：chatgpt_web（默认，Chrome 登录态 / AdsPower 换号链驱动 chatgpt.com 出图）/ local（纯 OpenCV+PIL，可复现）/ manual（人交图）。无论谁画的，归位（尺寸/alpha/字块 bbox）、验收（尺寸/透明边/墨迹量/纯白/落位）、写回 ArtFont_en + .meta 都是同一套本地硬断言。缺哪张补哪张，已存在的不动。译文对不对需要人眼看：glyph 与整幅图重绘都会把验收标黄（硬项全过但无 OCR 闸门）。",
+  "description": "中文美术字 → 英文版流水线，四族资源共用一条链。① 战令横幅（ArtFont_zh/OperatingPanelAtlas/*_bg_zh.png，884x544）：标题+两行文案烘进图里，走写死的三段版面锚点；② 图集大图（Atlas/<面板>/*.png）：中文标题烘在一块纯色黑板上，走白字核+纯色板自动定位；③ 美术字块（ArtFont_zh/** 小型单色图，如 180x96 的页签）：只有纯白字 + alpha，本地排字会换掉笔画风格 ⇒ 必须交给模型重绘；④ 活动海报（**/banner/*_zh.png，884x856 不透明）：插画+斜切彩带+两行美术字，没有纯色底板可补也没锚点可写死 ⇒ 整幅交给模型重绘，再等比 cover 回原尺寸。出图方式由 PROVIDER 决定：chatgpt_web（默认，Chrome 登录态 / AdsPower 换号链驱动 chatgpt.com 出图）/ local（纯 OpenCV+PIL，可复现）/ manual（人交图）。无论谁画的，归位（尺寸/alpha/字块 bbox）、验收（尺寸/透明边/墨迹量/纯白/落位）、写回 ArtFont_en + .meta 都是同一套本地硬断言。缺哪张补哪张，已存在的不动。译文对不对需要人眼看：glyph 与整幅图重绘都会把验收标黄（硬项全过但无 OCR 闸门）。",
   "concurrent": false,
   "params": [
-    {"name":"MODE","type":"choice","choices":["batch","one"],"default":"batch","description":"batch=扫描全量（ArtFont_zh 横幅全目录 + 译名表里的 Atlas/glyph 白名单），只补缺英文版且译名表里有条目的；one=只做 ASSET 指定的那一张"},
-    {"name":"ASSET","type":"string","default":"","description":"MODE=one 时必填：源图相对工程根的路径。横幅如 Assets/ManagedResources/ArtFont_zh/OperatingPanelAtlas/cn2-X1_zhanling_mota_bg_zh.png；图集如 Assets/ManagedResources/Atlas/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou.png；字块如 Assets/ManagedResources/ArtFont_zh/DynamicActivityPanelAtlas/tab/cn2-X1_zhutihuodong_yuanliaoshouji_01_zh.png"},
-    {"name":"PROVIDER","type":"choice","choices":["chatgpt_web","local","manual"],"default":"chatgpt_web","description":"出图方式。chatgpt_web=参考绘图管线：打开 Chrome/AdsPower 用 GPT 重绘（消耗包月额度，额度用尽自动换号）；local=原来的纯本地像素工序（只能做横幅/图集大图，字块会被跳过）；manual=人把图放进 GEN_IMAGE（留空则输出提示词等人出图）"},
+    {"name":"MODE","type":"choice","choices":["batch","one"],"default":"batch","description":"batch=扫描全量（ArtFont_zh 横幅全目录 + 译名表里的 Atlas/glyph/poster 白名单），只补缺英文版且译名表里有条目的；one=只做 ASSET 指定的那一张"},
+    {"name":"ASSET","type":"string","default":"","description":"MODE=one 时必填：源图相对工程根的路径。横幅如 Assets/ManagedResources/ArtFont_zh/OperatingPanelAtlas/cn2-X1_zhanling_mota_bg_zh.png；图集如 Assets/ManagedResources/Atlas/LaddersTypePanelAtlas/cn2-X1_kuafu_rukou.png；字块如 Assets/ManagedResources/ArtFont_zh/DynamicActivityPanelAtlas/tab/cn2-X1_zhutihuodong_yuanliaoshouji_01_zh.png；海报如 Assets/ManagedResources/ArtFont_zh/DynamicActivityPanelAtlas/banner/cn2-X1_ciyuanyinqing_banner_zh.png"},
+    {"name":"PROVIDER","type":"choice","choices":["chatgpt_web","local","manual"],"default":"chatgpt_web","description":"出图方式。chatgpt_web=参考绘图管线：打开 Chrome/AdsPower 用 GPT 重绘（消耗包月额度，额度用尽自动换号）；local=原来的纯本地像素工序（只能做横幅/图集大图，字块/海报会被跳过）；manual=人把图放进 GEN_IMAGE（留空则输出提示词等人出图）"},
     {"name":"GEN_IMAGE","type":"string","default":"","description":"PROVIDER=manual 时显式指定出图（相对工程根或绝对路径）；留空则只生成参考图与提示词，不写回"},
     {"name":"CDP_PORT","type":"string","default":"","description":"复用已在运行的已登录浏览器（AdsPower/SunBrowser）的调试端口，find_browser_cdp.py 反查。留空=用本机 Chrome 的登录态副本"},
     {"name":"ADSPOWER_PROFILES","type":"string","default":"","description":"换号顺序（逗号分隔的 AdsPower user_id，排最前）。留空=按额度台账自动排。🔴 号池有 6 个但换号链默认只试 3 个，要覆盖就得显式写这里"},
@@ -68,10 +68,11 @@ mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
   echo "出图：${PROVIDER}${CDP_PORT:+  CDP=${CDP_PORT}}${ADSPOWER_PROFILES:+  号序=${ADSPOWER_PROFILES}}"
   echo ""
   echo "🔴 中文是烘进图里的艺术字（带发光/渐变/立体阴影），不是 TMP 文本 —— 只能重出一张图。"
-  echo "🔴 三族共用一条链，靠源图自身特征自动分派："
+  echo "🔴 四族共用一条链，靠源图自身特征自动分派（尺寸带互不重叠）："
   echo "     ArtFont_zh/** 884x544 横幅 → artfont 族（三段文字，版面锚点写死）"
   echo "     Atlas/**                   → atlas 族（中文压在一块纯色黑板上，白字核+纯色板自动定位）"
   echo "     ArtFont_zh/** 小型单色图   → glyph 族（纯白字+alpha 的页签/竖排标题，只能模型重绘）"
+  echo "     **/banner/*.png 884x856    → poster 族（插画+彩带+两行字，整幅重绘后 cover 回原尺寸）"
   echo "🔴 出图那一步不可复现、要花额度 ⇒ 单独摘出去：provider 只负责「把图给我」，"
   echo "     尺寸 / alpha / 字块落位 / 验收 / 写回全部是本地硬断言（与 TS-Art-Restyle 同一套切法）。"
   echo "🔴 喂给模型的参考图是「合成到深底的版本」：原始 PNG 是白字+透明底，"
@@ -133,6 +134,7 @@ FORCE_ARG=""
 #   local + artfont = 尺寸/alpha/重建区外零改动/粉色标题零残留/黄色文案零残留/英文白字已落版
 #   local + atlas   = 尺寸/alpha/重建区外零改动/板内墨迹零残留/板底平整/英文白字已落版/板外条带无残字
 #   chatgpt_web + glyph = 尺寸/四角仍透明/墨迹量/纯白 RGB255/主体不是小标记（字形 IoU 只记录）
+#   chatgpt_web + poster = 尺寸/alpha/确实重画过/没有整幅重画/色差可控/上 45% 彩带区动过
 #   chatgpt_web + 整幅图 = 尺寸/alpha/确实重画过/没有整幅重画/色差可控
 # 最后一条「译文对不对」没有自动闸门 ⇒ 出图族登记 warn，构建标黄，等人看 compare.png。
 # shellcheck disable=SC2086

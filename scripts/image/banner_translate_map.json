@@ -6,6 +6,8 @@
     "atlas 族没有「扫全目录」的余地（图集里绝大多数图没有中文），所以本表就是白名单：有 lines 的才做。",
     "glyph 族（2026-10-22）：ArtFont_zh 下「小型 + 单色」的美术字块（页签/竖排标题），也只支持白名单。",
     "  额外字段：zh_text = 图上那句中文原文（提示词里要写给它看）；gpt_layout = 版面怎么摆（人话描述，只对 glyph 生效）。",
+    "poster 族（2026-10-22）：ArtFont_zh/DynamicActivityPanelAtlas/banner 下的 884x856 全幅海报（插画+彩带+两行美术字）。",
+    "  同样只走白名单；字段与 glyph 一致（zh_text / lines / gpt_layout），但 lines 按「第 1 行大、其后依次」排。",
     "译名口径以 Assets/ManagedResources/~Lua/Config/Data/Language.lua 为准；",
     "已上线英文图（pata_bg_en / shenyuan_bg_en）的用词与之不完全一致时，以已上线图为准，别自己另造。",
     "第三行「累计返利 __ 倍」在 pata_bg_en / shenyuan_bg_en 里都是被删掉的（留给 UI 动态数字），这里同样不排。"
@@ -55,5 +57,11 @@
     "lines": ["MATERIAL", "COLLECT"],
     "gpt_layout": "Two stacked rows: 'MATERIAL' large on the top row, 'COLLECT' smaller and centred underneath it, same italic slant. Keep the two small solid triangular arrows sitting at the left and right end of the bottom row exactly where they are — reproduce them as identical solid shapes, they are part of the asset.",
     "note": "主题活动页签「原料收集」竖版（ArtFont_zh/DynamicActivityPanelAtlas/tab，152x120 单色字块，底部两侧带三角箭头）。译名待产品确认"
+  },
+  "cn2-X1_ciyuanyinqing_banner_zh.png": {
+    "zh_text": "完成任务 / 获取珍贵原料",
+    "lines": ["Complete Tasks", "Collect Precious Materials"],
+    "gpt_layout": "Two lines inside the same slanted navy ribbon, both italic and leaning up to the right at the same angle as the reference. Line 1 'Complete Tasks' is the big one, starts near the left tip of the ribbon and keeps the cyan-to-white gradient with a thick dark-navy outline. Line 2 'Collect Precious Materials' is indented to the right so it starts under the middle of line 1, keeps the orange-to-gold gradient with the same dark-navy outline, and is very slightly smaller than line 1. The three item icons under the ribbon stay where they are.",
+    "note": "次元引擎活动海报（ArtFont_zh/DynamicActivityPanelAtlas/banner，884x856 全幅不透明：插画 + 斜切彩带 + 两行美术字）。译名沿用「原料收集」页签的 MATERIAL/COLLECT 口径，语言表里没有这条文案，待产品确认"
   }
 }

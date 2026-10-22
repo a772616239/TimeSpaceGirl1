@@ -42,7 +42,8 @@ Jenkins 里点 **`TS-Art-Translate`**（`MODE=batch` 即可，缺哪张补哪张
 | `*_bg_zh.png` 战令横幅（884×544，三段文字同一套版面） | `*_peitu_zh.png` 无字配图（没文字可翻，`BANNER_GLOB` 已排除） |
 | 图集大图（`Atlas/**`，标题压在纯色板上） | 想换节日/换风格（走 `docs/art_restyle_pipeline.md`） |
 | 小型单色美术字块（`ArtFont_zh/**`，≤700×500 且只有 1~8 种颜色，如页签） | 只想改 TMP 文本（改语言表就行，别动图） |
-| 已有中文版、缺英文版 | 纯图标（彩色、alpha 是轮廓不是字）—— `_is_glyph` 会判掉，别硬塞 |
+| 全幅活动海报（`DynamicActivityPanelAtlas/banner/*_zh.png`，884×856 不透明，插画+彩带+两行字） | 纯图标（彩色、alpha 是轮廓不是字）—— `_is_glyph` 会判掉，别硬塞 |
+| 已有中文版、缺英文版 | —— |
 
 分派规则（`family_of`，按**源图自身特征**判，不看目录名）：
 
@@ -50,10 +51,14 @@ Jenkins 里点 **`TS-Art-Translate`**（`MODE=batch` 即可，缺哪张补哪张
 |---|---|---|---|
 | 在 `Atlas/` 下 | `atlas` | local 或 chatgpt_web | 白字核 + 纯色板自动定位 |
 | `ArtFont_zh` 下、≤700×500 且单色 | `glyph` | **只能 chatgpt_web** | 模型重绘 → 归位到源图字块 bbox |
+| 宽 ≥800 且高 ≥700（884×856 那一档） | `poster` | **只能 chatgpt_web** | 模型整幅重绘 → 等比 cover 回原尺寸 |
 | 其余 | `artfont` | local 或 chatgpt_web | 三段版面锚点写死（884×544） |
 
-`BANNER_GLOB = "*_bg_zh.png"` 仍是 artfont 族的筛选口径；atlas / glyph **走译名表白名单**
-（`banner_translate_map.json` 里有 `lines` 的才做），因为这两个目录里绝大多数图没有中文要翻。
+三条尺寸带互不重叠（字块 ≤700×500 / 战令横幅 884×544 / 海报 884×856），所以用尺寸判就够，
+不必看目录名 —— 以后 `banner/` 里换了别的尺寸也不会被误当成 884×544 的战令横幅去套锚点。
+
+`BANNER_GLOB = "*_bg_zh.png"` 仍是 artfont 族的筛选口径；atlas / glyph / poster **走译名表白名单**
+（`banner_translate_map.json` 里有 `lines` 的才做），因为这几个目录里绝大多数图没有中文要翻。
 
 ---
 
@@ -140,7 +145,7 @@ banner_translate.py --provider chatgpt_web
 
 | provider | 相关参数 | 什么时候用 |
 |---|---|---|
-| `chatgpt_web`（job 默认） | `CDP_PORT` / `ADSPOWER_PROFILES` / `GEN_IMAGE` | 字块（必需）；想把横幅/图集也交给模型重绘 |
+| `chatgpt_web`（job 默认） | `CDP_PORT` / `ADSPOWER_PROFILES` / `GEN_IMAGE` | 字块 / 海报（必需）；想把横幅/图集也交给模型重绘 |
 | `local`（脚本默认） | —— | 884×544 横幅、纯色板图集；要可复现的回归 |
 | `manual` | `GEN_IMAGE`（留空则只出参考图+提示词） | 额度空了、或要人挑一张 |
 
@@ -156,6 +161,25 @@ banner_translate.py --provider chatgpt_web
 3. **染白**：RGB 一律 `(255,255,255)`。游戏侧靠 tint 上色，图里带颜色反而串色。
 
 `ink_mask.png` 落盘当证据；`state.json` 记 `gen / gen_bbox / src_bbox / scale / iou / ink_px`。
+
+### 3.7 poster 族（884×856 全幅海报，2026-10-22 加）
+
+`DynamicActivityPanelAtlas/banner/` 下那 18 张活动海报：**插画打底 + 斜切彩带 + 两行美术字**，
+没有 alpha、没有纯色底板、也没有可写死的版面锚点 —— `local` 那套在这里一件也用不上
+（排字能排，但彩带的角度、渐变、描边、辉光全都复刻不出来）。所以：
+
+```
+build_prompt(poster)   → POSTER_PROMPT（点名「彩带的形状/位置/角度/描边/阴影都不许动」）
+gen_chatgpt_web.py     → 同一条 Chrome/AdsPower 链
+postprocess_photo()    → 等比 cover 回 884×856（🔴 不能 contain：海报是满幅的，留边会露底）
+```
+
+`postprocess_photo` 只做尺寸和 alpha 两件事：`cover` 缩放 + 居中裁 + 把源图的 alpha 通道贴回去
+（源图是 RGBA 时这样做，等价于「透明轮廓 lock」；CIYUANYINQING 这张是 RGB，直接原样 cover）。
+
+口径参考：同族已上线的 `cn2-X1_zhutihuodong_liutianmowang_en.png` 也是「整幅重绘 + 贴回 alpha」，
+与中文版逐像素比是 **73.6% 改动 / 平均差 128**（插画和彩带都是模型重画的）。这说明这条链的
+预期就是「重画一张同构的图」，而不是「只在原图上换字」—— 断言口径必须按这个来定（见 4.3）。
 
 ---
 
@@ -197,6 +221,22 @@ banner_translate.py --provider chatgpt_web
 🔴 **「译文对不对」没有自动闸门**：手写美术字上 OCR 不可靠，拿它判红绿只会假红。
 所以出图族的验收会登记 `warn`（构建标黄），**必须人眼看 `compare.png`**。
 字形 IoU（译文 vs 原文）只记录不当红 —— 两批字本来就不是同一批字形，实测 0.15~0.47 都正常。
+
+### 4.3 poster 族：整幅重绘能自动担保什么
+
+海报是整幅重画的，「背景零改动」这条不成立（同族上线品实测 73.6% 改动），所以沿用整幅口径
+再加一条，硬项共 6 条：
+
+| # | 断言 | 为什么是硬项 |
+|---|---|---|
+| 1 | 尺寸与源图一致（884×856） | 面板按原尺寸摆 |
+| 2 | alpha 与源图逐像素一致（RGB 源图跳过） | 透明轮廓 lock |
+| 3 | 改动像素 ≥ 2% | 防「原图原样返回」 |
+| 4 | 改动像素 ≤ 75% / 平均通道差 ≤ 45 | 防「重画成另一张海报」 |
+| 5 | **上 45% 区域改动 ≥ 3%** | 彩带就在上半部；这条专抓「模型把字挪走/干脆没画」 |
+
+第 5 条是 poster 独有的。它不能更严 —— 彩带本身也在重画，改动量本来就大；
+再严只会把成品全判红，等于没有闸门。
 
 ---
 
@@ -296,6 +336,19 @@ banner_translate.py --provider chatgpt_web
   这就是第 3.5 节「参考图必须白底黑字」那条的由来。
 - 换号链真实生效：本机 Chrome `Profile 5` 额度用尽（台账封锁到 18:19）→ 自动接上已开着的
   SunBrowser `64227` → 出图成功。**全程没人工介入**。
+
+### 8.3 poster + `chatgpt_web`（2026-10-22）
+
+| 资源 | 出图 | 归位 | 耗时 | 验收 |
+|---|---|---|---|---|
+| `ciyuanyinqing_banner_zh`（884×856，插画+彩带+两行字） | 1275×1234 | cover 0.69 → 884×856，改动 26.8%、平均差 37.6 | 74s | 6 硬项过 + 2 warn |
+
+译名 `Complete Tasks / Collect Precious Materials`（沿用「原料收集」页签的 MATERIAL/COLLECT 口径）。
+一次成功，没有重出：彩带的形状/角度/描边、三件材料图标、背景插画都保住了，只有字母换了。
+
+对照：同族已上线的 `liutianmowang_en` 改动 **73.6%**、平均差 128（那张是模型重画了整幅），
+本张只有 26.8% —— 说明「按同一张图画」时模型能贴着原画面走，不必整幅重绘。
+口径参考就摆在这里：**改动比例不是越小越好，而是必须落在 2%~75% 这条带里**。
 
 Jenkins `TS-Art-Translate` 首轮 #1（`WRITE=false`）UNSTABLE（还有 2 张没翻，符合预期），
 #2 写回两张 → 因「开工盘点」当时判黄而 UNSTABLE（口径问题，已改），

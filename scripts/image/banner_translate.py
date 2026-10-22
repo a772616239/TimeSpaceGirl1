@@ -117,6 +117,14 @@ FAMILY_ATLAS = "atlas"
 #   整张只有 1~3 种颜色 = 纯白字 + 抗锯齿 alpha，字身是手写/斜切美术字。
 #   这类图**本地排 Arial 会换掉画风**，只能让模型重绘 ⇒ 只支持 provider=chatgpt_web。
 FAMILY_GLYPH = "glyph"
+# poster：整幅不透明的活动海报（ArtFont_zh/DynamicActivityPanelAtlas/banner，884x856）。
+#   画面是插画 + 斜切彩带 + 两行美术字，没有 alpha、没有纯色底板、也没有可写死的版面锚点
+#   ⇒ 本地既排不了字也补不了底，只能整幅让模型重绘（同族已上线的
+#   cn2-X1_zhutihuodong_liutianmowang_en.png 就是这条路口径）。
+FAMILY_POSTER = "poster"
+# poster 判据：全幅大图。艺术字块（glyph）上限 700x500，战令横幅是 884x544，
+# 海报是 884x856 —— 三条尺寸带互不重叠，所以用尺寸判就够，不必看目录名。
+POSTER_MIN = (800, 700)
 
 # 出图 provider：local=本地像素工序（原行为）；chatgpt_web=Chrome/AdsPower 驱动 GPT 重绘；
 # manual=人交图（--gen-image），跳过浏览器。三者之后的归位/验收/写回完全同一条。
@@ -179,11 +187,26 @@ def _is_glyph(path: Path) -> bool:
         return False
 
 
+def _is_poster(path: Path) -> bool:
+    """全幅海报：宽高都超过 glyph 上限，且尺寸落在 884x856 这一档。
+
+    只按尺寸判，不看目录名 —— 以后 banner/ 里加了别的尺寸也不会被误当 884x544 的战令横幅
+    （战令横幅是 884x544，高度差 300 多像素，不会误判）。
+    """
+    try:
+        with Image.open(path) as im:
+            w, h = im.size
+            return w >= POSTER_MIN[0] and h >= POSTER_MIN[1]
+    except Exception:                                            # noqa: BLE001
+        return False
+
+
 def family_of(zh: Path) -> str:
     """按源图自身特征分派（不看目录名，避免新增图集时忘了登记）。
 
     Atlas/**            → atlas（中文压在一块纯色黑板上）
     ArtFont_zh/** 小型单色 → glyph（美术字块，只能模型重绘）
+    884x856 全幅海报     → poster（插画 + 彩带，只能整幅重绘）
     其余                → artfont（884x544 三段横幅，版面锚点写死）
     """
     try:
@@ -193,6 +216,8 @@ def family_of(zh: Path) -> str:
         pass
     if _is_glyph(Path(zh)):
         return FAMILY_GLYPH
+    if _is_poster(Path(zh)):
+        return FAMILY_POSTER
     return FAMILY_ARTFONT
 
 
@@ -719,8 +744,46 @@ def _flat_ref(src_im: Image.Image, work: Path) -> Path:
     return out
 
 
+POSTER_PROMPT = """\
+This is an image-edit task for a mobile-game event poster. Take the reference artwork and redo its \
+baked-in Chinese headline in English.
+
+Chinese text currently in the image: 「{zh}」
+
+Replace it with exactly these lines, keeping their order:
+{lines_block}
+Layout / styling: {layout_line}
+
+Hard requirements — if any of these is broken the output is unusable:
+1. Keep the artwork: illustration, characters, the item icons, glow, lighting, background textures and \
+every decorative element must stay as they are. Do not add, remove or move any object.
+2. Keep the ribbon / plate that carries the text: same shape, same position, same rotation, same inner \
+fill, same bright rim light and same drop shadow.
+3. Keep each line's styling exactly like the original line it replaces: same gradient direction, same \
+colours, same thick dark outline, same glow, same italic slant, same left alignment, same relative size. \
+Only the letters change: Chinese becomes English.
+4. Keep the hand-lettered game font look (heavy, slanted, slightly condensed). Do NOT switch to a thin \
+geometric sans-serif.
+5. Every Chinese character must be gone. No Chinese / Japanese / Korean glyphs anywhere.
+6. Do not add any word, number, logo, watermark or signature that is not listed above, and do not repeat \
+the words.
+7. Canvas keeps the same aspect ratio as the reference image.
+
+Output one single image.
+"""
+
+
 def build_prompt(zh: Path, entry: dict, lines: list[str], title: str, fam: str) -> str:
     """提示词只描述「怎么翻」，不写死版面数值 —— 数值由本地归位负责。"""
+    if fam == FAMILY_POSTER:
+        body = "\n".join(f"  {i + 1}. {t}" for i, t in enumerate(lines))
+        return POSTER_PROMPT.format(
+            zh=entry.get("zh_text") or entry.get("note") or zh.stem,
+            lines_block=body,
+            layout_line=entry.get("gpt_layout") or
+            "Same placement as the original: the first line is the big one, the following line(s) sit "
+            "under it with the same indent and the same slant.")
+
     if fam == FAMILY_GLYPH:
         if len(lines) == 1:
             lines_block = f"  - {lines[0]}  (single word, as large as the original)"
@@ -931,6 +994,8 @@ def cmd_scan(args) -> int:
         pool += sorted(ZH_DIR.glob(BANNER_GLOB))
     if family in ("auto", FAMILY_GLYPH):
         pool += glyph_targets(mapping)
+    if family in ("auto", FAMILY_POSTER):
+        pool += poster_targets(mapping)
     if family in ("auto", FAMILY_ATLAS):
         pool += atlas_targets(mapping)
     # 同一张图可能同时被 BANNER_GLOB 与译名表命中（横幅也在表里），去重后再盘
@@ -1070,7 +1135,10 @@ def cmd_run(args) -> int:
     entry = load_map().get(zh.name, {})
     title = args.title or entry.get("title") or ""
     lines = args.lines.split("|") if args.lines else entry.get("lines") or []
-    if not lines or (fam == FAMILY_ARTFONT and not title):
+    # `title` 只有本地排字（local + artfont 三段版面）才必需：模型的整幅提示词里标题可有可无，
+    # poster / glyph 本来就没有小标题。以前一律要 title，海报会在这一步被判「缺译名」。
+    need_title = provider == PROVIDER_LOCAL and fam == FAMILY_ARTFONT
+    if not lines or (need_title and not title):
         print(f"⚠ {zh.name} 没有译名：请在 {MAP_FILE.relative_to(ROOT)} 里补 title/lines，"
               f"或用 --title/--lines 传", file=sys.stderr)
         return 3
@@ -1082,6 +1150,10 @@ def cmd_run(args) -> int:
         if fam == FAMILY_GLYPH:
             print(f"⚠ {zh.name} 是 glyph 族（{size[0]}x{size[1]} 单色美术字块）：本地只能排 Arial，"
                   f"那等于把原图的笔画风格换掉 ⇒ 请用 --provider chatgpt_web", file=sys.stderr)
+            return 3
+        if fam == FAMILY_POSTER:
+            print(f"⚠ {zh.name} 是 poster 族（{size[0]}x{size[1]} 全幅海报）：本地既没有纯色底板可补、"
+                  f"也没有可写死的版面锚点 ⇒ 请用 --provider chatgpt_web", file=sys.stderr)
             return 3
         # 尺寸闸门：本地工序按 884x544 的版面锚点走；工程里几张 100x100 的占位图会在补底板时炸形状
         if size[0] < 600 or size[1] < 400:
@@ -1368,6 +1440,26 @@ def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str
     return checks, warns
 
 
+def verify_poster(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], list[str]]:
+    """海报口径 = 整幅重绘的通用口径 + 一条「彩带区真的动过」。
+
+    为什么不再加更硬的闸门：同族已上线的 `cn2-X1_zhutihuodong_liutianmowang_en.png` 与中文版
+    逐像素比是 **73.6% 改动 / 平均差 128**（插画和彩带都是模型重画的），拿「背景零改动」当红线
+    只会把这类成品全判红。能自动担保的只有「尺寸/alpha/改没改/改得有多狠」，剩下的必须人眼看图。
+    """
+    checks, warns = verify_photo_gpt(work, state)
+    a_src = np.asarray(Image.open(work / "src.png").convert("RGB")).astype(int)
+    a_out = np.asarray(Image.open(work / "out.png").convert("RGB")).astype(int)
+    h = a_src.shape[0]
+    band = slice(0, int(h * 0.45))               # 文字彩带在上半部
+    diff = np.abs(a_src[band] - a_out[band]).max(axis=2)
+    ratio = float((diff > 24).mean())
+    checks.append(("彩带文字区确实重画过", ratio >= 0.03,
+                   f"上 45% 区域改动像素 {ratio:.1%}（太小说明模型没动字）"))
+    warns.append("整幅海报是模型重绘的：彩带边缘、插画细节会与中文版有细微差别，务必看图确认")
+    return checks, warns
+
+
 def run_verify(work: Path, state: dict):
     """按 provider / family 选口径。provider 决定「谁画的」，family 决定「画的是什么」。"""
     fam = state.get("family") or FAMILY_ARTFONT
@@ -1376,6 +1468,8 @@ def run_verify(work: Path, state: dict):
         return verify_atlas(work, state) if fam == FAMILY_ATLAS else verify_artfont(work, state)
     if fam == FAMILY_GLYPH:
         return verify_glyph(work, state)
+    if fam == FAMILY_POSTER:
+        return verify_poster(work, state)
     return verify_photo_gpt(work, state)
 
 
@@ -1414,6 +1508,17 @@ def cmd_verify(args) -> int:
 # --------------------------------------------------------------------------- #
 # 子命令：publish
 # --------------------------------------------------------------------------- #
+def _fresh_meta_ids(text: str) -> str:
+    """把 meta 里的 guid 与 spriteID 换成新的。
+
+    🔴 只换 guid 不够：`spriteID` 是 SpriteAtlas 打包变体时的引用键，两份资源共用一个 id
+       会互相顶掉（旧版 tab 01/02 就是这么生成的，隐患一直挂着）。两处一起换才干净。
+    """
+    text = re.sub(r"^guid: .*$", "guid: " + uuid.uuid4().hex, text, count=1, flags=re.M)
+    return re.sub(r"^(\s*)spriteID: .*$", lambda m: f"{m.group(1)}spriteID: {uuid.uuid4().hex}",
+                  text, count=1, flags=re.M)
+
+
 def ensure_meta(target: Path, src_hint: Path | None = None) -> str:
     """目标 png 缺 .meta 时，从同族资源复制一份并换新 guid。
 
@@ -1430,10 +1535,9 @@ def ensure_meta(target: Path, src_hint: Path | None = None) -> str:
 
     src_meta = Path(str(src_hint) + ".meta") if src_hint is not None else None
     if src_meta is not None and src_meta.exists():
-        text = re.sub(r"^guid: .*$", "guid: " + uuid.uuid4().hex,
-                      src_meta.read_text(encoding="utf-8"), count=1, flags=re.M)
+        text = _fresh_meta_ids(src_meta.read_text(encoding="utf-8"))
         meta.write_text(text, encoding="utf-8")
-        return f"按中文源图 {src_meta.name} 模板生成（新 guid，导入设置完全一致）"
+        return f"按中文源图 {src_meta.name} 模板生成（新 guid/spriteID，导入设置完全一致）"
 
     stem = target.name[: -len("_en.png")]  # cn2-X1_zhanling_miwu_bg
     family = stem.split("_")[1] if "_" in stem else ""  # zhanling
@@ -1457,10 +1561,9 @@ def ensure_meta(target: Path, src_hint: Path | None = None) -> str:
     if template is None:
         return "⚠ 同目录没有可参照的 .meta，需要 Unity 重新导入生成"
 
-    text = template.read_text(encoding="utf-8")
-    text = re.sub(r"^guid: .*$", "guid: " + uuid.uuid4().hex, text, count=1, flags=re.M)
+    text = _fresh_meta_ids(template.read_text(encoding="utf-8"))
     meta.write_text(text, encoding="utf-8")
-    return f"按 {template.name} 模板生成（新 guid）"
+    return f"按 {template.name} 模板生成（新 guid/spriteID）"
 
 
 def cmd_publish(args) -> int:
@@ -1484,9 +1587,10 @@ def cmd_publish(args) -> int:
 
     shutil.copyfile(work / "out.png", target)
     fam = state.get("family") or FAMILY_ARTFONT
-    # atlas / glyph：目标目录与源图同一套族结构，中文源图自己的 .meta 就是最准的模板
-    # （同一个图集、同一份导入设置）；artfont 横幅仍按「同族 bg_en」挑，见 ensure_meta 注释。
-    meta_hint = ROOT / state["asset"] if fam in (FAMILY_ATLAS, FAMILY_GLYPH) else None
+    # atlas / glyph / poster：目标目录与源图同一套族结构，中文源图自己的 .meta 就是最准的模板
+    # （同一张图、同一份导入设置）；artfont 横幅仍按「同族 bg_en」挑，见 ensure_meta 注释。
+    meta_hint = ROOT / state["asset"] if fam in (FAMILY_ATLAS, FAMILY_GLYPH,
+                                                 FAMILY_POSTER) else None
     meta_note = ensure_meta(target, meta_hint)
 
     state["published"] = {
@@ -1541,6 +1645,21 @@ def glyph_targets(mapping: dict) -> list[Path]:
     return sorted(out)
 
 
+def poster_targets(mapping: dict) -> list[Path]:
+    """poster 族同样走白名单（译名表里有 lines 才算）。
+
+    banner/ 下 18 张海报，多数还没译名；扫全目录只会把「缺译名」刷成一片黄。
+    """
+    out: list[Path] = []
+    for name, entry in mapping.items():
+        if name.startswith("_") or not (entry.get("lines") or entry.get("title")):
+            continue
+        for hit in ZH_ROOT.rglob(name):
+            if hit.name.endswith("_zh.png") and _is_poster(hit):
+                out.append(hit)
+    return sorted(out)
+
+
 def _name_keys(zh: Path) -> set[str]:
     """`--only` 的可接受写法：带扩展名、不带扩展名、去掉 _zh 后缀，三种都认。
 
@@ -1589,6 +1708,8 @@ def cmd_batch(args) -> int:
             pool += sorted(ZH_DIR.glob(BANNER_GLOB))
         if family in ("auto", FAMILY_GLYPH):
             pool += glyph_targets(mapping)
+        if family in ("auto", FAMILY_POSTER):
+            pool += poster_targets(mapping)
         if family in ("auto", FAMILY_ATLAS):
             pool += atlas_targets(mapping)
         seen: set[Path] = set()
@@ -1717,7 +1838,7 @@ def main() -> int:
     p.add_argument("--quiet", action="store_true", help="只打一行汇总（收尾复核用）")
     p.add_argument("--run", default="", help="Jenkins 证据目录（登记环节结论用）")
     p.add_argument("--strict-ok", action="store_true", help="即使有缺失也返回 0")
-    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_GLYPH, FAMILY_ATLAS],
+    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_GLYPH, FAMILY_POSTER, FAMILY_ATLAS],
                    help=fam_help)
     p.set_defaults(func=cmd_scan)
 
@@ -1726,7 +1847,7 @@ def main() -> int:
     p.add_argument("--title", default="")
     p.add_argument("--lines", default="", help='用 | 分隔，如 "UNLOCK|ADVANCED|BATTLE PASS"')
     p.add_argument("--work", default="")
-    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_GLYPH, FAMILY_ATLAS],
+    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_GLYPH, FAMILY_POSTER, FAMILY_ATLAS],
                    help=fam_help)
     _add_provider_args(p)
     p.set_defaults(func=cmd_run)
@@ -1749,7 +1870,7 @@ def main() -> int:
     p.add_argument("--asset", default="", help="只跑这一张（相对工程根，MODE=one 用）")
     p.add_argument("--force", action="store_true", help="已有英文版 / 已验收过也重做")
     p.add_argument("--run", default="")
-    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_GLYPH, FAMILY_ATLAS],
+    p.add_argument("--family", default="auto", choices=["auto", FAMILY_ARTFONT, FAMILY_GLYPH, FAMILY_POSTER, FAMILY_ATLAS],
                    help=fam_help)
     _add_provider_args(p)
     p.set_defaults(func=cmd_batch)

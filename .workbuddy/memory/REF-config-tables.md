@@ -48,3 +48,10 @@
 - 🔴 `scripts/resource_build.sh` 的 `ORIG_ARGS=("$@")` 必须在 **while 解析之前**取。
   放在后面 = 重入时 argv 已空 ⇒ `--action export` 跑成 `all`（白多建一次 AB）、`--server-env` 丢失
   （AB 打进工程当前 version.txt 口径 = 连错服）。已在 2026-10-21 修（提交 `69726cc00`）。
+
+## 🔴 2026-10-22：手改 DataConfigMD5Record.asset 的 CRC 落点必须按下标反查
+- `_keys:`/`_values:` 两个平行数组，**首条目在标记行的下一行**（数组下标 0 = 标记行行号+1）。
+  用「目标行号 − 标记行行号」会**差 1**，实测把 Language 的 CRC 写进了下一张表（WorkShopEquipmentConfig）的槽位。
+- 正确姿势：改完先 `git show HEAD:<xlsx>` 算旧 CRC，在 `_values` 里**反查该值所在的数组下标**确认落点，再写入新 CRC；写完 diff asset 确认只有 1 行变化。
+- 导表全量重导会把 288 张服务端 txt 全部重写（影子目录 TimeSpaceServer/skzc/.../conf/server），属正常；真实服务端仓不consume Language 表，无需同步。
+- 字节码验证别用 `grep -aoc "中文"`（BSD grep 对 binary+多字节不可靠），用 python `data.count("...".encode())`。

@@ -265,13 +265,17 @@ function VipPanel:InitAllRedBtn()
     end
 end
 
+-- 页签红点：只表达「这一档有零成本可拿的东西」，与右侧面板块口径一致。
+-- 🔴 原来这里用的是 VipManager.GetBtnListRed（「礼包还能买且没点开过」），
+--    线上表现就是 VIP1/VIP2/VIP3 三颗红点同时亮，玩家点进去只看到 800/3450/4950 钻石的价格，
+--    没有任何「领取」⇒ 点完三颗，三颗一起消失（一次性引导），与「可领奖」完全无关。
+--    每日礼包/月卡奖励仍由 dailyGiftBg 里那个领取按钮自己的红点 + 外层入口红点（99975）表达。
 function VipPanel:SetBtnRedState(level)
-    local isShow = VipManager.GetBtnListRed(level)
-    this.btnRedPointList[level + 1]:SetActive(isShow)
-
-    if level == 0 and VipManager.RefreshEveryDayGiftRedpoint() then
-        this.btnRedPointList[level + 1]:SetActive(true)
+    local redPoint = this.btnRedPointList[level + 1]
+    if redPoint == nil then
+        return
     end
+    redPoint:SetActive(VipManager.HasFreeVipGift(level))
 end
 
 ----------------------------- 特权信息显示 --------------------------------------
@@ -521,6 +525,8 @@ function VipPanel:BuyVipGift()
             if heroNum + shopItemNum <= limit then
                 ShopManager.RequestBuyShopItem(giftData.shopType, giftData.shopItemId, 1, function ()
                     VipPanel:FreshBuyBtnState(giftData.costNum)
+                    --买完就没有「零成本可拿」了 ⇒ 页签红点要当场灭（原来只在点击时灭，现在不靠点击）
+                    VipPanel:SetBtnRedState(curChooseLevel)
                     CheckRedPointStatus(RedPointType.GrowthPackage)
                     CheckRedPointStatus(RedPointType.VipPanel)
                 end)
@@ -531,6 +537,8 @@ function VipPanel:BuyVipGift()
     else
         ShopManager.RequestBuyShopItem(giftData.shopType, giftData.shopItemId, 1, function ()
             VipPanel:FreshBuyBtnState(giftData.costNum)
+            --买完就没有「零成本可拿」了 ⇒ 页签红点要当场灭（原来只在点击时灭，现在不靠点击）
+            VipPanel:SetBtnRedState(curChooseLevel)
             CheckRedPointStatus(RedPointType.GrowthPackage)
             CheckRedPointStatus(RedPointType.VipPanel)
         end)

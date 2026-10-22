@@ -299,20 +299,48 @@ function this.SetBuyBtnRed(level, value)
     PlayerPrefs.SetInt(PlayerManager.uid .. "VIP_GIFT" .. level, value)
 end
 
--- 一排按钮的红点
+-- 一排按钮的红点（历史函数，语义是「这档礼包**还能买**且没点开看过」）
+-- 🔴 不要拿它驱动 VIP1/VIP2/VIP3 那排页签红点：它表达的是「可购买」，玩家读成「可领取」，
+--    点进去只有价格和购买按钮 ⇒ 「亮着但没有奖可领」。页签红点请用 HasFreeVipGift（见下）。
 function this.GetBtnListRed(level)
     local data = this.vipShopData[level + 1]
+    if data == nil then
+        return false
+    end
     local leftNum = ShopManager.GetShopItemRemainBuyTimes(SHOP_TYPE.VIP_GIFT, data.Id)
-
-    local canBuy = false -- 剩余购买次数大于0
-    if leftNum > 0 and this.GetVipLevel() >= level then
-        canBuy = true
-    else
-        canBuy = false
+    if leftNum == nil then
+        return false
     end
 
-    local isFirst = this.GetBuyBtnRedState(level) == 0  -- 今天或者解锁后的第一次点击
+    local canBuy = false -- 剩余购买次数大于0（-1 = 不限购，也算能买）
+    if (leftNum > 0 or leftNum == -1) and this.GetVipLevel() >= level then
+        canBuy = true
+    end
+
+    local isFirst = this.GetBuyBtnRedState(level) == 0  -- 解锁后的第一次点击
     return isFirst and canBuy
+end
+
+--- 该档位有没有「零成本就能拿走」的东西（0 元购 / 活动打折到 0）。
+--- 页签红点只认这个：红点 = 可领，花钱才能买的礼包不点亮红点。
+--- 判定与面板右侧「购买按钮 + 价格」同源：剩余次数够（-1 不限购）且实付为 0。
+function this.HasFreeVipGift(level)
+    local data = this.vipShopData[level + 1]
+    if data == nil then
+        return false
+    end
+    if this.GetVipLevel() < level then
+        return false -- 还没解锁
+    end
+    local leftNum = ShopManager.GetShopItemRemainBuyTimes(SHOP_TYPE.VIP_GIFT, data.Id)
+    if leftNum == nil then
+        return false
+    end
+    if leftNum < 1 and leftNum ~= -1 then
+        return false -- 次数已用尽
+    end
+    local costId, finalCost = ShopManager.calculateBuyCost(SHOP_TYPE.VIP_GIFT, data.Id, 1)
+    return finalCost == 0
 end
 
 -- 检查红点

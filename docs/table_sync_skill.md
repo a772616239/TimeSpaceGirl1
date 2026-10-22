@@ -1,6 +1,6 @@
 # 导表服务端同步 skill（table_sync）
 
-> 适用范围：`data_execl/base_data/*.xlsx` 改完之后，要让**线上服读到的配置**和客户端 lua 对齐。
+> 适用范围：`data_execl/base_data/*.xlsx` 改完之后，要让**测试服和线上服读到的配置**都和客户端 lua 对齐。
 > 更新时间：2026-10-22
 > 关联文档：`导表实跑与三处断点-20261020.md`（导出链路本身的三处断点）、
 > `测试服导表部署与角标核查-20261021.md`（nil→null 那次事故）、
@@ -11,12 +11,22 @@
 
 ## 0. 一句话
 
-**导表只写本地影子目录，线上服那份从来没被推过** —— 客户端 lua 与服务端 txt 同源同一次导出，
+**导表只写本地影子目录，两套服务端那份从来没被推过** —— 客户端 lua 与服务端 txt 同源同一次导出，
 但 `DataConfigSetting.serverOutputDir` 指向 `TimeSpaceServer/skzc/.../conf/server`（git 里的影子目录），
-而线上真正读的是 `gs:/home/java/gameserver/conf/server`。两条链之间没有任何自动衔接，
+而服务端真正读的是另外两处。三条链之间没有任何自动衔接，
 于是出现「客户端显示 0、服务端还能领」这类口径差，以及历史上反复的 `NoSuchMethodError`。
 
-`table_sync.py` 补的就是这一段：**导表成功后，把「本次真正改动」的表增量推到线上**。
+`table_sync.py` 补的就是这一段：**导表成功后，把「本次真正改动」的表增量推到两套服务端**。
+
+### 两个目标，缺一不可
+
+| 目标 | 位置 | 谁在用 |
+|---|---|---|
+| `local` 本机测试服 | `~/home/java/gameserver/{conf,assets/conf}/server` | Unity 编辑器、测试包（局域网 192.168.3.x:8081 + 游戏服 16081） |
+| `gs` 线上服 | `gs:/home/java/gameserver/{conf,assets/conf}/server` | 现网 129.226.213.65 |
+
+只推一边等于没改：测试服旧表 → 自测过的东西上线不成立；线上旧表 → 客户端显示与服务端校验继续对不上。
+而且两套现在**本来就不是一个版本**（2026-10-22 实测有 3 张表判定不同，见第 6 节）。
 
 ---
 
@@ -24,9 +34,9 @@
 
 2026-10-22 全量语义审计（406 张 txt）的结论，三种事故都是整目录覆盖直接造成的：
 
-| 表 | 线上 | 仓库 | 整表覆盖的后果 |
+| 表 | 线上/测试服 | 仓库 | 整表覆盖的后果 |
 |---|---|---|---|
-| `Language.txt` | 5 列（含 `Korean`） | 4 列 | 韩语列整个消失，线上韩语全空 |
+| `Language.txt` | 5 列（含 `Korean`） | 4 列 | 韩语列整个消失，韩语全空 |
 | `EncourageTaskConfig.txt` | 296 行 | 270 行 | **删掉线上 16001~16025 共 25 条任务** |
 | `MultiLanguage.txt` | 有 id 10301 | 没有 | 同上，删线上行 |
 | 30+ 张内容表 | 装机版本 | 2026 开发版 | 随机奖励 / 觉醒属性 / 新道具段**直接开给线上玩家** |
@@ -38,22 +48,26 @@
 ## 2. 怎么用
 
 ```bash
-# ① 体检（默认，只读线上，不改任何东西）
+# ① 体检（默认，只读两个目标，不改任何东西）
 python3 scripts/table_sync.py
 
-# ② 推「本次导表改动」且通过体检的表
+# ② 推「本次导表改动」且通过体检的表（默认 local + gs 都推）
 python3 scripts/table_sync.py --apply
 
-# ③ 只推指定几张（表名可省 .txt）
+# ③ 只推某一边
+python3 scripts/table_sync.py --apply --targets local   # 只推本机测试服
+python3 scripts/table_sync.py --apply --targets gs      # 只推线上服
+
+# ④ 只推指定几张（表名可省 .txt）
 python3 scripts/table_sync.py --apply --only StoreConfig,VipLevelConfig
 
-# ④ 点名强推（体检红灯也推，慎用）
+# ⑤ 点名强推（体检红灯也推，慎用）
 python3 scripts/table_sync.py --apply --only Language --force
 
-# ⑤ 把历史漂移全推（含未发布内容，非交互必须 --yes）
+# ⑥ 把历史漂移全推（含未发布内容，非交互必须 --yes）
 python3 scripts/table_sync.py --apply --include-drift --yes
 
-# ⑥ 推完重启游戏服（不重启则新数值不生效）
+# ⑦ 推完重启（本机 launchctl 立即生效；线上会踢线，非交互需 --yes）
 python3 scripts/table_sync.py --apply --restart
 ```
 
@@ -62,20 +76,24 @@ python3 scripts/table_sync.py --apply --restart
 ```bash
 scripts/resource_build.sh --action export                     # 导表 + 自动同步（默认 apply）
 scripts/resource_build.sh --action export --sync-tables plan  # 导表 + 只体检
-scripts/resource_build.sh --action export --sync-tables off   # 导表但不碰线上
+scripts/resource_build.sh --action export --sync-tables off   # 导表但不碰服务端
 scripts/resource_build.sh --action export --sync-strict       # 同步失败算构建失败
 ```
 
-同步失败默认**不拖垮导表**（产物已在本地，线上只是「还是旧的」），明细写
+同步失败默认**不拖垮导表**（产物已在本地，服务端只是「还是旧的」），明细写
 `build/table_sync/reports/sync_<时间戳>.md`。
 
 退出码：`0` 正常｜`2` 参数/环境错｜`3` 传输或校验失败｜`4` 有被拦下的表（仅 `--strict`）｜`5` 缺 `--yes`
+
+> 判定是按「表 × 目标」算的：同一张表可能线上能推、测试服不能推（或反过来）。
+> 基线只在**所有选中目标都到位**之后才前移，所以某一边失败不会让下次漏推。
 
 ---
 
 ## 3. 「本次改动」是怎么算出来的（基线机制）
 
-基线文件 `build/table_sync/state.json`，每张表记一个**语义指纹**：
+基线文件 `build/table_sync/state.json`（v2：全局一份 `sig` + 各目标 `last_sync_at`），
+每张表记一个**语义指纹**：
 
 ```
 指纹 = md5( 表头 + 按主键排序后的每一行（单元格归一化） )
@@ -103,12 +121,12 @@ scripts/resource_build.sh --action export --sync-strict       # 同步失败算�
 | `SAME` | 归一化后逐格一致 | 不推（不需要） |
 | `VALUE_DIFF` | 同主键、部分单元格值不同 | ✅ 推 |
 | `ROW_ADD` | 本地新增主键 | ✅ 推 |
-| `NEW` | 线上没有这张表 | ✅ 推 |
+| `NEW` | 目标没有这张表 | ✅ 推 |
 | `COL_GAIN` | 本地多列 | ⚠ 推（服务端按字段名反射注入，需确认 `S*Config` 有该字段） |
-| `COL_LOSS` | 本地列数少于线上 | 🔴 拦（覆盖会丢列，`Language` 就死在这） |
-| `ROW_LOSS` | 线上有主键、本地没有 | 🔴 拦（覆盖会删线上数据） |
+| `COL_LOSS` | 本地列数少于目标 | 🔴 拦（覆盖会丢列，`Language` 就死在这） |
+| `ROW_LOSS` | 目标有主键、本地没有 | 🔴 拦（覆盖会删目标数据） |
 | `HEADER_DIFF` | 表头字段名/顺序不一致 | 🔴 拦（覆盖会串列） |
-| `REMOTE_ONLY` | 线上有、本地导出没有 | 🔴 永不删（可能纯后端表/已下线表） |
+| `REMOTE_ONLY` | 目标有、本地导出没有 | 🔴 永不删（可能纯后端表/已下线表） |
 | `REVIEW` | 人工复核名单 | 🔴 拦（`Language` / `MultiLanguage` / `Encourage*` / `RewardItemConfig`） |
 | `PARSE_FAIL` | 某行列数超过表头（串列风险） | 🔴 拦 |
 | `NIL_CELLS` | **数值列里是 `nil`** | 🔴 拦（见第 5 节，这条最重要） |
@@ -137,14 +155,19 @@ if ("null".equals(value) || isEmpty(value) || " ".equals(value)) return new int[
    （逐单元格验证过：5009 个单元格，零其他改动，行尾风格不变），等价于重跑导表。
    ⚠️ 它会改 git 工作区里的 txt，记得和导表产物一起提交。
 
-### 5.2 推完不重启等于没推
+### 5.2 推完不重启等于没推（两边重启姿势不同）
 
-`STableManager` 只在启动时 `initMap`。推完表不重启，线上还是旧数值。
-要么 `--restart`（跑 `RESTART-GAMESERVER.sh`），要么手工：
+`STableManager` 只在启动时 `initMap`。推完表不重启，服务端还是旧数值。
 
 ```bash
+# 本机测试服：launchd 立即重启（秒级，不踢人）
+launchctl kickstart -k gui/$(id -u)/com.ts.localserver.gameserver
+
+# 线上服：会踢线，必须确认后再做
 ssh gs "bash /home/java/gameserver/RESTART-GAMESERVER.sh"
 ```
+
+`--restart` 两个目标都重启；线上那条在非交互环境需要 `--yes`，否则只提示不执行。
 
 ### 5.3 两个目录都要写
 
@@ -154,35 +177,50 @@ ssh gs "bash /home/java/gameserver/RESTART-GAMESERVER.sh"
 
 ### 5.4 ssh 每次握手 2~3 秒，别逐目录调
 
-`md5sum` 清单用一次 ssh 拿两个目录（`remote_md5s_multi`），逐目录调会把 20 秒的活干成 1 分钟。
+`md5sum` 清单用一次 ssh 拿两个目录（`Target.md5s`），逐目录调会把 20 秒的活干成 1 分钟。
 
-### 5.5 线上快照缓存的键必须带 `--remote-base`
+### 5.5 远端快照缓存的键必须带 base
 
-用 `--remote-base` 指向测试目录跑一次，如果缓存键只用目录名（`snap_conf_server`），
+用 `--gs-base` 指向测试目录跑一次，如果缓存键只用目录名（`snap_conf_server`），
 会把生产快照缓存覆盖成测试内容，下次比对直接 `EOFError: Compressed file ended...`。
-已改成 `snap_<remote_base 的 md5 前 8 位>_<dir>`。
+已改成 `snap_<base 的 md5 前 8 位>_<dir>`。
 
 ### 5.6 `--include-drift` 是给审计用的，不是日常同步
 
-它会把 31 张漂移表全纳入候选（含未发布内容）。日常同步永远用默认的基线增量。
+它会把所有漂移表全纳入候选（含未发布内容）。日常同步永远用默认的基线增量。
+
+### 5.7 两套服务端本来就不是一个版本，别假设「推一边就够」
+
+2026-10-22 实测：同一批表，`local` 漂移 30 张、`gs` 漂移 31 张，**有 3 张判定不同**：
+
+| 表 | 本机测试服 | 线上服 | 说明 |
+|---|---|---|---|
+| `ActivityRewardConfig` | `VALUE_DIFF` | `SAME` | 测试服落后 |
+| `LuckyCatConfig` | `SAME` | `VALUE_DIFF` | 线上落后（32 行 `ValueUp`/`ValueDown`） |
+| `RechargeCommodityConfig` | `SAME` | `VALUE_DIFF` | 线上落后（10-21 手工补过测试服，线上没补） |
 
 ---
 
-## 6. 本次实测数据（2026-10-22 22:05）
+## 6. 本次实测数据（2026-10-22 22:25，双目标）
 
-本地影子目录 406 张 txt vs 线上 406 张：
+本地影子目录 406 张 txt：
 
-| 结果 | 数量 |
-|---|---|
-| 语义一致（`SAME`） | 375 |
-| 语义漂移 | **31** |
-| 其中 `VALUE_DIFF` | 23（`MainLevelConfig` 2540 行、`SupremacyLevelConfig` 933 行、`MonsterConfig` 6 行…） |
-| 其中 `ROW_LOSS` | 3（`EncourageTaskConfig` 25 行、`EncouragePlanConfig` 1 行、`MultiLanguage` 1 行） |
-| 其中 `COL_LOSS` | 1（`Language` 缺 `Korean`） |
-| 其中 `HEADER_DIFF` | 1（`ChannelRechargeIdConfig` 少 `Android_99_Child2`） |
-| 其中 `ROW_ADD` | 1（`ChannelConfig` 16/17） |
-| 其中 `COL_GAIN` | 1（`SkillLogicConfig` 多 `IgnoreControl`） |
-| 其中 `REVIEW` | 1（`RewardItemConfig` 103 个 990000+ 道具） |
+| 结果 | 本机测试服 local | 线上服 gs |
+|---|---|---|
+| 语义漂移 | **30** | **31** |
+| 其中 `VALUE_DIFF` | 16 | 17 |
+| 其中 `NIL_CELLS`（同时有值差异） | 6 | 6 |
+| 其中 `ROW_LOSS` | 3（`EncourageTaskConfig` 25 行、`EncouragePlanConfig` 1 行、`MultiLanguage` 1 行） | 同左 |
+| 其中 `COL_LOSS` | 1（`Language` 缺 `Korean`） | 同左 |
+| 其中 `HEADER_DIFF` | 1（`ChannelRechargeIdConfig` 少 `Android_99_Child2`） | 同左 |
+| 其中 `ROW_ADD` | 1（`ChannelConfig` 16/17） | 同左 |
+| 其中 `COL_GAIN` | 1（`SkillLogicConfig` 多 `IgnoreControl`） | 同左 |
+| 其中 `REVIEW` | 1（`RewardItemConfig` 103 个 990000+ 道具） | 同左 |
+
+> `VALUE_DIFF` 里最大的几张：`MainLevelConfig` 2540 行、`SupremacyLevelConfig` 933 行、
+> `RewardGroup` 320 行、`MonsterConfig` 6 行。
+> 数值列含 `nil` 的表共 **54** 张（`StoreConfig` 一张 5009 个），推之前必须 `--fix-nil` 或重跑导表。
+
 | 数值列含 `nil` 的表 | **54**（必须先 `--fix-nil` 或重跑导表） |
 
 对照审计底稿（37 张）：`EquipTalismana`（3604 行）、`WorkShopSetting`、`ArtifactSkillConfig`、
@@ -194,10 +232,12 @@ ssh gs "bash /home/java/gameserver/RESTART-GAMESERVER.sh"
 
 ## 7. 待决策（工具不替人做）
 
-- 31 张漂移里，哪几张属于「客户端已经发布、服务端必须跟上」？
+- 漂移表里哪几张属于「客户端已经发布、服务端必须跟上」？
   按审计建议分三批：批 2 是纯结构补齐（`SkillLogicConfig` / `RechargeCommodityConfig` /
   `ChannelRechargeIdConfig` + `Language` 补 Korean 列），批 3 是内容型数值表（跟版本走）。
 - `RechargeCommodityConfig` 本地多 `SystemMessageShow` 列，42 行 `=1` 意味着那些礼包
   **不再发系统消息**，属行为变更，需产品确认后再推。
-- 线上 `Language.txt` 的 `Korean` 列要不要先在导出器里补上（`DataHelper` 的类型行），
-  否则这张表永远 `COL_LOSS`、永远推不了。
+- `Language.txt` 的 `Korean` 列要不要先在导出器里补上（`DataHelper` 的类型行），
+  否则这张表在两个目标上永远 `COL_LOSS`、永远推不了。
+- 测试服和线上服的差异（`ActivityRewardConfig` / `LuckyCatConfig` / `RechargeCommodityConfig`）
+  是先对齐测试服到线上，还是反过来？这决定 `--targets` 选哪一边。

@@ -13,8 +13,9 @@
 #   scripts/resource_build.sh --action all  --server-env 正式服  # 先导表再重建 AB（两次 Unity 启动）
 #
 # 🔴 --sync-tables（默认 apply）：导表成功后调用 scripts/table_sync.py，把「本次导表改动的
-#    服务端 txt」增量推到线上服（gs:/home/java/gameserver/conf/server + assets/conf/server）。
-#    为什么默认开：客户端 lua 与服务端 txt 同源，但服务端那份从来没被推过 ⇒ 客户端显示
+#    服务端 txt」增量推到两套服务端：本机测试服 ~/home/java/gameserver 与线上服
+#    gs:/home/java/gameserver（各含 conf/server + assets/conf/server）。只推一边等于没改。
+#    为什么默认开：客户端 lua 与服务端 txt 同源，但服务端那两份从来没被推过 ⇒ 客户端显示
 #    一套、服务端校验另一套。为什么不整目录 rsync：Language 会丢 Korean 列、
 #    EncourageTaskConfig 会删线上 25 条任务、30+ 张是未发布内容 —— 详见 docs/table_sync_skill.md。
 #    工具只推「基线差异」里的表，且逐张过结构体检（列丢失/行丢失/nil 空值一律拦下），

@@ -375,7 +375,7 @@ scripts/cheat_scan.py --uid <UID> --json    # 机器可读
 | AB 构建/拷贝 | `Assets/Scripts/Editor/GameEditor/FrameTool/FrameTool.cs` | `BuildGameAssetBundles` / `CopyAssetBundleToStreamingAssets` / `BuildLuaAssetBundles` |
 | 导表 | `Assets/Scripts/Editor/ExcelTool/DataConfig/DataConfigWindow.cs` | xlsx → 客户端 lua |
 | 导表（无头） | `scripts/resource_build.sh --action export` | Unity batchmode 跑 `BatchResourceBuild.ExportTables`，导表后默认接服务端同步 |
-| **服务端表同步** | `scripts/table_sync.py` | 导表产物 → 线上服 `conf/server` + `assets/conf/server`，增量 + 结构体检 + 备份校验。**不能整目录覆盖**，详见 `table_sync_skill.md` |
+| **服务端表同步** | `scripts/table_sync.py` | 导表产物 → 本机测试服 + 线上服（各 `conf/server` 与 `assets/conf/server`），增量 + 结构体检 + 备份校验。**不能整目录覆盖**，详见 `table_sync_skill.md` |
 | 字节码编码器 | `LuaEncoder/luajit_mac/64/luajit` | `~Lua/*.lua` → `*.bytes` |
 | 自动签名 | `Assets/Scripts/Editor/AutoSignKeystore.cs` | 打包前注入 `beauty.keystore` |
 

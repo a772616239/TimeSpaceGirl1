@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""导表服务端同步（table_sync）：把本次导表改动的服务端 txt 安全推到线上服。
+"""导表服务端同步（table_sync）：把本次导表改动的服务端 txt 同步到各套服务端。
 
 ## 为什么需要它
 
@@ -9,14 +9,22 @@
 但 `DataConfigSetting.serverOutputDir` 只写本地影子目录：
 
     TimeSpaceServer/skzc/home/java/gameserver/conf/server      ← 导表写这里（git 里）
-    gs:/home/java/gameserver/conf/server                       ← 线上真正读这里
+    ~/home/java/gameserver/conf/server                         ← 本机测试服真正读这里
+    gs:/home/java/gameserver/conf/server                       ← 线上服真正读这里
 
 这条链从来没被打通 ⇒ 客户端显示一套数值、服务端校验另一套（「显示 0 还能领」、
 历史 `NoSuchMethodError` 都是这个结构问题的症状）。
 
+## 两个同步目标（都要，只改一边等于没改）
+
+| 目标 | 位置 | 谁在用 |
+|---|---|---|
+| `local` 本机测试服 | `~/home/java/gameserver/{conf,assets/conf}/server` | Unity 编辑器 / 测试包（192.168.3.x:8081 + 游戏服 16081） |
+| `gs` 线上服 | `gs:/home/java/gameserver/{conf,assets/conf}/server` | 现网 129.226.213.65 |
+
 ## 为什么不能整目录 rsync（2026-10-22 审计结论，必须尊重）
 
-    · Language.txt            线上 5 列（含 Korean），仓库 4 列 → 覆盖后韩语全空
+    · Language.txt            线上/测试服都是 5 列（含 Korean），仓库只有 4 列 → 覆盖后韩语全空
     · EncourageTaskConfig     线上独有 16001~16025 → 覆盖等于删掉线上 25 条任务
     · 30+ 张表是未发布内容（随机奖励 / 觉醒属性 / 新道具段）→ 覆盖等于给线上玩家开新数值
 
@@ -26,25 +34,27 @@
      （指纹 = 表头 + 按主键排序的行 + 单元格归一化后的 md5，
      所以尾随 TAB、`nil`↔`null`、`0.0`↔`0`、行序变化都不算改动）。
      没有基线时用 `git status` 的工作区差异当基线；**第一次跑只建基线，不推任何表**。
-  2. **每张候选表先做结构体检** —— 列丢失 / 行丢失 / 表头错位 / 人工复核名单，
-     命中任意一条直接拦下（拦下的表连 `--force` 都要显式点名才推）。
-  3. **推前整目录备份、推后双向 md5 校验** —— 线上 `tar.gz` 落本地 backups/。
-  4. **默认 `--plan` 只体检不改线上**；`--apply` 才写。
+  2. **每张候选表、每个目标先做结构体检** —— 列丢失 / 行丢失 / 表头错位 / nil 空值 /
+     人工复核名单，命中任意一条该目标就跳过（拦下的表连 `--force` 都要显式点名才推）。
+  3. **推前整目录备份、推后双向 md5 校验** —— 各目标 `tar.gz` 落本地 backups/。
+  4. **默认只体检**，`--apply` 才写；线上服重启会踢线，非交互环境还要 `--yes`。
 
 ## 用法
 
-    python3 scripts/table_sync.py                          # 体检（默认，不改线上）
-    python3 scripts/table_sync.py --apply                  # 推「本次改动」且通过体检的表
+    python3 scripts/table_sync.py                          # 体检（默认，不改任何服务端）
+    python3 scripts/table_sync.py --apply                  # 推「本次改动」且通过体检的表（两个目标）
+    python3 scripts/table_sync.py --apply --targets gs     # 只推线上服
+    python3 scripts/table_sync.py --apply --targets local  # 只推本机测试服
     python3 scripts/table_sync.py --apply --only A,B       # 只推指定表（仍过体检）
     python3 scripts/table_sync.py --apply --only A --force # 点名强推（体检红灯也推）
     python3 scripts/table_sync.py --apply --include-drift  # 连历史漂移一起推（危险，需 --yes）
+    python3 scripts/table_sync.py --apply --restart        # 推完重启（线上会踢线，需 --yes）
     python3 scripts/table_sync.py --status                 # 只打印基线与候选
-    python3 scripts/table_sync.py --apply --restart        # 推完重启游戏服
 
 退出码：0 正常 / 2 参数或环境错误 / 3 同步失败（传输或校验不过）
        4 存在被拦下的表（仅 --strict 时）/ 5 需要 --yes 但未提供
 
-依赖：本机 ssh 已配置 Host gs（~/.ssh/config + tencent-gameserver.pem），
+依赖：`gs` 目标依赖本机 ssh 别名（~/.ssh/config + tencent-gameserver.pem），
       与 scripts/server_health_check.py 共用同一个别名。
 """
 from __future__ import annotations
@@ -75,11 +85,14 @@ PROJECT_ROOT = BASE_DIR.parent
 # 导表产物（影子目录，git 跟踪）
 DEFAULT_LOCAL_DIR = PROJECT_ROOT / 'TimeSpaceServer/skzc/home/java/gameserver/conf/server'
 
-# 线上服：运行时读的第一份 + 资源目录里的那份，两份都要一致（2026-10-21 实测两个目录都要覆盖）
-REMOTE_BASE = '/home/java/gameserver'
-DEFAULT_REMOTE_DIRS = ['conf/server', 'assets/conf/server']
+# 各服务端根目录 + 要写的子目录（运行时读的那份 + 资源目录里那份，两份独立文件都要写）
+DEFAULT_DIRS = ['conf/server', 'assets/conf/server']
+LOCAL_BASE = Path.home() / 'home/java/gameserver'          # 本机测试服
+GS_BASE = '/home/java/gameserver'                          # 线上服
+LOCAL_RESTART_LABEL = 'com.ts.localserver.gameserver'
+GS_RESTART_SCRIPT = '/home/java/gameserver/RESTART-GAMESERVER.sh'
 
-# 本地真实服务端仓（打 jar 用），默认同步过去，避免仓库继续落后于线上
+# 本地真实服务端仓（打 jar 用），默认同步过去，避免仓库继续落后
 DEFAULT_MIRROR_DIR = PROJECT_ROOT / 'TimeSpaceServer/Server_x1tag1.2.2/server_game/conf/server'
 
 WORK_DIR = PROJECT_ROOT / 'build/table_sync'
@@ -88,9 +101,9 @@ BACKUP_DIR = WORK_DIR / 'backups'
 REPORT_DIR = WORK_DIR / 'reports'
 CACHE_DIR = WORK_DIR / 'cache'
 
-# 人工复核名单：结构体检可能全绿，但语义上必须产品确认才能动线上
+# 人工复核名单：结构体检可能全绿，但语义上必须产品确认才能动服务端
 REVIEW_ONLY = {
-    'Language.txt': '多语言表：线上多 Korean 列，且英文/日文有数千行内容变动，需单独合并',
+    'Language.txt': '多语言表：线上/测试服都是 5 列（含 Korean），导出只有 4 列，需先在导出器补列',
     'MultiLanguage.txt': '线上有仓库没有的 id（10301），需确认',
     'EncourageTaskConfig.txt': '线上独有 25 条任务（16001~16025），覆盖即删除',
     'EncouragePlanConfig.txt': '线上独有 id=16',
@@ -106,10 +119,10 @@ VERDICT_TEXT = {
     'ROW_ADD': '新增行',
     'COL_GAIN': '本地多列',
     'NEW': '本地新表',
-    'COL_LOSS': '🔴 本地列数少于线上（覆盖会丢列）',
-    'ROW_LOSS': '🔴 线上有仓库没有的主键（覆盖会删线上数据）',
+    'COL_LOSS': '🔴 本地列数少于目标（覆盖会丢列）',
+    'ROW_LOSS': '🔴 目标有仓库没有的主键（覆盖会删数据）',
     'HEADER_DIFF': '🔴 表头字段名/顺序不一致（覆盖会串列）',
-    'REMOTE_ONLY': '🔴 线上有、本地没有（本工具永不删线上表）',
+    'REMOTE_ONLY': '🔴 目标有、本地没有（本工具永不删目标文件）',
     'REVIEW': '🔴 人工复核名单（语义需产品确认）',
     'PARSE_FAIL': '🔴 解析失败（列数不齐）',
     'NIL_CELLS': '🔴 数值列空值写成 nil（服务端解析会抛异常）',
@@ -131,11 +144,6 @@ def log(msg=''):
 
 def run(cmd, timeout=SSH_TIMEOUT):
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-
-
-def ssh(script, timeout=SSH_TIMEOUT):
-    return run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', SSH_HOST, script],
-               timeout=timeout)
 
 
 def md5_bytes(data: bytes) -> str:
@@ -176,11 +184,6 @@ def norm_cell(cell: str) -> str:
         except (ValueError, OverflowError):
             pass
     return s
-
-
-def remote_path(remote_dir: str) -> str:
-    """相对目录（conf/server）→ 线上绝对路径。"""
-    return remote_dir if remote_dir.startswith('/') else '%s/%s' % (REMOTE_BASE, remote_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +234,7 @@ def parse_txt(name: str, text: str) -> Table:
             return t
         cs += [''] * (width - len(cs))
         key = norm_cell(cs[0])
-        # 零值填充行：线上 txt 里有一批这类尾巴，不算内容
+        # 零值填充行：目标 txt 里有一批这类尾巴，不算内容
         if key == '' or (key == '0' and all(norm_cell(c) in ('', '0') for c in cs[1:])):
             t.padding += 1
             continue
@@ -314,19 +317,19 @@ def rewrite_nil(path: Path, t: Table) -> int:
     return changed
 
 
-def classify(local: Table, remote: Table, name: str):
+def classify(local: Table, target: Table, name: str):
     """返回 (verdict, notes)。verdict 见 VERDICT_TEXT。"""
     notes = []
     if local.err:
         return 'PARSE_FAIL', ['本地：' + local.err]
-    if remote.err:
-        return 'PARSE_FAIL', ['线上：' + remote.err]
+    if target.err:
+        return 'PARSE_FAIL', ['目标：' + target.err]
 
-    lh, rh = local.header, remote.header
+    lh, rh = local.header, target.header
     if lh == rh:
         pass
     elif lh and rh and lh == rh[:len(lh)] and len(lh) < len(rh):
-        return 'COL_LOSS', ['线上 %d 列 / 本地 %d 列，本地缺列：%s'
+        return 'COL_LOSS', ['目标 %d 列 / 本地 %d 列，本地缺列：%s'
                             % (len(rh), len(lh), ', '.join(rh[len(lh):]))]
     elif lh and rh and rh == lh[:len(rh)] and len(lh) > len(rh):
         notes.append('本地多列：%s（服务端按字段名反射注入，需确认 S*Config 已有该字段）'
@@ -338,15 +341,15 @@ def classify(local: Table, remote: Table, name: str):
     if name in REVIEW_ONLY:
         notes.insert(0, REVIEW_ONLY[name])
 
-    lost = [k for k in remote.rows if k not in local.rows]
+    lost = [k for k in target.rows if k not in local.rows]
     if lost:
         sample = ', '.join(lost[:6]) + (' …' if len(lost) > 6 else '')
-        return 'ROW_LOSS', ['线上有 %d 个主键本地没有（覆盖会删线上数据）：%s' % (len(lost), sample)]
+        return 'ROW_LOSS', ['目标有 %d 个主键本地没有（覆盖会删数据）：%s' % (len(lost), sample)]
 
-    added = [k for k in local.rows if k not in remote.rows]
+    added = [k for k in local.rows if k not in target.rows]
     changed_rows, changed_cells, common = [], 0, 0
     for key, lrow in local.rows.items():
-        rrow = remote.rows.get(key)
+        rrow = target.rows.get(key)
         if rrow is None:
             continue
         common += 1
@@ -363,8 +366,8 @@ def classify(local: Table, remote: Table, name: str):
     if added:
         sample = ', '.join(added[:6]) + (' …' if len(added) > 6 else '')
         notes.append('本地新增 %d 行：%s' % (len(added), sample))
-    if local.dup_keys or remote.dup_keys:
-        notes.append('重复主键：本地 %d / 线上 %d（只比首次出现）' % (local.dup_keys, remote.dup_keys))
+    if local.dup_keys or target.dup_keys:
+        notes.append('重复主键：本地 %d / 目标 %d（只比首次出现）' % (local.dup_keys, target.dup_keys))
 
     if name in REVIEW_ONLY:
         return 'REVIEW', notes
@@ -372,7 +375,7 @@ def classify(local: Table, remote: Table, name: str):
         verdict = 'VALUE_DIFF'
     elif added:
         verdict = 'ROW_ADD'
-    elif local.sig == remote.sig:
+    elif local.sig == target.sig:
         return 'SAME', ['归一化后逐格一致（字节差异来自换行/尾随空列/0.0/nil 之类）']
     else:
         verdict = 'COL_GAIN'
@@ -387,48 +390,121 @@ def classify(local: Table, remote: Table, name: str):
 
 
 # ---------------------------------------------------------------------------
-# 线上交互
+# 同步目标
 # ---------------------------------------------------------------------------
-def remote_md5s(remote_dir: str) -> dict:
-    return remote_md5s_multi([remote_dir]).get(remote_dir, {})
+class Target:
+    """一套服务端配置目录。kind = local（本机） / ssh（远端）。"""
+
+    def __init__(self, name: str, kind: str, base, dirs: list, restart_hint: str):
+        self.name = name
+        self.kind = kind
+        self.base = base
+        self.dirs = list(dirs)
+        self.restart_hint = restart_hint
+
+    @property
+    def label(self) -> str:
+        return ('本机测试服' if self.kind == 'local' else '线上服') + '(%s)' % self.name
+
+    def where(self, rdir: str) -> str:
+        if self.kind == 'local':
+            return str(Path(self.base) / rdir)
+        return '%s:%s/%s' % (SSH_HOST, str(self.base).rstrip('/'), rdir)
+
+    # ---- 读取 ----
+    def md5s(self) -> dict:
+        if self.kind == 'local':
+            out = {}
+            for rd in self.dirs:
+                d = Path(self.base) / rd
+                out[rd] = {p.name: md5_file(p) for p in sorted(d.glob('*.txt'))} if d.is_dir() else {}
+            return out
+        # 一次 ssh 拿多个目录的清单（每次握手 2~3 秒，别逐目录调）
+        parts = []
+        for rd in self.dirs:
+            parts.append('echo "@@%s"' % rd)
+            parts.append('cd %s 2>/dev/null && md5sum *.txt 2>/dev/null'
+                         % shlex.quote('%s/%s' % (str(self.base).rstrip('/'), rd)))
+        p = run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', SSH_HOST, '; '.join(parts)])
+        out = {rd: {} for rd in self.dirs}
+        cur = None
+        for line in p.stdout.splitlines():
+            if line.startswith('@@'):
+                cur = line[2:].strip()
+                continue
+            bits = line.split()
+            if cur in out and len(bits) == 2:
+                out[cur][bits[1]] = bits[0]
+        return out
+
+    def snapshot(self, rdir: str, md5map: dict, refresh=False):
+        """拿到该目标某目录的本地可读副本（本机就是原目录，远端整包 tar 拉取并缓存）。"""
+        if self.kind == 'local':
+            d = Path(self.base) / rdir
+            return d if d.is_dir() else None
+        return _ssh_snapshot(self, rdir, md5map, refresh)
+
+    # ---- 写入 ----
+    def backup(self, dest: Path) -> bool:
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        if self.kind == 'local':
+            cmd = ['tar', 'czf', str(dest), '-C', str(self.base)] + self.dirs
+            p = run(cmd)
+            if p.returncode != 0 or not dest.exists() or dest.stat().st_size < 512:
+                return False
+        else:
+            script = 'tar czf - -C %s %s' % (shlex.quote(str(self.base)),
+                                             ' '.join(shlex.quote(d) for d in self.dirs))
+            with open(dest, 'wb') as f:
+                p = subprocess.run(['ssh', '-o', 'BatchMode=yes', SSH_HOST, script],
+                                   stdout=f, stderr=subprocess.PIPE, timeout=SSH_TIMEOUT)
+            if p.returncode != 0 or dest.stat().st_size < 512:
+                return False
+        return run(['tar', 'tzf', str(dest)]).returncode == 0   # 备份必须可解
+
+    def push(self, local_path: Path, rdir: str, name: str) -> bool:
+        if self.kind == 'local':
+            try:
+                (Path(self.base) / rdir / name).write_bytes(local_path.read_bytes())
+                return True
+            except OSError as e:
+                log('   ✗ %s → %s 写入失败：%s' % (name, rdir, e))
+                return False
+        p = run(['scp', '-q', str(local_path),
+                 '%s:%s/%s/%s' % (SSH_HOST, str(self.base).rstrip('/'), rdir, name)])
+        return p.returncode == 0
+
+    def restart(self) -> bool:
+        if self.kind == 'local':
+            p = run(['launchctl', 'kickstart', '-k',
+                     'gui/%d/%s' % (os.getuid(), LOCAL_RESTART_LABEL)])
+            if p.returncode != 0:
+                log('   ✗ launchctl kickstart 失败：%s' % (p.stderr.strip()[:200]))
+                return False
+            return True
+        p = run(['ssh', '-o', 'BatchMode=yes', SSH_HOST, 'bash %s 2>&1 | tail -30' % GS_RESTART_SCRIPT],
+                timeout=600)
+        log(p.stdout.strip() or p.stderr.strip())
+        return p.returncode == 0
 
 
-def remote_md5s_multi(remote_dirs) -> dict:
-    """一次 ssh 拿多个目录的 md5 清单（每次 ssh 握手在本机要几秒，别逐目录调）。"""
-    parts = []
-    for d in remote_dirs:
-        parts.append('echo "@@%s"' % d)
-        parts.append('cd %s 2>/dev/null && md5sum *.txt 2>/dev/null' % shlex.quote(remote_path(d)))
-    p = ssh('; '.join(parts))
-    out = {d: {} for d in remote_dirs}
-    cur = None
-    for line in p.stdout.splitlines():
-        if line.startswith('@@'):
-            cur = line[2:].strip()
-            continue
-        bits = line.split()
-        if cur in out and len(bits) == 2:
-            out[cur][bits[1]] = bits[0]
-    return out
-
-
-def ensure_snapshot(remote_dir: str, md5map: dict, refresh=False):
-    """把线上某个配置目录整包拉到本地缓存（一次 tar 传输，按 md5 清单判新旧）。"""
-    # 🔴 缓存键必须带上 remote_base：否则拿 --remote-base 指向测试目录跑一次，
+def _ssh_snapshot(target: Target, rdir: str, md5map: dict, refresh: bool):
+    """把远端某个配置目录整包拉到本地缓存（一次 tar 传输，按 md5 清单判新旧）。"""
+    # 🔴 缓存键必须带上 base：否则拿 --gs-base 指向测试目录跑一次，
     #    会把生产快照缓存覆盖掉（实测踩过，下次比对直接解包失败）
-    key = '%s_%s' % (md5_bytes((REMOTE_BASE + '|' + remote_dir).encode())[:8],
-                     remote_dir.strip('/').replace('/', '_'))
+    key = '%s_%s' % (md5_bytes(('%s|%s' % (target.base, rdir)).encode())[:8],
+                     rdir.strip('/').replace('/', '_'))
     snap = CACHE_DIR / ('snap_' + key)
     index = snap / '.md5index.json'
     if not refresh and index.exists():
         try:
             if json.loads(index.read_text(encoding='utf-8')) == md5map:
-                return snap, True
+                return snap
         except (json.JSONDecodeError, OSError):
             pass
 
-    log('   下载线上快照 %s（%d 个 txt）…' % (remote_dir, len(md5map)))
-    script = 'tar czf - -C %s %s' % (shlex.quote(REMOTE_BASE), shlex.quote(remote_dir))
+    log('   下载 %s 快照 %s（%d 个 txt）…' % (target.name, rdir, len(md5map)))
+    script = 'tar czf - -C %s %s' % (shlex.quote(str(target.base)), shlex.quote(rdir))
     blob = b''
     for attempt in (1, 2):
         p = subprocess.run(['ssh', '-o', 'BatchMode=yes', SSH_HOST, script],
@@ -439,7 +515,7 @@ def ensure_snapshot(remote_dir: str, md5map: dict, refresh=False):
         log('   ⚠ tar 拉取失败（第 %d 次）：%s'
             % (attempt, p.stderr.decode('utf-8', 'replace')[:200]))
     if not blob:
-        return None, False
+        return None
 
     tmp = CACHE_DIR / ('tmp_' + key)
     shutil.rmtree(tmp, ignore_errors=True)
@@ -453,53 +529,51 @@ def ensure_snapshot(remote_dir: str, md5map: dict, refresh=False):
     except (tarfile.TarError, EOFError, OSError) as e:
         log('   ⚠ 解包失败（传输被截断？）：%s' % e)
         shutil.rmtree(tmp, ignore_errors=True)
-        return None, False
+        return None
 
-    src = tmp / remote_dir
+    src = tmp / rdir
     if not src.is_dir():
         log('   ⚠ 解包后找不到目录：%s' % src)
-        return None, False
+        return None
     shutil.rmtree(snap, ignore_errors=True)
     shutil.move(str(src), str(snap))
     shutil.rmtree(tmp, ignore_errors=True)
     (snap / '.md5index.json').write_text(json.dumps(md5map, ensure_ascii=False), encoding='utf-8')
-    return snap, False
+    return snap
 
 
-def backup_remote(dirs, dest: Path) -> bool:
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    script = 'tar czf - -C %s %s' % (shlex.quote(REMOTE_BASE),
-                                     ' '.join(shlex.quote(d) for d in dirs))
-    with open(dest, 'wb') as f:
-        p = subprocess.run(['ssh', '-o', 'BatchMode=yes', SSH_HOST, script],
-                           stdout=f, stderr=subprocess.PIPE, timeout=SSH_TIMEOUT)
-    if p.returncode != 0 or dest.stat().st_size < 1024:
-        return False
-    return run(['tar', 'tzf', str(dest)]).returncode == 0   # 备份必须可解
-
-
-def push_one(local_path: Path, remote_dir: str, name: str) -> bool:
-    p = run(['scp', '-q', str(local_path), '%s:%s/%s' % (SSH_HOST, remote_path(remote_dir), name)])
-    return p.returncode == 0
-
-
-def restart_server() -> bool:
-    log('==> 重启游戏服（RESTART-GAMESERVER.sh）')
-    p = ssh('bash %s/RESTART-GAMESERVER.sh 2>&1 | tail -30' % REMOTE_BASE, timeout=600)
-    log(p.stdout.strip() or p.stderr.strip())
-    return p.returncode == 0
+def build_targets(names: list, dirs: list, local_base: str, gs_base: str) -> list:
+    out = []
+    for n in names:
+        if n == 'local':
+            out.append(Target('local', 'local', Path(local_base).expanduser(), dirs,
+                              'launchctl kickstart -k gui/%d/%s' % (os.getuid(), LOCAL_RESTART_LABEL)))
+        elif n == 'gs':
+            out.append(Target('gs', 'ssh', gs_base, dirs,
+                              'ssh %s "bash %s"' % (SSH_HOST, GS_RESTART_SCRIPT)))
+        else:
+            raise SystemExit('✗ 未知目标：%s（可选 local / gs）' % n)
+    return out
 
 
 # ---------------------------------------------------------------------------
 # 基线状态
 # ---------------------------------------------------------------------------
 def load_state() -> dict:
-    if STATE_FILE.exists():
-        try:
-            return json.loads(STATE_FILE.read_text(encoding='utf-8'))
-        except (json.JSONDecodeError, OSError):
-            log('⚠ 基线文件损坏，按首次运行处理：%s' % STATE_FILE)
-    return {}
+    if not STATE_FILE.exists():
+        return {}
+    try:
+        st = json.loads(STATE_FILE.read_text(encoding='utf-8'))
+    except (json.JSONDecodeError, OSError):
+        log('⚠ 基线文件损坏，按首次运行处理：%s' % STATE_FILE)
+        return {}
+    # v1 → v2：v1 只有单一 remote，把它的 sig 提成全局基线
+    if st and 'tables' in st and 'sig' not in st:
+        sig = {k: v.get('sig') for k, v in st.get('tables', {}).items() if v.get('sig')}
+        st = {'version': 2, 'sig': sig,
+              'targets': {'gs': {'last_sync_at': st.get('last_sync_at', ''),
+                                 'base': st.get('remote', '')}}}
+    return st
 
 
 def save_state(state: dict):
@@ -525,48 +599,62 @@ def git_changed_tables(local_dir: Path):
     return names
 
 
+def _names(raw: str) -> set:
+    """'A,B' → {'A.txt','B.txt'}（表名可不带扩展名）。"""
+    out = set()
+    for n in raw.split(','):
+        n = n.strip()
+        if n:
+            out.add(n if n.endswith('.txt') else n + '.txt')
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
 def main() -> int:
-    global REMOTE_BASE, STATE_FILE
-    ap = argparse.ArgumentParser(description='导表服务端同步（增量 + 结构体检）',
+    global STATE_FILE
+    ap = argparse.ArgumentParser(description='导表服务端同步（增量 + 结构体检，多目标）',
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--local-dir', default=str(DEFAULT_LOCAL_DIR), help='导表产物目录（默认影子目录）')
-    ap.add_argument('--remote-dir', action='append', default=None,
-                    help='线上配置目录（相对 %s，可重复；默认两份都推）' % REMOTE_BASE)
+    ap.add_argument('--targets', default='local,gs',
+                    help='同步目标，逗号分隔：local（本机测试服）/ gs（线上服），默认两个都做')
+    ap.add_argument('--dirs', default=','.join(DEFAULT_DIRS),
+                    help='目标里的子目录，逗号分隔（默认 conf/server,assets/conf/server）')
+    ap.add_argument('--local-base', default=str(LOCAL_BASE), help='本机测试服根目录')
+    ap.add_argument('--gs-base', default=GS_BASE, help='线上服根目录（默认 %s）' % GS_BASE)
     ap.add_argument('--mirror-dir', default=str(DEFAULT_MIRROR_DIR), help='本地真实服务端仓配置目录')
     ap.add_argument('--no-mirror-repo', action='store_true', help='不写本地服务端仓')
-    ap.add_argument('--apply', action='store_true', help='真正写线上（默认只体检）')
+    ap.add_argument('--state-file', default=str(STATE_FILE), help='基线文件（默认 %s）' % STATE_FILE)
+    ap.add_argument('--apply', action='store_true', help='真正写目标（默认只体检）')
     ap.add_argument('--only', default='', help='只处理这些表（逗号分隔，忽略基线）')
     ap.add_argument('--include-drift', action='store_true',
-                    help='把所有与线上不同的表纳入候选（危险：会带上未发布内容）')
+                    help='把所有与目标不同的表纳入候选（危险：会带上未发布内容）')
     ap.add_argument('--force', action='store_true', help='点名表即使体检红灯也推（仅配合 --only）')
-    ap.add_argument('--restart', action='store_true', help='推完重启游戏服')
+    ap.add_argument('--restart', action='store_true', help='推完重启（线上会踢线，非交互需 --yes）')
     ap.add_argument('--strict', action='store_true', help='存在被拦下的表时退出码 4')
     ap.add_argument('--yes', action='store_true', help='跳过危险操作的交互确认')
     ap.add_argument('--status', action='store_true', help='只打印基线/候选，不做体检')
-    ap.add_argument('--state-file', default=str(STATE_FILE), help='基线文件（默认 %s）' % STATE_FILE)
-    ap.add_argument('--remote-base', default=REMOTE_BASE, help='线上服务端根目录（默认 %s）' % REMOTE_BASE)
-    ap.add_argument('--refresh', action='store_true', help='强制重新下载线上快照')
+    ap.add_argument('--refresh', action='store_true', help='强制重新下载远端快照')
     ap.add_argument('--fix-nil', action='store_true',
                     help='推送前把数值列的 nil 就地改写成 null（等价于重跑一次导表，会改 git 工作区文件）')
     ap.add_argument('--json-out', default='', help='额外写一份结构化结果 JSON')
     args = ap.parse_args()
 
-    REMOTE_BASE = args.remote_base.rstrip('/') or '/'
     STATE_FILE = Path(args.state_file).resolve()
     local_dir = Path(args.local_dir).resolve()
     mirror_dir = Path(args.mirror_dir).resolve()
-    remote_dirs = args.remote_dir or DEFAULT_REMOTE_DIRS
-    primary = remote_dirs[0]
+    dirs = [d.strip() for d in args.dirs.split(',') if d.strip()]
+    targets = build_targets([t.strip() for t in args.targets.split(',') if t.strip()],
+                            dirs, args.local_base, args.gs_base)
 
-    log('=' * 78)
+    log('=' * 88)
     log('导表服务端同步  %s' % time.strftime('%Y-%m-%d %H:%M:%S'))
     log('  本地导出：%s' % local_dir)
-    log('  线上服  ：%s:%s  (%s)' % (SSH_HOST, REMOTE_BASE, ', '.join(remote_dirs)))
+    for t in targets:
+        log('  目标 %-6s：%s  (%s)' % (t.name, t.where(dirs[0]), ', '.join(dirs)))
     log('  基线文件：%s' % STATE_FILE)
-    log('=' * 78)
+    log('=' * 88)
 
     if not local_dir.is_dir():
         log('✗ 本地导出目录不存在：%s' % local_dir)
@@ -576,9 +664,7 @@ def main() -> int:
         log('✗ 本地导出目录里没有 txt：%s' % local_dir)
         return 2
     log('本地 txt：%d 个，解析中 …' % len(local_files))
-    local_tables = {}
-    for name, p in local_files.items():
-        local_tables[name] = parse_txt(name, read_text(p))
+    local_tables = {n: parse_txt(n, read_text(p)) for n, p in local_files.items()}
     local_md5 = {n: md5_file(p) for n, p in local_files.items()}
 
     if args.fix_nil:
@@ -599,47 +685,48 @@ def main() -> int:
         else:
             log('--fix-nil：没有需要改写的 nil')
 
-    # ---- 线上快照 --------------------------------------------------------
-    log('拉取线上 md5 清单 …')
-    remote_md5 = remote_md5s_multi(remote_dirs)
-    for rd in remote_dirs:
-        m = remote_md5.get(rd) or {}
-        if not m:
-            log('✗ 读不到线上目录 %s:%s（ssh 别名或权限问题？）' % (SSH_HOST, rd))
+    # ---- 各目标现状 ------------------------------------------------------
+    log('读取各目标现状 …')
+    tgt_md5, tgt_tables = {}, {}
+    for t in targets:
+        m = t.md5s()
+        if not any(m.get(d) for d in dirs):
+            log('✗ 读不到目标 %s（%s）—— 路径/ssh 别名/权限问题？' % (t.name, t.where(dirs[0])))
             return 2
-        log('  %-20s %d 个 txt' % (rd, len(m)))
-
-    snap, cached = ensure_snapshot(primary, remote_md5[primary], refresh=args.refresh)
-    if snap is None:
-        log('✗ 线上快照获取失败，无法做语义比对')
-        return 2
-    log('  快照：%s（%s）' % (snap, '命中缓存' if cached else '刚下载'))
-
-    remote_tables = {}
-    for name, md in remote_md5[primary].items():
-        rp = snap / name
-        if not rp.exists():
-            continue
-        if md5_file(rp) != md:
-            log('  ⚠ %s 快照与线上 md5 不符（线上刚被改过？加 --refresh 重试）' % name)
-            continue
-        remote_tables[name] = parse_txt(name, read_text(rp))
-    log('线上 txt 解析完成：%d 张' % len(remote_tables))
+        tgt_md5[t.name] = m
+        first = m[dirs[0]]
+        extra = ' / '.join('%s:%d' % (d, len(m.get(d, {}))) for d in dirs[1:])
+        log('  %-6s %s  %d 个 txt%s' % (t.name, t.where(dirs[0]), len(first),
+                                        ('  (' + extra + ')') if extra else ''))
+        snap = t.snapshot(dirs[0], first, refresh=args.refresh)
+        if snap is None:
+            log('✗ %s 快照获取失败，无法做语义比对' % t.name)
+            return 2
+        parsed = {}
+        for name, md in first.items():
+            rp = Path(snap) / name
+            if not rp.exists():
+                continue
+            if md5_file(rp) != md:
+                log('  ⚠ %s/%s 快照与目标 md5 不符（刚被改过？加 --refresh 重试）' % (t.name, name))
+                continue
+            parsed[name] = parse_txt(name, read_text(rp))
+        tgt_tables[t.name] = parsed
+        log('         解析完成 %d 张' % len(parsed))
 
     # ---- 基线 ------------------------------------------------------------
     state = load_state()
-    tables = state.setdefault('tables', {})
-    first_run = not tables
+    state.setdefault('version', 2)
+    sig = state.setdefault('sig', {})
+    first_run = not sig
 
-    changed = set()
-    src = ''
+    changed, src = set(), ''
     if args.only:
         changed = _names(args.only)
         src = '--only'
     elif not first_run:
         for name, lt in local_tables.items():
-            rec = tables.get(name)
-            if rec is None or rec.get('sig') != lt.sig:
+            if sig.get(name) != lt.sig:
                 changed.add(name)
         src = '基线差异'
     else:
@@ -651,261 +738,347 @@ def main() -> int:
             src = '首次运行（只建基线）'
 
     if args.include_drift:
-        changed = {n for n in local_tables if n in remote_tables
-                   and local_tables[n].sig != remote_tables[n].sig}
+        drift_all = set()
+        for t in targets:
+            for name, lt in local_tables.items():
+                rt = tgt_tables[t.name].get(name)
+                if rt is not None and rt.sig != lt.sig:
+                    drift_all.add(name)
+        changed = drift_all
         src = '--include-drift 全量漂移'
 
-    # ---- 全量体检（顺带产出漂移清单）------------------------------------
-    all_results = {}
+    # ---- 逐表 × 逐目标体检 -----------------------------------------------
+    result, remote_only = {}, {t.name: set() for t in targets}
     for name, lt in local_tables.items():
-        rt = remote_tables.get(name)
-        if rt is None:
-            nil = count_nil_numeric(lt)
-            all_results[name] = {
-                'table': name,
-                'verdict': 'NIL_CELLS' if nil else 'NEW',
-                'notes': (['本地数值列有 %d 个 "nil" 空值，先重跑导表' % nil] if nil
-                          else ['线上没有这张表（新增）']),
-                'rows': '', 'pushable': not nil}
-            continue
-        verdict, notes = classify(lt, rt, name)
-        all_results[name] = {'table': name, 'verdict': verdict, 'notes': notes,
-                             'rows': '%d→%d' % (len(rt.rows), len(lt.rows)),
-                             'pushable': verdict in OK_VERDICTS}
-    for name in remote_md5[primary]:
-        if name not in local_tables:
-            all_results[name] = {'table': name, 'verdict': 'REMOTE_ONLY',
-                                 'notes': ['线上有、本地导出没有：可能纯后端表或已下线表，本工具不删线上文件'],
-                                 'rows': '', 'pushable': False}
+        result[name] = {}
+        for t in targets:
+            rt = tgt_tables[t.name].get(name)
+            if rt is None:
+                nil = count_nil_numeric(lt)
+                result[name][t.name] = {
+                    'verdict': 'NIL_CELLS' if nil else 'NEW',
+                    'notes': (['本地数值列有 %d 个 "nil" 空值，先重跑导表' % nil] if nil
+                              else ['目标没有这张表（新增）']),
+                    'rows': '', 'pushable': not nil}
+                continue
+            verdict, notes = classify(lt, rt, name)
+            result[name][t.name] = {'verdict': verdict, 'notes': notes,
+                                    'rows': '%d→%d' % (len(rt.rows), len(lt.rows)),
+                                    'pushable': verdict in OK_VERDICTS}
+    for t in targets:
+        for name in tgt_md5[t.name][dirs[0]]:
+            if name not in local_tables:
+                remote_only[t.name].add(name)
+                result.setdefault(name, {})[t.name] = {
+                    'verdict': 'REMOTE_ONLY',
+                    'notes': ['目标有、本地导出没有：可能纯后端表或已下线表，本工具不删目标文件'],
+                    'rows': '', 'pushable': False}
 
-    drift = {n for n, r in all_results.items() if r['verdict'] != 'SAME'}
-    remote_only = {n for n, r in all_results.items() if r['verdict'] == 'REMOTE_ONLY'}
+    drift = {n for n, per in result.items()
+             if any(per.get(t.name, {}).get('verdict') not in (None, 'SAME') for t in targets)}
 
     log('')
     log('基线：%s（记录 %d 张）｜候选来源：%s → %d 张'
-        % ('首次运行' if first_run else '已存在', len(tables), src, len(changed)))
-    log('线上漂移（语义）：%d 张｜线上独有：%d 张（永不删除）' % (len(drift), len(remote_only)))
-
-    missing = sorted(n for n in changed if n not in all_results)
-    if missing:
-        log('⚠ 找不到这些表（检查表名/是否已导出）：%s' % ', '.join(missing))
+        % ('首次运行' if first_run else '已存在', len(sig), src, len(changed)))
+    for t in targets:
+        d = sum(1 for n in result if result[n].get(t.name, {}).get('verdict') not in (None, 'SAME'))
+        log('  %-6s 语义漂移 %3d 张｜目标独有 %d 张（永不删除）' % (t.name, d, len(remote_only[t.name])))
 
     if args.status:
         log('')
         for n in sorted(changed):
-            if n in all_results:
-                log('  %-40s %s' % (n, VERDICT_TEXT.get(all_results[n]['verdict'], '')))
+            if n not in result:
+                continue
+            log('  %-38s %s' % (n, '  '.join(
+                '%s=%s' % (t.name, result[n].get(t.name, {}).get('verdict', '-')) for t in targets)))
         return 0
 
-    results = [all_results[n] for n in sorted(changed) if n in all_results]
-    pushable = [r for r in results if r['pushable']]
-    blocked = [r for r in results if r['verdict'] in BLOCK_VERDICTS]
+    missing = sorted(n for n in changed if n not in result)
+    if missing:
+        log('⚠ 找不到这些表（检查表名/是否已导出）：%s' % ', '.join(missing))
 
+    # 候选表 × 目标 → 可推 / 拦下
+    plan = {}
+    for name in sorted(changed):
+        if name not in result:
+            continue
+        plan[name] = {t.name: result[name].get(t.name, {}).get('pushable', False) for t in targets}
     if args.force and args.only:
-        forced = _names(args.only)
-        for r in results:
-            if r['table'] in forced and not r['pushable']:
-                r['pushable'] = True
-                r['notes'].append('⚠ --force 点名强推')
-                pushable.append(r)
-        blocked = [r for r in results if r['verdict'] in BLOCK_VERDICTS and not r['pushable']]
+        for name in _names(args.only):
+            if name in plan:
+                for t in targets:
+                    if not plan[name][t.name] and result[name].get(t.name, {}).get('verdict') in BLOCK_VERDICTS:
+                        plan[name][t.name] = True
+                        result[name][t.name]['notes'].append('⚠ --force 点名强推')
 
     # ---- 打印 ------------------------------------------------------------
-    log('')
-    log('-' * 96)
-    log('%-34s %-8s %-12s %s' % ('表', '判定', '行数(线上→本地)', '说明'))
-    log('-' * 96)
-    for r in results:
-        log('%-34s %-8s %-12s %s' % (r['table'], r['verdict'], r['rows'],
-                                     (r['notes'][0] if r['notes'] else '')[:64]))
-    log('-' * 96)
-    log('候选 %d 张：可推 %d / 拦下 %d' % (len(results), len(pushable), len(blocked)))
+    if plan:
+        log('')
+        w = max(30, max(len(n) for n in plan) + 2)
+        log('%-*s %s' % (w, '表', '  '.join('%-24s' % t.name for t in targets)))
+        log('-' * (w + 26 * len(targets)))
+        for name in sorted(plan):
+            cells = []
+            for t in targets:
+                v = result[name].get(t.name, {}).get('verdict', '-')
+                cells.append('%-24s' % ('%s%s' % (v, '' if plan[name][t.name] else ' ✗')))
+            log('%-*s %s' % (w, name, '  '.join(cells)))
+        log('-' * (w + 26 * len(targets)))
+        tot = sum(1 for n in plan for t in targets if plan[n][t.name])
+        log('候选 %d 张，可推 %d 个（表×目标），拦下 %d 个'
+            % (len(plan), tot, len(plan) * len(targets) - tot))
+    else:
+        log('')
+        log('本次没有候选表。')
 
     if drift and not changed:
         log('')
-        log('ℹ 本次没检测到改动，但线上与仓库有 %d 张语义漂移（多为未发布内容，不自动推）：' % len(drift))
-        stat = {}
-        for n in drift:
-            stat[all_results[n]['verdict']] = stat.get(all_results[n]['verdict'], 0) + 1
-        for v, c in sorted(stat.items(), key=lambda kv: -kv[1]):
-            log('    %-12s %3d 张  %s' % (v, c, VERDICT_TEXT.get(v, '')))
+        log('ℹ 本次没检测到改动，但目标与仓库有 %d 张语义漂移（多为未发布内容，不自动推）：' % len(drift))
+        for t in targets:
+            stat = {}
+            for n in drift:
+                v = result[n].get(t.name, {}).get('verdict')
+                if v and v != 'SAME':
+                    stat[v] = stat.get(v, 0) + 1
+            if stat:
+                log('  %-6s %s' % (t.name, '  '.join('%s %d' % (k, c) for k, c in
+                                                     sorted(stat.items(), key=lambda kv: -kv[1]))))
         log('    明细见报告；要推具体几张用 --only 表名（逗号分隔）')
 
     # ---- 落地 ------------------------------------------------------------
     if not args.apply:
-        if pushable:
+        if any(plan[n][t.name] for n in plan for t in targets):
             log('')
-            log('（体检模式，未写线上。要推上面「可推」的表：加 --apply）')
+            log('（体检模式，未写任何服务端。要推上面可推的：加 --apply）')
         if first_run:
             log('')
             log('首次运行只建基线，不推任何表。下次改表导表后会自动只推改动的那几张。')
-            _seed(tables, local_tables, remote_tables)
+            for name, lt in local_tables.items():
+                sig[name] = lt.sig
             save_state(state)
-        _write_report(all_results, [], [], blocked, drift, None, remote_dirs)
+        _write_report(targets, result, plan, {}, {}, drift, {}, dirs)
         return 0
 
-    if not pushable:
+    todo = {n: [t for t in targets if plan[n][t.name]] for n in plan}
+    todo = {n: ts for n, ts in todo.items() if ts}
+    if not todo:
         log('')
-        log('没有可推的表，线上保持不变。')
+        log('没有可推的表，目标保持不变。')
         if first_run:
-            _seed(tables, local_tables, remote_tables)
+            for name, lt in local_tables.items():
+                sig[name] = lt.sig
             save_state(state)
             log('基线已建立（%d 张表）。' % len(local_tables))
-            _write_report(all_results, [], [], blocked, drift, None, remote_dirs)
+            _write_report(targets, result, plan, {}, {}, drift, {}, dirs)
         return 0
 
     if args.include_drift and not args.yes and not sys.stdin.isatty():
         log('')
-        log('✗ --include-drift 会把所有历史漂移（含未发布内容）推到线上，非交互环境必须加 --yes')
+        log('✗ --include-drift 会把所有历史漂移（含未发布内容）推到目标，非交互环境必须加 --yes')
         return 5
 
-    log('')
-    log('开始推送 %d 张表 …' % len(pushable))
-    backup = BACKUP_DIR / ('conf_server_%s.tar.gz' % time.strftime('%Y%m%d_%H%M%S'))
-    log('==> 备份线上配置目录 → %s' % backup)
-    if not backup_remote(remote_dirs, backup):
-        log('✗ 线上备份失败，中止（不做没有回滚点的推送）')
-        return 3
-    mb = backup.stat().st_size / 1048576
-    log('    备份完成 %s（已校验可解包）' % ('%.1f MB' % mb if mb >= 1 else '%.0f KB' % (mb * 1024)))
+    pushed, failed, backups = {}, {}, {}
+    for t in targets:
+        names = [n for n in todo if t in todo[n]]
+        if not names:
+            continue
+        log('')
+        log('== %s：推 %d 张 %s' % (t.label, len(names), '=' * 40))
+        backup = BACKUP_DIR / ('%s_%s.tar.gz' % (t.name, time.strftime('%Y%m%d_%H%M%S')))
+        log('==> 备份 %s → %s' % (t.where(dirs[0]), backup.name))
+        if not t.backup(backup):
+            log('✗ %s 备份失败，跳过该目标（不做没有回滚点的推送）' % t.name)
+            failed[t.name] = names
+            continue
+        mb = backup.stat().st_size / 1048576
+        log('    备份完成 %s（已校验可解包）' % ('%.1f MB' % mb if mb >= 1 else '%.0f KB' % (mb * 1024)))
+        backups[t.name] = backup
 
-    pushed, failed = [], []
-    for r in pushable:
-        name = r['table']
-        lp = local_files[name]
-        ok = True
-        for rd in remote_dirs:
-            if not push_one(lp, rd, name):
-                ok = False
-                log('   ✗ %s → %s 传输失败' % (name, rd))
-        if ok:
-            pushed.append(name)
-            log('   ✓ %s' % name)
-        else:
-            failed.append(name)
-
-    log('==> 双向 md5 校验')
-    rc = 0
-    after = remote_md5s_multi(remote_dirs)
-    for rd in remote_dirs:
-        now = after.get(rd) or {}
-        bad = [n for n in pushed if now.get(n) != local_md5[n]]
+        ok_names = []
+        for name in names:
+            ok = True
+            for rd in dirs:
+                if not t.push(local_files[name], rd, name):
+                    ok = False
+                    log('   ✗ %s → %s 传输失败' % (name, rd))
+            if ok:
+                ok_names.append(name)
+                log('   ✓ %s' % name)
+        bad = [n for n in names if n not in ok_names]
         if bad:
-            log('   ✗ %s 校验不过：%s' % (rd, ', '.join(bad)))
-            rc = 3
-        else:
-            log('   ✓ %s  %d/%d 一致' % (rd, len(pushed), len(pushed)))
+            failed[t.name] = bad
 
-    # 推送后把本地快照对齐到线上现状，下次体检不用再下 20MB
-    if pushed:
-        touched = 0
-        for name in pushed:
+        log('==> 双向 md5 校验')
+        after = t.md5s()
+        for rd in dirs:
+            now = after.get(rd) or {}
+            wrong = [n for n in ok_names if now.get(n) != local_md5[n]]
+            if wrong:
+                log('   ✗ %s 校验不过：%s' % (rd, ', '.join(wrong)))
+                failed.setdefault(t.name, []).extend(wrong)
+                ok_names = [n for n in ok_names if n not in wrong]
+            else:
+                log('   ✓ %s  %d/%d 一致' % (rd, len(ok_names), len(ok_names)))
+        pushed[t.name] = ok_names
+
+        # 远端快照对齐，下次体检不用再下 20MB
+        if t.kind == 'ssh' and ok_names:
+            snap = CACHE_DIR / ('snap_%s_%s' % (
+                md5_bytes(('%s|%s' % (t.base, dirs[0])).encode())[:8],
+                dirs[0].strip('/').replace('/', '_')))
             try:
-                (snap / name).write_bytes(local_files[name].read_bytes())
-                touched += 1
+                for n in ok_names:
+                    (snap / n).write_bytes(local_files[n].read_bytes())
+                (snap / '.md5index.json').write_text(
+                    json.dumps(after.get(dirs[0], {}), ensure_ascii=False), encoding='utf-8')
             except OSError:
                 pass
-        if touched == len(pushed) and primary in after:
-            (snap / '.md5index.json').write_text(json.dumps(after[primary], ensure_ascii=False),
-                                                 encoding='utf-8')
 
-    if not args.no_mirror_repo and mirror_dir.is_dir():
+    # ---- 本地服务端仓 ----------------------------------------------------
+    all_pushed = sorted({n for v in pushed.values() for n in v})
+    if not args.no_mirror_repo and mirror_dir.is_dir() and all_pushed:
+        log('')
         log('==> 同步本地服务端仓：%s' % mirror_dir)
         copied = 0
-        for name in pushed:
+        for name in all_pushed:
             try:
                 (mirror_dir / name).write_bytes(local_files[name].read_bytes())
                 copied += 1
             except OSError as e:
                 log('   ⚠ %s 写入失败：%s' % (name, e))
         log('   ✓ %d 张（未提交，记得在服务端仓 git add/commit）' % copied)
-    elif not args.no_mirror_repo:
+    elif not args.no_mirror_repo and not mirror_dir.is_dir():
         log('⚠ 本地服务端仓目录不存在，跳过：%s' % mirror_dir)
 
+    # ---- 基线：只有「所有选中目标都到位」的表才前移 ----------------------
     now_ts = time.strftime('%Y-%m-%d %H:%M:%S')
-    # 与线上本来就一致的表也把基线对齐，否则它每次都会以「候选」身份重复出现
-    same_now = {r['table'] for r in results if r['verdict'] == 'SAME'}
+    done = []
+    for name in plan:
+        statuses = []
+        for t in targets:
+            if name in pushed.get(t.name, []):
+                statuses.append('pushed')
+            elif result[name].get(t.name, {}).get('verdict') == 'SAME':
+                statuses.append('same')
+            else:
+                statuses.append('pending')
+        if all(s in ('pushed', 'same') for s in statuses):
+            sig[name] = local_tables[name].sig
+            done.append(name)
     for name, lt in local_tables.items():
-        rec = tables.get(name) or {}
-        if name in pushed:
-            rec = {'sig': lt.sig, 'synced_at': now_ts}
-        elif name in same_now:
-            rec = {'sig': lt.sig, 'synced_at': 'same-as-remote'}
-        else:
-            rec.setdefault('sig', lt.sig)
-            rec.setdefault('synced_at', 'baseline')
-        tables[name] = rec
-    state['version'] = 1
+        sig.setdefault(name, lt.sig)      # 没进候选的表直接记基线
+    for t in targets:
+        rec = state.setdefault('targets', {}).setdefault(t.name, {})
+        rec['base'] = t.where(dirs[0])
+        if pushed.get(t.name):
+            rec['last_sync_at'] = now_ts
+    state['version'] = 2
     state['last_sync_at'] = now_ts
-    state['remote'] = '%s:%s' % (SSH_HOST, REMOTE_BASE)
     save_state(state)
-    log('==> 基线已更新：%s' % STATE_FILE)
+    log('')
+    log('==> 基线已更新：%s（本次前移 %d 张）' % (STATE_FILE, len(done)))
 
-    _write_report(all_results, pushed, failed, blocked, drift, backup, remote_dirs)
+    _write_report(targets, result, plan, pushed, failed, drift, backups, dirs)
     if args.json_out:
-        Path(args.json_out).write_text(json.dumps(list(all_results.values()), ensure_ascii=False, indent=2),
-                                       encoding='utf-8')
+        Path(args.json_out).write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
 
+    rc = 0
     if failed:
         log('')
-        log('✗ %d 张传输失败：%s' % (len(failed), ', '.join(failed)))
+        for tname, names in failed.items():
+            log('✗ %s 失败 %d 张：%s' % (tname, len(names), ', '.join(names)))
         rc = 3
+
+    blocked = [n for n in plan if not all(plan[n][t.name] for t in targets)]
     if blocked:
         log('')
-        log('🔴 被拦下 %d 张（未推）：' % len(blocked))
-        for r in blocked:
-            log('   %-34s %s' % (r['table'], VERDICT_TEXT.get(r['verdict'], r['verdict'])))
+        log('🔴 有表被拦下（对应目标未推）：')
+        for n in blocked:
+            for t in targets:
+                v = result[n].get(t.name, {}).get('verdict')
+                if not plan[n][t.name] and v:
+                    log('   %-34s %-6s %s' % (n, t.name, VERDICT_TEXT.get(v, v)))
         if args.strict:
             rc = rc or 4
 
-    if pushed and args.restart:
-        if not restart_server():
-            log('✗ 重启失败，请手工处理')
-            rc = rc or 3
+    # ---- 重启 ------------------------------------------------------------
+    if args.restart and pushed:
+        for t in targets:
+            if not pushed.get(t.name):
+                continue
+            if t.kind == 'ssh' and not args.yes:
+                if sys.stdin.isatty():
+                    ans = input('⚠ 重启线上服会踢线（%s），继续？[y/N] ' % t.name).strip().lower()
+                    if ans != 'y':
+                        log('   跳过重启 %s' % t.name)
+                        continue
+                else:
+                    log('⚠ 线上服 %s 未重启（非交互环境需加 --yes），新数值下次重启才生效' % t.name)
+                    continue
+            log('==> 重启 %s' % t.label)
+            if not t.restart():
+                log('✗ %s 重启失败，请手工处理：%s' % (t.name, t.restart_hint))
+                rc = rc or 3
+            else:
+                log('   ✓ 已重启')
     elif pushed:
         log('')
-        log('⚠ 表已落盘但游戏服未重启，新数值要重启后才生效：')
-        log('    ssh %s "bash %s/RESTART-GAMESERVER.sh"' % (SSH_HOST, REMOTE_BASE))
+        log('⚠ 表已落盘但服务端未重启，新数值要重启后才生效：')
+        for t in targets:
+            if pushed.get(t.name):
+                log('   %-6s %s' % (t.name, t.restart_hint))
 
     log('')
-    log('完成：推了 %d 张，失败 %d 张，拦下 %d 张。' % (len(pushed), len(failed), len(blocked)))
+    log('完成：%s；拦下 %d 张。' % (
+        '，'.join('%s 推 %d 张' % (k, len(v)) for k, v in pushed.items()) or '没推任何表',
+        len(blocked)))
     return rc
 
 
-def _names(raw: str) -> set:
-    """'A,B' → {'A.txt','B.txt'}（表名可不带扩展名）。"""
-    out = set()
-    for n in raw.split(','):
-        n = n.strip()
-        if n:
-            out.add(n if n.endswith('.txt') else n + '.txt')
-    return out
-
-
-def _seed(tables: dict, local_tables: dict, remote_tables: dict):
-    for name, lt in local_tables.items():
-        tables[name] = {'sig': lt.sig, 'synced_at': 'baseline'}
-
-
-def _write_report(all_results, pushed, failed, blocked, drift, backup, remote_dirs):
+def _write_report(targets, result, plan, pushed, failed, drift, backups, dirs):
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     path = REPORT_DIR / ('sync_%s.md' % time.strftime('%Y%m%d_%H%M%S'))
-    lines = ['# 导表服务端同步报告 %s' % time.strftime('%Y-%m-%d %H:%M:%S'), '',
-             '| 项 | 值 |', '|---|---|',
-             '| 线上 | `%s:%s` |' % (SSH_HOST, REMOTE_BASE),
-             '| 推送目录 | %s |' % ', '.join(remote_dirs),
-             '| 备份 | %s |' % (backup.name if backup else '（未写线上，无备份）'),
-             '| 已推 | %d 张 |' % len(pushed),
-             '| 失败 | %d 张 |' % len(failed),
-             '| 拦下 | %d 张 |' % len(blocked),
-             '| 语义漂移（未推） | %d 张 |' % len(drift), '',
-             '## 语义漂移明细', '', '| 表 | 判定 | 行数(线上→本地) | 说明 |', '|---|---|---|---|']
-    for name in sorted(drift):
-        r = all_results[name]
-        lines.append('| `%s` | %s | %s | %s |' % (name, r['verdict'], r['rows'],
-                                                  '<br>'.join(r['notes']).replace('|', '\\|')))
-    if pushed:
-        lines += ['', '## 本次推送', ''] + ['- `%s`' % n for n in pushed]
+    head = ['# 导表服务端同步报告 %s' % time.strftime('%Y-%m-%d %H:%M:%S'), '',
+            '| 项 | 值 |', '|---|---|']
+    for t in targets:
+        head.append('| %s | `%s` |' % (t.label, t.where(dirs[0])))
+    head.append('| 推送目录 | %s |' % ', '.join(dirs))
+    for t in targets:
+        b = backups.get(t.name)
+        head.append('| %s 备份 | %s |' % (t.name, b.name if b else '（未写，无备份）'))
+    for t in targets:
+        head.append('| %s 已推 / 失败 | %d / %d |'
+                    % (t.name, len(pushed.get(t.name, [])), len(failed.get(t.name, []))))
+    head.append('| 语义漂移（未推） | %d 张 |' % len(drift))
+    head.append('')
+
+    cols = ' | '.join('`%s`' % t.name for t in targets)
+    sep = '|---' * (len(targets) + 1) + '|'
+    lines = head + ['## 候选表逐表判定', '', '| 表 | %s |' % cols, sep]
+    for name in sorted(plan):
+        cells = []
+        for t in targets:
+            r = result[name].get(t.name, {})
+            mark = '✅' if plan[name][t.name] else '✗'
+            cells.append('%s %s' % (r.get('verdict', '-'), mark))
+        lines.append('| `%s` | %s |' % (name, ' | '.join(cells)))
+
+    if drift:
+        lines += ['', '## 语义漂移明细（本次未纳入候选）', '']
+        for t in targets:
+            rows = [(n, result[n].get(t.name, {})) for n in sorted(drift)
+                    if result[n].get(t.name, {}).get('verdict') not in (None, 'SAME')]
+            if not rows:
+                continue
+            lines += ['### %s' % t.label, '', '| 表 | 判定 | 行数(目标→本地) | 说明 |', '|---|---|---|---|']
+            for n, r in rows:
+                lines.append('| `%s` | %s | %s | %s |' % (n, r.get('verdict', ''), r.get('rows', ''),
+                                                          '<br>'.join(r.get('notes', [])).replace('|', '\\|')))
+            lines.append('')
+
+    for t in targets:
+        if pushed.get(t.name):
+            lines += ['## %s 本次推送' % t.name, ''] + ['- `%s`' % n for n in pushed[t.name]] + ['']
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     log('报告：%s' % path)
 

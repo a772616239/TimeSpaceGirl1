@@ -899,6 +899,11 @@ the original line it replaces. Same left alignment, same margins, same line coun
 3. The dark ribbon / plate that carries the text must keep its exact silhouette, position, \
 thickness, rotation and inner gradient. Do NOT enlarge, thicken, extend or re-shape it. If the \
 English is wider than the Chinese, condense the letters — never grow the ribbon.
+3b. Render the COMPLETE English text — every letter of every line, INCLUDING the final letter. \
+NEVER truncate, drop or clip any character (e.g. never turn "TEMPTATION" into "TEMPTATIO"). If the \
+line is still too wide after condensing, first tighten the letter-spacing, then reduce the glyph \
+HEIGHT proportionally — but always fit the WHOLE word inside the ribbon with a small margin at both \
+ends. The last letter must be fully visible, not hidden behind or cut off by the ribbon edge.
 4. All Chinese characters must be gone. No Chinese / Japanese / Korean glyphs anywhere.
 5. Use clean bold latin capitals, readable at small size, no decorative script that cannot be read.
 6. Do not add logos, watermarks, signatures, frames or any extra element.

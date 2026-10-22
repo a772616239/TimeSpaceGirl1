@@ -256,6 +256,12 @@ TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_d
 TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_missiondaily_cardslide.lua
 ```
 
+第五个落地 `CourtesyDressPanel`（一屏 ~6 张、底板是名为 `Image` 的直接子节点、页签是手写按钮）13 case：
+
+```bash
+TS_ROOT=../../.. LUA_PATH="./?.lua;;" ./luajit ../../../scripts/lua-tests/test_courtesydress_cardslide.lua
+```
+
 必测的 8 条：
 
 | # | 断言 |
@@ -292,12 +298,27 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 | `DailyCarbonPanel` | 副本卡 `Pre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | 打开 +260 / 0.26s / 错开 0.055；切页签 +170 / 0.30s / 错开 0.05 / 整批 +0.05 |
 | `MapPanel` | HUD 贴边容器 9 个（见 §10） | **各自就近的那条边** | 56~96px / 0.26s / 错开 0.05（总 0.61s） |
 | `MissionDailyPanel_Daily` | 任务卡 `rewardPre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | 打开 +260 / 0.26s / 错开 0.055；切页签 +170 / 0.30s / 错开 0.05 / 整批 +0.05 |
+| `CourtesyDressPanel` | 奖励卡 `item` → `item1..itemN`（一屏 ~6 张） | **右 → 左** | 同上（打开 +260 / 0.26s / 0.055；切页签 +170 / 0.30s / 0.05 / 整批 +0.05） |
 
 `MissionDailyPanel_Daily` 有一处和前三处不同，值得先看一眼：**任务卡没有 `bg` 子节点**，
 整卡底板就是卡根节点自己那张 `Image`（`cn2-X1_chongzhi_goumaixiangdiban`，1080×275 满幅）。
 所以 `kCardFadeNode` 那条查找换成了 `card:GetComponent("Image")` —— 淡 alpha 不动位置，
 写在根节点的 **Image 组件**上不会被 `ScrollCycleView` 的 `anchoredPosition` 重写波及。
 判据：`prefab` 里卡根有 `CanvasRenderer + Image` 且该 Image 铺满卡面 ⇒ 就走根节点 Image。
+
+`CourtesyDressPanel` 的底板又是第三种形态：**卡根节点没有 Image**，满幅底板是第一个名为 `Image` 的
+直接子节点（1060×230）⇒ `kCardFadeNode = "Image"`，且这个节点同时也在 `kCardNodes` 里（位移 + 淡入
+两个通道落在同一个节点上，互不冲突）。这条依赖 `Util.GetGameObject` 先 `root.Find` 再 DFS，
+所以直接子节点会先命中；万一将来 prefab 调序导致命中错的 Image，现象是「底板不淡入」，
+改法是在 `PlayCardSlideIn` 里把它换成显式 `transform:GetChild(0)`。
+
+三种底板形态对照（动手前先看要落的那张卡属于哪种）：
+
+| prefab 形态 | 找法 | 已落地 |
+|---|---|---|
+| 有名为 `Bg` / `bg` 的满幅子节点 | `Util.GetGameObject(card, "bg")` | `DailyCarbonPanel` / `BattlePassPanel_Mission` |
+| 卡根节点自己就是满幅 Image | `card:GetComponent("Image")` | `MissionDailyPanel_Daily` |
+| 无 bg 子节点、根也无 Image | 直接子节点里那个满幅 `Image` | `CourtesyDressPanel` |
 
 ---
 
@@ -375,6 +396,12 @@ prefab 一行没动。
 ---
 
 ## 11. 变更记录
+
+- 2026-10-22 第五个落地：`CourtesyDressPanel`（奖励卡，一屏 ~6 张，页签是 3 个手写按钮而不是 TabBox）。
+  新增：**底板第三种形态**（没有 bg 子节点、根也没有 Image，满幅底板是名为 `Image` 的直接子节点，
+  且它同时承担位移与淡入两个通道）与三种形态的对照表；`RefreshActivityDataSilently` 的收口方式
+  （在线奖励每秒推进也会重建列表，`pcall` 只为复位标记）。harness 13 case，
+  其中 case9 走真实入口 `OnShowActivityData`、case10 通过 `BindEvent` 真实接线验 3 个页签按钮。
 
 - 2026-10-22 第四个落地：`MissionDailyPanel_Daily`（任务卡，一屏 ~5 张）。两点新增：
   ① 底板不在子节点上 —— 卡根节点自己的 `Image` 就是满幅底板，淡 alpha 走

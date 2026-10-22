@@ -10,6 +10,6 @@ return {
     ["cn2-X1_loading_05"] = { minX = 0.163743, minY = 0.783203, maxX = 0.997076, maxY = 0.970215 },
     ["cn2-X1_loading_06"] = { minX = 0.197368, minY = 0.782227, maxX = 0.954678, maxY = 0.941406 },
     ["cn2-X1_loading_07"] = { minX = 0.210526, minY = 0.785645, maxX = 1.0, maxY = 0.971191 },
-    ["cn2-X1_loading_08"] = { minX = 0.197368, minY = 0.782227, maxX = 0.954678, maxY = 0.936523 },
+    ["cn2-X1_loading_08"] = { minX = 0.138889, minY = 0.782227, maxX = 0.896199, maxY = 0.936523 },
     ["cn2-X1_loading_09"] = { minX = 0.197368, minY = 0.782227, maxX = 0.954678, maxY = 0.957031 },
 }

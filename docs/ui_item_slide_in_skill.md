@@ -314,6 +314,7 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 | `FightRecordPopup` | 战斗记录卡 `Bg/Grid/RewardInfoGroupPre1..3`（固定 3 张，按 dataID 激活） | **右 → 左** | 打开 +260 / 0.26s / 0.055（无 tab，单节奏） |
 | `FindTreasureMainPanel` | 寻宝任务卡 `rewardPre1..N`（一屏 ~5 张，grid 挂 VerticalLayoutGroup） | **右 → 左** | 打开 +260 / 0.26s / 0.055（无页签，只有打开那一套） |
 | `LineupRecommend` | 阵容卡 `prefab` → 1..N（一屏 ~3.7 张）**+ 卡内英雄两层** | **右 → 左** | 卡 +240 / 0.22s / 错开 0.055；卡内英雄 +80 / 0.18s / 错开 0.04 / 相对自己的卡晚 0.06（无页签，只此一套） |
+| `LaddersTypePanel` | 入场卡 `rewardPre` → itemN（ScrollCycleView 一屏 2~3 张） | **右 → 左**（左滑入右） | 打开 +260 / 0.26s / 错开 0.055（无页签，只此一套） |
 
 `MissionDailyPanel_Daily` 有一处和前三处不同，值得先看一眼：**任务卡没有 `bg` 子节点**，
 整卡底板就是卡根节点自己那张 `Image`（`cn2-X1_chongzhi_goumaixiangdiban`，1080×275 满幅）。
@@ -412,6 +413,19 @@ prefab 一行没动。
 ---
 
 ## 11. 变更记录
+
+- 2026-10-22 第九个落地：`LaddersTypePanel`（无尽 PK/混乱之治入口卡，ScrollCycleView 一屏 2~3 张）。
+  ① 需求原话「左滑入右」＝ 从右侧滑入向左归位（主流方向）。② 可见卡是 `rewardPre` 的直接子节点
+  `Icon`（1080x488 满幅自带 Image，`RefreshItem` 往它设 sprite），`Bg` 是 INACTIVE 废弃遗留、
+  `nil` 是「敬请期待」占位卡 ⇒ `kSlideNodes = {"Icon","nil"}`，淡入落 Icon 的 Image
+  （CourtesyDressPanel 同款「位移+淡入同节点」双通道）。占位卡按 `RefreshItem` 实际行为是
+  `nil:SetActive(true)` 而 **Icon 保持模板默认 active** ⇒ 占位卡是 3 条 tween。
+  ③ 闸门 OnOpen 置 `needSlideAnim`、OnShow 末尾消费 —— 进无尽 PK/混乱之治返回时不重播
+  （FightRecordPopup 同款）。无页签、无数据刷新路径 ⇒ 无 suppress/第二节奏。
+  ④ 🔴 该文件顶部 `local type = {...}` 遮住全局 `type()`（§7 第 8 条的现成标本）：
+  `Alive` 里必须走 `_G.type`，且 `CollectCards` 判 ScrollCycleView 不能写 `type(sv) == "table"`
+  （DailyCarbon 的写法在此文件会直接炸），改成 `sv ~= nil and sv.ForeachItemGO ~= nil`。
+  harness 10 case：`scripts/lua-tests/test_ladderstype_cardslide.lua`；LuaBytes 已重编同步。
 
 - 2026-10-22 第八个落地：`FightRecordPopup`（战斗记录卡，固定 3 张，`Bg/Grid` 挂 VerticalLayoutGroup）。
   底板走形态二（卡根自己的 Image，1080×260）。新增一点：**播放闸门放 `OnOpen`、消费在 `OnShow` 末尾**

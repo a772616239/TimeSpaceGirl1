@@ -27,6 +27,14 @@
 
 ## 关键坑位
 
+- **导表产物 int 列必须按类型归一化，否则整张表不加载**：服务端 `STableManager.dealParams`
+  对 int 列直接 `Integer.parseInt`、catch 后 `throw e`，一个单元格坏 = 整表跳过。
+  xlsx 里常见的是**存成文本的 Excel 浮点噪声**（`'740.0000000000006'`、`'499.99999999999994'`）
+  和越界哨兵（`9999999999`）、整数列写小数（`1.25`）。现口径 = Java `(int)` 向零截断 +
+  int32 夹取（`1.25→1` 有损，要小数得改服务端列类型），导出器
+  `DataHelper.GetServerValByType` 已内置，历史产物用 `table_sync.py --fix-numeric`。
+  判定依据：发包树 `Server_x1tag1.2.2` 里就是截断后的值，说明这步以前有、后来丢了。
+
 - 真机换包后仍连旧服：`VersionManager.InitVersions()` 优先用持久化
   `persistentDataPath/Android/version.txt`，已加 `SyncServerConfigFromPackage()` 用包内值纠正。
 - 纯后端表（第 3 行导出类型全 4）导表工具会空跑，需要 `append_reward_items_to_server.py` 手工补。

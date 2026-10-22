@@ -607,6 +607,10 @@ def render(data: dict | None = None, base: dt.datetime | None = None, live: bool
             rows.append(f"(AdsPower 实时状态取不到：{e})")
 
     accounts = data.get("accounts") or {}
+    # asset: 条目只是「这张图归哪一轮」的临时占位，没租约就是垃圾（每轮 batch 都会留一条），
+    # 不在通道台账里显示，免得把「哪个号还有额度」这张表撑乱。
+    accounts = {k: e for k, e in accounts.items()
+                if not (e.get("kind") == "asset" and not e.get("lease"))}
     if not accounts:
         rows.append("台账是空的：还没有任何账号被记录过（第一次出图后自动建档）。")
         return "\n".join(rows)

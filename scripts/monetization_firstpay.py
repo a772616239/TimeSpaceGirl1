@@ -24,8 +24,17 @@
 
 本脚本只改配置（不动 Java/Lua）：
   R7  首充活动：紫晶卡 5→10（凑满十连的券），100 元档招募卡 1→3
-  R8  SKU 首购：6 元档首购补到 2000 钻（十连的钻石部分），12 元月卡首购 +300 钻
+  R8  SKU 首购：6 元档首购补钻（与首充活动的券配平；R16 起为 600 ⇒ 合计 660 钻）
   R9  星级成长礼按星级做钻/元阶梯（直充同档 +0.5，每星 +0.25），修倒挂 + 建梯度
+
+R16（2026-10-22 复核后的回退，别再加回去）：
+  10-21 的 R8 把 id=1 首购设成 1100 ⇒ 6 元合计 1160 钻，**比 30 元档首购 660 还高 76%**，
+  且首充 5 券 + 1160 钻 = 1.712 抽/元，超过月卡 1.364 成为全表第一（R13/R14 刚把落差压到
+  2.83x，被这一格拉回 4.85x）。现改为：首购 600 ⇒ 合计 660 钻 = 30 元档持平（不倒挂），
+  首充活动 6 元档券 5→3 ⇒ 3 张券 × 220 钻 恰好被 660 钻吃完，**零死券**；名义抽等值
+  3 + 660/220 = 6.0 抽 / 6 元 = 1.000 抽/元（＝成长基金，< 月卡 1.364）。
+  另：R8 里「12 元月卡首购 +300」是空改 —— id=9 的 OnSaleRule 是 1#999#999 已永久关停，
+  玩家买不到，月卡实际只有「累充 12 元白送」通道。已从 SKU_FIRST_MULTIPLE 移除。
 
 用法：
     python scripts/monetization_firstpay.py            # dry-run
@@ -66,9 +75,10 @@ FIRSTPAY_ACTIVITY_ID = 5
 
 # R7 首充活动：只改「已有道具的数量」（不新增奖励项 —— 客户端每天只有 2 格）
 #     键 = (累计充值元, 第几天)，值 = {道具id: 数量}
-#     6 元档 day1：紫晶卡 5 → 10（钻石招募十连 `19#10|16#2000` 的券凑齐）
-#     100 元档 day1：同上；day2：招募卡 1 → 3（普通招募单抽 `20#1`，多给 2 抽）
+#     6 元档 day1：紫晶卡 3（与 SKU 首购的 660 钻配平成 3 次单抽，零死券）
+#     100 元档 day1：紫晶卡 10（凑满十连的券）；day2：招募卡 1 → 3（多给 2 抽）
 FIRSTPAY_SET = {
+    (6, 1): {"19": 3},
     (100, 1): {"19": 10},
     (100, 2): {"20": 3},
 }
@@ -77,14 +87,16 @@ FIRSTPAY_SET = {
 FIRSTPAY_SLOTS = 2
 # 单抽 `19#1|16#220`（LotterySetting Id=12）/ 十连 `19#10|16#2000`（Id=11）
 SINGLE_PULL_DIAMONDS = 220
-SINGLE_PULLS_6YUAN = 5
+# 6 元档能配平几次单抽 = 首充活动给的紫晶卡张数（券和钻必须同进同出，券多出来的就是死库存）
+SINGLE_PULLS_6YUAN = FIRSTPAY_SET[(6, 1)]["19"]
 TEN_PULL_DIAMONDS = 2000
 
 # R8 SKU 首购（RechargeCommodityConfig.FirstMultiple，买该 SKU 第 1 次时额外发放）
-#     id=1  6 元钻石档：60 → 1100 ⇒ 首购合计 1160 钻，与首充活动给的 19#5 正好凑 5 次单抽
-#           （不动到 2000 钻 / 一次十连：那会让 6 元比 12 元月卡的边际吸引力还高，抢月卡转化）
-#     id=9  12 元月卡：0 → 300   ⇒ 首购 600 钻（即时 50 钻/元；30 天合计仍是全表最优 ~325）
-SKU_FIRST_MULTIPLE = {1: 1100, 9: 300}
+#     id=1  6 元钻石档：1100 → 600 ⇒ 首购合计 60+600 = 660 钻
+#           ① 与 30 元档首购合计 660 钻**持平**（1100 时是 1160，倒挂 1.76x，同屏角标一眼可见）
+#           ② 正好被 3 张紫晶卡吃完（3×220=660），不多不少，零死券
+#     月卡 id=9 已永久关停（OnSaleRule=1#999#999），不放进来 —— 那条改动永远不会到账
+SKU_FIRST_MULTIPLE = {1: 600}
 
 # R9 星级成长礼阶梯：目标钻/元 = 直充同价档 + BONUS_BASE + BONUS_STAR × (星级-5)
 BONUS_BASE = 0.5
@@ -217,6 +229,32 @@ def star_map():
 
 # ─────────────────────────── 三个改动 ───────────────────────────
 
+F_MONTHCARD = "MonthcardConfig"
+
+
+def monthcard_pull_per_yuan():
+    """月卡（MonthcardConfig id=1）的抽/元 = 每日钻 × 天数 / 220 / 激活门槛。
+    现读表，不写死 —— 它是「复购型产品必须压住首充」的锚点。"""
+    try:
+        wb, ws, idx = load(F_MONTHCARD)
+    except Exception:
+        return None
+    c_id, c_price, c_reward, c_days = (col(idx, "Id"), col(idx, "Price"),
+                                       col(idx, "BaseReward"), col(idx, "ContiueDays"))
+    for r, v in iter_rows(ws):
+        if get(v, c_id) != 1:
+            continue
+        price = get(v, c_price) or 0
+        days = get(v, c_days) or 0
+        dia = diamonds(parse_pairs(get(v, c_reward)))
+        wb.close()
+        if price > 0 and days > 0 and dia > 0:
+            return dia * days / float(SINGLE_PULL_DIAMONDS) / price
+        return None
+    wb.close()
+    return None
+
+
 def plan_firstpay_activity():
     """R7：首充活动改数量（不新增奖励项）"""
     wb, ws, idx = load(F_ACTREWARD)
@@ -310,7 +348,9 @@ def plan_star_ladder(star_bonus):
 
 # ─────────────────────────── 自检 ───────────────────────────
 
-def verify():
+def verify(check_star=True):
+    """自检范围 = 本次改动范围。`--only firstpay` 时不该被星级礼的历史倒挂拦住
+    （50 元神之塔 / 488 档那 4 处是 R9 之前就存在的存量，另行处理）。"""
     msgs, ok = [], True
 
     # 1) 首充活动：每天 ≤2 项（客户端硬限制）+ 券数够十连
@@ -339,32 +379,59 @@ def verify():
         card19 = sum(n for _, p in rows for k, n in p if k == "19")
         card20 = sum(n for _, p in rows for k, n in p if k == "20")
         total_dia = sum(diamonds(p) for _, p in rows)
-        need_card = 5 if tier == 6 else 10
+        need_card = SINGLE_PULLS_6YUAN if tier == 6 else 10
         msgs.append("%s 首充 %d 元档: 紫晶卡×%d（需 %d）· 招募卡×%d · 三天钻石 %d"
                     % ("✓" if card19 >= need_card else "✗", tier, card19, need_card,
                        card20, total_dia))
         if card19 < need_card:
             ok = False
 
-    # 2) 6 元档首购 + 十连券 能否凑成一次十连
+    # 2) 6 元档：券与钻必须配平（券多于能配的钻 = 死库存），且抽等值不得压过月卡
     wb, ws, idx = load(F_RECHARGE)
     (c_id, c_fm, c_price, c_base, c_show_type,
-     c_sale, c_show) = (col(idx, "Id"), col(idx, "FirstMultiple"), col(idx, "Price"),
-                        col(idx, "BaseReward"), col(idx, "ShowType"),
-                        col(idx, "OnSaleRule"), col(idx, "RewardShow"))
+     c_sale, c_show, c_type) = (col(idx, "Id"), col(idx, "FirstMultiple"), col(idx, "Price"),
+                                col(idx, "BaseReward"), col(idx, "ShowType"),
+                                col(idx, "OnSaleRule"), col(idx, "RewardShow"), col(idx, "Type"))
+    got6 = 0
     for r, v in iter_rows(ws):
         if get(v, c_id) != 1:
             continue
         base = diamonds(parse_pairs(get(v, c_base)))
         fm = diamonds(parse_pairs(get(v, c_fm)))
         price = get(v, c_price) or 0
-        got = base + fm
-        need = SINGLE_PULL_DIAMONDS * SINGLE_PULLS_6YUAN
-        msgs.append("%s 6 元档首购合计 %d 钻（基础 %d + 首购 %d）≥ %d 次单抽所需 %d；即时 %.0f 钻/元"
-                    % ("✓" if got >= need else "✗", got, base, fm,
-                       SINGLE_PULLS_6YUAN, need, got / price if price else 0))
-        if got < need:
+        got6 = base + fm
+        card6 = sum(n for _, p in days.get(6, []) for k, n in p if k == "19")
+        pulls = got6 // SINGLE_PULL_DIAMONDS
+        dead = card6 - pulls
+        nominal = card6 + got6 / float(SINGLE_PULL_DIAMONDS)
+        per_yuan = nominal / price if price else 0
+        mc = monthcard_pull_per_yuan()
+        head = "✓" if dead <= 0 and (mc is None or per_yuan <= mc + 1e-9) else "✗"
+        msgs.append("%s 6 元档首购合计 %d 钻（基础 %d + 首购 %d）· 紫晶卡×%d ⇒ 可抽 %d 次，死券 %d 张"
+                    % (head, got6, base, fm, card6, pulls, dead))
+        msgs.append("%s 6 元档名义 %.2f 抽 = %.3f 抽/元%s"
+                    % ("✓" if head == "✓" else "✗", nominal, per_yuan,
+                       "" if mc is None else ("（月卡 %.3f，上限）" % mc)))
+        if head != "✓":
             ok = False
+
+    # 2b) 直充首购总钻按价格单调不减 —— R16 的病根就是 6 元被单独抬到 30 元之上
+    ladder = []
+    for r, v in iter_rows(ws):
+        if get(v, c_type) != 3:
+            continue
+        price = get(v, c_price) or 0
+        if price <= 0:
+            continue
+        ladder.append((price, diamonds(parse_pairs(get(v, c_base)))
+                       + diamonds(parse_pairs(get(v, c_fm)))))
+    ladder.sort()
+    drop = [("%d元" % p0, g0, "%d元" % p1, g1)
+            for (p0, g0), (p1, g1) in zip(ladder, ladder[1:]) if g1 < g0]
+    msgs.append("%s 直充首购总钻按价格单调不减（倒挂 %d 处）%s"
+                % ("✓" if not drop else "✗", len(drop), drop[:4] if drop else ""))
+    if drop:
+        ok = False
 
     # 3) 首购赠礼写入一致
     per_sku = {}
@@ -375,6 +442,21 @@ def verify():
     msgs.append("%s 首购赠礼：%s %s" % ("✓" if not bad else "✗", per_sku, bad if bad else ""))
     if bad:
         ok = False
+
+    # 3b) 月卡 SKU 是否还活着（关停 ⇒ 首购赠永远到不了账，别再写进成果清单）
+    for r, v in iter_rows(ws):
+        if get(v, c_id) != 9:
+            continue
+        alive = DEAD_ONSALE not in str(get(v, c_sale) or "")
+        msgs.append("%s 月卡 SKU id=9 首购赠 %d 钻%s"
+                    % ("✓" if not alive else "✗",
+                       diamonds(parse_pairs(get(v, c_fm))),
+                       "（OnSaleRule=%s 永久关停，该赠礼不可达）" % get(v, c_sale)
+                       if not alive else "可购买"))
+
+    if not check_star:
+        msgs.append("· 星级礼检查已跳过（本次 --only firstpay，未改动 R9 的相关行）")
+        return ok, msgs
 
     # 4) 星级礼：不低于直充 + 星级单调
     direct = direct_ratio_table(ws, idx)
@@ -438,16 +520,20 @@ def verify():
 
 # ─────────────────────────── 主流程 ───────────────────────────
 
-def plan_all(star_bonus):
+def plan_all(star_bonus, do_firstpay=True, do_star=True):
     changes = collections.OrderedDict()
-    report = {}
+    report = {"firstpay": [], "first": [], "star": []}
     wb, ws, idx, ch, rep = plan_firstpay_activity()
-    changes[F_ACTREWARD] = (wb, ws, idx, ch)
-    report["firstpay"] = rep
+    changes[F_ACTREWARD] = (wb, ws, idx, ch if do_firstpay else [])
+    if do_firstpay:
+        report["firstpay"] = rep
     wb2, ws2, idx2, ch2, rep2 = plan_sku_first_multiple()
-    wb3, ws3, idx3, ch3, rep3 = plan_star_ladder(star_bonus)
-    changes[F_RECHARGE] = (wb2, ws2, idx2, ch2 + ch3)
-    report["first"] = rep2
+    ch3, rep3 = [], []
+    if do_star:
+        wb3, ws3, idx3, ch3, rep3 = plan_star_ladder(star_bonus)
+    changes[F_RECHARGE] = (wb2, ws2, idx2, (ch2 if do_firstpay else []) + ch3)
+    if do_firstpay:
+        report["first"] = rep2
     report["star"] = rep3
     return changes, report
 
@@ -486,7 +572,7 @@ def print_plan(changes, report):
     print("\n合计改动单元格 %d 个：%s" % (total, {k: len(v[3]) for k, v in changes.items()}))
 
 
-def do_apply(changes, star_bonus):
+def do_apply(changes, star_bonus, check_star=True):
     ts = time.strftime("%Y%m%d-%H%M%S")
     bdir = os.path.join(BACKUP_ROOT, ts)
     os.makedirs(bdir, exist_ok=True)
@@ -500,7 +586,7 @@ def do_apply(changes, star_bonus):
         wb.save(os.path.join(BASE, fname + ".xlsx"))
         print("写盘 %s.xlsx (%d 处)" % (fname, len(ch)))
 
-    ok, msgs = verify()
+    ok, msgs = verify(check_star)
     print("\n自检:")
     for m in msgs:
         print("  " + m)
@@ -531,6 +617,8 @@ def main():
     ap.add_argument("--star-bonus", type=float, default=BONUS_STAR,
                     help="每升 1 星增加的钻/元（默认 %.2f）" % BONUS_STAR)
     ap.add_argument("--verify-only", action="store_true", help="只跑自检，不改表")
+    ap.add_argument("--only", choices=("all", "firstpay", "star"), default="all",
+                    help="只做首充（R7+R8）/ 只做星级阶梯（R9）/ 全做")
     args = ap.parse_args()
 
     if args.list_backups:
@@ -542,17 +630,19 @@ def main():
         do_revert(args.revert)
         return
     if args.verify_only:
-        ok, msgs = verify()
+        ok, msgs = verify(args.only != "firstpay")
         print("自检: %s" % ("通过" if ok else "未通过"))
         for m in msgs:
             print("  " + m)
         sys.exit(0 if ok else 1)
 
-    changes, report = plan_all(args.star_bonus)
+    changes, report = plan_all(args.star_bonus,
+                               do_firstpay=args.only in ("all", "firstpay"),
+                               do_star=args.only in ("all", "star"))
     print_plan(changes, report)
     if args.apply:
         print("\n" + "=" * 96)
-        do_apply(changes, args.star_bonus)
+        do_apply(changes, args.star_bonus, check_star=args.only != "firstpay")
     else:
         print("\n（dry-run，未写盘。加 --apply 落表）")
 

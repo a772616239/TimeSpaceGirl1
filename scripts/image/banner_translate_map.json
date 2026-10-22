@@ -85,6 +85,7 @@
   "cn2-x1_texie_aijiyanhou_01_zh.png": {
     "zh_text": "诱惑之息",
     "lines": ["Breath of Temptation"],
+    "gpt_layout": "WIDTH LIMIT (hard, measured on the 512x256 canvas): the Chinese 诱惑之息 occupies x≈95..413 (318px wide, 61px tall, starting at y≈101). The single English line 'BREATH OF TEMPTATION' is much wider than four Chinese characters, so it MUST be condensed to fit inside that same span — start at the same left edge (x≈95) and end no later than x≈402, keeping at least 10px clearance on the right. Tighten letter-spacing first, then reduce glyph height proportionally (down to roughly 30px tall, about half the Chinese height — that is expected and correct) until the whole phrase fits. No letter may cross x≈408: the solid plate ends there (alpha drops from 58px to zero within a few columns) and anything drawn further right is cut off by the artwork's own silhouette. Never widen, extend or re-shape the banner, and never drop or truncate the final 'N' of TEMPTATION.",
     "note": "爱姬艳后英雄特写技能横幅「HERO-SKILL 诱惑之息」（ArtFont_zh/font，512x256 RGBA 透明底：黑色笔刷横幅底板 + 金黄渐变大字，左上小字 HERO-SKILL 本来就是英文不许动）。译名取语言表 38010002「Breath of Temptation」（jp テンプテーションブレス / kr 유혹의 숨결 同源）。同系列口径同 cn2-x1_texie_baiqi_01：尺寸落在 artfont 带但不是 884x544 三段版面、也不是单色 glyph ⇒ local 锚点与 600x400 闸门都不适用，必须 chatgpt_web；family=auto 判成 artfont 即走「整幅重绘 + alpha lock + 可见区改动 2%~75%」口径"
   },
   "cn2-x1_texie_baiqi_01_zh.png": {

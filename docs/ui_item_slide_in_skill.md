@@ -299,6 +299,7 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 | `MapPanel` | HUD 贴边容器 9 个（见 §10） | **各自就近的那条边** | 56~96px / 0.26s / 错开 0.05（总 0.61s） |
 | `MissionDailyPanel_Daily` | 任务卡 `rewardPre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | 打开 +260 / 0.26s / 错开 0.055；切页签 +170 / 0.30s / 错开 0.05 / 整批 +0.05 |
 | `CourtesyDressPanel` | 奖励卡 `item` → `item1..itemN`（一屏 ~6 张） | **右 → 左** | 同上（打开 +260 / 0.26s / 0.055；切页签 +170 / 0.30s / 0.05 / 整批 +0.05） |
+| `FindTreasureMainPanel` | 寻宝任务卡 `rewardPre1..N`（一屏 ~5 张，grid 挂 VerticalLayoutGroup） | **右 → 左** | 打开 +260 / 0.26s / 0.055（无页签，只有打开那一套） |
 | `LineupRecommend` | 阵容卡 `prefab` → 1..N（一屏 ~3.7 张） | **右 → 左** | 打开 +240 / 0.22s / 错开 0.055（无页签，只此一套） |
 
 `MissionDailyPanel_Daily` 有一处和前三处不同，值得先看一眼：**任务卡没有 `bg` 子节点**，
@@ -313,13 +314,14 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 所以直接子节点会先命中；万一将来 prefab 调序导致命中错的 Image，现象是「底板不淡入」，
 改法是在 `PlayCardSlideIn` 里把它换成显式 `transform:GetChild(0)`。
 
-三种底板形态对照（动手前先看要落的那张卡属于哪种）：
+四种底板形态对照（动手前先看要落的那张卡属于哪种）：
 
 | prefab 形态 | 找法 | 已落地 |
 |---|---|---|
 | 有名为 `Bg` / `bg` 的满幅子节点 | `Util.GetGameObject(card, "bg")` | `DailyCarbonPanel` / `BattlePassPanel_Mission` |
 | 卡根节点自己就是满幅 Image | `card:GetComponent("Image")` | `MissionDailyPanel_Daily` |
 | 无 bg 子节点、根也无 Image | 直接子节点里那个满幅 `Image` | `CourtesyDressPanel` |
+| 底板是个「容器」（自身无 Image，可见图在子节点） | 显式路径 `Util.GetGameObject(card, "BG/Image_BG1")` | `FindTreasureMainPanel` |
 
 ---
 
@@ -397,6 +399,19 @@ prefab 一行没动。
 ---
 
 ## 11. 变更记录
+
+- 2026-10-22 第七个落地：`FindTreasureMainPanel`（寻宝任务卡，一屏 ~5 张，`grid` 挂
+  VerticalLayoutGroup + ContentSizeFitter）。四点新增：
+  ① **底板第四种形态**——`BG` 是容器、自身没有 Image，满幅底板是子节点 `BG/Image_BG1`，
+  `kCardFadeNode` 用显式路径取（三种形态对照表扩成四种）；
+  ② 入场闸门走 **OnOpen 置 `this.needCardSlide`**、`OnShowPanelData` **开头**消费——
+  开头消费是为了 `GetTypeTaskList` 返回 nil 提前 return 时标记不漏到下一次数据刷新；
+  ③ **数据刷新路径的 else 分支要显式 `StopCardSlideIn`**（领奖/刷新/派遣回调重建列表时，
+  上一轮还在跑的 tween 会把刚刷新的卡拖回半截位置——harness case4 抓出来的）；
+  ④ 该面板没有页签，只保留「打开」一套节奏，播放点收口在 `OnShowPanelData` 末尾
+  （`OnShow` / 事件回调 / 刷新按钮全部经过这里）。
+  harness 走**真实接线**（InitComponent → AddListener → OnOpen → OnShow → 事件总线刷新）
+  9 case：`scripts/lua-tests/test_findtreasure_cardslide.lua`。
 
 - 2026-10-22 第六个落地：`LineupRecommend`（阵容推荐卡，一屏 ~3.7 张，从右往左逐张滑入）。
   三点和前面几个都不同：① 列表**不是** `ScrollCycleView`，是 `OnShow` 的网络回调里手工 `newObject`

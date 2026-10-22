@@ -27,6 +27,175 @@ local changeBgColor = {
     [2] = Color.New(130/255,77/255,238/255,150/255)
 }
 -- local starImage={[1]="m5_img_tansuo-kongbaixingxing",[2]="ui_1yue"}--星星资源名
+
+--============================== 任务卡入场（右滑入 + 底板淡入）==============================
+-- docs/ui_item_slide_in_skill.md 配方落地。与 DailyCarbonPanel / MissionDailyPanel_Daily 同档参数。
+-- 容器结构（prefab 实测）：rect 挂 Image，rect1 挂 ScrollRect + Mask（视口），grid 挂
+-- VerticalLayoutGroup + ContentSizeFitter（content）⇒ 布局重建会重写 item 根的
+-- anchoredPosition，位移必须写在卡的可视子节点上（配方 §4 第一行）。
+-- 播放时机：只在玩家主动打开面板时播（OnOpen 闸门 + OnShow 末尾消费，见 MapPanel 落地 §10
+-- —— 从派遣/领奖弹窗返回时只走 OnShow，不重播）。领奖 / 刷新按钮 / 派遣完成的事件回调
+-- （GameEvent.FindTreasure.RefreshFindTreasure）都算数据刷新，不播：闪一下很显眼。
+local kCardSlideFrom     = 260      -- 起点位移（px），卡宽 1043 的 ~25%
+local kCardSlideDuration = 0.26     -- 单卡时长
+local kCardSlideStep     = 0.055    -- 相邻卡错开（一屏 ~5 张，逐格涌入）
+local kCardFadeFrom      = 0.3647   -- 参考 item/Bg 的 alpha 起点
+-- 底板形态：BG 容器自己没有 Image，满幅底板是 BG/Image_BG1（1043×227，与 BG 同尺寸）
+local kCardFadeNode      = "BG/Image_BG1"
+
+-- 任务卡的可视子节点（一起右移 = 整卡滑入）。按钮区按任务状态互斥显隐
+-- （getButton / jumpButton / quickGetButton / consumeObj / timeObject / getFinishText），
+-- 未激活的会被 activeSelf 跳过。这 9 个名字在卡的整棵子树里都唯一（配方 §7 第 10 条）。
+local kCardNodes = { "BG", "titleImage", "content", "getButton", "jumpButton",
+                     "quickGetButton", "consumeObj", "timeObject", "getFinishText" }
+
+local cardSlideItems = {}       -- { rect, x, y, graphic, color, tween }，rect 与 graphic 二选一
+local cardSlidePlaying = false  -- 这一轮还没播完（重播 / 快速重开靠它防叠）
+local cardSlidePending = 0      -- 还有几条 tween 没完成；减到 0 才算播完
+this.needCardSlide = false      -- OnOpen 闸门：true = 下一次 OnShowPanelData 播入场（挂 this 上，便于离线 harness 验证）
+
+-- tolua 的枚举是运行期注册的：取不到就跳过，异常被 pcall 吃掉会整段静默不播
+local function SetEaseSafe(tween, name)
+    local enum = _G.Ease
+    local value = enum and enum[name]
+    if value ~= nil then
+        tween:SetEase(value)
+    end
+    return tween
+end
+
+-- UnityEngine.Object 在 lua 侧是 userdata：Destroy 之后既不是 nil 也不能取字段
+local function Alive(obj)
+    if obj == nil then
+        return false
+    end
+    if type(obj) == "userdata" then
+        return not IsNull(obj)
+    end
+    return true
+end
+
+local function WithAlpha(color, a)
+    return Color.New(color.r, color.g, color.b, a)
+end
+
+-- 回收：Kill 掉所有 tween 并把位置/颜色复位。
+-- 🔴 漏复位 = 任务卡永久停在半截位置或半透明；重播 / 关闭 / 销毁都必须走这里。
+function this.StopCardSlideIn()
+    -- Kill 不会回调 OnComplete ⇒ 播中标记必须在这里自己清，否则一次 Stop 之后
+    -- 后面所有入场都会被「连点保护」当成播中而跳过
+    cardSlidePlaying = false
+    cardSlidePending = 0
+    for i = #cardSlideItems, 1, -1 do
+        local item = cardSlideItems[i]
+        if Alive(item.tween) then
+            item.tween:Kill(false)
+        end
+        if item.rect and item.x and Alive(item.rect) then
+            item.rect.anchoredPosition = Vector2.New(item.x, item.y)
+        end
+        if item.graphic and item.color and Alive(item.graphic) then
+            item.graphic.color = item.color
+        end
+        cardSlideItems[i] = nil
+    end
+end
+
+-- 收集当前可见的任务卡（findTreasureGrid[i] 与 missionInfo[i] 按下标一一对应；
+-- 超出 missionInfo 数量的旧卡已在 OnShowPanelData 里 SetActive(false)）
+local function CollectCards()
+    local cards = {}
+    for i = 1, #missionInfo do
+        local go = findTreasureGrid[i]
+        if go and Alive(go) and go.activeSelf then
+            cards[#cards + 1] = go
+        end
+    end
+    return cards
+end
+
+-- 起播：每张任务卡从右侧滑回原位，底板 alpha 0.3647 → 1。
+function this.PlayCardSlideIn()
+    -- 上一轮还没播完就只复位、不再重播 —— 重播等于列表刚重建完又堆一批 tween，
+    -- 连点时最容易卡。复位到终值本身就是「立刻到位」，观感上不比重播差。
+    local interrupted = cardSlidePlaying
+    this.StopCardSlideIn()
+    if interrupted then
+        return 0
+    end
+    local cards = CollectCards()
+    if #cards <= 0 then
+        return 0
+    end
+    -- 每完成一条减一，减到 0 才算这一轮播完（Kill 不会回调 OnComplete，见 StopCardSlideIn）
+    local function Done()
+        cardSlidePending = cardSlidePending - 1
+        if cardSlidePending <= 0 then
+            cardSlidePending = 0
+            cardSlidePlaying = false
+        end
+    end
+    cardSlidePlaying = true
+    local ok, err = pcall(function()
+        for ci = 1, #cards do
+            local card = cards[ci]
+            local delay = (ci - 1) * kCardSlideStep
+            -- 位移：卡的可视子节点一起走
+            for i = 1, #kCardNodes do
+                local go = Util.GetGameObject(card, kCardNodes[i])
+                if Alive(go) and go.activeSelf then
+                    local rect = go:GetComponent("RectTransform")
+                    if Alive(rect) then
+                        local pos = rect.anchoredPosition
+                        -- 从右侧滑入：起点在右边，向左归位（反向 = 把这里的 + 改回 -）
+                        rect.anchoredPosition = Vector2.New(pos.x + kCardSlideFrom, pos.y)
+                        local tween = rect:DOAnchorPosX(pos.x, kCardSlideDuration)
+                        tween:SetDelay(delay)
+                        SetEaseSafe(tween, "OutQuad")
+                        cardSlidePending = cardSlidePending + 1
+                        tween:OnComplete(function()
+                            if Alive(rect) then
+                                rect.anchoredPosition = Vector2.New(pos.x, pos.y)
+                            end
+                            Done()
+                        end)
+                        cardSlideItems[#cardSlideItems + 1] = { rect = rect, x = pos.x, y = pos.y, tween = tween }
+                    end
+                end
+            end
+            -- 淡入：只淡底板（参考里就是 item/Bg，装饰图跟着底板走但不透明）
+            local bg = Util.GetGameObject(card, kCardFadeNode)
+            if Alive(bg) then
+                local image = bg:GetComponent("Image")
+                if Alive(image) then
+                    local color = image.color
+                    image.color = WithAlpha(color, kCardFadeFrom)
+                    local tween = image:DOFade(color.a, kCardSlideDuration)
+                    tween:SetDelay(delay)
+                    SetEaseSafe(tween, "OutQuad")
+                    cardSlidePending = cardSlidePending + 1
+                    tween:OnComplete(function()
+                        if Alive(image) then
+                            image.color = color
+                        end
+                        Done()
+                    end)
+                    cardSlideItems[#cardSlideItems + 1] = { graphic = image, color = color, tween = tween }
+                end
+            end
+        end
+    end)
+    if not ok then
+        -- DOTween 侧任何异常都不能把任务卡留在半截位置/半透明
+        LogError("FindTreasureMainPanel: 任务卡入场失败 " .. tostring(err))
+        this.StopCardSlideIn()
+        return 0
+    end
+    if cardSlidePending == 0 then
+        cardSlidePlaying = false
+    end
+    return #cards
+end
 --初始化组件（用于子类重写）
 function FindTreasureMainPanel:InitComponent()
 
@@ -183,6 +352,9 @@ end
 
 --界面打开时调用（用于子类重写）
 function FindTreasureMainPanel:OnOpen(...)
+    -- 入场闸门：OnOpen 只在真正打开面板走；从派遣/领奖弹窗返回时只走 OnShow，
+    -- 不会置这个标记 ⇒ 不会每次关弹窗都重看一遍入场（MapPanel 落地同款闸门）
+    this.needCardSlide = true
 end
 
 function FindTreasureMainPanel:RefreshHelpBtn()
@@ -216,6 +388,9 @@ function FindTreasureMainPanel:OnSortingOrderChange()
 end
 
 function FindTreasureMainPanel:OnShowPanelData(isSort)
+    -- 消费入场标记（在函数开头消费，temp==nil 提前 return 时标记也不会漏到下次刷新）
+    local playSlideIn = this.needCardSlide
+    this.needCardSlide = false
     refreshIsMaterial = true
     isRefreshAddNum = false
     TaskManager.SetFindTreasureDataState()
@@ -258,6 +433,17 @@ function FindTreasureMainPanel:OnShowPanelData(isSort)
         isFirstOpen = false
         self.findTreasureGridGo:GetComponent("RectTransform").anchoredPosition = Vector2.New(0, 0)
     end
+
+    -- 任务卡入场：只有玩家主动打开面板（OnOpen 置的标记）才播。
+    -- 领奖（getButton/allGetBtn/quickGetButton）、刷新按钮、派遣完成的事件回调走到这里
+    -- 时 playSlideIn 都是 false —— 数据刷新重播会闪一下。
+    -- 🔴 抑制时也要 Stop：列表刚被重建，上一轮的 tween 若还在跑会把刚刷新的卡拖回半截位置。
+    if playSlideIn then
+        this.PlayCardSlideIn()
+    else
+        this.StopCardSlideIn()
+    end
+
     self:RemainTimeDown()
 
     --vip
@@ -473,6 +659,7 @@ end
 
 --界面关闭时调用（用于子类重写）
 function FindTreasureMainPanel:OnClose()
+    this.StopCardSlideIn()
     if timer then
         timer:Stop()
         timer = nil
@@ -485,10 +672,13 @@ end
 --界面销毁时调用（用于子类重写）
 function FindTreasureMainPanel:OnDestroy()
      findTreasureGrid = {}
+    -- DestroyPanel 不走 OnClose，面板还会被 openedList 缓存复用 ⇒ 两处都要收
+    this.StopCardSlideIn()
     findTreasureItemsGrid = {}
     missionInfo = {}
     refreshIsMaterial = true
     isRefreshAddNum = false
+    this.needCardSlide = false
 end
 
 function FindTreasureMainPanel:Jump(rewardData)

@@ -108,8 +108,14 @@ cd "$PROJ"
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
+# MODE=one 必须 --asset 直指源图：候选池按特征分派（glyph 单色 / poster ≥800x700 /
+# artfont=OperatingPanelAtlas glob / atlas=译名表），译名表里有条目但落不进任何池的图
+# （如 ArtFont_zh/font 下的 512x256 特写横幅，既不是单色 glyph 也不够 poster 尺寸）
+# 用 --only 会在②③④「目标 0 张」全绿 —— 假绿球（#6 实测）。
+ASSET_ARG=""
+[[ "${MODE:-batch}" == "one" && -n "${ASSET:-}" ]] && ASSET_ARG="--asset ${ASSET}"
 ONLY=""
-[[ -n "${TR_ONLY:-}" ]] && ONLY="--only ${TR_ONLY}"
+[[ -z "$ASSET_ARG" && -n "${TR_ONLY:-}" ]] && ONLY="--only ${TR_ONLY}"
 FORCE_ARG=""
 [[ "${FORCE:-false}" == "true" ]] && FORCE_ARG="--force"
 # 出图方式：chatgpt_web 要开浏览器等模型，单张 3~8 分钟 ⇒ 给到 2400s（与 TS-Art-Restyle 一致）
@@ -121,7 +127,7 @@ PROV_ARGS="--provider ${PROVIDER:-chatgpt_web}"
 "$BASH" .jenkins/lib/run_stage.sh --name "生成英文图" \
   --group "美术翻译链" --slug tr-run --timeout 2400 --warn-rc 3 \
   -- "$PY" scripts/image/banner_translate.py batch --stage run \
-       --run "$TS_RUN_DIR" $ONLY $FORCE_ARG $PROV_ARGS
+       --run "$TS_RUN_DIR" $ASSET_ARG $ONLY $FORCE_ARG $PROV_ARGS
 ''')
       }
     }
@@ -131,8 +137,10 @@ PROV_ARGS="--provider ${PROVIDER:-chatgpt_web}"
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
+ASSET_ARG=""
+[[ "${MODE:-batch}" == "one" && -n "${ASSET:-}" ]] && ASSET_ARG="--asset ${ASSET}"
 ONLY=""
-[[ -n "${TR_ONLY:-}" ]] && ONLY="--only ${TR_ONLY}"
+[[ -z "$ASSET_ARG" && -n "${TR_ONLY:-}" ]] && ONLY="--only ${TR_ONLY}"
 FORCE_ARG=""
 [[ "${FORCE:-false}" == "true" ]] && FORCE_ARG="--force"
 # 断言口径按「provider 出的图 × family 的画法」两维选：
@@ -146,7 +154,7 @@ FORCE_ARG=""
 "$BASH" .jenkins/lib/run_stage.sh --name "像素级验收" \
   --group "美术翻译链" --slug tr-verify --timeout 300 \
   -- "$PY" scripts/image/banner_translate.py batch --stage verify \
-       --run "$TS_RUN_DIR" $ONLY $FORCE_ARG
+       --run "$TS_RUN_DIR" $ASSET_ARG $ONLY $FORCE_ARG
 ''')
       }
     }
@@ -159,15 +167,17 @@ FORCE_ARG=""
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
+ASSET_ARG=""
+[[ "${MODE:-batch}" == "one" && -n "${ASSET:-}" ]] && ASSET_ARG="--asset ${ASSET}"
 ONLY=""
-[[ -n "${TR_ONLY:-}" ]] && ONLY="--only ${TR_ONLY}"
+[[ -z "$ASSET_ARG" && -n "${TR_ONLY:-}" ]] && ONLY="--only ${TR_ONLY}"
 FORCE_ARG=""
 [[ "${FORCE:-false}" == "true" ]] && FORCE_ARG="--force"
 # shellcheck disable=SC2086
 "$BASH" .jenkins/lib/run_stage.sh --name "写回英文版资源" \
   --group "交付" --slug tr-publish --timeout 300 --warn-rc 3 \
   -- "$PY" scripts/image/banner_translate.py batch --stage publish \
-       --run "$TS_RUN_DIR" $ONLY $FORCE_ARG
+       --run "$TS_RUN_DIR" $ASSET_ARG $ONLY $FORCE_ARG
 ''')
       }
     }

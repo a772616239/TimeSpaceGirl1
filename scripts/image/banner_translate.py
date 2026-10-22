@@ -152,6 +152,11 @@ ATLAS_STRIP_SAMPLE = 30    # 板外条带从上方多少像素处取样
 # 是 26.5 / 17.1% —— 所以上限取 25 / 20%，能把「背景被顺手重画」判出来。
 POSTER_EDGE_TOP, POSTER_EDGE_BOTTOM, POSTER_EDGE_SIDE = 40, 30, 40
 POSTER_EDGE_MAX = (25.0, 0.20)
+# 🔴 但这条闸门有个前提：边圈里得真的是「背景」。异形透明卡（竖版会员卡
+# `cn2-X1_zhongshenhuiyuan_peitu`，884x1480）四边 79%~92% 是 alpha=0，剩下的可见像素
+# 是卡自己的描边 + 辉光带 —— 整幅重绘必然让它整体位移 1~2px，实测好图也能到 54.2 / 31.1%。
+# 所以边圈可见像素占比低于这个数就直接判「不适用」，别拿它开红（改由人眼确认）。
+POSTER_EDGE_MIN_OPAQUE = 0.50
 
 
 # --------------------------------------------------------------------------- #
@@ -1486,6 +1491,20 @@ def verify_glyph(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], 
     return checks, warns
 
 
+def _visible_mask(src: Image.Image):
+    """源图 alpha 掩膜：alpha=0 的像素运行时永远看不见，比较它们的 RGB 没有意义。
+
+    🔴 2026-10-22 `cn2-X1_zhongshenhuiyuan_peitu_zh`（884x1480 竖版会员卡）实测：
+       透明区占 17.4%，四边 79%~92% 是 alpha=0；源图透明区 RGB=(0,0,0)，而参考图是
+       按 `_flatten` 的 (28,30,44) 深底合成给的模型 ⇒ 出图那圈 RGB 天然差 44 > 24。
+       不按 alpha 掩膜，「改动比例」和「四边背景」都会被这圈看不见的像素判红。
+       （alpha 本身另有硬项逐像素 lock，所以掩掉不会放走「模型把底画满」这类问题。）
+    """
+    if src.mode != "RGBA":
+        return None
+    return np.asarray(src.getchannel("A")) > 8
+
+
 def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]], list[str]]:
     """整幅图走模型重绘时的口径：尺寸 / alpha / 「确实改了字」/ 「没被整幅重画」。"""
     src = Image.open(work / "src.png")
@@ -1505,12 +1524,19 @@ def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str
     a_src = np.asarray(src.convert("RGB")).astype(int)
     a_out = np.asarray(out.convert("RGB")).astype(int)
     diff = np.abs(a_src - a_out).max(axis=2)
-    changed = float((diff > 24).mean())
-    mean_diff = float(diff.mean())
+    vis = _visible_mask(src)
+    if vis is None:
+        changed = float((diff > 24).mean())
+        mean_diff = float(diff.mean())
+        scope = ""
+    else:
+        changed = float((diff[vis] > 24).mean())
+        mean_diff = float(diff[vis].mean())
+        scope = f"，按可见区统计（alpha>0 占 {vis.mean():.1%}，透明区不计）"
     checks.append(("文字区域确实重画过", changed >= 0.02,
-                   f"改动像素 {changed:.1%}（原样返回说明模型没动手）"))
-    checks.append(("没有整幅重画", changed <= 0.75, f"改动像素 {changed:.1%}（翻译不该重绘背景）"))
-    checks.append(("整体色差可控", mean_diff <= 45, f"平均通道差 {mean_diff:.1f}"))
+                   f"改动像素 {changed:.1%}（原样返回说明模型没动手）{scope}"))
+    checks.append(("没有整幅重画", changed <= 0.75, f"改动像素 {changed:.1%}（翻译不该重绘背景）{scope}"))
+    checks.append(("整体色差可控", mean_diff <= 45, f"平均通道差 {mean_diff:.1f}{scope}"))
     if changed > 0.40:
         warns.append(f"改动像素 {changed:.0%} 偏大：模型可能顺手改了画面，务必看图")
     warns.append("英文是否正确、有没有被裁掉需人眼确认（无 OCR 闸门）")
@@ -1535,31 +1561,57 @@ def verify_poster(work: Path, state: dict) -> tuple[list[tuple[str, bool, str]],
     checks, warns = verify_photo_gpt(work, state)
     # 整幅均值在这族里没判别力（见 docstring）：降级成 warn，别当硬闸门
     checks = [c for c in checks if c[0] != "整体色差可控"]
-    a_src = np.asarray(Image.open(work / "src.png").convert("RGB")).astype(int)
+    src_im = Image.open(work / "src.png")
+    a_src = np.asarray(src_im.convert("RGB")).astype(int)
     a_out = np.asarray(Image.open(work / "out.png").convert("RGB")).astype(int)
+    vis = _visible_mask(src_im)
     h = a_src.shape[0]
     band = slice(0, int(h * 0.45))               # 文字彩带在上半部
     diff = np.abs(a_src[band] - a_out[band]).max(axis=2)
-    ratio = float((diff > 24).mean())
+    if vis is not None:
+        sub = vis[band]
+        ratio = float((diff[sub] > 24).mean()) if sub.any() else 0.0
+        band_note = f"（按可见区统计，alpha>0 占 {sub.mean():.0%}）"
+    else:
+        ratio = float((diff > 24).mean())
+        band_note = ""
     checks.append(("彩带文字区确实重画过", ratio >= 0.03,
-                   f"上 45% 区域改动像素 {ratio:.1%}（太小说明模型没动字）"))
+                   f"上 45% 区域改动像素 {ratio:.1%}（太小说明模型没动字）{band_note}"))
 
     # 四边背景：这一圈里没有文字，必须原样（模型整幅重渲染时最先在这里露馅）
+    # 🔴 透明图（竖版会员卡这类异形卡）四边 79%~92% 是 alpha=0，那圈比对的是
+    #    「源图 RGB=0 vs 参考图深底合成出的 RGB」，天然差 40+ ⇒ 必须先掩掉再判。
     full = np.abs(a_src - a_out).max(axis=2)
     edge = np.zeros(full.shape, dtype=bool)
     edge[:POSTER_EDGE_TOP, :] = True
     edge[-POSTER_EDGE_BOTTOM:, :] = True
     edge[:, :POSTER_EDGE_SIDE] = True
     edge[:, -POSTER_EDGE_SIDE:] = True
-    edge_mean = float(full[edge].mean())
-    edge_changed = float((full[edge] > 24).mean())
-    checks.append(("四边背景未被重绘",
-                   edge_mean <= POSTER_EDGE_MAX[0] and edge_changed <= POSTER_EDGE_MAX[1],
-                   f"边框（上{POSTER_EDGE_TOP}/下{POSTER_EDGE_BOTTOM}/左右{POSTER_EDGE_SIDE}px）"
-                   f"平均差 {edge_mean:.1f}、改动 {edge_changed:.1%}"
-                   f"（上限 {POSTER_EDGE_MAX[0]:.0f} / {POSTER_EDGE_MAX[1]:.0%}）"))
+    ring_total = int(edge.sum())
+    opaque_share = 1.0
+    if vis is not None:
+        opaque_share = int((edge & vis).sum()) / max(1, ring_total)
+        edge = edge & vis
+    if edge.any():
+        edge_mean = float(full[edge].mean())
+        edge_changed = float((full[edge] > 24).mean())
+    else:
+        edge_mean, edge_changed = 0.0, 0.0
+    if opaque_share < POSTER_EDGE_MIN_OPAQUE:
+        # 边圈里不是「背景」而是卡自身的描边/辉光（异形透明卡）⇒ 这条闸门的前提不成立，
+        # 判不适用，别拿它开红（看了图再定，见 POSTER_EDGE_MIN_OPAQUE 的说明）。
+        warns.append(
+            f"四边背景闸门不适用：源图是异形透明卡，边圈只有 {opaque_share:.0%} 是可见像素"
+            f"（其余 alpha=0），可见的那圈是卡自己的描边/辉光，整幅重绘必然整体位移 —— "
+            f"实测平均差 {edge_mean:.1f}、改动 {edge_changed:.1%}（仅参考），四边务必人眼看")
+    else:
+        checks.append(("四边背景未被重绘",
+                       edge_mean <= POSTER_EDGE_MAX[0] and edge_changed <= POSTER_EDGE_MAX[1],
+                       f"边框（上{POSTER_EDGE_TOP}/下{POSTER_EDGE_BOTTOM}/左右{POSTER_EDGE_SIDE}px）"
+                       f"平均差 {edge_mean:.1f}、改动 {edge_changed:.1%}"
+                       f"（上限 {POSTER_EDGE_MAX[0]:.0f} / {POSTER_EDGE_MAX[1]:.0%}）"))
 
-    mean_diff = float(full.mean())
+    mean_diff = float(full[vis].mean()) if vis is not None else float(full.mean())
     if (state.get("gen") or {}).get("gen_size"):
         warns.append(f"整幅平均通道差 {mean_diff:.1f}（这族只作参考：彩带与美术字占大半画布，"
                      f"只换字也会到 60 上下；上面那条四边背景才是硬闸门）")

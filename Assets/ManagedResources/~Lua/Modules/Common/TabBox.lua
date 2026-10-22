@@ -47,9 +47,9 @@ function this.New()
     setmetatable(o, this)
     -- 切换页签时选中底板滑动动画（opt-in，默认关闭，需 SetTabSlideAnim(true) 打开）
     o.SlideAnimEnabled = false
-    o.slideTweener = nil
-    o.slideClone = nil
-    o.slideTab = nil
+    o.slideTimer = nil
+    o.slideSelect = nil
+    o.slideOrig = nil
     o.boxGo = nil
     return o
 end
@@ -245,72 +245,60 @@ function this:SetTabSlideAnim(enable)
     self.SlideAnimEnabled = enable and true or false
 end
 
--- 收尾滑动动画：kill tween + 销毁滑块克隆
--- finish=true 时立即呈现最终选中态（把被隐藏的 select 重新显示）；调用方须保证目标 tab 节点仍存活
+-- 收尾滑动动画：停掉驱动 Timer 并把 select 位置复位到原值
+-- 无论 finish 与否都复位位置——保证任何中断路径都不留下错位的选中底板
 function this:KillTabSlide(finish)
-    if self.slideTweener then
-        self.slideTweener:Kill()
-        self.slideTweener = nil
+    if self.slideTimer then
+        self.slideTimer:Stop()
+        self.slideTimer = nil
     end
-    if self.slideClone then
-        if finish and self.slideTab then
-            local newSelect = Util.GetGameObject(self.slideTab, "select")
-            if newSelect then
-                newSelect:SetActive(true)
-            end
+    if self.slideSelect then
+        if self.slideOrig then
+            self.slideSelect.transform.localPosition = self.slideOrig
         end
-        GameObject.Destroy(self.slideClone)
-        self.slideClone = nil
-        self.slideTab = nil
+        self.slideSelect = nil
+        self.slideOrig = nil
     end
 end
 
--- 选中底板从旧页签位置滑到新页签位置：克隆新 select 底板做滑块，到达后还原
+-- 选中底板从旧页签位置滑到新页签位置：直接位移 tween 新 select（不克隆节点）
+-- 不克隆的原因：克隆体挂 box 下会被布局/锚点重新摆位，且 tween 一旦被杀
+-- 克隆体就滞留在旧位置（表现为「错位 icon」）；select 是 tab 自己的子节点，动它无此风险
 function this:PlayTabSlide(oldIndex, newIndex)
     local newTab = self.TabList[newIndex]
     local oldTab = self.TabList[oldIndex]
-    if not newTab or not oldTab or not self.boxGo then return end
+    if not newTab or not oldTab then return end
     local newSelect = Util.GetGameObject(newTab, "select")
     local oldSelect = Util.GetGameObject(oldTab, "select")
     if not newSelect or not oldSelect then return end
-    -- 上一次动画没结束先收尾，防连点叠播
+    -- 上一次动画没结束先复位，防连点叠播
     self:KillTabSlide(true)
-    local box = self.boxGo.transform
-    local oldPos = box:InverseTransformPoint(oldSelect.transform.position)
-    local newPos = box:InverseTransformPoint(newSelect.transform.position)
-    if math.abs(oldPos.x - newPos.x) < 1 then return end
-    -- 克隆新选中底板当滑块；关掉射线，避免 0.15s 动画期间挡住页签点击
-    local clone = GameObject.Instantiate(newSelect)
-    clone.transform:SetParent(box)
-    clone.transform.localScale = Vector3.one
-    clone:SetActive(true)
-    local imgs = clone:GetComponentsInChildren(typeof(UnityEngine.UI.Image), true)
-    if imgs then
-        for i = 0, imgs.Length - 1 do
-            imgs[i].raycastTarget = false
+    -- box 局部空间里两个 tab 的位移差（tab 尺度一致，可直接搬到 select 的局部空间用）
+    local nt = newTab.transform.localPosition
+    local ot = oldTab.transform.localPosition
+    local dx, dy = ot.x - nt.x, ot.y - nt.y
+    if math.abs(dx) < 1 and math.abs(dy) < 1 then return end
+    local selTf = newSelect.transform
+    local orig = selTf.localPosition
+    self.slideSelect = newSelect
+    self.slideOrig = orig
+    local DUR = 0.15
+    local elapsed = 0
+    -- 先落到旧页签位置（首个 Timer tick 在下一帧，不先摆位会在终点闪一帧）
+    selTf.localPosition = Vector3.New(orig.x + dx, orig.y + dy, orig.z)
+    -- Timer 逐帧驱动（unscaledDeltaTime，UI 不受时间缩放影响），避免依赖全局 DOTween 存活
+    self.slideTimer = Timer.New(function()
+        elapsed = elapsed + Time.unscaledDeltaTime
+        local p = elapsed / DUR
+        if p >= 1 then
+            selTf.localPosition = orig
+            self:KillTabSlide(true)
+            return
         end
-    end
-    local texts = clone:GetComponentsInChildren(typeof(UnityEngine.UI.Text), true)
-    if texts then
-        for i = 0, texts.Length - 1 do
-            texts[i].raycastTarget = false
-        end
-    end
-    clone.transform.localPosition = Vector3.New(oldPos.x, newPos.y, newPos.z)
-    newSelect:SetActive(false)
-    self.slideClone = clone
-    self.slideTab = newTab
-    self.slideTweener = DoTween.To(
-        DG.Tweening.Core.DOGetter_float(function() return clone.transform.localPosition.x end),
-        DG.Tweening.Core.DOSetter_float(function(x)
-            local lp = clone.transform.localPosition
-            clone.transform.localPosition = Vector3.New(x, lp.y, lp.z)
-        end),
-        newPos.x, 0.15
-    ):SetEase(Ease.OutQuad):OnComplete(function()
-        self.slideTweener = nil
-        self:KillTabSlide(true)
-    end)
+        local e = 1 - (1 - p) * (1 - p) -- OutQuad
+        selTf.localPosition = Vector3.New(orig.x + dx * (1 - e), orig.y + dy * (1 - e), orig.z)
+    end, 0, -1, true)
+    self.slideTimer:Start()
 end
 
 -- 改变模块显示

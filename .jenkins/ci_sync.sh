@@ -47,6 +47,11 @@ esac
 
 # ---- ① fetch ---------------------------------------------------------------
 cd "$CI" || exit 2
+# 🔴 记下「正在跑的这份脚本」在 reset 前的 blob：本脚本自己也在被 reset 的范围内，
+#    换掉之后 bash 仍按旧文件的字节偏移继续读新文件 ⇒ 后面的命令被截断/拼错。
+#    实测症状（2026-10-23，Release #22/#23）：TimeSpaceServer 那条 rsync 只报
+#    `rsync: error: unexpected end of file` 就被跳过，而脚本仍然打「✅ 同步完成」。
+SELF_BLOB_BEFORE="$(git rev-parse "HEAD:.jenkins/ci_sync.sh" 2>/dev/null || true)"
 if ! git fetch origin "$BRANCH" --prune 2>&1 | sed 's/^/   /'; then
   echo "🔴 git fetch origin ${BRANCH} 失败" >&2
   exit 3
@@ -73,6 +78,19 @@ if ! git reset --hard "origin/$BRANCH" >/dev/null 2>&1; then
 fi
 echo "✅ 代码已对齐 origin/$BRANCH @ $(git rev-parse --short HEAD)"
 
+# ---- ②-1 本脚本自己被 reset 换掉了 → 重跑新版本 -----------------------------
+# 不重跑的话，bash 会拿旧偏移量去读新文件内容：命令被腰斩、参数错位，
+# 而且因为 `set -uo pipefail` 没有 -e，错误不会中断脚本，只留下一条莫名其妙的
+# rsync 报错 —— 静默半途而废。CI_SYNC_REEXEC 防死循环（新版本再跑一次就不会变）。
+SELF_BLOB_AFTER="$(git rev-parse "HEAD:.jenkins/ci_sync.sh" 2>/dev/null || true)"
+if [[ "${CI_SYNC_REEXEC:-0}" != "1" && -n "$SELF_BLOB_BEFORE" \
+      && "$SELF_BLOB_BEFORE" != "$SELF_BLOB_AFTER" ]]; then
+  echo "→ ci_sync.sh 自身在本次 reset 中更新（${SELF_BLOB_BEFORE:0:8} → ${SELF_BLOB_AFTER:0:8}），"
+  echo "  重新执行新版本（否则 bash 会按旧字节偏移读新文件，后面的镜像步骤会被腰斩）"
+  export CI_SYNC_REEXEC=1
+  exec "${BASH:-/usr/local/bin/bash}" "$CI/.jenkins/ci_sync.sh" "$@"
+fi
+
 # ---- ③ 从开发目录镜像不入库资产 ---------------------------------------------
 if [[ ! -d "$DEV_PROJ" ]]; then
   echo "⚠️ 开发目录不存在（${DEV_PROJ}），跳过资产镜像" >&2
@@ -81,9 +99,15 @@ fi
 echo "→ 镜像不入库资产（真源：${DEV_PROJ}）"
 rsync -a --delete "$DEV_PROJ/.secrets/"  "$CI/.secrets/"  && echo "   ✓ .secrets/"
 rsync -a --delete "$DEV_PROJ/keystore/"  "$CI/keystore/"  && echo "   ✓ keystore/"
-rsync -a --inplace "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/" \
-  && echo "   ✓ TimeSpaceServer/（独立服务端仓，随开发目录同状态；--inplace 直写，
+# 🔴 服务端表镜像失败必须判红：它是打包 clone 里「服务端 txt」的唯一来源，
+#    静默跳过 ⇒ 包里/推给线上的是旧表（2026-10-23 就是这么丢过一次）。
+if rsync -a --inplace "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/"; then
+  echo "   ✓ TimeSpaceServer/（独立服务端仓，随开发目录同状态；--inplace 直写，
             不带 --delete：CI 目录不是真源，残留旧文件无害且沙箱拦 unlink）"
+else
+  echo "🔴 TimeSpaceServer/ 镜像失败（服务端表可能不是最新的），拒绝继续" >&2
+  exit 5
+fi
 
 # ---- ④ 镜像「表同步基线」（否则打包 clone 永远是首次运行、一张表都推不出去） ----
 # 🔴 2026-10-23 实测：build/table_sync/state.json 是 gitignore 的，打包 clone 里没有；

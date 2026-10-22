@@ -19,6 +19,10 @@ pipeline {
 
   options {
     timestamps()
+    // 🔴 2026-10-22：必须串行。出图只有一个 Chrome/AdsPower 登录态 + 一份包月额度，
+    //   多个构建并发时 driver 会把上一张图交回来（坑 #11），且共享 WORK_ROOT 会互相覆盖
+    //   src/gen/out/state。批量补图请排队跑，不要并发点。
+    disableConcurrentBuilds()
     // 出图那一步要等模型（单张 3~8 分钟，额度用尽还要换号），30 分钟装不下两张 —— 宽到 75
     timeout(time: 75, unit: 'MINUTES')
     buildDiscarder(logRotator(daysToKeepStr: '60', numToKeepStr: '40'))

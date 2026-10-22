@@ -1062,19 +1062,28 @@ def postprocess_glyph(src_im: Image.Image, gen_im: Image.Image) -> tuple[Image.I
     return out, stat
 
 
-def postprocess_photo(src_im: Image.Image, gen_im: Image.Image) -> tuple[Image.Image, dict]:
+def postprocess_photo(src_im: Image.Image, gen_im: Image.Image,
+                      trust_alpha: bool = False) -> tuple[Image.Image, dict]:
     """整幅图（横幅 / 图集大图）：等比 cover 回源尺寸，alpha 与模式沿用源图。
 
     🔴 不能用 contain：那批图是 full-bleed 的，留边会在面板上露出白框/黑框。
+
+    `trust_alpha=True` 专供**本地确定性合成**（provider=manual + 边车 alpha_band）：
+    合成器已经把「字形位置」的 alpha 从金字水平压回底板水平（否则浅底上会显出一层
+    中文形状的残影），此时再用源图 alpha 覆盖回去等于把鬼影又贴回来。
+    限制：只在 gen 图与源图同尺寸且自带 alpha 时生效，也就是「已经归位好的成品」。
     """
     W, H = src_im.size
-    g = gen_im.convert("RGB")
+    keep_a = bool(trust_alpha) and gen_im.mode == "RGBA" and gen_im.size == src_im.size
+    g = gen_im.convert("RGBA") if keep_a else gen_im.convert("RGB")
     s = max(W / g.width, H / g.height)
     nw, nh = max(W, round(g.width * s)), max(H, round(g.height * s))
     g = g.resize((nw, nh), Image.LANCZOS)
     left, top = (nw - W) // 2, (nh - H) // 2
     g = g.crop((left, top, left + W, top + H))
-    if src_im.mode == "RGBA":
+    if keep_a:
+        pass                     # alpha 是合成器重建出来的（含网点孔），原样保留
+    elif src_im.mode == "RGBA":
         g = g.convert("RGBA")
         g.putalpha(src_im.getchannel("A"))
     diff = np.abs(np.asarray(src_im.convert("RGB")).astype(int)
@@ -1084,6 +1093,7 @@ def postprocess_photo(src_im: Image.Image, gen_im: Image.Image) -> tuple[Image.I
         "cover_scale": round(s, 4),
         "changed_ratio": round(float((diff > 24).mean()), 4),
         "mean_diff": round(float(diff.mean()), 2),
+        "alpha": "kept(rebuilt)" if keep_a else "locked(src)",
     }
     print(f"归位：出图 {gen_im.size[0]}x{gen_im.size[1]} → cover {s:.2f} → {W}x{H}；"
           f"改动像素 {stat['changed_ratio']:.1%}，平均差 {stat['mean_diff']}")
@@ -1327,7 +1337,25 @@ def cmd_run(args) -> int:
             out, gstat = postprocess_glyph(src_im, gen_im)
             Image.fromarray(np.asarray(out)[..., 3]).save(work / "ink_mask.png")
         else:
-            out, gstat = postprocess_photo(src_im, gen_im)
+            # 本地合成器（ribbon_compose.py 之类）会在出图旁边留一张边车
+            # `<名>.band.json`，声明「文字带」矩形：带内的 alpha 是重建出来的，
+            # 带外必须逐像素等于源图。有它才允许保留合成图的 alpha。
+            alpha_band = None
+            gi = str(getattr(args, "gen_image", "") or "")
+            for cand in ([Path(gi)] if gi else []) + [gen_path]:
+                side = cand.with_name(cand.stem + ".band.json")
+                if side.is_file():
+                    try:
+                        alpha_band = json.loads(side.read_text(encoding="utf-8")).get("alpha_band")
+                    except Exception as e:                       # noqa: BLE001
+                        print(f"⚠ 读不了边车 {side}：{e}", file=sys.stderr)
+                    if alpha_band:
+                        print(f"本地合成：文字带 x[{alpha_band[0]},{alpha_band[2]}] "
+                              f"y[{alpha_band[1]},{alpha_band[3]}]，带内 alpha 允许重建")
+                        break
+            out, gstat = postprocess_photo(src_im, gen_im, trust_alpha=bool(alpha_band))
+            if alpha_band:
+                extra["alpha_band"] = [int(v) for v in alpha_band]
         extra.update({"provider_note": note, "gen": gstat,
                       "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]})
 
@@ -1542,7 +1570,31 @@ def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str
 
     checks.append(("尺寸与源图一致", src.size == out.size,
                    f"{src.size[0]}x{src.size[1]} vs {out.size[0]}x{out.size[1]}"))
-    if src.mode == "RGBA":
+    band = state.get("alpha_band")
+    if src.mode == "RGBA" and band:
+        # 本地确定性合成：字形位置换了 ⇒ 带内 alpha 必然变；但**带外必须逐像素锁死**
+        # （彩带轮廓、箭头、网点孔一个都不能动），带内只要求 alpha 总量不变
+        # （即没把带子掏成透明洞、也没整块填成实心）。
+        x0, y0, x1, y1 = [int(v) for v in band]
+        A_s = np.asarray(src.getchannel("A")).astype(int)
+        A_o = np.asarray(out.getchannel("A")).astype(int) if out.mode == "RGBA" \
+            else np.full_like(A_s, 255)
+        outside = np.ones(A_s.shape, bool)
+        outside[y0:y1 + 1, x0:x1 + 1] = False
+        checks.append(("alpha 带外与源图逐像素一致", np.array_equal(A_s[outside], A_o[outside]),
+                       f"文字带 x[{x0},{x1}] y[{y0},{y1}] 内允许重建，带外锁死"))
+        # 带内不能看「均值差」：重排后笔画数量本来就变（本图中文 4 字 → 英文 20 字符，
+        # 全不透明像素占比 39%→66%），均值差 +29 是正常排版，不是错。
+        # 真正要守的两条：① 没把彩带掏成透明洞；② 字确实排上去了。
+        holes_s = float((A_s[y0:y1 + 1, x0:x1 + 1] < 100).mean())
+        holes_o = float((A_o[y0:y1 + 1, x0:x1 + 1] < 100).mean())
+        checks.append(("带内没有掏出新的透明洞", holes_o <= holes_s + 0.02,
+                       f"半透明像素 {holes_s:.1%} → {holes_o:.1%}（源图网点孔应当保留）"))
+        ink_s = float((A_s[y0:y1 + 1, x0:x1 + 1] > 250).mean())
+        ink_o = float((A_o[y0:y1 + 1, x0:x1 + 1] > 250).mean())
+        checks.append(("带内确实排上了字（不透明墨迹量）", ink_o >= ink_s * 0.5,
+                       f"alpha>250 占比 {ink_s:.1%} → {ink_o:.1%}（少于源图一半＝字没画上）"))
+    elif src.mode == "RGBA":
         same = out.mode == "RGBA" and np.array_equal(np.asarray(src.getchannel("A")),
                                                     np.asarray(out.getchannel("A")))
         checks.append(("alpha 与源图逐像素一致", same, "透明边沿用源图（lock 语义）"))

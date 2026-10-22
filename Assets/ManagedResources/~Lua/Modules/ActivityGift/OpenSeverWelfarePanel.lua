@@ -1,9 +1,9 @@
 require("Base/BasePanel")
+local ItemPopIn = require("Modules/Common/ItemPopIn")--列表逐格入场（唯一实现，docs/ui_item_pop_in_skill.md）
 OpenSeverWelfarePanel = Inherit(BasePanel)
 local this = OpenSeverWelfarePanel
 local activityRewardConfig = ConfigManager.GetConfig(ConfigName.ActivityRewardConfig)
 local sortingOrder
-local isFirstOn = true--是否首次打开页面
 
 --初始化组件（用于子类重写）
 function OpenSeverWelfarePanel:InitComponent()
@@ -18,6 +18,7 @@ function OpenSeverWelfarePanel:InitComponent()
     this.ScrollView.moveTween.MomentumAmount = 1
     this.ScrollView.moveTween.Strength = 1
     this.NoviceItemList = {}--存储itemview 重复利用
+    this.popIn = ItemPopIn.New(function() return this.ScrollView end)
 end
 
 --绑定事件（用于子类重写）
@@ -42,7 +43,7 @@ end
 
 --界面打开或者重新打开后，界面刷新时调用（用于子类重写）
 function OpenSeverWelfarePanel:OnShow()
-    isFirstOn = true
+    this.listPopPending = true--玩家主动打开/重开面板：本轮列表灌完播一次逐格入场
     this.OnShowPanelData()
 end
 function OpenSeverWelfarePanel:OnSortingOrderChange()
@@ -63,20 +64,25 @@ function this.OnShowPanelData()
     activityData = ActivityGiftManager.GetActivityTypeInfo(ActivityTypeDef.OpenSeverWelfare)
     isShowNeedGetUpTextId = 0
 
-    local allActivity = {}
     if activityData then
         this.RemainTimeDown(this.timeTextGo,this.timeText,activityData.endTime - GetTimeStamp())
         ActivityGiftManager.OpenSeverWelfareRewardTabsSort(activityData.mission)
         this.ScrollView:SetData(activityData.mission, function (index, go)
             this.SingleDataShow(go, activityData.mission[index])
-            allActivity[index] = go
         end)
     end
 
-    if isFirstOn then
-        isFirstOn = false
-        DelayCreation(allActivity)
-    end
+    --🔴 不走 DelayCreation（skill 坑 #8）：它会把刚 SetData 出来的 item 全部隐藏再逐个打开，
+    --   入场动画一格都收不到；逐格放大缩小本身就是逐行冒出来，SetData 完直接播
+    this.TryPlayListPopIn()
+end
+
+--一次性标记：OnShow（玩家主动打开/重开面板）置位 → 列表灌完消费一次；
+--领奖回调里直接调 OnShowPanelData 的刷新不经过 OnShow ⇒ 不重播（skill 判据：「数据回来了」不播）
+function this.TryPlayListPopIn()
+    if not this.listPopPending then return end
+    this.listPopPending = false
+    if this.popIn ~= nil then this.popIn:Play() end
 end
 
 function this.SingleDataShow(go,rewardData)
@@ -210,10 +216,13 @@ function OpenSeverWelfarePanel:OnClose()
         this.timer:Stop()
         this.timer = nil
     end
+    this.listPopPending = false
+    this.popIn:Stop()
 end
 
 --界面销毁时调用（用于子类重写）
 function OpenSeverWelfarePanel:OnDestroy()
+    this.popIn:Stop()
 end
 
 return OpenSeverWelfarePanel

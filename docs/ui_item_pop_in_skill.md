@@ -7,14 +7,16 @@
 > `RankingSingleListPanel`（榜单，A 方案 + 统一接点见第 3.1 节）；  
 > 页签多的三个面板走「页面级接入」：`ExpertPanel`、`OperatingPanel`、`AdjutantActivityPanel`  
 > （覆盖限定珍藏 / 积天豪礼 / 周月礼包 / **成长礼金 page_3** / **终身限购 page_9** / 战令 /  
-> 副官挑战 / 副官赠礼）；  
+> 副官挑战 / 副官赠礼）；`CardActivityPanel` 同为页面级接入（任务 / 英雄礼包 / 英雄豪礼 / 收集  
+> 四页签），但 **page_1（DrawCardPanel）显式跳过批量**——唯一长列表挂在 ChangeWishPanel  
+> 弹窗里、平时整窗隐藏，批量会把动画播在看不见的弹窗里 ⇒ 由弹窗打开时机自己播（见第 3 节）；  
 > 固定版面（不是列表）走关键帧模式：`ThousandDrawPanel`（三张卡 + 剩余抽数四位，`phases`）、  
 > `DefenseTrainingPopup`（5 个关卡节点 `Stage1..5`，`phases`，只在 `OnOpen` 那一轮播）；  
 > 地图上的单点元素走 `phases`：`BlitzStrikePanel`（**未开宝箱**从小到大弹一下，数组数据源，  
 > 缩放目标是 `Bg/box` 而不是宝箱根节点，见第 5 节第 15 条）；  
 > 地图上的据点走「由中心往外」的 `phases`：`ChallengePanel`（公会战 `map/city1..10`，  
 > 数组数据源按 `anchoredPosition` 离中心远近排序 + `centerPivot = false`，见第 8 节末条）。  
-> 更新时间 2026-10-21。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
+> 更新时间 2026-10-22。流程/反解方法见 `ui_anim_reproduce_skill.md`，本文只讲这个配方的落地。
 
 
 
@@ -182,6 +184,8 @@ local kNumberInCfg = { mode = "phases", from = 0.82, delay = 0.34, step = 0.06, 
 | `ExpertPanel`                       | `OnShow`、页签点击（`ActivityRewardShow` 之后）                                                     | `RefreshActivity`（活动开关 / 进度 / 5 点刷新 / 支付成功回调）                               |
 | `OperatingPanel`                    | `OnShow`、页签点击（`OnTabChanged` 之后）                                                           | `RefreshActivity`（月卡 / 活动开关 / 战令解锁）                                         |
 | `AdjutantActivityPanel`             | `PageTabCtrl:ChangeTab` 的回调（首开也走这条）                                                        | 无独立的事件刷新路径                                                                  |
+| `CardActivityPanel`                 | `OnPageTabChange`（页内容 `OnShow` 之后；首开 `OnShow → ChangeTab` 同走这条）；**page_1 跳过批量**       | 领奖 / 买礼包回调里的 `Refresh`、`GameEvent.Task.Achievement → view:OnShow`、日刷新计时器——都不经过面板这条路径 |
+| `DrawCardPanel`（page_1 切换心愿弹窗，A 方案） | `btnChange` 打开 ChangeWishPanel 弹窗时（数据早在 `OnShow` 的 `InitWish` 回调里 `SetData` 灌好）         | `OnShow`（列表随弹窗整窗隐藏，播了看不见）、弹窗内左右切换心愿（不重灌列表）                          |
 | `ThousandDrawPanel`（phases）         | `Init` 的网络回调末尾（数据到位、卡面填好之后）                                                                | 领奖后的整表刷新会重播——那是**新一局**，可以接受                                                 |
 | `DefenseTrainingPopup`（phases，关卡节点） | `OnOpen` 置位 → `OnShow` 末尾消费（`UpdateMain` 之后，status 节点已按状态激活）                               | 战斗返回（`IsBackOpen` 只走 `OnShow`，不经 `OnOpen`）、点「重置关卡」（回调里直接调 `OnShow`）——都是同屏刷新 |
 | `BlitzStrikePanel`（phases，未开宝箱）     | 同上：`OnOpen` 置位 → `OnShow` 里 `UpdateMain` 之后消费                                              | 战斗返回（只走 `OnShow`）、领奖回调里的 `UpdateMain` 刷新；`difficultyLevel = 0`（弹选难度）那一支也不播  |
@@ -423,6 +427,16 @@ end
 
 ## 8. 变更记录
 
+- **2026-10-22**（卡牌活动）：`CardActivityPanel` 接入页面级批量（任务 / 英雄礼包 / 英雄豪礼 /
+  收集四个页签的 ScrollCycleView，播在 `OnPageTabChange`，首开 `OnShow → ChangeTab` 同路）。
+  🔴 page_1（`DrawCardPanel`）**显式跳过批量**：它唯一的长列表挂在 `ChangeWishPanel` 弹窗里、
+  平时整窗隐藏——`_Collect` 只认 `activeSelf`（不看父级激活状态），批量会把动画播在看不见的
+  弹窗里，等玩家真点开「切换心愿」反而没动画。改为 A 方案：`btnChange` 打开弹窗时
+  `PlayWishPopIn()`（数据早在 `OnShow` 的 `InitWish` 回调里 `SetData` 灌好，「Play 在 SetData
+  之后」天然满足）。数据刷新路径（领奖回调 `Refresh`、买礼包回调、
+  `GameEvent.Task.Achievement → view:OnShow`、TaskPanel 的日刷新计时器）都不经过面板的
+  `OnPageTabChange` ⇒ 天然不重播。新增 `test_cardactivity_listpopin.lua`
+  （4 组 20 断言：批量接线 / page_1 跳过 / 弹窗时机 / 刷新路径不播）。
 - **2026-10-21** `c337ea8e7`：`ValuePackPanel` 首版（动画逻辑内联在面板里，`0.82→1.02→1`、错开 0.055s）。
 - **2026-10-21**：抽出 `Modules/Common/ItemPopIn.lua`（每实例独立状态 + 可覆盖配方 + 异常兜底），
   `ValuePackPanel` 改为薄封装；`GrowthManual_RewardPreview` / `GrowthManual_TaskPreview` 接入，

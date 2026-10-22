@@ -39,11 +39,18 @@ Jenkins 里点 **`TS-Art-Translate`**（`MODE=batch` 即可，缺哪张补哪张
 
 | 用 | 不用 |
 |---|---|
-| `*_bg_zh.png` 战令横幅（884×544，三段文字同一套版面） | `*_peitu_zh.png` 无字配图（没文字可翻，`BANNER_GLOB` 已排除） |
+| `*_bg_zh.png` 战令横幅（884×544，三段文字同一套版面） | `*_peitu_zh.png` **纯插画**配图（确实一个字都没有）—— 但别按文件名判，见下方红字 |
 | 图集大图（`Atlas/**`，标题压在纯色板上） | 想换节日/换风格（走 `docs/art_restyle_pipeline.md`） |
 | 小型单色美术字块（`ArtFont_zh/**`，≤700×500 且只有 1~8 种颜色，如页签） | 只想改 TMP 文本（改语言表就行，别动图） |
 | 全幅活动海报（`DynamicActivityPanelAtlas/banner/*_zh.png`，884×856 不透明，插画+彩带+两行字） | 纯图标（彩色、alpha 是轮廓不是字）—— `_is_glyph` 会判掉，别硬塞 |
+| **会员特权卡**（`OperatingPanelAtlas/*_huiyuan_peitu_zh.png`：820×860 / 884×1480 竖版异形卡，彩带+巨型美术字，**与 poster 同结构**） | —— |
 | 已有中文版、缺英文版 | —— |
+
+🔴 **`_peitu_zh` 不等于「没字」（2026-10-22 实测）**：`BANNER_GLOB = "*_bg_zh.png"` 只圈**战令横幅族**的候选，
+不代表这一类文件无字。`cn2-X1_zhongshenhuiyuan_peitu_zh.png`（884×1480）与
+`cn2-X1_zhizunhuiyuan_peitu_zh.png`（820×860）都是会员特权卡，三条中文美术字烘在彩带上，
+`family_of` 按尺寸（宽 ≥800 且高 ≥700）判成 **poster 族**，走整幅重绘。
+判族只看**源图自身特征**，永远不要按文件名猜。
 
 分派规则（`family_of`，按**源图自身特征**判，不看目录名）：
 
@@ -389,3 +396,22 @@ postprocess_photo()    → 等比 cover 回 884×856（🔴 不能 contain：海
 Jenkins `TS-Art-Translate` 首轮 #1（`WRITE=false`）UNSTABLE（还有 2 张没翻，符合预期），
 #2 写回两张 → 因「开工盘点」当时判黄而 UNSTABLE（口径问题，已改），
 #4 全绿：`开工盘点 / 生成英文图 / 像素级验收 / 写回 / 收尾清单 / 证据归档` 6 个环节全过。
+
+---
+
+## 9. 会员特权卡（`*_huiyuan_peitu_zh.png`）案例（2026-10-22）
+
+同族两张，都归 poster：`cn2-X1_zhongshenhuiyuan_peitu_zh.png`（884×1480）、`cn2-X1_zhizunhuiyuan_peitu_zh.png`（820×860）。
+版面骨架固定：**顶部白色斜切彩带 + 斜卡上的巨型两字美术字（下面已印英文 `PRIVILEGE`）+ 底部横彩带**。
+
+| 项 | 值 |
+|---|---|
+| 字号顺序 | 彩带小字（大字块级）→ 巨型美术字（整张主角）→ 底部彩带小字 |
+| 版面写法 | `gpt_layout` 里逐条点名「哪条彩带 + 像素范围 + 哪个英文不许动」；底部那条要写死**文字右边界**（至尊卡 = 停在钻石图标 x464 之前，右侧 x510~760 是 UI 价格位） |
+| 出图耗时 | 98s（`chatgpt_web`，一次成，无重出） |
+| 验收 | 8 环节 7 过 + 1 warn（UNSTABLE）—— 那条 warn 是 poster 族常规四项，均为**参考/记录**，不判红 |
+| OCR 旁证 | 相似度 0.74，且把 `PRIVILEGE` / `VIP` 也读进来了 ⇒ **别拿 OCR 分数定生死**，poster 族本来就不判红 |
+
+🔴 **poster 的「四边背景未重绘」闸门对会员卡永远不适用**：异形透明卡边圈只有 18% 可见像素
+（`POSTER_EDGE_MIN_OPAQUE = 0.50`），实测那圈平均差 127 / 改动 78%，但肉眼一个字没少。
+实际硬项只有 5 条（尺寸 / alpha / 改过 / 没整幅重画 / 上 45% 动过）—— 判定时别被这条带偏。

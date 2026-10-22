@@ -260,6 +260,11 @@ def en_path_for(zh: Path, family: str | None = None) -> Path:
     fam = _pick_family(zh, family)
     stem = Path(zh).stem
     if fam == FAMILY_ATLAS:
+        # 图集里也有带 _zh 后缀的源图（如 cn2-X1_wuxianzhanzhen_02_zh.png）：
+        # 口径与 GetPictureFont 的 _zh↔_en 换名一致，en 名必须剥掉 _zh，
+        # 否则写回 x_zh_en.png，客户端按 bgEn/GetPictureFont 拼名找不到。
+        if stem.endswith("_zh"):
+            stem = stem[: -len("_zh")]
         rel = Path(zh).resolve().relative_to(ATLAS_ROOT)   # LaddersTypePanelAtlas/x.png
         return EN_ROOT / rel.parts[0] / (stem + "_en.png")
     if not Path(zh).name.endswith("_zh.png"):

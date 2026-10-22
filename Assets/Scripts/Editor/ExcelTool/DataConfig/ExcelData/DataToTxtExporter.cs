@@ -87,8 +87,12 @@ namespace GameEditor.Core.DataConfig
 
 
                     var cell = line[i];
-            
-                    cells.Add(DataHelper.GetValByDefault(cell,field.defaultContent,field.fieldType));
+
+                    // 🔴 2026-10-22：int 列按类型归一化（截断 + int32 夹取）。
+                    // xlsx 里常有 Excel 浮点噪声文本（740.0000000000006 / 499.99999999999994）
+                    // 和越界值（9999999999），服务端 Integer.parseInt 会抛 NumberFormatException
+                    // 并中断整张表加载。详见 DataHelper.GetServerValByType。
+                    cells.Add(DataHelper.GetServerValByType(cell, field.defaultContent, field));
                     
                 }
                 sw.WriteLine(string.Join("\t", cells));

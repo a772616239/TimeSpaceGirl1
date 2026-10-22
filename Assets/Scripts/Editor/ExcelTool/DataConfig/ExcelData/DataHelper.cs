@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Xml;
@@ -264,6 +265,130 @@ namespace GameEditor.Core.DataConfig
             }
             return result;
         }
+        /// <summary>
+        /// 🔴 2026-10-22 修：服务端 txt 的 int 列必须写成 int32 范围内的整数。
+        ///
+        /// 服务端 STableManager.dealParams 对 int 列直接 Integer.parseInt，
+        /// 而且 catch 之后 throw e，**一张表里有一个单元格解析不了，整张表都不加载**。
+        /// xlsx 里这些值常常是 Excel 算出来的浮点噪声（存成了文本）：
+        ///   SupremacyLevelConfig.Hit = "740.0000000000006"
+        ///   SupremacyLevelConfig.CritFactor = "499.99999999999994"
+        ///   ChallengeConfig.MapTime = "9999999999"（超 int32）
+        ///   RunesPoolConfig.Max = "1.25"（整数列写小数）
+        /// 2026-10-22 把导出的表推到测试服，就是这 3 张抛 NumberFormatException。
+        ///
+        /// 归一化口径 = Java `(int)` 强制转换（向零截断）+ int32 夹取，
+        /// 与发包树 TimeSpaceServer/Server_x1tag1.2.2 里的历史值一致
+        /// （那里就是 740 / 499 / 2147483647 / 1），不改变服务端行为。
+        /// 非数字原样返回，留给导表时人工发现。
+        /// </summary>
+        public static string GetServerValByType(string val, string defaultVal, DataField field)
+        {
+            string s = GetValByDefault(val, defaultVal, field.fieldType);
+            if (string.IsNullOrEmpty(s) || !IsIntLikeServerField(field))
+            {
+                return s;
+            }
+            return NormalizeIntCell(s);
+        }
+
+        /// <summary>服务端会按 Integer.parseInt 解析的列：int / ref* / mut,int#…</summary>
+        private static bool IsIntLikeServerField(DataField field)
+        {
+            switch (field.fieldType)
+            {
+                case DataFieldType.Int:
+                case DataFieldType.Ref:      // dealParams: startsWith("ref") → Integer.parseInt
+                    return true;
+                case DataFieldType.Mut:      // mut,int#… → StringUtil.parseFiledInt/2/3
+                    return !string.IsNullOrEmpty(field.ext)
+                        && field.ext.StartsWith("int", StringComparison.OrdinalIgnoreCase);
+            }
+            return false;
+        }
+
+        /// <summary>列表列（mut,int#…）按 | # , ; 拆子值逐个归一化，分隔符原样保留。</summary>
+        private static string NormalizeIntCell(string cell)
+        {
+            bool isList = cell.IndexOf('|') >= 0 || cell.IndexOf('#') >= 0
+                       || cell.IndexOf(',') >= 0 || cell.IndexOf(';') >= 0;
+            if (!isList)
+            {
+                return NormalizeIntToken(cell);
+            }
+            StringBuilder sb = new StringBuilder(cell.Length);
+            StringBuilder cur = new StringBuilder();
+            for (int i = 0; i < cell.Length; i++)
+            {
+                char ch = cell[i];
+                if (ch == '|' || ch == '#' || ch == ',' || ch == ';')
+                {
+                    sb.Append(NormalizeIntToken(cur.ToString()));
+                    sb.Append(ch);
+                    cur.Length = 0;
+                }
+                else
+                {
+                    cur.Append(ch);
+                }
+            }
+            sb.Append(NormalizeIntToken(cur.ToString()));
+            return sb.ToString();
+        }
+
+        private static string NormalizeIntToken(string tok)
+        {
+            if (string.IsNullOrWhiteSpace(tok))
+            {
+                return tok;
+            }
+            string s = tok.Trim();
+            if (s.Equals("null", StringComparison.OrdinalIgnoreCase))
+            {
+                return tok;
+            }
+            bool plainInt = s.Length > 0;
+            for (int i = 0; i < s.Length; i++)
+            {
+                char ch = s[i];
+                if (ch == '-' && i == 0)
+                {
+                    continue;
+                }
+                if (ch < '0' || ch > '9')
+                {
+                    plainInt = false;
+                    break;
+                }
+            }
+            long lv;
+            if (plainInt && long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out lv))
+            {
+                if (lv >= int.MinValue && lv <= int.MaxValue)
+                {
+                    return s;                                  // 本来就合法，保留原样（含前导零）
+                }
+                return lv > int.MaxValue
+                    ? int.MaxValue.ToString(CultureInfo.InvariantCulture)
+                    : int.MinValue.ToString(CultureInfo.InvariantCulture);
+            }
+            double dv;
+            if (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out dv)
+                || double.IsNaN(dv) || double.IsInfinity(dv))
+            {
+                return tok;                                    // 不是数字：原样留着，人工修
+            }
+            if (dv >= int.MaxValue)
+            {
+                return int.MaxValue.ToString(CultureInfo.InvariantCulture);
+            }
+            if (dv <= int.MinValue)
+            {
+                return int.MinValue.ToString(CultureInfo.InvariantCulture);
+            }
+            return ((long)dv).ToString(CultureInfo.InvariantCulture);   // 向零截断，同 Java (int)
+        }
+
         public static string GetClientValByDefault(string val, string defaultVal, DataFieldType dataFieldType)
         {
             if (!string.IsNullOrEmpty(val))

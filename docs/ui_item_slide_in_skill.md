@@ -311,6 +311,7 @@ grep -rhno '"DO[A-Za-z]*"' Assets/Source/Generate/*.cs | sed 's/.*://' | sort -u
 | `MapPanel` | HUD 贴边容器 9 个（见 §10） | **各自就近的那条边** | 56~96px / 0.26s / 错开 0.05（总 0.61s） |
 | `MissionDailyPanel_Daily` | 任务卡 `rewardPre` → `item1..itemN`（一屏 ~5 张） | **右 → 左** | 打开 +260 / 0.26s / 错开 0.055；切页签 +170 / 0.30s / 错开 0.05 / 整批 +0.05 |
 | `CourtesyDressPanel` | 奖励卡 `item` → `item1..itemN`（一屏 ~6 张） | **右 → 左** | 同上（打开 +260 / 0.26s / 0.055；切页签 +170 / 0.30s / 0.05 / 整批 +0.05） |
+| `FightRecordPopup` | 战斗记录卡 `Bg/Grid/RewardInfoGroupPre1..3`（固定 3 张，按 dataID 激活） | **右 → 左** | 打开 +260 / 0.26s / 0.055（无 tab，单节奏） |
 | `FindTreasureMainPanel` | 寻宝任务卡 `rewardPre1..N`（一屏 ~5 张，grid 挂 VerticalLayoutGroup） | **右 → 左** | 打开 +260 / 0.26s / 0.055（无页签，只有打开那一套） |
 | `LineupRecommend` | 阵容卡 `prefab` → 1..N（一屏 ~3.7 张）**+ 卡内英雄两层** | **右 → 左** | 卡 +240 / 0.22s / 错开 0.055；卡内英雄 +80 / 0.18s / 错开 0.04 / 相对自己的卡晚 0.06（无页签，只此一套） |
 
@@ -411,6 +412,15 @@ prefab 一行没动。
 ---
 
 ## 11. 变更记录
+
+- 2026-10-22 第八个落地：`FightRecordPopup`（战斗记录卡，固定 3 张，`Bg/Grid` 挂 VerticalLayoutGroup）。
+  底板走形态二（卡根自己的 Image，1080×260）。新增一点：**播放闸门放 `OnOpen`、消费在 `OnShow` 末尾**
+  —— 本弹窗从战斗回显返回时 `OnShow` 会再走一次，闸门放 OnOpen（有有效数据才置 `needSlideAnim`）
+  防止每次返回都重播（思路同 §10 的 MapPanel；空数据 NoPeople 分支不置标记）。
+  无 tab、无数据刷新路径 ⇒ 不需要第二节奏与 suppress。
+  harness 10 case：`scripts/lua-tests/test_fightrecord_cardslide.lua`（case8 走真实 `OnOpen` 入口验
+  「打开播一次 / 返回不重播 / 空数据不播」三条路径；DOTween 绑定已核：`DOAnchorPosX` 在
+  `UnityEngine_RectTransformWrap`、`DOFade` 在 `UnityEngine_UI_MaskableGraphicWrap`）。
 
 - 2026-10-22 第七个落地：`FindTreasureMainPanel`（寻宝任务卡，一屏 ~5 张，`grid` 挂
   VerticalLayoutGroup + ContentSizeFitter）。四点新增：

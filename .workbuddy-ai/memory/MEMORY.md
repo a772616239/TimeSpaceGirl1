@@ -41,6 +41,21 @@
 - 镜像 `TimeSpaceServer/` **必须 `--exclude='.git/'`**：`Server_x1tag1.2.2` 是独立 git 仓，
   `.git/objects/pack/*.pack` 是 444 只读，`--inplace` 直写会 `Permission denied` / 退 23，
   以前 `set -uo pipefail` 没 -e ⇒ 静默跳过（镜像从来没成功过）。现镜像失败判红 rc=5。
+- **AB 复用缓存口径**（2026-10-23）：`TS-Resource-Build` 的 `REBUILD_AB`(bool) 已换成
+  `AB_MODE` 三档 `重建/复用缓存/跳过`。复用 = 不启动 Unity，直接吃打包目录里上一轮重建的
+  `Assets/StreamingAssets/Android`（gitignore，跨 ci_sync 的 reset 存活），约 10s；
+  校验由 `scripts/ab_cache.py verify` 做（存在性 + `build/ab_cache/manifest.json` 指纹 +
+  **字节码内容哈希**），缓存不全或字节码变过判红 rc=3。适用：只改 C#/打包参数/环境。
+- 🔴 **「bundle 新不新鲜」不能用 mtime 判**：`ci_sync` 的 `git reset --hard` 会把改动过的文件
+  重新检出（内容不变、mtime 变新）⇒ `check_lua_bundle_fresh.sh` 必然误报「bundle 过期」。
+  现口径：mtime 说过期时再问一次 `ab_cache.py fresh-check`（内容哈希 + bundle sha256），
+  对得上就放行（2026-10-23 构建 #34 实锤，没有这层兜底复用档每次都会红）。
+- 🔴 **改脚本时先确认没有别的会话正在跑它**：bash 惰性读取按字节偏移取下一行，
+  文件被整体重写后偏移错位 ⇒ 报一个与代码完全无关的 `line NNN: $X: unbound variable`
+  （2026-10-23 #32 导表跑到一半 `resource_build.sh` 被改，就是这么炸的）。看到行号对不上先怀疑脚本被改。
+- ⚠️ 待修：`scripts/check_ab_ready.sh` 的 `PROJECT_ROOT` **写死开发目录**，在打包目录跑也体检
+  开发目录（⑤ 的「AB 就绪体检」因此对 clone 毫无约束力）。要修得同时决定「复用档下 BuildABs
+  缺失算不算问题」（clone 的 BuildABs/Android 是空的）。
 
 ## 关键坑位
 

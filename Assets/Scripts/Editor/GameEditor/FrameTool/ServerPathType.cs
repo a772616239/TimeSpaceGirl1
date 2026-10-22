@@ -19,97 +19,97 @@ namespace GameEditor.FrameTool
         /// 回环地址只有打包机自己连得上，包/客户端分发即废）
         /// </summary>
         [ServerPathTypeValue("http://192.168.3.82:8081/", "http://129.226.213.65:81/")]
-        开发服 = 0,
+        测试服 = 0,
 
-        /// <summary>
-        /// 商务服
-        /// </summary>
-        [ServerPathTypeValue("http://120.92.119.145:8080/", "http://129.226.213.65:81/")]
-        商务服,
+        // /// <summary>
+        // /// 商务服
+        // /// </summary>
+        // [ServerPathTypeValue("http://120.92.119.145:8080/", "http://129.226.213.65:81/")]
+        // 商务服,
 
          /// <summary>
         /// 商务服
         /// </summary>
         [ServerPathTypeValue("http://129.226.213.65:8080/", "http://129.226.213.65:81/")]
-        柯测试服,
+        正式服,
 
-        /// <summary>
-        /// 百度测试
-        /// </summary>
-        [ServerPathTypeValue("http://106.12.148.155:8080/", "http://106.12.148.155:80/projectxglobal/", "http://106.12.148.155:8082/err", "http://106.12.148.155:8081/idip/sfzb/sdk", "http://106.12.148.155:8081/idip/sfzb")]
-        百度新马简中测试服,
+        // /// <summary>
+        // /// 百度测试
+        // /// </summary>
+        // [ServerPathTypeValue("http://106.12.148.155:8080/", "http://106.12.148.155:80/projectxglobal/", "http://106.12.148.155:8082/err", "http://106.12.148.155:8081/idip/sfzb/sdk", "http://106.12.148.155:8081/idip/sfzb")]
+        // 百度新马简中测试服,
 
-        /// <summary>
-        /// 百度
-        /// </summary>
-        [ServerPathTypeValue("http://global-projectx-login.bdgser-oversea.com/", "https://projectx-global.bdgser-oversea.com/projectxglobal/Release/", "http://global-projectx-errlog.bdgser-oversea.com/err", "http://global-projectx-sdk.bdgser-oversea.com/idip/sfzb/sdk", "http://global-projectx-sdk.bdgser-oversea.com/idip/sfzb")]
-        百度新马简中正式服,
+        // /// <summary>
+        // /// 百度
+        // /// </summary>
+        // [ServerPathTypeValue("http://global-projectx-login.bdgser-oversea.com/", "https://projectx-global.bdgser-oversea.com/projectxglobal/Release/", "http://global-projectx-errlog.bdgser-oversea.com/err", "http://global-projectx-sdk.bdgser-oversea.com/idip/sfzb/sdk", "http://global-projectx-sdk.bdgser-oversea.com/idip/sfzb")]
+        // 百度新马简中正式服,
 
-        /// <summary>
-        /// 9377正式服
-        /// </summary>
-        [ServerPathTypeValue("http://cn_login.emiplay.com/", "http://cn-hotupdate.emiplay.com/", "http://cn_err.emiplay.com/err", "http://cn_pay.emiplay.com/idip/sfzb/sdk", "http://cn_pay.emiplay.com/idip/sfzb")]
-        正式服9377,
+        // /// <summary>
+        // /// 9377正式服
+        // /// </summary>
+        // [ServerPathTypeValue("http://cn_login.emiplay.com/", "http://cn-hotupdate.emiplay.com/", "http://cn_err.emiplay.com/err", "http://cn_pay.emiplay.com/idip/sfzb/sdk", "http://cn_pay.emiplay.com/idip/sfzb")]
+        // 正式服9377,
 
-        /// <summary>
-        /// 赤兔测试服
-        /// </summary>
-        [ServerPathTypeValue("http://120.92.209.58:8080/", "http://120.92.209.58:80/", "http://120.92.209.58:8082/err", "http://120.92.209.58:8081/idip/sfzb/sdk", "http://120.92.209.58:8081/idip/sfzb")]
-        赤兔测试服,
+        // /// <summary>
+        // /// 赤兔测试服
+        // /// </summary>
+        // [ServerPathTypeValue("http://120.92.209.58:8080/", "http://120.92.209.58:80/", "http://120.92.209.58:8082/err", "http://120.92.209.58:8081/idip/sfzb/sdk", "http://120.92.209.58:8081/idip/sfzb")]
+        // 赤兔测试服,
 
-        /// <summary>
-        /// 赤兔正式服
-        /// </summary>
-        [ServerPathTypeValue("http://cn-login.caiyanghuyu.com/", "http://cn-hotupdate.caiyanghuyu.com/", "http://cn-err.caiyanghuyu.com/err", "http://cn-pay.caiyanghuyu.com/idip/sfzb/sdk", "http://cn-pay.caiyanghuyu.com/idip/sfzb")]
-        赤兔正式服,
+        // /// <summary>
+        // /// 赤兔正式服
+        // /// </summary>
+        // [ServerPathTypeValue("http://cn-login.caiyanghuyu.com/", "http://cn-hotupdate.caiyanghuyu.com/", "http://cn-err.caiyanghuyu.com/err", "http://cn-pay.caiyanghuyu.com/idip/sfzb/sdk", "http://cn-pay.caiyanghuyu.com/idip/sfzb")]
+        // 赤兔正式服,
 
-        /// <summary>
-        /// 韩国测试服
-        /// </summary>
-        [ServerPathTypeValue("http://daclogin.ilod.co.kr/", "http://dacpu.ilod.co.kr/", "http://dacer.ilod.co.kr/err", "http://dacpay.ilod.co.kr/idip/sfzb/sdk", "http://dacpay.ilod.co.kr/idip/sfzb")]
-        韩国测试服,
+        // /// <summary>
+        // /// 韩国测试服
+        // /// </summary>
+        // [ServerPathTypeValue("http://daclogin.ilod.co.kr/", "http://dacpu.ilod.co.kr/", "http://dacer.ilod.co.kr/err", "http://dacpay.ilod.co.kr/idip/sfzb/sdk", "http://dacpay.ilod.co.kr/idip/sfzb")]
+        // 韩国测试服,
 
-        /// <summary>
-        /// 韩国正式服
-        /// </summary>
-        [ServerPathTypeValue("http://aclogin.ilod.co.kr/", "http://acpu.ilod.co.kr/", "http://acer.ilod.co.kr/err", "http://acpay.ilod.co.kr/idip/sfzb/sdk", "http://acpay.ilod.co.kr/idip/sfzb")]
-        韩国正式服,
+        // /// <summary>
+        // /// 韩国正式服
+        // /// </summary>
+        // [ServerPathTypeValue("http://aclogin.ilod.co.kr/", "http://acpu.ilod.co.kr/", "http://acer.ilod.co.kr/err", "http://acpay.ilod.co.kr/idip/sfzb/sdk", "http://acpay.ilod.co.kr/idip/sfzb")]
+        // 韩国正式服,
 
-        /// <summary>
-        /// Quick
-        /// </summary>
-        [ServerPathTypeValue("http://1.13.176.142:8080/", "http://1.13.176.142:80/", "http://1.13.176.142:8082/err", "http://1.13.176.142:8081/idip/sfzb/sdk", "http://1.13.176.142:8081/idip/sfzb")]
-        QuickGame测试服,
+        // /// <summary>
+        // /// Quick
+        // /// </summary>
+        // [ServerPathTypeValue("http://1.13.176.142:8080/", "http://1.13.176.142:80/", "http://1.13.176.142:8082/err", "http://1.13.176.142:8081/idip/sfzb/sdk", "http://1.13.176.142:8081/idip/sfzb")]
+        // QuickGame测试服,
 
-        /// <summary>
-        /// Quick
-        /// </summary>
-        [ServerPathTypeValue("http://1.13.165.154:8080/", "http://cn-hotupdate.weiweihudong.cn/", "http://1.13.165.154:8082/err", "http://1.13.165.154:8081/idip/sfzb/sdk", "http://1.13.165.154:8081/idip/sfzb")]
-        QuickGame正式服,
+        // /// <summary>
+        // /// Quick
+        // /// </summary>
+        // [ServerPathTypeValue("http://1.13.165.154:8080/", "http://cn-hotupdate.weiweihudong.cn/", "http://1.13.165.154:8082/err", "http://1.13.165.154:8081/idip/sfzb/sdk", "http://1.13.165.154:8081/idip/sfzb")]
+        // QuickGame正式服,
 
-        /// <summary>
-        /// 长尾测试服
-        /// </summary>
-        [ServerPathTypeValue("http://1.13.176.142:8080/", "http://1.13.176.142:80/cw/", "http://1.13.176.142:8082/err", "http://1.13.176.142:8081/idip/sfzb/sdk", "http://1.13.176.142:8081/idip/sfzb")]
-        长尾测试服,
+        // /// <summary>
+        // /// 长尾测试服
+        // /// </summary>
+        // [ServerPathTypeValue("http://1.13.176.142:8080/", "http://1.13.176.142:80/cw/", "http://1.13.176.142:8082/err", "http://1.13.176.142:8081/idip/sfzb/sdk", "http://1.13.176.142:8081/idip/sfzb")]
+        // 长尾测试服,
         
-        /// <summary>
-        /// 长尾正式服
-        /// </summary>
-        [ServerPathTypeValue("http://1.13.165.154:8080/", "http://cn-hotupdate.weiweihudong.cn/cw/", "http://1.13.165.154:8082/err", "http://1.13.165.154:8081/idip/sfzb/sdk", "http://1.13.165.154:8081/idip/sfzb")]
-        长尾正式服,
+        // /// <summary>
+        // /// 长尾正式服
+        // /// </summary>
+        // [ServerPathTypeValue("http://1.13.165.154:8080/", "http://cn-hotupdate.weiweihudong.cn/cw/", "http://1.13.165.154:8082/err", "http://1.13.165.154:8081/idip/sfzb/sdk", "http://1.13.165.154:8081/idip/sfzb")]
+        // 长尾正式服,
 
-        /// <summary>
-        /// 99测试服
-        /// </summary>
-        [ServerPathTypeValue("http://43.139.240.49:8080/", "http://43.139.240.49:80/", "http://43.139.240.49:8082/err", "http://43.139.240.49:8081/idip/sfzb/sdk", "http://43.139.240.49:8081/idip/sfzb")]
-        测试服99,
+        // /// <summary>
+        // /// 99测试服
+        // /// </summary>
+        // [ServerPathTypeValue("http://43.139.240.49:8080/", "http://43.139.240.49:80/", "http://43.139.240.49:8082/err", "http://43.139.240.49:8081/idip/sfzb/sdk", "http://43.139.240.49:8081/idip/sfzb")]
+        // 测试服99,
 
-        /// <summary>
-        /// 99正式服
-        /// </summary>
-        [ServerPathTypeValue("http://yjqsl-login.boomegg.cn/", "http://yjqsl-static.boomegg.cn/", "http://yjqsl-err.boomegg.cn/err", "http://yjqsl-pay.boomegg.cn/idip/sfzb/sdk", "http://yjqsl-pay.boomegg.cn/idip/sfzb")]
-        正式服99,
+        // /// <summary>
+        // /// 99正式服
+        // /// </summary>
+        // [ServerPathTypeValue("http://yjqsl-login.boomegg.cn/", "http://yjqsl-static.boomegg.cn/", "http://yjqsl-err.boomegg.cn/err", "http://yjqsl-pay.boomegg.cn/idip/sfzb/sdk", "http://yjqsl-pay.boomegg.cn/idip/sfzb")]
+        // 正式服99,
     }
 
     [AttributeUsage(AttributeTargets.Field, Inherited = false, AllowMultiple = false)]

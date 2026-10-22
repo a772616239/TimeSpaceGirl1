@@ -1,6 +1,6 @@
 /**@META
 {
-  "description": "Android 发版全链路（AAB + APK）：发布安全闸门 → 打包环境预检 → 提版本号 → **按 SERVER_ENV 注入连服地址** → Unity 构建 AAB → **同版本号打出测试 APK（同一环境）** → 包内四重校验（服务器环境/出包口径/16KB/交付）→ 归档 → 上传 Play。**默认上传并发布**（UPLOAD=True、AUTO_APPROVE=True、BUILD_APK=True）：默认轨道 internal 内部测试（status=completed，测试员即可安装）；选 production/beta/alpha 时同样上传并发布，其 completed/inProgress 仍需勾 PUBLISH 作为线上最后一道确认。需要停下来点按钮时把 AUTO_APPROVE 设为 False。",
+  "description": "Android 发版全链路（AAB + APK）：发布安全闸门 → 打包环境预检 → 提版本号 → **按 SERVER_ENV 注入连服地址** → Unity 构建 AAB → **同版本号打出测试 APK（同一环境）** → 包内四重校验（服务器环境/出包口径/16KB/交付）→ 归档 → 上传 Play。**默认上传并发布**（UPLOAD=True、AUTO_APPROVE=True、BUILD_APK=True）：默认轨道 internal 内部测试（status=completed，测试员即可安装）；选 production/beta/alpha 时同样上传并发布，其 completed/inProgress 仍需勾 PUBLISH 作为线上最后一道确认。需要停下来点按钮时把 AUTO_APPROVE 设为 False。选 production 时默认同时把同一版本挂到 internal（ALSO_INTERNAL=True）；构建成功后默认把本次 bump 出的 versionCode 回写并推回 release 分支（PUSH_BACK=True，只推白名单，Unity 重导入噪声不进仓）。",
   "concurrent": false,
   "params": [
     {"name":"SERVER_ENV","type":"choice","choices":["正式服","测试服","现网-129.226.213.65"],"default":"正式服","description":"🔴 这个包连哪个服务器（地址表 scripts/build_envs.json：正式服=103.151.173.99 / 测试服=本机 127.0.0.1:8081 / 现网=历史包用的 129.226.213.65）。构建前注入 Assets/Resources/version.txt，EXIT 时（含失败）自动还原；打包后**解包核验**，包里连的不是所选环境就拒绝上传。要回滚/对照旧包选「现网」"},
@@ -18,6 +18,7 @@
     {"name":"PUBLISH","type":"bool","default":false,"description":"🔴 线上轨道（production/beta/alpha）的放行旗标：选这些轨道 + STATUS=completed/inProgress 时必须勾选，表示已知晓「会送审 / 上线」。internal 轨道不需要"},
     {"name":"ALSO_INTERNAL","type":"bool","default":true,"description":"选 production 轨道时，把**同一个版本**同时挂到 internal 内部测试轨道（同一个 Play edit 内写两条轨道、一次 commit 原子生效，不重复上传、不占新号）。默认开 —— 测试员装到的就是线上那个包；不想挂内部测试才取消勾选"},
     {"name":"AUTO_APPROVE","type":"bool","default":true,"description":"上传前的审批闸门是否自动放行。**默认是**（无人值守跑通整条链路）。设为 False 则停下来等人在 Jenkins 页面点「确认上传」"},
+    {"name":"PUSH_BACK","type":"bool","default":true,"description":"构建成功后把**打包改动**（versionCode / version.txt）提交并推回 release 分支。**默认开** —— 不然 bump 出来的号只活在打包目录里，下次构建又撞号。只回写白名单，Unity 重导入的噪声文件不进仓"},
     {"name":"NOTES","type":"string","default":"","description":"更新说明（Play 发布说明）"}
   ]
 }
@@ -58,6 +59,7 @@ pipeline {
           env.TS_STATUS    = params.STATUS
           env.TS_PUBLISH   = params.PUBLISH.toString()
           env.TS_ALSO_INTERNAL = params.ALSO_INTERNAL.toString()
+          env.TS_PUSH_BACK = params.PUSH_BACK.toString()
           env.TS_AUTOAPPROVE = params.AUTO_APPROVE.toString()
           env.TS_NOTES     = params.NOTES
           env.TS_REBUILD_RES = params.REBUILD_RESOURCES.toString()
@@ -78,6 +80,7 @@ mkdir -p "$TS_RUN_DIR/logs"
   echo "资源准备：${TS_REBUILD_RES}   AB 处理：${TS_AB_MODE}（复用缓存 = 不重打 AB，直接用打包目录上一轮的）"
   echo "服务端表：本 job 只做只读体检；改表请跑独立 job TS-Table-Sync"
   echo "上传：$UPLOAD  轨道：$TS_TRACK  状态：$TS_STATUS  PUBLISH：$TS_PUBLISH  自动放行审批：$TS_AUTOAPPROVE"
+  echo "回写 release：$TS_PUSH_BACK（成功后才推；只推 versionCode / version.txt 白名单）"
   if [[ "$TS_TRACK" == "production" && "${TS_ALSO_INTERNAL:-false}" == "true" ]]; then
     echo "同时挂：internal 内部测试（同一个包、同一个 edit 原子提交）"
   fi
@@ -518,6 +521,25 @@ echo "→ scripts/play_upload.py ${UPLOAD_ARGS[*]}"
        "$PY" scripts/play_upload.py "${UPLOAD_ARGS[@]}"
 ''')
         }
+      }
+    }
+
+    stage('⑩-1 回写打包改动到 release 分支') {
+      // 只回写**白名单**（ProjectSettings.asset 的 versionCode + 四处 version.txt），
+      // 绝不 git add -A：打包目录里 Unity 重导入会留下十几个噪声文件（*.preset.meta 被删、
+      // CRC/game.asset、LuaBytes/*.bytes 被改），那些不该进仓。详见 .jenkins/lib/push_back.sh。
+      // 🔴 目的：CLI 打包的 versionCode 自增只发生在打包目录，会被 ①-1 的 reset 抹掉 ⇒
+      //    仓库值必须跟上「Play 已占用的最大号」，否则下次构建原地撞号。
+      // --warn-rc 4：推不上去只标黄 —— 走到这一步包已经打好（甚至已传 Play），判红是误报。
+      when { expression { params.PUSH_BACK } }
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+"$BASH" .jenkins/lib/run_stage.sh --name "回写 versionCode 到 release" \
+  --group "发布" --slug push-back --timeout 600 --warn-rc 4 \
+  -- "$BASH" .jenkins/lib/push_back.sh --branch release
+''')
       }
     }
 

@@ -104,7 +104,7 @@
 | Job | 做什么 | 参数（默认值） | 定时 | 并发 |
 |---|---|---|---|---|
 | **TS-Pipeline-Overview** | 只读总览：一次看完 8 个环节，失败互不阻断 | `SKIP_PLAY=False` `SKIP_HEALTH=False` | — | 允许 |
-| **TS-Android-Release** | **AAB + APK** 全链路，默认打包 + 上传发布。**只管客户端**：服务端表只做 `②-3` 只读一致性体检（只提醒不改），改表走独立 job `TS-Table-Sync` | `SERVER_ENV=正式服` `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `ALSO_INTERNAL=True` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
+| **TS-Android-Release** | **AAB + APK** 全链路，默认打包 + 上传发布。**只管客户端**：服务端表只做 `②-3` 只读一致性体检（只提醒不改），改表走独立 job `TS-Table-Sync` | `SERVER_ENV=正式服` `EXPECT_PROFILE=minimal` `BUMP_VERSION=True` `BUILD_APK=True` `REUSE_AAB=` `ALLOW_NO_LUA=False` `UPLOAD=True` `TRACK=internal` `STATUS=completed` `PUBLISH=False` `ALSO_INTERNAL=True` `PUSH_BACK=True` `AUTO_APPROVE=True` `NOTES=` | — | **禁止** |
 
 > **`ALSO_INTERNAL`（默认 True，2026-10-23 新增）**：`TRACK=production` 时，**同一个版本**
 > 同时挂到 `internal` 内部测试轨道 —— 测试员装到的就是线上那个包，不用另出一个号。
@@ -113,6 +113,22 @@
 > 🔴 **不能"再传一次到 internal"**：Play 的 versionCode 是 **app 级全局**的，同一个号第二次
 > `bundles.upload` 必被拒。也正因如此，这条不影响 `BUMP_VERSION`，不多占号。
 > 不想挂内部测试就取消勾选（`ALSO_INTERNAL=False`）。
+
+> **`PUSH_BACK`（默认 True，2026-10-23 新增）+ 环节 `⑩-1`**：构建成功后把**这次打包产生的
+> 改动**提交并推回 `release` 分支，解决一个长期坑 —— CLI 打包的 versionCode 自增只发生在
+> **打包目录**，`①-1` 的 `reset --hard` 会把它抹掉 ⇒ 仓库里的 `AndroidBundleVersionCode`
+> 永远停在旧值，下次构建原地撞号（Play 各轨道共享同一个号空间）。
+>
+> 🔴 **只回写白名单，不是 `git add -A`**（`.jenkins/lib/push_back.sh`）：
+> `ProjectSettings/ProjectSettings.asset` + 四处 `version.txt`。打包目录里 Unity 重导入会留下
+> 十几个噪声文件（实测一次构建 17 个脏文件：15 个 `*.preset.meta` 被删、`Assets/CRC/game.asset`、
+> `LuaBytes/*.bytes`、`ResourcePathConfig.asset` 被改），这些**不该进仓**。
+>
+> 配套两条：
+> - `ci_sync.sh` 在 reset 之后多一步 `git checkout -B release`，保证 HEAD 在**本地分支**上而不是
+>   detached —— detached HEAD 上的提交没有引用指向它，下次 reset 就找不到了，回写等于白做；
+> - 推送被拒（远端有别人的提交）会自动 `fetch + rebase` 重试 3 次；仍然失败或 rebase 冲突
+>   则**标黄不判红**（`--warn-rc 4`）—— 走到这一步包已经打好、甚至已经传上 Play 了，判红是误报。
 
 > **`BUILD_APK`（默认 True）**：打完 AAB 立刻在同一把 `unity` 锁下再出 **同 versionCode** 的 universal APK
 > （`--no-bump`，绝不二次提号），供直接装机测试。

@@ -77,6 +77,20 @@ if ! git reset --hard "origin/$BRANCH" >/dev/null 2>&1; then
 fi
 echo "✅ 代码已对齐 origin/$BRANCH @ $(git rev-parse --short HEAD)"
 
+# ---- ②-0 确保 HEAD 在**本地分支**上，而不是 detached HEAD ---------------------
+# ⑪ 的 push_back.sh 要在这个分支上 commit 回写 versionCode。detached HEAD 上提交
+# 没有引用指向它，下一次 reset 就找不到了 —— 回写等于白做。
+# reset --hard 只移动当前分支（或 detached HEAD）指向的提交，**不会**自动 attach 到分支。
+CUR_BRANCH="$(git branch --show-current 2>/dev/null || true)"
+if [[ "$CUR_BRANCH" != "$BRANCH" ]]; then
+  echo "→ 当前 HEAD 在「${CUR_BRANCH:-detached}」，切到本地分支 ${BRANCH}（指向 origin/${BRANCH}）"
+  if ! git checkout -B "$BRANCH" "origin/$BRANCH" >/dev/null 2>&1; then
+    echo "🔴 git checkout -B ${BRANCH} 失败（⑪ 的回写会没有分支可提交）" >&2
+    exit 4
+  fi
+  echo "✅ 已在分支 ${BRANCH} @ $(git rev-parse --short HEAD)"
+fi
+
 # ---- ②-1 本脚本自己被 reset 换掉了 → 重跑新版本 -----------------------------
 # 不重跑的话，bash 会拿旧偏移量去读新文件内容：命令被腰斩、参数错位，
 # 而且因为 `set -uo pipefail` 没有 -e，错误不会中断脚本 —— 静默半途而废。

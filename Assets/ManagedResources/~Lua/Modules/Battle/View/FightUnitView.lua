@@ -102,7 +102,7 @@ function FightUnitView:OnSkillCast(skill, func)
     if not combat then
         return
     end
-    BattleManager.PauseBattle()
+    BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.UNIT_SKILL)
 
     self:SceneCardAni(skill, combat)
 end
@@ -149,7 +149,7 @@ function FightUnitView:SceneCardAni(skill, combat)
 end
 
 function FightUnitView:SceneCardAniProcess(skill, combat)
-    BattleManager.ResumeBattle()
+    BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.UNIT_SKILL)
     self.GameObject.transform.parent.parent:GetComponent("Animator").speed = 1
     self:CheckSkillForoleEffect(combat, skill)
     self:DelayFunc(

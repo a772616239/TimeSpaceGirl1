@@ -929,13 +929,38 @@ function RoleView:HpComponentHide(isHide)
     end
 end
 
+--==== 暂停锁的 owner（每个 RoleView 实例一把，互不干扰）=========================
+-- 以前位移/特写/PV 都用 BattleManager 的共享布尔位：A 单位的位移结束会把 B 单位的
+-- 特写锁一起放掉，反过来 B 的 tween 被 Kill 掉又会让整个战斗永久暂停。
+-- 现在每个单位每种演出各用一个独立 owner（role:<实例>:<kind>），Dispose 时统一强放。
+function RoleView:GetPauseOwner(kind)
+    local key = "role:" .. tostring(self) .. ":" .. tostring(kind)
+    self.pauseOwnerKeys = self.pauseOwnerKeys or {}
+    self.pauseOwnerKeys[key] = true
+    return key
+end
+
+function RoleView:ReleasePauseOwners()
+    if not self.pauseOwnerKeys then
+        return
+    end
+    for key in pairs(self.pauseOwnerKeys) do
+        BattleManager.ReleasePauseOwner(key)
+    end
+    self.pauseOwnerKeys = {}
+end
+
 -- 战斗位移
 function RoleView:DoFightMove(curpos, tarpos, dur, func, beforeIsHideObj, afterIsHideObj)
+    local pauseOwner = self:GetPauseOwner(BattleManager.PAUSE_OWNER.FIGHT_MOVE)
     if self.dsTweenFightMove then
         self.dsTweenFightMove:Kill()
+        -- 被 Kill 的 tween 不会走 OnComplete ⇒ 它那把锁必须在这里手动放，
+        -- 否则同一单位反复位移时锁会越积越多，最后谁也放不掉（永久暂停）
+        BattleManager.ResumeBattle(pauseOwner)
     end
 
-    BattleManager.PauseBattle()
+    BattleManager.PauseBattle(pauseOwner)
 
     local oldpt = curpos == nil and self.RoleLiveGO.transform.parent.localPosition or curpos
 
@@ -958,7 +983,7 @@ function RoleView:DoFightMove(curpos, tarpos, dur, func, beforeIsHideObj, afterI
             function()
                 self:HpComponentHide(afterIsHideObj)
                 if curpos == 10 or curpos==99 then self:HpComponentHide(true) end -- 主角血条不显示
-                BattleManager.ResumeBattle()               
+                BattleManager.ResumeBattle(pauseOwner)
                 if func then
                     func()
                 end
@@ -1361,7 +1386,7 @@ function RoleView:SkillFireAll(skill)
 end
 
 function RoleView:PlaySkillCloseUpBefore(combat, skill, funFire)
-    BattleManager.PauseBattle()
+    BattleManager.PauseBattle(self:GetPauseOwner(BattleManager.PAUSE_OWNER.CLOSEUP))
     self:DelayFunc(0.5, function()
         -- self:SetBgColor(false, 0.2, self.RootPanel.BG)
         local roles = self.RootPanel.GetRoles()
@@ -1394,7 +1419,8 @@ end
 
 --播放PV
 function RoleView:PlayPV(combat, skill, func)
-    BattleManager.PauseBattle()
+    local pauseOwner = self:GetPauseOwner(BattleManager.PAUSE_OWNER.PV)
+    BattleManager.PauseBattle(pauseOwner)
 
     if self.playPV_LocalMove then
         self.playPV_LocalMove:Kill()
@@ -1411,7 +1437,7 @@ function RoleView:PlayPV(combat, skill, func)
     self.playPV_LocalMove = self.RoleLiveGO.transform.parent:DOLocalMove(tarPos, moveTime, false)
     :SetEase(Ease.Linear)
     :OnComplete(function()
-            BattleManager.ResumeBattle()
+            BattleManager.ResumeBattle(pauseOwner)
             --播放PV
             self:PlayPVPrefab(combat.PV, combat.PVDuration, self.role.camp == 0)
             --播放声音            
@@ -1430,7 +1456,7 @@ function RoleView:PlayPV(combat, skill, func)
             self:DelayFunc(
                 combat.PVDuration / 1000,
                 function()
-                    BattleManager.PauseBattle()
+                    BattleManager.PauseBattle(pauseOwner)
 
                     self.RootPanel.ResetHighLightWithTargets(true, targets, self)
                     self.RootPanel.SetRoleActive(self.role, combat.HideActor, true, targets)
@@ -1458,7 +1484,7 @@ function RoleView:PlayPV(combat, skill, func)
                                     --所有人显示
                                     self.RootPanel.SetRoleActive(self.role, 999, true, targets)
 
-                                    BattleManager.ResumeBattle()
+                                    BattleManager.ResumeBattle(pauseOwner)
 
                                     if func then
                                         func()
@@ -1495,7 +1521,7 @@ function RoleView:PlaySkillCloseUpNew(combat, func, skill)
             local targets = skill:GetDirectTargets()
             self.RootPanel.ResetHighLightWithTargets(true, targets, self)
 
-            BattleManager.ResumeBattle()
+            BattleManager.ResumeBattle(self:GetPauseOwner(BattleManager.PAUSE_OWNER.CLOSEUP))
 
             if func then
                 func()
@@ -3030,6 +3056,9 @@ function RoleView:OrderStart()
 end
 
 function RoleView:Dispose()
+    -- 先把本单位的暂停锁全部强放：下面会 Kill 掉 tween、清掉 DelayFunc，
+    -- 那些 OnComplete 里的 ResumeBattle 从此不会执行，不放锁就是永久暂停
+    self:ReleasePauseOwners()
     -- 清空所有延迟方法
     self:ClearDelayFunc()
     self:ClearLoopFunc()

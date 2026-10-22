@@ -458,6 +458,9 @@ function this:BindEvent()
     end)
 
     local pauseTime = 31
+    -- 退出确认同一时刻只允许一份。反复点 btnExit 会重复 ShowTwo：上一次的 cancelFunc 被顶掉
+    -- （它持有的暂停锁永远放不掉 ⇒ 战斗卡在暂停），旧倒计时还在跑 ⇒ 到点自动退出战斗。
+    local exitDialogOpen = false
     Util.AddClick(this.btnExit, function ()
         if not BattleManager.IsUnlockBattlePass() then
             PopupTipPanel.ShowTip(PrivilegeManager.GetPrivilegeOpenTip(isBack and  PRIVILEGE_TYPE.SkipFight or PRIVILEGE_TYPE.ExitFight ))
@@ -466,8 +469,17 @@ function this:BindEvent()
         if BattleLogic.IsEnd or not BattleManager.IsCanOperate() then
             return
         end
+        if exitDialogOpen then
+            if UIManager.IsOpen(UIName.MsgPanel) then
+                return
+            end
+            -- 上一份弹窗被别处关掉了（没走 cancel/sure）⇒ 兜底把锁和标记一起清掉，别把按钮锁死
+            exitDialogOpen = false
+            BattleManager.ReleasePauseOwner(BattleManager.PAUSE_OWNER.EXIT_CONFIRM)
+        end
+        exitDialogOpen = true
         -- 战斗暂停
-        BattleManager.PauseBattle()
+        BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.EXIT_CONFIRM)
 
         local count = 0
         local timer = Timer.New(function ()
@@ -487,11 +499,15 @@ function this:BindEvent()
         end, 1, pauseTime, true)
         local cancelFunc = function ()
             this.CastingPass = MsgPanel._toggle.isOn
-            BattleManager.ResumeBattle()
+            exitDialogOpen = false
+            BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.EXIT_CONFIRM)
             timer:Stop()
         end
         local sureFunc = function()
             this.CastingPass = MsgPanel._toggle.isOn
+            exitDialogOpen = false
+            -- 走退出流程：战斗本来就要停，锁直接清（不依赖配对 Resume）
+            BattleManager.ReleasePauseOwner(BattleManager.PAUSE_OWNER.EXIT_CONFIRM)
             BattleLogic.IsEnd = true
             BattleView.Clear()
             timer:Stop()
@@ -607,6 +623,10 @@ function this:BindEvent()
         if BattleManager.IsUnlockBattleInBack() then
             if not UIManager.IsOpen(UIName.MainPanel) then
                 BattleManager.isFightBack = true
+                -- 切后台会把战斗场景整块隐藏、Spine 复位成待机，正在播的特写/PV/位移/支援技
+                -- 再也走不到 OnComplete ⇒ 它们的暂停锁必须在这里强放，否则回战斗时战斗是暂停的。
+                -- 反复「切出→重进」时漏一把就卡一次，这就是「反复切暂停」的根。
+                BattleManager.ReleaseTransientPauseOwners("btnFightBack")
                 BattleView:ResetAllRoleAnimation()
                 SoundManager.SetBattleVolume(0)
                 UIManager.OpenPanel(UIName.MainPanel)
@@ -900,7 +920,7 @@ end
 function this.BattleEnd(result)
     BattleManager.isFightBack = false
     BattleManager.ResetCVDatas() --< 重置航母显示数据
-    BattleManager.PauseBattle()
+    BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.BATTLE_END)
     -- 强制停止倍速
     Time.timeScale = 1
     -- 设置音效播放的速度

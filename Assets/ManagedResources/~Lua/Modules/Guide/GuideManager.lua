@@ -366,7 +366,7 @@ function this.RefreshTriggerListen(id, openType, openArgs)
         trigger = function(roleView)
             if FightPointPassManager.curOpenFight == openArgs[1] then
                 Game.GlobalEvent:RemoveEvent(GameEvent.Guide.GuideBattleCDDone, trigger)
-                BattleManager.PauseBattle()
+                BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.GUIDE)
                 this.ShowGuide(id, roleView)
 
                 GuidePanel.upArrow.transform.position = roleView.GameObject.transform.position
@@ -388,7 +388,7 @@ function this.RefreshTriggerListen(id, openType, openArgs)
                 trigger = function(theId)
                     if id == theId then
                         Game.GlobalEvent:RemoveEvent(GameEvent.Guide.NextTrigger, trigger)
-                        BattleManager.ResumeBattle()
+                        BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.GUIDE)
                         GuidePanel.upArrow:SetActive(false)
                         canGO1.overrideSorting = false
                         canGO2.overrideSorting = false
@@ -415,7 +415,7 @@ function this.RefreshTriggerListen(id, openType, openArgs)
         trigger = function(roleView)
             if FightPointPassManager.curOpenFight == openArgs[1] and roleView.RootPanel.GuideCheckEnemyDead(roleView.role) then
                 Game.GlobalEvent:RemoveEvent(GameEvent.Guide.GuideBattleCDDone, trigger)
-                BattleManager.PauseBattle()
+                BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.GUIDE)
                 this.ShowGuide(id, roleView)
 
                 GuidePanel.upArrow.transform.position = roleView.GameObject.transform.position
@@ -443,7 +443,7 @@ function this.RefreshTriggerListen(id, openType, openArgs)
                     end
                     if GuideConfig[id].Next == theId then
                         Game.GlobalEvent:RemoveEvent(GameEvent.Guide.NextTrigger, trigger)
-                        BattleManager.ResumeBattle()
+                        BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.GUIDE)
                     end
                 end
                 Game.GlobalEvent:AddEvent(GameEvent.Guide.NextTrigger, trigger)
@@ -456,7 +456,7 @@ function this.RefreshTriggerListen(id, openType, openArgs)
         trigger = function(roleView)
             if FightPointPassManager.curOpenFight == openArgs[1] then
                 Game.GlobalEvent:RemoveEvent(GameEvent.Guide.GuideBattleCDDone, trigger)
-                BattleManager.PauseBattle() --触发时暂停游戏逻辑
+                BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.GUIDE) --触发时暂停游戏逻辑
                 this.ShowGuide(id, roleView)
 
                 local canGO1 = roleView.GameObject.transform.parent.parent.gameObject:GetComponent("Canvas")
@@ -466,7 +466,7 @@ function this.RefreshTriggerListen(id, openType, openArgs)
                 trigger = function(panelType)
                     if panelType == UIName.GuidePanel then
                         Game.GlobalEvent:RemoveEvent(GameEvent.UI.OnClose, trigger)
-                        BattleManager.ResumeBattle()
+                        BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.GUIDE)
                         canGO1.overrideSorting = false
                     end
                 end
@@ -490,13 +490,13 @@ function this.RefreshTriggerListen(id, openType, openArgs)
         trigger = function(stage)
             if FightPointPassManager.curOpenFight == openArgs[1] and stage == openArgs[2] then
                 Game.GlobalEvent:RemoveEvent(GameEvent.Guide.GuideBattleStageChange, trigger)
-                BattleManager.PauseBattle() --触发时暂停游戏逻辑
+                BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.GUIDE) --触发时暂停游戏逻辑
                 this.ShowGuide(id, stage)
 
                 trigger = function(theId)
                     if GuideConfig[id].Next == theId then
                         Game.GlobalEvent:RemoveEvent(GameEvent.Guide.NextTrigger, trigger)
-                        BattleManager.ResumeBattle()
+                        BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.GUIDE)
                     end
                 end
                 Game.GlobalEvent:AddEvent(GameEvent.Guide.NextTrigger, trigger)
@@ -579,13 +579,13 @@ function this.RefreshTriggerListen(id, openType, openArgs)
         trigger = function(panelType)
             if MapManager.curMapId == 100 then
                 Game.GlobalEvent:RemoveEvent(GameEvent.Guide.GuideBattleStart, trigger)
-                BattleManager.PauseBattle()
+                BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.GUIDE)
                 this.ShowGuide(id)
 
                 trigger = function(panelType)
                     if panelType == UIName.GuidePanel then
                         Game.GlobalEvent:RemoveEvent(GameEvent.UI.OnClose, trigger)
-                        BattleManager.ResumeBattle()
+                        BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.GUIDE)
                     end
                 end
                 Game.GlobalEvent:AddEvent(GameEvent.UI.OnClose, trigger)

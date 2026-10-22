@@ -1,5 +1,7 @@
 BattleManager = {}
 local this = BattleManager
+-- 战斗暂停锁（按 owner 记的引用计数，见文件头注释）
+local BattlePauseLock = require("Modules/Battle/BattlePauseLock")
 local PassiveSkillLogicConfig = ConfigManager.GetConfig(ConfigName.PassiveSkillLogicConfig)
 local SkillLogicConfig = ConfigManager.GetConfig(ConfigName.SkillLogicConfig)
 local HeroConfig = ConfigManager.GetConfig(ConfigName.HeroConfig)
@@ -1687,31 +1689,159 @@ end
 --     return PrivilegeManager.GetPrivilegeOpenStatus(PRIVILEGE_TYPE.BattleInBack)
 -- end
 
--- 战斗暂停控制
+--==== 战斗暂停控制（按暂停源记的引用计数锁，实现见 Modules/Battle/BattlePauseLock.lua）==
+-- 旧实现只有 IsPlay 三态（0 停战 / 1 播放 / 2 暂停），PauseBattle / ResumeBattle 都是
+-- 幂等的「置位」，谁都能把别人的暂停放掉、也谁都能被后来者吞掉。全项目 15+ 个暂停源
+-- （回合剧情、助战/替补入场、大招特写、技能 PV、战斗位移、支援/副官/航母演出、宠物技、
+-- 新手引导、退出确认…）一旦交错或反复触发，必然出现两类症状：
+--   ① 该停的没停：A 暂停中，B 也暂停（被吞），B 先 Resume ⇒ 战斗在 A 的演出/遮罩下继续跑；
+--   ② 该恢复的停死：Resume 挂在 tween / DelayFunc 的 OnComplete 上，单位中途被移除
+--      （阵亡、替补、战斗结束）时回调永不执行 ⇒ 永久暂停，只能重开战斗。
+-- 现口径：按 owner 记的引用计数锁 —— 同一 owner 上锁 N 次要释放 N 次；所有 owner 都释放
+-- 才真正把 IsPlay 置回 1。owner 一律用 PAUSE_OWNER 常量，别手写字符串。
 this.IsPlay = 0
+this.pauseLock = BattlePauseLock.New()
+this.pauseWatchdog = nil
+this.pauseWarnSeconds = 45   -- 暂停超过这么久还没释放就打红字（退出确认最长 31s，留余量）
+
+this.PAUSE_OWNER = {
+    DEFAULT      = "default",       -- 未指定 owner 的历史调用（仍是一把共享锁）
+    EXIT_CONFIRM = "exit_confirm",  -- BattlePanel 退出/跳过确认弹窗
+    STORY        = "story",         -- 回合开始剧情对话框
+    ORDER_CHANGE = "order_change",  -- 回合切换（EnemyAppear 收尾恢复）
+    HELP_HERO    = "help_hero",     -- 助战英雄入场
+    TIBU         = "tibu",          -- 替补上阵
+    FIGHT_MOVE   = "fight_move",    -- 战斗位移 tween
+    CLOSEUP      = "closeup",       -- 技能特写
+    PV           = "pv",            -- 技能 PV
+    UNIT_SKILL   = "unit_skill",    -- 支援/副官/航母技能演出
+    POKEMON      = "pokemon",       -- 宠物（合体）技演出
+    GUIDE        = "guide",         -- 新手引导
+    BATTLE_END   = "battle_end",    -- 结算（BattlePanel/GuideBattlePanel 的 BattleEnd）
+}
+
+-- IsPlay 保留为只读镜像，方便日志/旧代码观察，真正的状态在 pauseLock 里
+function this.SyncPauseState()
+    this.IsPlay = this.pauseLock:GetState()
+end
+
+function this.GetPauseOwnersStr()
+    return this.pauseLock:OwnersStr()
+end
+
+function this.DumpPauseOwners(tag)
+    LogError(string.format("[BattlePause] %s IsPlay=%s owners=%s",
+        tostring(tag or ""), tostring(this.IsPlay), this.GetPauseOwnersStr()))
+end
+
+-- 看门狗：暂停久了还没释放，把「谁还持着锁」打出来，避免又出现只能靠重开战斗解决的卡暂停
+function this.StartPauseWatchdog()
+    if this.pauseWatchdog then
+        return
+    end
+    local beginTime = Time.realtimeSinceStartup
+    this.pauseWatchdog = Timer.New(function ()
+        if this.pauseLock:GetState() ~= BattlePauseLock.STATE_PAUSED then
+            this.StopPauseWatchdog()
+            return
+        end
+        local elapsed = Time.realtimeSinceStartup - beginTime
+        if elapsed >= this.pauseWarnSeconds then
+            LogError(string.format("[BattlePause] 已暂停 %.0fs 未恢复，持有锁的源：%s",
+                elapsed, this.GetPauseOwnersStr()))
+            this.StopPauseWatchdog()
+        end
+    end, 1, -1, true)
+    this.pauseWatchdog:Start()
+end
+
+function this.StopPauseWatchdog()
+    if this.pauseWatchdog then
+        this.pauseWatchdog:Stop()
+        this.pauseWatchdog = nil
+    end
+end
+
 function this.StartBattle()
-    if this.IsPlay == 0 then
-        this.IsPlay = 1
+    if this.pauseLock:Start() then
+        this.SyncPauseState()
     end
 end
 function this.IsBattlePlaying()
-    return this.IsPlay == 1
+    return this.pauseLock:IsPlaying()
 end
-function this.PauseBattle()
-    if this.IsPlay == 1 then
-        this.IsPlay = 2        
-    end
+function this.IsBattlePaused()
+    return this.pauseLock:IsPaused()
 end
-function this.ResumeBattle()
-    if this.IsPlay == 2 then
-        this.IsPlay = 1
+-- owner 省略时落到 "default"，兼容还没改的老调用点
+function this.PauseBattle(owner)
+    if not this.pauseLock:Pause(owner) then
+        return false
     end
+    this.SyncPauseState()
+    this.StartPauseWatchdog()
+    return true
+end
+function this.ResumeBattle(owner)
+    local ok = this.pauseLock:Resume(owner)
+    this.SyncPauseState()
+    if this.pauseLock:OwnerCount() == 0 then
+        this.StopPauseWatchdog()
+    end
+    return ok
+end
+-- 强制释放某个源的全部锁：tween/timer 被 Kill、单位 Dispose 等「配对 Resume 不会再来」的路径
+function this.ReleasePauseOwner(owner)
+    local ok = this.pauseLock:ReleaseOwner(owner)
+    this.SyncPauseState()
+    if this.pauseLock:OwnerCount() == 0 then
+        this.StopPauseWatchdog()
+    end
+    return ok
+end
+function this.ReleasePauseOwnerPrefix(prefix)
+    local n = this.pauseLock:ReleaseOwnerPrefix(prefix)
+    this.SyncPauseState()
+    if this.pauseLock:OwnerCount() == 0 then
+        this.StopPauseWatchdog()
+    end
+    return n
+end
+
+-- 演出型暂停源：Resume 全挂在 tween / DelayFunc / Spine 动画回调上。
+-- 切后台（btnFightBack）会把整块战斗场景 SetActive(false)、Spine 复位成待机，
+-- 这些演出从此不可能播完 ⇒ 配对的 Resume 永远不会来 ⇒ 回战斗时战斗永久暂停。
+-- 所以「切出战斗」这个动作要先把演出型锁全部强放掉（逻辑态锁不动：引导/剧情/退出确认）。
+this.TRANSIENT_PAUSE_OWNERS = {
+    this.PAUSE_OWNER.CLOSEUP,
+    this.PAUSE_OWNER.PV,
+    this.PAUSE_OWNER.FIGHT_MOVE,
+    this.PAUSE_OWNER.UNIT_SKILL,
+    this.PAUSE_OWNER.POKEMON,
+    this.PAUSE_OWNER.HELP_HERO,
+    this.PAUSE_OWNER.TIBU,
+}
+
+function this.ReleaseTransientPauseOwners(tag)
+    local n = this.ReleasePauseOwnerPrefix("role:")   -- 每单位的位移/特写/PV
+    for _, owner in ipairs(this.TRANSIENT_PAUSE_OWNERS) do
+        if this.ReleasePauseOwner(owner) then
+            n = n + 1
+        end
+    end
+    if n > 0 then
+        Log(string.format("[BattlePause] %s 强放演出型暂停锁 %d 把，剩余：%s",
+            tostring(tag or ""), n, this.GetPauseOwnersStr()))
+    end
+    return n
 end
 function this.StopBattle()
-    this.IsPlay = 0
+    this.pauseLock:Stop()
+    this.SyncPauseState()
+    this.StopPauseWatchdog()
 end
 function this.IsCanOperate()
-    return this.IsPlay ~= 0
+    return this.pauseLock:IsCanOperate()
 end
 
 --> battlePanelBehind

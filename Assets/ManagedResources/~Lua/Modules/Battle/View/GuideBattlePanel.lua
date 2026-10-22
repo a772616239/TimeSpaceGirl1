@@ -221,7 +221,7 @@ function this.SwitchTimeScale()
 end
 
 function this.BattleEnd(result)
-    BattleManager.PauseBattle()
+    BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.BATTLE_END)
     -- 强制停止倍速
     Time.timeScale = 1
     -- 设置音效播放的速度

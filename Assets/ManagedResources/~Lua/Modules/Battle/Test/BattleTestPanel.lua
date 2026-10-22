@@ -117,9 +117,9 @@ function this:BindEvent()
         if _IsStart then
             -- 战斗暂停
             if BattleManager.IsBattlePlaying() then
-                BattleManager.PauseBattle()
+                BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.DEFAULT)
             else
-                BattleManager.ResumeBattle()
+                BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.DEFAULT)
             end
         end
     end)
@@ -391,7 +391,7 @@ function this.SwitchTimeScale()
 end
 
 function this.BattleEnd(result)
-    BattleManager.PauseBattle()
+    BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.BATTLE_END)
 
 end
 

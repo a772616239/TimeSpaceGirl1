@@ -248,6 +248,9 @@ function this:OnOpen(data)
 end
 
 function this:OnOpenCustom()
+    -- 从后台回到战斗：先把上一次切出时残留的演出型暂停锁强放一次（幂等，没锁就是 0）。
+    -- 正常路径在 btnFightBack 已经放过，这里是兜底 —— 例如切出时没走按钮（被踢回主界面/断线重连）。
+    BattleManager.ReleaseTransientPauseOwners("OnOpenCustom")
     BattleManager.InitTimeScale()
     this.ClearSkillRootEffect()
 
@@ -623,19 +626,18 @@ function this.RoundBeginDialogue(dialogueId)
         return false
     end
 
-    BattleManager.PauseBattle()
+    BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.STORY)
     -- 标记战斗中剧情开始：结算弹框会等这段剧情播完再弹（先剧情对话框、后英雄显示框）
     BattleManager.BeginStoryDialogue(dialogueId)
     Log(string.format("[UIFlow] RoundBeginDialogue 播放剧情 id=%s stack=%s", tostring(dialogueId), tostring(GetUIStackStr and GetUIStackStr() or "?")))
     StoryManager.EventTrigger(dialogueId, function()
         BattleManager.EndStoryDialogue()
-        -- 助战英雄入场时由 handler 接手（弹展示框，结束再 ResumeBattle），否则直接恢复战斗
+        -- 只释放剧情自己的那把锁：助战英雄入场还持有 help_hero 锁，战斗不会在这里抢到展示框前面
+        BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.STORY)
         local handler = this.storyFinishHandler
         this.storyFinishHandler = nil
         if handler then
             handler()
-        else
-            BattleManager.ResumeBattle()
         end
     end)
     return true
@@ -694,7 +696,7 @@ function this.EnemyAppear()
                                 BattleManager.StartBattle()
                                 this.OnOpenInvestigateBuff()
                             else
-                                BattleManager.ResumeBattle()
+                                BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.ORDER_CHANGE)
                             end
                         end, 0.1):Start()
 
@@ -778,7 +780,7 @@ function this.BattleOrderChange(order)
     this.EnemyHP.fillAmount = 0
     this.PlayerHP.fillAmount = 0
 
-    BattleManager.PauseBattle()
+    BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.ORDER_CHANGE)
 
     if order > 1 then
         -- PlayUIAnimBack(this.gameObject,function ()
@@ -875,7 +877,7 @@ end
 -- to do add yh show 增加替补上阵界面
 function this.OnAddTibuRoleShow(data)
     -- 英雄出场表现
-    BattleManager.PauseBattle()
+    BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.TIBU)
     local _camp = -2
     if data.camp == 1 then _camp = 2 end
     tbRole[data].RoleLiveGO.transform.localPosition = Vector2.New(_camp, 0)
@@ -890,7 +892,7 @@ function this.OnAddTibuRoleShow(data)
         this.MinePanel:SetActive(true)
         -- 动画展现替补               
         -- BattleLogic.Event:DispatchEvent(BattleEventName.BattleRoundBeginDialogue, data.roleData.client_dialogue)
-        BattleManager.ResumeBattle()
+        BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.TIBU)
     end, 2):Start()     
     end)
 end
@@ -933,7 +935,7 @@ function this.OnAddRole(data, isHelp,isTibu,isShowMan)
     end
 
     if isHelp then
-        BattleManager.PauseBattle()
+        BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.HELP_HERO)
         tbRole[data].RoleLiveGO.transform.localPosition = Vector2.New(-2, 0)
         tbRole[data]:PlaySpineAnim(tbRole[data].RoleLiveGOGraphic, 0, RoleAnimationName.Run, true)
         tbRole[data].RoleLiveGO.transform:DOLocalMove(Vector2.zero,0.6):OnComplete(function()        
@@ -987,7 +989,7 @@ function this.ShowHelpHeroFrame()
 
     if not UIManager.IsOpen(UIName.BattlePanel) then
         -- 战斗界面已经关了（结算/退出），别再弹也没必要恢复战斗
-        BattleManager.ResumeBattle()
+        BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.HELP_HERO)
         return
     end
 
@@ -1005,7 +1007,7 @@ function this.ShowHelpHeroFrame()
         end
         this.EnemyPanel:SetActive(true)
         this.MinePanel:SetActive(true)
-        BattleManager.ResumeBattle()
+        BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.HELP_HERO)
     end, 3.5):Start()
 end
 
@@ -1047,7 +1049,7 @@ function this.ShowHelpHeroAfterDialogue(dialogueId)
         if this.pendingHelpHeroShow then
             this.ShowHelpHeroFrame()
         else
-            BattleManager.ResumeBattle()
+            BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.HELP_HERO)
         end
     end
 
@@ -1671,7 +1673,7 @@ function this.OnSkillCast(skill)
     liveGO:GetComponent("SkeletonGraphic"):DOFade(1, 0)
     liveGO:GetComponent("SkeletonGraphic"):DOColor(Color.New(1,1,1,1), 0)
 
-    BattleManager.PauseBattle()
+    BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.POKEMON)
 
     addDelayRecycleRes("casting_skill", go, 1.6, function ()
         local yiPath1 = pokemonConfig.screen
@@ -1689,7 +1691,7 @@ function this.OnSkillCast(skill)
             go3.transform.localPosition = camp == 0 and Vector3.New(0,100,0) or Vector3.New(0,-674,0)
             go3:SetActive(true)
 
-            BattleManager.ResumeBattle()
+            BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.POKEMON)
 
             addDelayRecycleRes(yiPath2, go3, 3)
         end, pokemonConfig.screenCD)

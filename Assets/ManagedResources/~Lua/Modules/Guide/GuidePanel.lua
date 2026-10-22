@@ -230,13 +230,13 @@ function this.ExecuteBehavior(beType, beArgs)
             _trigger.onPointerClick = _trigger.onPointerClick - args[1]._onPointerClick
             _trigger.onPointerClick = _trigger.onPointerClick - endFunc
             --BattlePanel.BtnPlay:GetComponent("Button").onClick:Invoke() --还原暂停
-            BattleManager.ResumeBattle()
+            BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.GUIDE)
         end
         _trigger.onPointerClick = _trigger.onPointerClick + endFunc
         this.SetBtnGOPosition(args[1].RoleIconTran.position)
     elseif beType == 4 then --点击设置战斗自动
         if BattleManager.IsBattlePlaying() then
-            BattleManager.PauseBattle()
+            BattleManager.PauseBattle(BattleManager.PAUSE_OWNER.GUIDE)
         end
         local go = Util.GetGameObject(UIManager.uiNode, beArgs)
         local btn = nil
@@ -260,7 +260,7 @@ function this.ExecuteBehavior(beType, beArgs)
                 end
                 this.NextGuide()
                 this.button:GetComponent("Button").onClick:RemoveAllListeners()
-                BattleManager.ResumeBattle()
+                BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.GUIDE)
                 Util.AddClick(this.button, this.NextGuide)
             end
         )
@@ -336,7 +336,7 @@ function this.ExecuteBehavior(beType, beArgs)
                 _trigger.onEndDrag = _trigger.onEndDrag - args[1]._onEndDrag
                 _trigger.onDrag = _trigger.onDrag - dragFunc
                 _trigger.onEndDrag = _trigger.onEndDrag - endFunc
-                BattleManager.ResumeBattle()
+                BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.GUIDE)
                 this.upArrow:SetActive(false)
                 this.NextGuide()
                 Util.AddClick(this.button, this.NextGuide)
@@ -363,7 +363,7 @@ function this.ExecuteBehavior(beType, beArgs)
             function()
                 args[1]:GetComponent("Button").onClick:Invoke()
                 this.NextGuide()
-                BattleManager.ResumeBattle()
+                BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.GUIDE)
                 this.button:GetComponent("Button").onClick:RemoveAllListeners()
                 Util.AddClick(this.button, this.NextGuide)
             end
@@ -448,7 +448,7 @@ function this.ExecuteBehavior(beType, beArgs)
                 BattleManager.SetTimeScale(BATTLE_TIME_SCALE_TWO)
                 this.NextGuide()
                 this.button:GetComponent("Button").onClick:RemoveAllListeners()
-                BattleManager.ResumeBattle()
+                BattleManager.ResumeBattle(BattleManager.PAUSE_OWNER.GUIDE)
                 Util.AddClick(this.button, this.NextGuide)
             end
         )

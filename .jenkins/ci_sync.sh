@@ -48,9 +48,8 @@ esac
 # ---- ① fetch ---------------------------------------------------------------
 cd "$CI" || exit 2
 # 🔴 记下「正在跑的这份脚本」在 reset 前的 blob：本脚本自己也在被 reset 的范围内，
-#    换掉之后 bash 仍按旧文件的字节偏移继续读新文件 ⇒ 后面的命令被截断/拼错。
-#    实测症状（2026-10-23，Release #22/#23）：TimeSpaceServer 那条 rsync 只报
-#    `rsync: error: unexpected end of file` 就被跳过，而脚本仍然打「✅ 同步完成」。
+#    文件被换掉后 bash 仍按旧文件的字节偏移继续读新文件 ⇒ 后面的命令可能被截断/拼错。
+#    （2026-10-23 加第④步时第一次遇到「脚本改自己」的情形，故补这道保险。）
 SELF_BLOB_BEFORE="$(git rev-parse "HEAD:.jenkins/ci_sync.sh" 2>/dev/null || true)"
 if ! git fetch origin "$BRANCH" --prune 2>&1 | sed 's/^/   /'; then
   echo "🔴 git fetch origin ${BRANCH} 失败" >&2
@@ -80,8 +79,8 @@ echo "✅ 代码已对齐 origin/$BRANCH @ $(git rev-parse --short HEAD)"
 
 # ---- ②-1 本脚本自己被 reset 换掉了 → 重跑新版本 -----------------------------
 # 不重跑的话，bash 会拿旧偏移量去读新文件内容：命令被腰斩、参数错位，
-# 而且因为 `set -uo pipefail` 没有 -e，错误不会中断脚本，只留下一条莫名其妙的
-# rsync 报错 —— 静默半途而废。CI_SYNC_REEXEC 防死循环（新版本再跑一次就不会变）。
+# 而且因为 `set -uo pipefail` 没有 -e，错误不会中断脚本 —— 静默半途而废。
+# CI_SYNC_REEXEC 防死循环（新版本再跑一次就不会变）。
 SELF_BLOB_AFTER="$(git rev-parse "HEAD:.jenkins/ci_sync.sh" 2>/dev/null || true)"
 if [[ "${CI_SYNC_REEXEC:-0}" != "1" && -n "$SELF_BLOB_BEFORE" \
       && "$SELF_BLOB_BEFORE" != "$SELF_BLOB_AFTER" ]]; then
@@ -101,7 +100,11 @@ rsync -a --delete "$DEV_PROJ/.secrets/"  "$CI/.secrets/"  && echo "   ✓ .secre
 rsync -a --delete "$DEV_PROJ/keystore/"  "$CI/keystore/"  && echo "   ✓ keystore/"
 # 🔴 服务端表镜像失败必须判红：它是打包 clone 里「服务端 txt」的唯一来源，
 #    静默跳过 ⇒ 包里/推给线上的是旧表（2026-10-23 就是这么丢过一次）。
-if rsync -a --inplace "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/"; then
+# 🔴 `--exclude='.git/'` 不是可选项：`Server_x1tag1.2.2` 是**独立 git 仓**，其
+#    `.git/objects/pack/*.pack` 是只读（444）的，`--inplace` 直接打开原文件写 ⇒
+#    `Permission denied (13)` → rsync 退 23 / 报 `unexpected end of file`。
+#    镜像只搬工作树（表 + 服务端源码），clone 里那份 .git 保持原样（TS-Local-Deploy 用它）。
+if rsync -a --inplace --exclude='.git/' "$DEV_PROJ/TimeSpaceServer/" "$CI/TimeSpaceServer/"; then
   echo "   ✓ TimeSpaceServer/（独立服务端仓，随开发目录同状态；--inplace 直写，
             不带 --delete：CI 目录不是真源，残留旧文件无害且沙箱拦 unlink）"
 else

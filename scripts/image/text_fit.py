@@ -16,7 +16,9 @@
 """
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 import tempfile
 from difflib import SequenceMatcher
@@ -24,6 +26,8 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageOps
+
+_TESS: str | None = None
 
 # 文字 ink 落在透明区的比例上限；超过它才算「会被切」
 LOST_INK_RATIO = 0.004
@@ -144,34 +148,61 @@ def refit_covered(src_im: Image.Image, gen_im: Image.Image) -> tuple[Image.Image
 # --------------------------------------------------------------------------- #
 # 二、OCR 译文闸门
 # --------------------------------------------------------------------------- #
+def _tesseract_bin() -> str | None:
+    """找 tesseract 的绝对路径并缓存。
+
+    🔴 不能只用 `tesseract --version` 裸命令判断：Jenkins 的 launchd 环境 PATH 里
+       没有 /usr/local/bin（本机 tesseract 就装在那儿），实测 #39 里明明装着却被判
+       「没装，OCR 闸门跳过」——闸门静默失效比没有闸门更危险。
+    """
+    global _TESS
+    if _TESS is None:
+        _TESS = ""
+        for cand in ("/usr/local/bin/tesseract", "/opt/homebrew/bin/tesseract",
+                     "/usr/bin/tesseract", shutil.which("tesseract") or ""):
+            if cand and Path(cand).is_file():
+                _TESS = cand
+                break
+    return _TESS or None
+
+
 def has_tesseract() -> bool:
-    try:
-        r = subprocess.run(["tesseract", "--version"], capture_output=True, timeout=10)
-        return r.returncode == 0
-    except Exception:                                              # noqa: BLE001
-        return False
+    return _tesseract_bin() is not None
 
 
-def ocr_read(im: Image.Image) -> str | None:
-    """读图上的拉丁字母。None = 本机没装 tesseract（闸门降级成 warn）。
+def ocr_read(im: Image.Image, workdir: Path | None = None) -> str | None:
+    """读图上的拉丁字母。None = OCR 跑不起来（本机没装 / 环境不对）⇒ 闸门降级成 warn。
 
     🔴 预处理是固定的：先 flatten 到**黑底**（透明区不能当白纸，否则白字消失），
        再取灰度反相（字变黑、底变白），最后 `--psm 6`（按块识别）。
        2026-10-22 实测 `cn2-x1_texie_mozhate_01_en` 读出 `HERO-SKILL / AVE VERUM / CoRPUS`。
+    🔴 临时文件必须落在 `workdir` 里，不能用默认临时目录：Jenkins 环境里 TMPDIR 常常
+       没设 ⇒ 落到 /tmp ⇒ tesseract（sandbox 限制）打不开，rc=1、stdout 空。
+       而「空字符串」会被上层算成「相似度 0 ⇒ 判红」，等于把环境问题变成资源判红。
+    🔴 rc != 0 一律返回 None（降级 warn），只有「读成功但确实没字」才算真失败。
     """
-    if not has_tesseract():
+    exe = _tesseract_bin()
+    if not exe:
         return None
     if im.mode != "RGBA":
         im = im.convert("RGBA")
     flat = Image.alpha_composite(Image.new("RGBA", im.size, (0, 0, 0, 255)), im).convert("L")
-    tmp = Path(tempfile.mkstemp(suffix=".png")[1])
+    fd, name = tempfile.mkstemp(suffix=".png", dir=str(workdir) if workdir else None)
+    os.close(fd)
+    tmp = Path(name)
     try:
         ImageOps.invert(flat).save(tmp)
-        r = subprocess.run(["tesseract", str(tmp), "stdout", "--psm", "6"],
-                           capture_output=True, text=True, timeout=60)
-        return " ".join(r.stdout.split())
+        # 不吃 text=True：Jenkins 里 LANG 常常是空的，tesseract 会把 `°` 之类的字节
+        # 按 Latin-1 吐出来，严格 UTF-8 解码直接抛异常 ⇒ 闸门又被静默跳过。
+        r = subprocess.run([exe, str(tmp), "stdout", "--psm", "6"],
+                           capture_output=True, timeout=60)
+        err = r.stderr.decode("utf-8", errors="replace").strip()
+        if r.returncode != 0 or err.startswith("Error"):
+            print(f"⚠ OCR 退出码 {r.returncode}（{err[:120]}）⇒ 本轮跳过 OCR 闸门")
+            return None
+        return " ".join(r.stdout.decode("utf-8", errors="replace").split())
     except Exception as e:                                          # noqa: BLE001
-        print(f"⚠ OCR 执行失败（{e}），本轮跳过 OCR 闸门")
+        print(f"⚠ OCR 执行失败（{e}）⇒ 本轮跳过 OCR 闸门")
         return None
     finally:
         tmp.unlink(missing_ok=True)

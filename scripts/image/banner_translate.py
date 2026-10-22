@@ -1661,9 +1661,10 @@ def verify_photo_gpt(work: Path, state: dict) -> tuple[list[tuple[str, bool, str
     fam = state.get("family") or FAMILY_ARTFONT
     if lines and fam in (FAMILY_ARTFONT, FAMILY_POSTER) \
             and (state.get("provider") or "") != PROVIDER_LOCAL:
-        read = ocr_read(Image.open(work / "out.png"))
+        read = ocr_read(Image.open(work / "out.png"), workdir=work)
         if read is None:
-            warns.append("本机没装 tesseract，OCR 译文闸门跳过（英文是否正确仍需人眼确认）")
+            warns.append("OCR 闸门这次没跑起来（原因见上一行：没装 tesseract / 环境不认 / "
+                         "临时目录打不开）⇒ 英文是否正确仍需人眼确认")
         else:
             score, detail = text_score(lines, read)
             msg = f"相似度 {score:.2f}；{detail}"

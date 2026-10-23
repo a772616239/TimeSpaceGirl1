@@ -74,6 +74,12 @@ $PY scripts/aso/aso_assets.py preview --variant B        # 只重画验收页
 - `crop_top` / `crop_bottom` 是**卡片边界落在哪**，不是「裁掉多少」；落在战斗画面里最好看。
 - 源图分辨率要盯：现有竖版源图仅 597~720px 宽，放大 >1.6× 会标黄；正解是真机出 1080×1920。
 - 文字一律本地压（`STHeiti Medium.ttc`：简中=1 号面、繁中=0 号面；全角标点步进 0.68em）。
+- 🔴 **Play 张数上限**：`phoneScreenshots` 8 张/语、`featureGraphic` 1 张。`shots.json` 8 条会派生
+  9 张 `shot_*.png`，全推必 400 ⇒ 上传用 `--shots 0,1,2,5` 挑。
+- 锐度分层（实测）：`shot_01`(1.5×)、`shot_05`(1.1×) 最锐 → `shot_00`/`02`(1.8×) 可用 →
+  `shot_03`/`04`(2.6×) 偏糊 → `shot_06`/`07`/`08`(3.2×) 别上。
+- 🔴 **置顶图不能兼作手机截图**：1024×500 比例 2.048 > Play 上限 2.0，强行转竖前景只占 27.5%；
+  且 fusion 10 组 > 8 张上限。置顶图讲「长什么样」，截图讲「能玩几种玩法」，两者内容不该重复。
 
 ## 3. 文案与推送
 
@@ -81,10 +87,23 @@ $PY scripts/aso/aso_assets.py preview --variant B        # 只重画验收页
 $PY scripts/aso/aso_lint.py --variant B --baseline A       # 闸门：长度/串味/夸大
 $PY scripts/aso/aso_play.py push --variant B --text-only   # 默认只打印 diff
 $PY scripts/aso/aso_play.py push --variant B --with-images --allow-write --yes
+
+# 只换手机截图（四语、指定 4 张）
+$PY scripts/aso/aso_play.py push --variant B --images-only \
+    --image-types phoneScreenshots --shots 0,1,2,5 --allow-write --yes --auto-review
+# 只换置顶图
+$PY scripts/aso/aso_play.py push --variant B --images-only \
+    --image-types featureGraphic --allow-write --yes --auto-review
 ```
 
 三道闸门：`ALLOW_WRITE`（允许写）→ `--yes`（job 自动带）→ `MODE`（推哪些字段）。
 硬上限：标题 30 / 短描述 80 / 长描述 4000（Unicode 字符）。
+
+🔴 `--auto-review` 必须带：本包是「提交即自动送审」，不带参数会被 400 打回（`changesNotSentForReview must not be set`）。
+⇒ **传图 = 上线**，动手前先跟用户确认。
+
+核验口径：**看 sha1，不看张数**。传完再跑一次 `list`，把新导出目录里 `images.json` 的 sha1
+与 `derived/B/<locale>/shot_XX.png` 逐张比对（`deleteall+upload` 是替换语义，旧图应 0 残留）。
 
 ## 4. A/B：能测什么
 

@@ -18,19 +18,33 @@
 - 全服排行宝箱（`RankingRewardLogic.takeRankingReward`）**只判宝箱非空、不判玩家在不在榜** ⇒ 人人可领（10-21 定位，待决策）；领取后界面又变可领＝客户端不回写 `RankingRewardedList`。
 - 🔴 **服务端下发给聊天/邮件/跑马灯的文案一律是客户端语言表 id（数字串），禁止中文字面量**：`GetLanguageStrById` 对非数字串原样返回（functions.lua:2091）⇒ 英/日包直接显示中文。占位补位消息（`MessageCache.SEED_TEXT_IDS` 91001612~91001621，commit `cecc70f8f`）栽过，Redis 7 天 TTL 旧中文种子要手工清。语言表 10xxx 全占，新文案挂 910016xx 尾部。
 
-## 客户端 / Lua / UI
-- 真机读 `LuaBytes/<路径>_64.bytes` ⇒ 源码+字节码成对提交（`scripts/lua-bytes-sync.sh`，不加 `-g`）。
-- `~Lua/*.lua` 是 **CRLF**（`docs/`、`scripts/` 是 LF）：改完必须转回 CRLF，否则 diff 变「全文件重写」。
-- `tolua` fake-null 只能 `IsNull()`；红点 `BindObjs[rpType]` 不幂等；`Timer.New` 第 4 参 UI 传 `true`。
-- 红点树：**父红点值 = 子红点按位或**，父节点不能再 `AddCheckFunc`（静默丢弃、永不刷新）。入口红点必须与「面板里看得见的红点」同口径，否则「外面亮、点进去全灭」（10-21 契约 page2 / 神眷者 page4）。研发等级红点落点只在研发面板 ⇒ 不许挂 `Lead`。
-- 🔴 `BasePanel:OpenUI` **只有首次打开才调 `OnOpen(...)`**（面板缓存，重开 `IsBackOpen=true` ⇒ 只调 `OnShow`）：面板间交接参数不能走 `OnOpen` 形参，必须读 manager 级字段（如 `AircraftCarrierManager.pendingAssemblySelect`）；靠 `OnOpen` 初始化的成员第二次打开全是上一轮旧值。装配红点/入口 10-22 按此改（`GetEquippableSkillList` 单口径 + `SetScroll` 结尾反算）。
-- 🔴 红点排障先看项目内 `Logs/Editor.log` 的 `[RedPoint]` 行（不是 `~/Library/Logs`）；`RedPointType` **会撞号**（Lead_UpLv/SpeedLvUp ↔ 扭蛋已修），改父子关系后**必须重启客户端**（`RedPointData` 树是模块级局部变量，`SetParent` 对已有父节点直接 return；已加 `RedPointData:Reset()`，旧 session 仍要重启）。
-- `ActivityRewardConfig.Values` 是 `{{参数},{阈值}}` 两组，但 1216 行里 617 行只有一组 ⇒ 一律走 `ActivityGiftManager.GetMissionNeedValue(conFigData, 组号)`，**禁止 `Values[2][1]`**（nil 索引会打断 `MainPanel.OnShow` 整链）。达人活动自己的行都是两组，报错＝missionId 落到别的活动的行（老号残留 / 服务端配置与外网不一致）。
-- 🔴 **点号定义 / 冒号调用是隐形参数错位**：`function this.X(index)` + `this:X(index)` ⇒ self 顶进第一形参、实参整体右移（10-22 `CardActivityPanel:109` 崩在这：`contents[面板表]=nil` ⇒ LuaJIT `attempt to index field '?'`，**'?' = 动态 key 取到 nil 再取字段**，先查 key）。加 helper 后跑 `scripts/lua-tests/` 的 `badCallStyles`。
-- 新增地图三步：prefab `.meta assetBundleName`（复制来的会继承 mapN-1）+ `ResourcePathConfig.asset` 三处**末尾追加**（resAbNameList / resInfoList / assetBundleList 条数必须相等，插中间会平移几千个 resAbNameIndex）+ `MainLevelConfig.BG`。漏登记 ⇒ `resMgr:LoadAsset` 返 nil，挂机战斗起不来。
-- 🔴 `GetPictureFont` 只对「名字带 `_zh` 后缀」的资源成立（按 `GetLan()` 拼 `_zh/_en/_jp`）。图集里中文原图大量无后缀（`Atlas/LaddersTypePanelAtlas` 9 张只有 1 张带 `_zh`）⇒ 中文/日文拼出不存在的名字 ⇒ 整块白图。这类改用条目显式字段（`bgEn = "<名>_en"`，`GetLan()==1` 才换），且要在刷新时求值、别写进 require 期表构造。
-- UI「列表项逐格放大缩小」入场统一 `Modules/Common/ItemPopIn`（配方/坑见 `docs/ui_item_pop_in_skill.md`），禁止各面板复写；只在玩家主动换屏播，数据回调刷新不播。「从一侧滑入 + 底板淡入」走 `docs/ui_item_slide_in_skill.md`（已落地 BattlePass 任务卡 / DailyCarbon 副本卡）。🔴 参考 clip 节奏（0.167/0.033）是**弹窗一次性入场**，落在切页签上必然太快 ⇒ 打开 / 切页签两套 preset，切页签另加 0.05s 整批延后起播躲 `SetData` 那帧并挡连点叠播。`Util.GetGameObject` 按名字 **DFS** 找第一个同名节点 ⇒ 目标名必须整棵子树唯一。
-- 复刻 `.anim` 走 `docs/ui_anim_reproduce_skill.md` 五阶段（S0 反解出分镜表，`dump_clip.py` 读全 `m_*Curves`）。**TabBox 页签取列表必须读 `box` 子节点**（`this.TabCtrl:GetTabList()` 常为空实例 ⇒ 静默不播）；例外：`Init_SetTabAndBox` 显式传 tab/box 的面板（DailyCarbon 已落）可放心用。布局组占位时位移改写到子节点；`ScrollCycleView` item 根 `anchoredPosition` 由 `SetData`/`SetItemIndex` 直接重写（同理写子节点）。`dump_clip.py` 只给节点名（`grid/item1`）、给不出业务语义 ⇒ 动手前先确认是哪张列表。
+## 客户端 / Lua / UI → 详见 `REF-client-ui.md`
+- 硬红线只剩三条记在这里：`~Lua/*.lua` 是 **CRLF**（改完必须转回）；`LuaBytes` 源码+字节码成对提交；`BasePanel:OpenUI` 只有首次打开才调 `OnOpen` ⇒ 交接参数走 manager 字段。
+- 红点/动画/地图登记等细节全在 REF，别凭印象改。
+
+## 美术管线 → 详见 `REF-art-pipeline.md`（分派/并行/合规）+ `REF-art-translate.md` / `REF-art-restyle.md`
+- 三条必记：出图并行靠**浏览器租约**不靠串行；`gpt_layout` 必须禁模型自译；字被切只能 **lock 之前 refit**。
+
+## 店面 / ASO（Play 商店页）
+- 🔴 **Play 的能力边界别按印象说**：`edits.listings`（标题/短描述/长描述/video）与 `edits.images`（imageType: phoneScreenshots/featureGraphic/icon…）都能 API 改；但**商店页 A/B 实验没有公开 API**（建实验/看结论只能网页）。**送审模式实测更正（10-23）**：`com.warera.timespace` 是**「提交即自动送审」**，`edits.commit` 带 `changesNotSentForReview` 直接 400（"Changes are sent for review automatically…"），不带就会自动进审核队列 ⇒ 传图=上线，必须先问用户；`aso_play.py` 要加 `--auto-review` 才会真提交。核对是否生效**看 sha1**（`aso_play.py list` 导出 vs `derived/<变体>/<locale>/feature_01.png`），日志「已传 1 张」只是 upload、不含 commit。只换置顶图要 `--image-types featureGraphic`，否则连带覆盖 16 张截图。
+- 入口 Jenkins `TS-Store-Iteration`；脚本 `scripts/aso/`（common/play/lint/assets/art/experiment）；文案真源 `data_aso/variants/{A,B}/<locale>.json`，A = 线上快照**禁改**；runbook `docs/play_store_iteration_aso.md`。
+- 🔴 传图张数：`phoneScreenshots` ≤**8 张/语**、`featureGraphic` ≤**1 张**；`shots.json` 8 条会派生 9 张，全推必 400 ⇒ `aso_play.py --shots 0,1,2,5` 挑（`MAX_IMAGES` 兜底会告警）。`deleteall+upload` 是替换语义，推几张剩几张。核验看 **sha1**，不看张数。
+- 🔴 **置顶图不能兼作手机截图**：1024×500 比例 **2.048 > 2.0** 硬拒；转竖前景仅 27.5%。置顶图讲「长什么样」，截图讲「能玩几种玩法」，内容不该重复。锐度分层：`shot_01`(1.5×)/`05`(1.1×) 最好，`00`/`02`(1.8×) 可用，`03`/`04`(2.6×) 偏糊，`06`/`07`/`08`(3.2×) 别上。
+- 🔴 `aso_assets.py build` 会连带覆盖 `feature_01.png`，且 `aso_fusion.py --locales` 默认**只有 en-US** ⇒ 恢复置顶图必须显式写 `--locales en-US,ja-JP,zh-CN,zh-TW`，否则只 promote 一个语言。
+- 硬上限：标题 30 / 短描述 80 / 长描述 4000（码位）。Play 截图最短边 ≥320、最长边 ≤3840、**长宽比 ≤2:1**（9:19.5 的原始竖截会被拒）、单张 ≤8MB；置顶图固定 1024×500。
+- 🔴 这游戏是**纯竖版**（`defaultScreenOrientation=0`，只允许 Portrait），而线上 4 张 phoneScreenshots 全是 1920×1080 横版 ⇒ 手机商店页两条黑边、首图面积浪费一半。竖版源图在 `时空美少女物料/`（uuid 命名的 597~720px 宽），放大 1.8× 才到 1080。
+- 🔴 截图底部 1/3 常挂**中文世界聊天**，上商店页必须按图配 `crop_bottom` 裁掉；卖点条要**预留**在画布下方，不能叠在画面上（叠加会被聊天行糊穿）。
+- A/B 读数纪律：单窗口 ≥7 天且 ≥1000 访问才读，否则脚本直接报「数据不足」，不输出 uplift；且是顺序窗口对比，非随机分流。
+- 换皮链路：`aso_art.py plan/seed/trigger/ingest`；`TS-Art-Restyle` 的 `ASSET` 是相对工程根路径，`WRITE_BACK` 必须 false；并行靠浏览器租约，`TSG_LEASE_OWNER=$JOB_NAME-$BUILD_NUMBER`。
+- 🔴 **从立绘池选角色必须逐张放大看图**：立绘 123 张基础图（156 含表情差分），光看名字会挑错——`韩信/尼禄/霍恩海姆/亚瑟/帕里斯/西巴达/法姆贡/海明威/荣芙/运动员` 在游戏里都是**男性**。选人后配色走 `hero_features.py extract --art` 现算，原图暴露的改写成不透明覆盖版。多组候选：`fusion_pairs.json`（**tag 必须是 left+right 拼的四位数**，否则底图收不到）+ `hero_keyart.py batch`（串行/断点续跑/`--force`）+ `aso_fusion.py --bg`（覆盖底图，别反复改 fusion.json）+ `fusion_page.py` 验收页；候选目录**禁 `--promote`**（会把 feature_01 覆盖成一张并清掉其它）。一组 89~126s，卡到 8 分钟是踩坏号（`cdp:xxxxx 不可用 → 换下一个号`），**别 kill**。
+- 🔴 **置顶图拼装链路（定版，2026-10-23）**：三层拆分——两侧角色 `hero_keyart.py duo --pair 01,02 --wait`（管线按**特征卡**重绘，立绘只抽特征、**禁止贴立绘**）→ 中间压实机截图框 → 底部本地压字；`aso_fusion.py build --promote` 把成品写成 `derived/<变体>/<语言>/feature_01.png`（同 `aso_assets build` 文件名）并清掉其它 `feature_*`、刷 `index.json` 哈希 ⇒ preview/push 不用改、不会出现两张置顶图。**无需抠图**的取巧点：底图中段 60% 留空后被画面框整块盖住。Jenkins `TS-Store-Iteration` ③b 阶段，参数 `FUSION` / `FUSION_PAIR` / `FUSION_RENDER`（只有 RENDER 才耗额度）。换图后必须 `aso_assets.py preview` 刷验收页数字。skill `aso-store-iteration`。
+- 🔴 店面图口径：**AI 只画画面，标题一律本地真字体压**（`aso_assets.py headline`）——中/日/繁字形模型会画错、四语排版要统一、改文案不该重出图。宣传图真源 `时空美少女物料/新版本宣传图/*_{1920,1024}/`（专业排版，远超 `1024*500/` 那张拼贴）；配方 `data_aso/assets/promo.json`，AI 底图 `data_aso/assets/gen/`（进库），`seeds/` 不进库。
+- 🔴 画店面图三坑：`LAYOUT` 必须写死「NO text + 底部 N% 留空」（否则面板压到底、标题没处放）；主题 `outfit` 句会把角色原服装换掉 ⇒ `OUTFIT` 逐件点名保留；design 构图自动套金卡框 ⇒ `postprocess --frame none --alpha-mode keep` 复用生成图重跑。实测出图 ~90s。
+- 🔴 **置顶图左右角色不许贴现成立绘**（用户否决：不同光源/画风，一眼剪贴画）⇒ `hero_keyart.py duo --pair 01,02` 按特征卡重绘双人底图（两人都被左右边缘裁切、中间 60%+底部 26% 留空）。中间那块之后被实机截图整块盖掉 ⇒ 不需要抠图（管线不出透明角色，chroma key 抠不干净）。版面 `aso_fusion.py` + `data_aso/assets/fusion.json`；框内取景 `band` 必须避开截图底部按钮行（取 `[0.40,0.80]`，否则中文「禁止」会挂到英文商店页）。
+- 🔴 **立绘特征卡里的 `bare legs/bare feet` 会画出高开叉露胯**（Play 必拒）⇒ 一律写及踝长裙/高腰不透明衬裙；`hero_prompt.py` 有 `DRESS CODE` 硬约束段（groin/buttocks 必须覆盖、开叉不过膝、列 forbidden 词），单人/双人模板都带。
+- ⚠️ Jenkins job META 里布尔参数 **必须写 `type:"bool"`**，写 `"boolean"` 会渲染成字符串参数 ⇒ `when { expression { params.X } }` 恒真（TS-Store-Iteration #1 踩到）。
+- 🔴 置顶图 10 组候选**不能共用同一段画面**：`fusion.json` 的 `screen.shot/band` 是全局值，所有组都读它 ⇒ 缩略图「同一画面重复十遍」（10-23 用户指出）。每组在 `fusion_pairs.json` 里带 `screen{shot,band,focus_x,zoom}`，`aso_fusion.py --pair <tag>` 一次出齐。干净合规真机截图只有 3 张 ⇒ 只能做「3 场战斗的 10 种景别」，要 10 场不同必须补真机截图；`band` 0.30 起（更低吃空景）、0.90 封顶（再往上是中文按钮行）。
+- 🔴 验收页 `data_aso/derived/<变体>/preview.html` 是**验收台**（真机模拟+合规检查+文案计数+灯箱），不是缩略图墙；**改任何前端都要先无头截图自己看一眼**再交付（Chrome `--headless=new --user-data-dir=/tmp/x --screenshot`，不带 user-data-dir 会静默不出图）。⑤ 归档必须 `cp -R` 整目录，只 cp 那个 html 就是满屏 404。
 
 ## 资源构建
 - 🔴 导表/资源构建一律走 Jenkins `TS-Resource-Build`（独立 clone `TimeSpaceGirl1-build` 里跑），**不要让用户关 Unity 编辑器**（10-21 用户纠正：开发工程开着也能导）。本地 `resource_build.sh` 才会被同 `-projectpath` 进程拒绝。打包目录从 origin 无条件 reset ⇒ **先 commit+push 再触发**（`EXPORT_TABLES=true SYNC_BYTES=true REBUILD_AB=true SERVER_ENV=正式服`），产物再手工 copy 回开发目录。`REBUILD_AB=false` 时 ⑤ 新鲜度闸门必红（正常）。
@@ -38,18 +52,7 @@
 - 🔴 克隆 Unity `.meta` 时 **guid 和 `spriteID` 都要换**：只换 guid 会让两份资源共享 spriteID，SpriteAtlas 变体互相顶掉（早期 tab 01/02 已留隐患）。
 - 🔴 **覆盖 job 配置会打断正在跑的构建**：`disableConcurrentBuilds(abortPrevious=false)` 只排队，但 `create-job`/apply 覆盖会中断在跑的构建且**不留 `Aborted by` 行**（#28 连 post-actions 都跑完才标 ABORTED）⇒ 改 job 前先看有没有 RUNNING；被打断时 `publish` 已覆盖的坏图会留在磁盘（#27）。
 - 新增资源写回后补登记：`ArtFont_en/<族目录>/<名>_en.png` 目录必须在 `resPathList` 白名单里，否则重扫整目录跳过 ⇒ resName 不登记 ⇒ 真机白图。客户端 `_en` 加载不到会**静默回退 `_zh`**（`Util.cs:1182-1224`，日志仅一行「回退加载精灵图」）⇒ 「图没生效」看起来像「根本没写入」，要用 resName 是否进 `resInfoList` 判断。
-
-## 美术管线 → 详见 `REF-art-translate.md`（翻译）/ `REF-art-restyle.md`（换皮）
-- 四族按源图特征自动分派（尺寸带互不重叠）：`ArtFont_zh/**` 884x544→artfont（锚点写死）；`Atlas/**`→atlas；≤700x500 且 ≤8 色→glyph；≥800x700→poster。**glyph / poster / 512x256 texie 只能 provider=chatgpt_web**（local 会 rc=3）。884x336 彩带满幅（`ExpertPanelAtlas/banner/`）落在 artfont 尺寸带但版面不同 ⇒ 显式 `--family poster`。
-- `MODE=one` 传 `--asset` 必指**真实存在的源文件名**（多数带 `_zh`，Atlas 图无后缀；口述名字常漏 `_zh`，先 `ls` 核）；用 `--only` 会让 ②③④「目标 0 张」全绿＝假绿球。
-- 🔴 **出图已可并行（2026-10-22 起），正确性靠「浏览器租约」不靠串行**：`TS-Art-Translate` 去掉了 `disableConcurrentBuilds()`，改成开画前抢 `provider_ledger.lease_claim`（kind=`adspower:<uid>`/`cdp:<port>`/`chrome:<profile>`/`asset:<源图>`）。抢不到就换下一个号（并行路数 = 没封锁的号数）；额度用尽**立刻 `adspower_stop` + 记 `blocked_until` + 放租约**再换下一个。`TSG_LEASE_OWNER=$JOB_NAME-$BUILD_NUMBER` 必须传（一轮 batch 里每张图是独立进程，用 pid 认不出自己人）。同一张图被另一轮占着 ⇒ skip（不是失败）。详见 `REF-art-translate.md` §7。
-- 额度看 `banner_translate.py quota`（会报「可并行 N 路 / 占用中 / 封锁中」）；手工查占用 `provider_ledger.py lease-list`、审计流水 `provider_ledger.py events`。复用已登录浏览器用 `find_browser_cdp.py` 反查端口传 `CDP_PORT`（该端口也会被租约占住，两轮指同一端口必有一轮被拒）。
-- 🔴 `gpt_layout` 开头必写 `TARGET TEXT IS FIXED — copy it verbatim, do NOT translate anything yourself` + IDENTITY LOCK（禁止新增人物/插画/装饰，底板与 HERO-SKILL 小标不动）——模型会自造译名（mozhate 要 Ave Verum Corpus 出图是 DIVINE JUDGMENT；zhende #16 整幅画成角色插画）。硬参数（行数/字数/字面/宽度像素区间）它听，**行距/内缩不听**。
-- 🔴 字被切只有一个修法：**lock 之前 refit**（`putalpha` 才啃笔画）；判定量 `ink & (alpha<=8)`，只压有笔画越界的那几行字带，腾出列填底板背景中位数。别拿「越界比例」当闸门（零判别力）。详见 REF。
-- 🔴 透明图统计一律走 alpha 掩膜（`_visible_mask`），异形卡四边不是背景（`POSTER_EDGE_MIN_OPAQUE=0.50` 量边圈占比，低于判不适用）；OCR 闸门 `text_fit.py`（tesseract 三坑见 REF），**跑不起来降黄 + 说明原因，不许静默算 0**（本机未装 tesseract，当前必跳过）。
-- 🔴 en 图**平铺族目录根**（`ArtFont_en/<族目录>/<名>_en.png`，zh 侧 `tab/`/`banner/` 压平）；目录不在 `resPathList` 白名单 ⇒ 重扫跳过 ⇒ 真机白图。写回 ≠ 进包（要重打 AB）；`_en` 缺失客户端**静默回退 `_zh`**，判断写没写看 resName 是否进 `resInfoList`。
-- 🔴 换皮 = 换色不是换结构；重装/机械角色必须 `--outfit` 逐件点名装备（「保留分节与铆钉只换色，不许变 gift box / 丝带 / 包裹，双手原姿势可见」）。换风格出图**禁用内置 ImageGen**（10-21 用户明确），只走 AdsPower；号池 6 个但换号链默认只试 3 个 ⇒ 显式 `ADSPOWER_PROFILES` + 看过期台账 `_output/art_restyle/provider_state.json`。
-- 🔴 异形透明 + 要套框 ⇒ `--alpha-mode keep --frame card --frame-rim violet`（源 alpha 按老构图抠的，套到重画图上会硬斜切）。
+- 🔴 出包口径名 `minimal/full` ≠ 枚举名 `MinimalGmOff/FullTemplate`：`Enum.TryParse` 失败会**静默回落 Release**（测试包被打成关日志正式包，核验判「期望 minimal 实际 release」整轮红）。排查看 `run/<tag>/logs/unity-apk.log` 的 `[CLIBuilder] TS_RELEASE_PROFILE=… 不是合法口径`（Jenkins 与 Unity 自己也印「口径 minimal」，只有产物是 release ⇒ 光读脚本看不出）。已修 `7817c3e58`；修复**必须 push** 才生效（打包目录每轮 reset origin）。
 
 ## 约定
 - 巡检只读、量化分级；打包/校验/commit/push 可自行做，**送审/重启生产服/改线上部署先问**。

@@ -504,12 +504,38 @@ def read_layout(spec: str | None, work: Path | None = None) -> list[str] | None:
     return [ln.strip() for ln in spec.splitlines() if ln.strip()]
 
 
+# 生成端支持的画布尺寸（按长宽比挑最近的一档）。
+# 🔴 曾经所有资源都硬写 presets.defaults.size=1024x1536：竖版底板碰巧对得上，
+#    横版 banner（1080x700 / 1080x360）等于让模型把横图重排成竖图，postprocess 再按
+#    源尺寸 cover 裁切 ⇒ 只剩角色大腿一块（chaozhilibao 2026-10-24 就是这么废的）。
+GEN_SIZES = ((1024, 1536), (1536, 1024), (1024, 1024))
+
+
+def size_for_asset(asset_arg: str, fallback: str | None) -> str | None:
+    """按源图长宽比选最接近的生成画布；���不到源图就退回预设值。"""
+    if not asset_arg:
+        return fallback
+    p = Path(asset_arg)
+    p = p if p.is_absolute() else (ROOT / p)
+    try:
+        with Image.open(p) as im:
+            w, h = im.size
+    except Exception:  # noqa: BLE001
+        return fallback
+    if not w or not h:
+        return fallback
+    ar = w / h
+    bw, bh = min(GEN_SIZES, key=lambda s: abs(math.log((s[0] / s[1]) / ar)))
+    return f"{bw}x{bh}"
+
+
 def cmd_prompt(args) -> int:
     theme = theme_of(args.theme)
     layout = read_layout(getattr(args, "layout", None))
     composition = getattr(args, "composition", None) or load_presets().get("composition_default", "lock")
     pose_hint = pose_for(composition, theme, getattr(args, "pose", None))
-    print(f"# theme={args.theme} size={theme.get('size')} quality={theme.get('quality')} "
+    size = size_for_asset(getattr(args, "asset", None), theme.get("size"))
+    print(f"# theme={args.theme} size={size} quality={theme.get('quality')} "
           f"input_fidelity={theme.get('input_fidelity')} composition={composition}")
     if composition == "free":
         print(f"# pose={'随机候选' if getattr(args, 'pose', None) is None else args.pose}")
@@ -1776,6 +1802,9 @@ def main(argv: list[str] | None = None) -> int:
                         "角色剪裁/露肤度是设计的一部分时用，别让主题的默认大衣把构图改掉")
     p.add_argument("--no-text", dest="no_text", action="store_true",
                    help="源图本来没有字：换成「一个字母都不许画」的文案口径")
+    p.add_argument("--asset", default=None,
+                   help="要换的资源（可选）。给了就按它的长宽比选生成画布；"
+                        "不给=用预设的 1024x1536（横版资源会被要求画成竖版，别省这一步）")
     p.set_defaults(func=cmd_prompt, key=None)
 
     p = sub.add_parser("prepare", help="校验源资源并建立工作目录")

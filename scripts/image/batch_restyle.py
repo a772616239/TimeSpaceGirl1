@@ -160,6 +160,10 @@ def step_prepare(cfg: dict, theme: str, work: Path) -> list[str]:
 def step_prompt(cfg: dict, theme: str) -> list[str]:
     cmd = [PY, str(PIPE), "prompt", "--theme", theme,
            "--composition", cfg.get("composition") or "lock"]
+    # 必须把资源一起传下去：prompt 要按源图长宽比挑生成画布。
+    # 漏传 = 横版 banner 被要求画成 1024x1536 竖图，postprocess cover 之后只剩一块局部。
+    if cfg.get("asset"):
+        cmd += ["--asset", cfg["asset"]]
     if cfg.get("layout"):
         cmd += ["--layout", cfg["layout"]]
     if cfg.get("pose"):

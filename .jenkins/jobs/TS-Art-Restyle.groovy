@@ -114,10 +114,10 @@ if [[ -n "${PROMPT_OVERRIDE:-}" ]]; then
 else
   if [[ -n "${LAYOUT:-}" ]]; then
     printf '%s\\n' "${LAYOUT}" > "$TS_RUN_DIR/artifacts/layout.txt"
-    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --pose "${POSE:-}" --layout "$TS_RUN_DIR/artifacts/layout.txt" --outfit "${OUTFIT:-}" > "$PROMPT_FILE"
+    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --pose "${POSE:-}" --asset "$ART_ASSET" --layout "$TS_RUN_DIR/artifacts/layout.txt" --outfit "${OUTFIT:-}" > "$PROMPT_FILE"
     echo "提示词来源：LAYOUT 参数 + scripts/image/theme_presets.json（$ART_THEME / $ART_COMP / pose=${POSE:-随机}${OUTFIT:+ / outfit 已覆盖}）"
   else
-    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --pose "${POSE:-}" --outfit "${OUTFIT:-}" > "$PROMPT_FILE"
+    "$PY" scripts/image/restyle_pipeline.py prompt --theme "$ART_THEME" --composition "$ART_COMP" --pose "${POSE:-}" --asset "$ART_ASSET" --outfit "${OUTFIT:-}" > "$PROMPT_FILE"
     echo "提示词来源：scripts/image/theme_presets.json（$ART_THEME / $ART_COMP / pose=${POSE:-随机}${OUTFIT:+ / outfit 已覆盖}）"
   fi
 fi

@@ -6,6 +6,7 @@
   "keep": [40, 40],
   "params": [
     {"name":"CYCLE_DAYS","type":"string","default":"3","description":"周期天数。cron 每 6 小时探一次，闸门卡满 N×24h 才真跑 ⇒ 实际间隔 N 天 + 0~6h，比 Jenkins 的 */3 日字段可靠（后者跨月会抖成 1~3 天）"},
+    {"name":"SITE","type":"string","default":"","description":"站点名：换到别的包时填 data_aso/sites/<SITE>（如 capybara）。留空 = 本工程主站点《时空美少女》。脚本侧只认 ASO_SITE，包名由该站点的 site.json 决定"},
     {"name":"FORCE","type":"bool","default":false,"description":"无视周期闸门立刻跑一轮（人工触发时用）"},
     {"name":"BASELINE","type":"string","default":"A","description":"实验对照基线。A = 线上历史快照，只记分不改它"},
     {"name":"PARENT","type":"string","default":"","description":"派生父本（真正被改的那一版）。留空=自动取最新 treatment（当前是 B）。🔴 不要填 A：A 自带 zh-TW 简体混排等已知缺陷，派生出来会继承一片红"},
@@ -45,6 +46,8 @@ pipeline {
         script {
           env.STAGE_PROJECT_ROOT = env.PROJ
           env.TS_RUN_DIR = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
+          env.ASO_SITE   = params.SITE.trim()
+          env.ASO_DATA   = env.ASO_SITE ? "data_aso/sites/${env.ASO_SITE}" : "data_aso"
           env.CYCLE_ID   = sh(returnStdout: true,
                               script: 'date +%Y%m%d-%H%M').trim()
           env.ASO_BASE   = params.BASELINE.trim() ?: 'A'
@@ -86,6 +89,7 @@ cd "$PROJ"
   echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
   echo "周期：${CYCLE_ID}（闸门结果 ${CYCLE_MODE}，设定 ${CYCLE_DAYS} 天）"
+  echo "站点：${ASO_SITE:-（主站点）}　数据根：${ASO_DATA:-data_aso}"
   echo "基线：${ASO_BASE}　父本：${ASO_PARENT:-自动}　语言：${ASO_LOCALE:-四语全做}"
   echo "发布：$( [[ "$ASO_PUBLISH" == "review" ]] && echo '🔴 会写入 Play 并自动送审' || echo '否（只设计）' )"
   echo ""
@@ -117,10 +121,10 @@ cd "$PROJ"
        "$PY" scripts/aso/aso_play.py list
 
 # online/ 下每次导出一个时间戳目录。历史真源是 snapshots/，这里只留最近 20 份。
-ls -1dt data_aso/online/*/ 2>/dev/null | tail -n +21 | while read -r d; do
+ls -1dt "${ASO_DATA:-data_aso}"/online/*/ 2>/dev/null | tail -n +21 | while read -r d; do
   echo "清理旧线上导出：$d"; rm -rf "$d"
 done || true
-cp -f data_aso/online/$(ls -1t data_aso/online | head -1)/listings.json \
+cp -f "${ASO_DATA:-data_aso}"/online/$(ls -1t "${ASO_DATA:-data_aso}"/online | head -1)/listings.json \
       "$TS_RUN_DIR/artifacts/online-listings.json" 2>/dev/null || true
 ''')
       }
@@ -162,14 +166,14 @@ echo "→ aso_keyword_cycle.py ${ARGS[*]}"
   --group "ASO" --slug aso-plan --timeout 600 --warn-rc 4 \
   -- "$PY" scripts/aso/aso_keyword_cycle.py "${ARGS[@]}"
 
-cp -f "data_aso/keywords/$CYCLE_ID/strategy.md" "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
-cp -f "data_aso/keywords/$CYCLE_ID/strategy.json" "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
+cp -f "${ASO_DATA:-data_aso}/keywords/$CYCLE_ID/strategy.md" "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
+cp -f "${ASO_DATA:-data_aso}/keywords/$CYCLE_ID/strategy.json" "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
 ''')
         script {
           // 把「派生出的变体 / 实际父本 / 阻断条数」抽成环境变量，供后续阶段判断。
           def meta = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
 cd "$PROJ"
-export STRAT="data_aso/keywords/${CYCLE_ID}/strategy.json"
+export STRAT="${ASO_DATA:-data_aso}/keywords/${CYCLE_ID}/strategy.json"
 "$PY" - <<'PYEOF'
 import json, os, pathlib
 p = pathlib.Path(os.environ["STRAT"])
@@ -218,7 +222,7 @@ echo "→ 检查变体 ${CHECK}（父本 ${ASO_PARENT_USED:-无}）"
 # 存档绝对口径的问题清单，便于人眼比对
 "$PY" scripts/aso/aso_lint.py --variant "$CHECK" \
   --baseline "$ASO_BASE" --json >/dev/null 2>&1 || true
-cp -f data_aso/reports/listing_lint.json "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
+cp -f "${ASO_DATA:-data_aso}/reports/listing_lint.json" "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
 ''')
       }
     }
@@ -235,9 +239,12 @@ if [[ -z "${ASO_TARGET:-}" ]]; then
   echo "   先确认 rewrite_rules.json 的 enabled 与替换对（命中 0 处就不会派生）。"
   exit 1
 fi
-if [[ "${ASO_CONFIRM:-}" != "com.Warera.timespace" ]]; then
-  echo "🔴 拒绝发布：CONFIRM_PACKAGE=「${ASO_CONFIRM:-}」与包名不符。"
-  echo "   要真发布，把 CONFIRM_PACKAGE 精确填成 com.Warera.timespace。"
+# 包名从站点配置读，不写死：换站点（SITE=capybara）时这个闸门必须跟着换，
+# 否则要么拦住正确包，要么放过错误包。
+PKG="$("$PY" -c 'import sys; sys.path.insert(0,"scripts/aso"); import aso_common as C; print(C.PACKAGE)')"
+if [[ "${ASO_CONFIRM:-}" != "$PKG" ]]; then
+  echo "🔴 拒绝发布：CONFIRM_PACKAGE=「${ASO_CONFIRM:-}」与包名 ${PKG} 不符。"
+  echo "   要真发布，把 CONFIRM_PACKAGE 精确填成 ${PKG}。"
   exit 1
 fi
 if [[ "${ASO_BLOCKERS:-0}" != "0" ]]; then
@@ -250,7 +257,7 @@ echo "🔴 即将写入线上变体 ${ASO_TARGET} 并**自动送审**（该包�
 echo "   文案改动："
 "$PY" - <<PYEOF
 import json, pathlib
-p = pathlib.Path("data_aso/keywords/${CYCLE_ID}/strategy.json")
+p = pathlib.Path("${ASO_DATA:-data_aso}/keywords/${CYCLE_ID}/strategy.json")
 d = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
 for c in (d.get("changes") or []):
     print("   -", c)

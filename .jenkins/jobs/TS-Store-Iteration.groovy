@@ -5,6 +5,8 @@
   "keep": [30, 30],
   "params": [
     {"name":"MODE","type":"choice","choices":["dry-run（只读体检）","text（只推文案）","images（只换图）","both（文案+图）","art（只出美术需求单）"],"default":"dry-run（只读体检）","description":"干什么。前四种都会先过文案闸门与素材体检；art 只盘点缺哪些图并生成需求单，不碰 Play"},
+    {"name":"SITE","type":"string","default":"","description":"站点名：换到别的包时填 data_aso/sites/<SITE>（如 capybara = Capybara Merge: Tower Defense）。留空 = 本工程主站点《时空美少女》。脚本侧只认环境变量 ASO_SITE，代码一行不用改"},
+    {"name":"SKIP_ASSETS","type":"bool","default":false,"description":"跳过 ③ 素材派生与 ⑤ 验收页。只改文案、或该站点没有本地素材（如 capybara）时勾上，否则 ③ 会因为找不到物料直接红"},
     {"name":"VARIANT","type":"string","default":"B","description":"要处理的变体目录 data_aso/variants/<VARIANT>"},
     {"name":"BASELINE","type":"string","default":"A","description":"对照基线变体（A = 线上现状快照，别改它）"},
     {"name":"LOCALES","type":"string","default":"","description":"语言子集，逗号分隔：en,ja,zh-CN,zh-TW。留空=四语全做"},
@@ -48,6 +50,10 @@ pipeline {
         script {
           env.STAGE_PROJECT_ROOT = env.PROJ
           env.TS_RUN_DIR  = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
+          // 站点：留空 = 主站点（data_aso/）；填了 = data_aso/sites/<SITE>/。
+          // 脚本侧唯一开关是 ASO_SITE（见 aso_common.py），这里只是把它和路径一起定出来。
+          env.ASO_SITE    = params.SITE.trim()
+          env.ASO_DATA    = env.ASO_SITE ? "data_aso/sites/${env.ASO_SITE}" : "data_aso"
           env.ASO_VARIANT = params.VARIANT.trim() ?: 'B'
           env.ASO_BASE    = params.BASELINE.trim() ?: 'A'
           env.ASO_LOCALES = params.LOCALES.trim()
@@ -70,6 +76,7 @@ mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
   echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
   echo "模式：${ASO_MODE}"
+  echo "站点：${ASO_SITE:-（主站点）}　数据根：${ASO_DATA:-data_aso}"
   echo "变体：${ASO_VARIANT}（对照 ${ASO_BASE}）  语言：${ASO_LOCALES:-四语全做}"
   echo "写线上：$( [[ "$ASO_WRITE" == "true" ]] && echo '🔴 会写 Play' || echo '否（只打印 diff）' )"
   echo ""
@@ -95,12 +102,16 @@ LOC_ARGS=()
   --group "ASO" --slug aso-lint --timeout 300 \
   -- "$PY" scripts/aso/aso_lint.py --variant "$ASO_VARIANT" \
        --baseline "$ASO_BASE" --json "${LOC_ARGS[@]}"
-cp -f data_aso/reports/listing_lint.json "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
+cp -f "${ASO_DATA:-data_aso}/reports/listing_lint.json" "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
 ''')
       }
     }
 
     stage('③ 素材派生（截图 + 置顶图）') {
+      when {
+        // 只改文案、或该站点没有本地素材（capybara）时跳过：否则 aso_assets 找不到物料直接红
+        expression { params.SKIP_ASSETS.toString() != 'true' }
+      }
       steps {
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
@@ -131,7 +142,7 @@ if [[ "$ASO_SHOTMODE" == "landscape" ]]; then
     --group "ASO" --slug aso-fusion-all --timeout 900 \
     -- "$PY" scripts/aso/aso_fusion.py build --layout duo --variant "$ASO_VARIANT" \
          --pairs shots --by-locale \
-         --out "data_aso/derived/$ASO_VARIANT/fusion_all" \
+         --out "${ASO_DATA:-data_aso}/derived/$ASO_VARIANT/fusion_all" \
          --locales "$LOC"
 
   "$BASH" .jenkins/lib/run_stage.sh --name "横版截图合规化（1024×520）" \
@@ -156,7 +167,7 @@ fi
 "$BASH" .jenkins/lib/run_stage.sh --name "Play 规格体检" \
   --group "ASO" --slug aso-check --timeout 300 \
   -- "$PY" scripts/aso/aso_assets.py check --variant "$ASO_VARIANT"
-cp -f "data_aso/derived/$ASO_VARIANT/index.json" "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
+cp -f "${ASO_DATA:-data_aso}/derived/$ASO_VARIANT/index.json" "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
 ''')
       }
     }
@@ -203,8 +214,8 @@ fi
   -- "$PY" scripts/aso/aso_assets.py check --variant "$ASO_VARIANT"
 
 mkdir -p "$TS_RUN_DIR/artifacts/fusion"
-cp -f "data_aso/derived/$ASO_VARIANT"/fusion/*.png "$TS_RUN_DIR/artifacts/fusion/" 2>/dev/null || true
-echo "拼装图：data_aso/derived/$ASO_VARIANT/fusion/ ；已 promote 到各语言 feature_01.png"
+cp -f "${ASO_DATA:-data_aso}/derived/$ASO_VARIANT"/fusion/*.png "$TS_RUN_DIR/artifacts/fusion/" 2>/dev/null || true
+echo "拼装图：${ASO_DATA:-data_aso}/derived/$ASO_VARIANT/fusion/ ；已 promote 到各语言 feature_01.png"
 ''')
       }
     }
@@ -230,7 +241,8 @@ fi
 export TSG_LEASE_OWNER="$JOB_NAME-$BUILD_NUMBER"
 SEED="$("$PY" - <<'PYEOF'
 import glob, json, os
-fs = sorted(glob.glob("data_aso/reports/art_requests/%s-*.json" % os.environ["ASO_VARIANT"]))
+root = os.environ.get("ASO_DATA", "data_aso")
+fs = sorted(glob.glob(root + "/reports/art_requests/%s-*.json" % os.environ["ASO_VARIANT"]))
 if not fs:
     print("")
 else:
@@ -255,11 +267,14 @@ done
     }
 
     stage('⑤ 人眼验收页') {
+      when {
+        expression { params.SKIP_ASSETS.toString() != 'true' }
+      }
       steps {
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
-SRC="data_aso/derived/$ASO_VARIANT"
+SRC="${ASO_DATA:-data_aso}/derived/$ASO_VARIANT"
 if [[ -f "$SRC/preview.html" ]]; then
   # 整目录归档：验收页用的是相对路径引图（en-US/shot_01.png），
   # 只 cp 那个 html 过去就是一堆 404 —— 曾经这么错过。
@@ -325,8 +340,8 @@ cd "$PROJ"
 HYPO="${ASO_HYPO:-}"
 if [[ -z "$HYPO" ]]; then
   HYPO="$("$PY" - <<PYEOF
-import json, pathlib
-p = pathlib.Path("data_aso/variants/${ASO_VARIANT}/meta.json")
+import json, os, pathlib
+p = pathlib.Path(os.environ.get("ASO_DATA", "data_aso") + "/variants/${ASO_VARIANT}/meta.json")
 print(json.loads(p.read_text(encoding="utf-8")).get("hypothesis", "") if p.is_file() else "")
 PYEOF
 )"

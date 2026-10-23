@@ -29,6 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import aso_common as C  # noqa: E402
 
 IMAGE_TYPES = ["phoneScreenshots", "featureGraphic"]
+# Play 的硬上限，推超了 upload 直接 400。派生产物常多于上限（shots.json 8 条 → 9 张）。
+MAX_IMAGES = {"phoneScreenshots": 8, "featureGraphic": 1}
 
 
 # --------------------------------------------------------------------------- #
@@ -247,6 +249,21 @@ def _push_images(service, ed, args, loc) -> None:
         files = sorted([p for p in base.glob("*.png") if p.name.startswith(_prefix_of(it))])
         if not files:
             continue
+        # Play 有硬上限（phoneScreenshots 8 张 / featureGraphic 1 张）。
+        # 派生目录里常有比上限多的候选（shots.json 8 条会出 9 张），全推必 400。
+        picks = (getattr(args, "shots", "") or "").strip()
+        if picks and it == "phoneScreenshots":
+            want = {int(x) for x in picks.split(",") if x.strip().isdigit()}
+            files = [f for f in files if _shot_index(f) in want]
+            if not files:
+                pu.log(f"[{loc}] {it}: --shots {picks} 没匹配到任何文件，跳过")
+                continue
+            pu.log(f"[{loc}] {it}: --shots {picks} 只传 {len(files)} 张")
+        cap = MAX_IMAGES.get(it)
+        if cap and len(files) > cap:
+            pu.log(f"[{loc}] {it}: 🔴 {len(files)} 张超过 Play 上限 {cap}，只传前 {cap} 张"
+                   f"（要指定用 --shots 0,1,2,5）")
+            files = files[:cap]
         if not args.allow_write:
             pu.log(f"[{loc}] {it}: 将替换为 {len(files)} 张 → {[f.name for f in files][:3]}…")
             continue
@@ -265,6 +282,14 @@ def _push_images(service, ed, args, loc) -> None:
 
 def _prefix_of(image_type: str) -> str:
     return "shot_" if image_type == "phoneScreenshots" else "feature_"
+
+
+def _shot_index(p: Path) -> int:
+    """shot_03.png → 3；不符合命名返回 -1（--shots 白名单用）。"""
+    try:
+        return int(p.stem.split("_")[1])
+    except (IndexError, ValueError):
+        return -1
 
 
 # --------------------------------------------------------------------------- #
@@ -290,6 +315,9 @@ def main() -> int:
     p.add_argument("--image-types", default="",
                    help="只传指定图片类型（逗号分隔：phoneScreenshots,featureGraphic）；"
                         "缺省全传。只换置顶图务必写 featureGraphic。")
+    p.add_argument("--shots", default="",
+                   help="只传这几张手机截图，逗号分隔序号（如 0,1,2,5 → shot_00/01/02/05.png）。"
+                        "派生目录里的候选常多于 Play 上限 8 张，用它挑挑。")
     p.add_argument("--auto-review", action="store_true",
                    help="🔴 自动送审：去掉 changesNotSentForReview 提交。"
                         "只对「提交即自动送审」的包有效，一提交就进审核队列，改不回来。")
@@ -304,6 +332,8 @@ def main() -> int:
     p.add_argument("--yes", action="store_true")
     p.add_argument("--image-types", default="",
                    help="只传指定图片类型（phoneScreenshots,featureGraphic）；只换置顶图写 featureGraphic。")
+    p.add_argument("--shots", default="",
+                   help="只传这几张手机截图，逗号分隔序号（如 0,1,2,5）。")
     p.add_argument("--auto-review", action="store_true",
                    help="🔴 自动送审：一提交就进审核队列（该包不允许 changesNotSentForReview）。")
     p.add_argument("--package", default=C.PACKAGE)

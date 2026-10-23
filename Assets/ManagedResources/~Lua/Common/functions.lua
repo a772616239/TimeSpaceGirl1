@@ -2594,3 +2594,94 @@ function AppReview_TryShowOnKeyLevel(key)
     ReviewMgr:AllInOneFlowClick()
     return true
 end
+
+--============================================================================
+-- 八日礼包签到（活动 Type = ActivityTypeDef.EightDayGift = 56）
+--
+-- 旧实现的天数完全按「建号自然日」推导：
+--   curDay = ceil((距24点秒数 + 服务器时间 - 建号时间) / 86400)
+-- 结果就是离线一天回来天数自己涨一天，玩家不登录也在自动签到。
+--
+-- 现在改成「玩家主动签到才记一天」：
+--   * 每天最多签一次（按服务器时间的自然日判重，落在 PlayerPrefs，键带 uid）；
+--   * 允许断签：断签不重置进度，回来再签到继续 +1（累计制，不是连续制）；
+--   * 离线不签到 ⇒ 天数不动。
+--
+-- 服务端 NewEightActivity.takeRewardsProcess 的校验是
+--   TimeUtils.getSoFarWentDays(createTime, now) >= 配置值 - 1
+-- 即只要求「建号已过 N-1 个自然日」，比签到口径宽松，
+-- 所以客户端收紧成签到制不会被服务端拒；本地判重被清掉的极端情况
+-- 也会有服务端这一条兜底，因此不需要改服务端。
+--============================================================================
+local EIGHT_DAY_SIGN_KEY_PREFIX = "EightDayGiftSign_"
+
+local function EightDaySignPrefKey()
+    local uid = 0
+    if PlayerManager and PlayerManager.uid then
+        uid = PlayerManager.uid
+    end
+    return EIGHT_DAY_SIGN_KEY_PREFIX .. tostring(uid)
+end
+
+--- 今日 0 点的时间戳（服务器时间口径，跟界面倒计时同源）
+function EightDaySignTodayZero()
+    return GetTimeStamp() + CalculateSecondsNowTo_N_OClock(24) - 86400
+end
+
+--- 自然日序号：同一天内恒定、跨天 +1。
+--- 存序号而不是原始时间戳，避开 2038 年 int32 溢出（PlayerPrefs.GetInt）。
+function EightDaySignTodayIndex()
+    return math.floor(EightDaySignTodayZero() / 86400)
+end
+
+--- 今天是否已经签到过
+function EightDaySignHasSignedToday()
+    return PlayerPrefs.GetInt(EightDaySignPrefKey(), 0) == EightDaySignTodayIndex()
+end
+
+--- 记录今天已签到。只有领奖（= 签到）请求成功后才允许调用，
+--- 否则会出现「签到成功但没拿到奖励」的丢奖励。
+function EightDaySignMarkSigned()
+    PlayerPrefs.SetInt(EightDaySignPrefKey(), EightDaySignTodayIndex())
+    PlayerPrefs.Save()
+    Log("[EightDaySign] mark signed, dayIndex=" .. tostring(EightDaySignTodayIndex()))
+end
+
+--- 从服务端下发的 activityInfo 推导签到进度。
+--- mission 是服务端按配置顺序下发的 1..8 天，state == 1 表示该天已领。
+--- @return number nextDay 第一个还没领的天（1 基；全领完 = #mission + 1）
+--- @return number signedDays 已领过的天数，仅用于展示
+--- @return boolean canSign 今天是否还能签到
+function EightDaySignProgress(activityInfo)
+    local mission = activityInfo and activityInfo.mission
+    if type(mission) ~= "table" or #mission == 0 then
+        return 1, 0, false
+    end
+    local nextDay = #mission + 1
+    for i = 1, #mission do
+        if mission[i].state ~= 1 then
+            nextDay = i
+            break
+        end
+    end
+    -- 全部领完就没得签了
+    return nextDay, nextDay - 1, nextDay <= #mission and not EightDaySignHasSignedToday()
+end
+
+--- 签到口径下「可领取的最大天数」，对齐旧 canRewardDay 的语义
+--- （福利面板用 data.Sort <= 该值 判断可领）。
+--- 今天还没签 ⇒ nextDay（第 nextDay 天此刻可签可领）；今天已签 ⇒ nextDay - 1。
+function EightDaySignCanRewardDay(activityInfo)
+    local mission = activityInfo and activityInfo.mission
+    local total = (type(mission) == "table") and #mission or 0
+    local nextDay = EightDaySignProgress(activityInfo)
+    -- 全部领完：nextDay 会越过最后一天，这里要夹回总天数，
+    -- 否则福利面板会按「第 9 天可领」去算 data.Sort 比较
+    if nextDay > total then
+        return total
+    end
+    if EightDaySignHasSignedToday() then
+        return nextDay - 1
+    end
+    return nextDay
+end

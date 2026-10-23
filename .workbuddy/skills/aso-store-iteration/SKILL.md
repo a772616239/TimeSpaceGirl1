@@ -1,21 +1,24 @@
 ---
 name: aso-store-iteration
-description: TimeSpaceGirl1 的 Play 商店页运营（ASO）——四语文案闸门、竖版截图派生、**拼装式置顶图（左右角色由 TS-Art-Restyle 按特征卡重绘 + 中间压实机画面框 + 本地压字）**、Play 规格体检、A/B 登记与读数、推送 Play。当用户说"改商店页""换置顶图/宣传图/featureGraphic""做店面图""商店页 A/B""上线截图""推 Play listing"时使用。含三层拆分原则、promote 落盘口径、五条红线（禁止贴立绘、band 避按钮、--wait 串行、DRESS CODE 合规、API 不能送审）。
+description: Play 商店页运营（ASO）——四语文案闸门、截图派生（竖版 1080×1920 / **横版 1024×520**）、**拼装式置顶图（左右角色由 TS-Art-Restyle 按特征卡重绘 + 中间压实机画面框 + 本地压字）**、Play 规格体检、A/B 登记与读数、推送 Play。当用户说"改商店页""换置顶图/宣传图/featureGraphic""做店面图""商店页 A/B""上线截图""推 Play listing""把这条管线用到别的项目"时使用。代码层面可复用（项目特异性只在 data_aso/site.json），通用 runbook 见 docs/promo_shots_pipeline.md。含三层拆分原则、promote 落盘口径、六条红线（禁止贴立绘、band 比例必须匹配框、画面与文案两两不同、-wait 串行、DRESS CODE 合规、API 不能送审）。
 ---
 
 # Play 商店页迭代（ASO）
 
 > 详细 runbook：**`docs/play_store_iteration_aso.md`**（闸门规则、踩坑复盘、A/B 纪律全在里面）
+> 通用版（**搬到别的项目照这个抄**）：**`docs/promo_shots_pipeline.md`**
 > 入口：Jenkins **`TS-Store-Iteration`**（`.jenkins/jobs/TS-Store-Iteration.groovy`）
 > 出图管线：skill `art-restyle` + Jenkins `TS-Art-Restyle`
 > 出包发版：skill `play-aab-release`（与本 skill 无关，别混）
+> 项目特异性配置：**`data_aso/site.json`**（包名/品牌/语言/尺寸 —— 换项目只改这一个文件）
 
 ## 什么时候用
 
 | 用户说 | 走哪条 |
 |---|---|
 | 「改标题/短描述/长描述」「推文案」 | §3 `aso_play.py push --text-only`，先 `aso_lint.py` |
-| 「换截图」「截图不好看」 | §2：横版走 `fusion_shots.py`（8 张、用置顶图那批组合）；竖版走 `aso_assets.py build` |
+| 「换截图」「截图不好看」 | §2：横版走 `aso_fusion.py --pairs shots` + `fusion_shots.py`（6 张、用置顶图那批组合）；竖版走 `aso_assets.py build` |
+| 「这套能不能用到别的项目」 | `docs/promo_shots_pipeline.md`：改 `data_aso/site.json` + 拷 job，代码不动 |
 | 「换置顶图」「做店面图/宣传图」「featureGraphic」 | §1 拼装式（**不要贴立绘**） |
 | 「换掉左右两个角色」「换成 XX 和 YY」 | §1 `--pair` 改 id + `fusion.json` 的 `bg` |
 | 「商店页 A/B 怎么读数」 | §4 `aso_experiment.py report/close` |
@@ -50,8 +53,12 @@ $PY scripts/aso/aso_assets.py check --variant B
 - **`--promote`** = 写成 `derived/<变体>/<语言>/feature_01.png`（`aso_assets build` 用的同一文件名），
   顺手清掉该目录其它 `feature_*`、把真实 size/bytes/sha1 刷回 `index.json` ⇒
   `preview.html` / `index.json` / `aso_play.py push` 全不用改，也不会出现两张置顶图。
+- **批量出图用 `--pairs`**（一次一组太慢、Jenkins 里写 shell for 又难定位）：
+  `--pairs shots` = `fusion_shots.py` 的 `DEFAULT_ORDER`（✅ 推荐，和商店页顺序同一真源）；
+  `--pairs all` = 所有未标 `_retired` 的组；`--pairs 0102,2019` = 指定。
+  🔴 `--promote` 与多组互斥，脚本会直接拒绝（每语只准一张 featureGraphic）。
 - **多组候选走 `--pair <tag>`**：一次带出 `bg_<tag>.png` + 该组的框内取景（`fusion_pairs.json` 的
-  `screen`）+ 输出后缀，不写 `--promote`。🔴 10 组**不能** promote（会互相覆盖成一张）。
+  `screen`）+ 输出后缀，不写 `--promote`。
 - 🔴 **画面框里别全用同一段截图**：`shots.json` 只有 3 张干净合规图，10 组若共用同一 `band`
   就是「一个画面重复十遍」。每组在 `fusion_pairs.json` 里配 `shot/band/zoom/focus_x` 拉开景别；
   `band` 起点 0.30 起（再往上吃空景）、上限 0.90（再往下吃中文按钮行）。
@@ -78,8 +85,14 @@ $PY scripts/aso/aso_assets.py preview --variant B        # 只重画验收页
   9 张 `shot_*.png`，全推必 400 ⇒ 上传用 `--shots 0,1,...,7` 挑。
 - 🔴 **横版路线（用户偏好这个）**：置顶图 1024×500 比例 2.048 只超上限 0.048，
   **补边到 1024×520（1.969）就能当 phoneScreenshots**，画面一个像素不动。
-  `fusion_shots.py --variant B` 一步出 8 张 × 四语。
-  ⚠️ 用过它之后**别再跑 `aso_assets.py build`**，会把 shot_* 覆盖回竖版；
+  ```bash
+  # 一次出齐 6 组 × 四语（零额度，~22s）
+  $PY scripts/aso/aso_fusion.py build --layout duo --variant B --pairs shots \
+      --by-locale --out data_aso/derived/B/fusion_all
+  $PY scripts/aso/fusion_shots.py --variant B        # 补边 + 回写 index.json + 查重
+  ```
+  ⚠️ 用过它之后**别再跑 `aso_assets.py build`**，会把 shot_* 覆盖回竖版、并把 `feature_01.png`
+  换回拼贴版（Jenkins 横版分支已处理这个顺序：build 先跑 → 横版整批覆盖 → 复原拼装置顶图）；
   `preview` 可以随便跑。
 - 🔴 **截图和文案都必须两两不同**（用户两次指出）：
   - 画面：每组在 `fusion_pairs.json` 里**独占**一个 `screen.shot`。
@@ -143,9 +156,12 @@ $PY scripts/aso/aso_play.py push --variant B --images-only \
 |---|---|
 | `MODE` | `dry-run` / `text` / `images` / `both` / `art（只出美术需求单）` |
 | `VARIANT` / `BASELINE` | 变体目录，`A` 是线上快照**禁改** |
+| `SHOT_MODE` | `portrait（竖版 1080×1920）` / `landscape（横版 1024×520）`。横版走 ③ 的批量拼装 + 补边 + 复原置顶图 |
 | `FUSION` | 走 ③b 置顶图拼装阶段 |
 | `FUSION_PAIR` | 双人底图的英雄 id，`01,02` |
 | `FUSION_RENDER` | 🔴 重出底图（耗额度、必须串行）；只改排版时**不要勾** |
+| `IMAGE_TYPES` | 只推某一类图：空 / `phoneScreenshots` / `featureGraphic` |
+| `SHOTS` | 只推这几张截图的序号，如 `0,1,2,3,4,5` |
 | `ALLOW_WRITE` | 🔴 唯一能写线上的开关，默认关 |
 
 `FUSION=true` + `FUSION_RENDER=false` = 零额度只重排；`MODE=art` + `FUSION_RENDER=true` = 只出图不碰 Play。

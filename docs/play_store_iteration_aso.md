@@ -4,6 +4,7 @@
 > 配套：`google_play_upload_setup.md`（凭证与发版 API）、`android_release_runbook.md`（出包）、
 > `.workbuddy/skills/play-aab-release/SKILL.md`（打包发版）
 > 操作卡：**`.workbuddy/skills/aso-store-iteration/SKILL.md`**（简明版，含红线与 Jenkins 参数）
+> 通用版（**这套管线怎么搬到别的项目**）：**`promo_shots_pipeline.md`**
 > 本文件管的是**商店页本身**：文案、截图、置顶图、A/B。
 
 ---
@@ -76,7 +77,10 @@ $P scripts/aso/aso_experiment.py status               # 实验台账
 | `BASELINE` | 对照变体，默认 `A`（**A 是线上现状快照，别改**） |
 | `LOCALES` | `en,ja,zh-CN,zh-TW` 任意子集；留空=四语全做 |
 | `FIT` | `cover`（铺满裁切，默认）/ `pad`（整图装入 + 模糊补边） |
+| `SHOT_MODE` | `portrait（竖版 1080×1920）` / `landscape（横版 1024×520）`。横版走 ③ 的批量拼装 → 补边 → 复原置顶图 |
 | `ALLOW_WRITE` | 🔴 只有勾上才写 Play。不勾=只打印 diff |
+| `IMAGE_TYPES` | 只推某一类图：留空 / `phoneScreenshots` / `featureGraphic` |
+| `SHOTS` | 只推这几张截图的序号，如 `0,1,2,3,4,5`（Play 每语上限 8 张） |
 | `TRIGGER_ART` | 勾上则按缺图清单触发 `TS-Art-Restyle` |
 | `ART_THEME` | `cyber`（保持赛博原味）/ 节日题材 |
 | `FUSION` | 置顶图改走「左右角色 + 实机画面框」拼装版（§5.2），默认关 |
@@ -498,9 +502,19 @@ $P scripts/aso/aso_experiment.py close --exp <id> --winner B
 `scripts/aso/fusion_shots.py` 就是干这个的：
 
 ```bash
+# 一步出齐 6 组 × 四语（零额度，~22 秒）—— 循环收在脚本里，不用 shell for
+$PY scripts/aso/aso_fusion.py build --layout duo --variant B --pairs shots \
+    --by-locale --out data_aso/derived/B/fusion_all
+
 $PY scripts/aso/fusion_shots.py --variant B --dry-run     # 看顺序与张数
-$PY scripts/aso/fusion_shots.py --variant B               # 出 8 张 ×/语 → derived/B/<locale>/shot_*.png
+$PY scripts/aso/fusion_shots.py --variant B               # 出 6 张 ×/语 → derived/B/<locale>/shot_*.png
 ```
+
+`--pairs` 的三种取值：`shots`（= `fusion_shots.py` 的 `DEFAULT_ORDER`，✅ 推荐，
+和商店页顺序同一真源）/ `all`（所有未标 `_retired` 的组）/ `0102,2019`（指定）。
+🔴 `--promote` 和多组互斥（每语只准一张 featureGraphic），脚本会直接拒绝。
+Jenkins 侧对应 `SHOT_MODE=landscape（横版 1024×520）`，③ 阶段自动跑完上面三步，
+并在最后**复原拼装置顶图**（因为 `aso_assets.py build` 会把 `feature_01.png` 换回拼贴版）。
 
 补边不是压纯色条（会看出硬边、也容易被当成「黑边」），而是取首/末若干行做高斯模糊
 再拉伸填进去，肉眼分辨不出补过。脚本会先清空同目录旧 `shot_*`，避免上一轮 9 张竖版混进来。
@@ -508,8 +522,9 @@ $PY scripts/aso/fusion_shots.py --variant B               # 出 8 张 ×/语 →
 🔴 **用过 `fusion_shots.py` 之后不要再跑 `aso_assets.py build`** —— 它会把 `shot_*`
 覆盖回 1080×1920 竖版。`aso_assets.py preview`（只重画验收页）随便跑。
 
-**选哪 8 组、按什么顺序**：顺序即商店页展示顺序，第一张权重最高。
-`fusion_shots.py` 的 `DEFAULT_ORDER` 是 `0102, 0715, 0823, 2019, 0922, 1624, 1013, 1821`。
+**选哪几组、按什么顺序**：顺序即商店页展示顺序，第一张权重最高。
+`fusion_shots.py` 的 `DEFAULT_ORDER` 是 `0102, 2019, 1013, 0922, 0715, 1821`
+（前三张全是战斗＝核心玩法，后三张换口味＝主城 / 雪原 / 世界地图）。
 
 🔴 **画面框和文案都必须两两不同**（10-24 用户两次指出）。第一版踩的两个坑：
 

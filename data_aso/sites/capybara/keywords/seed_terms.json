@@ -1,0 +1,42 @@
+{
+  "_readme": "《Capybara Merge: Tower Defense》的品类先验词表。core=品类必打词（命中 +3），modifier=修饰/证明词（命中 +1.5），probe=搜索量假设（只做体检、不参与打分），banned=直接剔除。脚本只读这里。",
+  "_why": "Play 的关键词权重是黑盒，但「品类词必须出现在标题或短描述」是稳定的行业事实。这个包的品类是 merge + tower defense，跟本工程另一个包（二次元放置 RPG）没有一个词重合 —— 词表必须分开维护，共用一个只会两头都不准。",
+  "_note": "CJK 走 2~4 字 n-gram，所以写「塔防」「合成」而不是「合成塔防」（后者命中不了「塔防」单独出现的句子）。「卡皮巴拉」是水豚的音译，两个词都要留：用户搜哪个的都有。",
+
+  "locales": {
+    "en-US": {
+      "brand": ["capybara merge", "capybara defenders"],
+      "core": [
+        "merge", "tower defense", "merge tower defense", "capybara",
+        "tower defense game", "merge game", "defense", "idle", "zombie",
+        "strategy", "casual"
+      ],
+      "modifier": [
+        "cute", "offline", "one hand", "kawaii", "relaxing", "evolve",
+        "skins", "collect", "endless", "free", "stress relief"
+      ],
+      "probe": [
+        "merge tower defense", "tower defense", "idle tower defense",
+        "zombie tower defense", "merge games", "capybara game",
+        "casual tower defense", "defense games", "merge defense"
+      ],
+      "banned": ["best", "no.1", "number one", "#1", "100%", "guaranteed", "top rated"]
+    },
+
+    "zh-CN": {
+      "brand": ["卡皮巴拉", "水豚"],
+      "core": [
+        "塔防", "合成", "水豚", "卡皮巴拉", "放置", "僵尸",
+        "休闲", "策略", "防线", "闯关"
+      ],
+      "modifier": [
+        "解压", "治愈", "单手", "离线", "免费", "卡通", "无尽", "进化", "升级", "萌"
+      ],
+      "probe": [
+        "塔防游戏", "合成游戏", "水豚", "卡皮巴拉", "僵尸塔防",
+        "单机塔防", "休闲游戏", "放置塔防", "塔防"
+      ],
+      "banned": ["最强", "第一", "唯一", "100%", "保证中奖", "全网"]
+    }
+  }
+}

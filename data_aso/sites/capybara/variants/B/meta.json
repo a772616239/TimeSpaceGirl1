@@ -1,0 +1,22 @@
+{
+  "label": "首轮文案重写：中文标题去「萌豚」换品类词，两语短/长描述补关键词与信息量",
+  "role": "treatment",
+  "parent": "A",
+  "baseline": "A",
+  "cycle": "20261024-0227",
+  "generated_by": "人工撰写（按 keywords/seed_terms.json 的品类词，非规则替换）",
+  "hypothesis": "三处实证缺陷：① zh-CN 标题写「萌豚守卫：合体大作战」，而「萌豚」在中文里指萌系二次元受众，既不是水豚也不是本作品牌；同时标题里没有「水豚 / 卡皮巴拉 / 塔防」之外的第二品类词，搜「水豚 游戏」「卡皮巴拉」都匹配不到本作 ⇒ 改成「卡皮巴拉防线：水豚合成塔防」，四个搜索词（卡皮巴拉/水豚/合成/塔防）全进标题。② zh-CN 长描述仅 604 字，装不下「怎么玩 / 合成+塔防的取舍 / 装扮 / 图鉴 / 适合谁」，商店页没有说服链条。③ en-US 短描述把关键词压在 79/80 的斜杠线上、长描述没有 how-to-play 段，且标题 29/30 顶格 —— 英文侧只动短/长描述、标题保持不动，让本轮英文归因干净。预期：两语「商店页访问→安装」转化率提升，zh 侧另加搜索可见性。",
+  "variables": [
+    "zh-CN/title: 萌豚守卫：合体大作战 - 休闲解压塔防 → 卡皮巴拉防线：水豚合成塔防",
+    "zh-CN/shortDescription: 重写（补 水豚/合成/塔防/解压/离线/单手）",
+    "zh-CN/fullDescription: 604 → 约 900 字（补怎么玩/取舍/装扮/图鉴/适合谁）",
+    "en-US/shortDescription: 重写（merge / capybara / zombie / tower defense / one-hand 全在）",
+    "en-US/fullDescription: 1872 → 约 2600 字（补 HOW TO PLAY / 不适合谁 / 免费说明）"
+  ],
+  "keep": [
+    "en-US/title 一律不动（已是 Capybara Merge: Tower Defense，命中主词，且 29/30 顶格）",
+    "icon / featureGraphic / phoneScreenshots / video 一律不动（本轮只测文案）",
+    "两语的 video 字段不动"
+  ],
+  "readout_window_days": 7
+}

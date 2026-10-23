@@ -1,0 +1,31 @@
+{
+  "_readme": "《Capybara Merge: Tower Defense》的店面配置。用 `ASO_SITE=capybara` 切到这里，脚本一行不用改（见 aso_common.py 顶部）。",
+  "_why": "同一套管线服务多个包。站点之间只共享脚本，不共享数据：variants/online/keywords 各走各的目录，避免两个包的变体互相顶掉。",
+
+  "brand": "Capybara Merge",
+  "package": "com.cocos2d.piggie",
+
+  "shot_size": [1080, 1920],
+  "feature_size": [1024, 500],
+
+  "_locales_note": "🔴 locales_mode=replace：这个包线上只开通了 en-US / zh-CN（2026-10-24 用 edits.listings.list 核实）。默认四语里的 ja-JP / zh-TW 若带进来，listings.get 会 404。等真要扩语种时在这里加，push 会创建该语言（aso_play._get_listing 已容忍 404）。",
+  "locales_mode": "replace",
+  "locales": {
+    "en-US": {
+      "label": "英语",
+      "material_dirs": ["capybara_assets/en", "capybara_assets"],
+      "fonts": [
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc"
+      ]
+    },
+    "zh-CN": {
+      "label": "简中",
+      "material_dirs": ["capybara_assets/zh", "capybara_assets"],
+      "fonts": [
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc"
+      ]
+    }
+  }
+}

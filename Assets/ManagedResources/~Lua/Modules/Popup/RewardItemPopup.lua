@@ -381,12 +381,15 @@ function RewardItemPopup:OnClose()
     end
 
     compShowType = 0
-    if func and not isPopGetSSR then
-        if fightConFigData and fightConFigData.PicShow == 1 and FightPointPassManager.isOpenNewChapter  then
-            func()
-        else
-            func()
-        end
+    -- 🔴 回调用完必须立刻清空：func 是模块级变量，OnOpen 里只有调用方传了 args[3] 才会覆盖，
+    -- 弹窗关闭后仍留着上一次的回调 ⇒ 之后任何一次奖励弹窗关闭（哪怕跟卡牌活动无关）都会
+    -- 把旧回调再执行一遍。卡牌活动任务页的 `this.Refresh` 就是这么在面板已经销毁之后打进来的，
+    -- 最终炸在 ScrollCycleView:SetData 的 fake-null rectTransform 上。
+    -- （原来那个 if fightConFigData and ... 的两个分支都是 func()，等价于直接调一次，已合并）
+    local closeFunc = func
+    func = nil
+    if closeFunc and not isPopGetSSR then
+        closeFunc()
     end
 
     -- 展示完以后结束章节解锁状态

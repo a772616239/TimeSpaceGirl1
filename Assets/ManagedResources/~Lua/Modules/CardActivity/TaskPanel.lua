@@ -5,6 +5,18 @@ local ThemeActivityTaskConfig = ConfigManager.GetConfig(ConfigName.ThemeActivity
 local itemsGrid = {}
 local singleTaskPre = {}
 local endtime = 0
+
+-- UnityEngine.Object 在 tolua 里销毁后是 fake-null userdata（既不是 nil 也过不了 == nil），
+-- 直接取属性会抛 "attempt to index xxx on a nil value"，必须 IsNull 判活。
+local function Alive(obj)
+    if obj == nil then
+        return false
+    end
+    if type(obj) == "userdata" then
+        return not IsNull(obj)
+    end
+    return true
+end
 --初始化组件（用于子类重写）
 function TaskPanel:InitComponent(parent)
     this.gameObject = parent
@@ -52,11 +64,27 @@ function TaskPanel:OnDestroy()
         this.timer:Stop()
         this.timer = nil
     end
+    -- 🔴 本类是模块级单例：面板销毁后 this.scrollView / this.scroll / this.time 还指着
+    -- 已经 Destroy 的节点，之后任何遗留回调（奖励弹窗 OnClose 里的 this.Refresh、
+    -- GameEvent.Task.Achievement、计时器）再打进来就是 fake-null 崩溃
+    -- （"attempt to index sizeDelta on a nil value" @ ScrollCycleView:SetData）。
+    -- 销毁时一律清空，让 Refresh 的判活能真正生效。
+    if this.scrollView then
+        SubUIManager.Close(this.scrollView)
+        this.scrollView = nil
+    end
+    this.scroll = nil
+    this.time = nil
+    this.pre = nil
     itemsGrid = {}
     singleTaskPre = {}
 end
 
 function this.Refresh()
+    -- 面板已经关闭/销毁（OnDestroy 之后仍可能被旧回调调用）就直接放弃刷新
+    if not this.scrollView or not this.scrollView:IsAlive() then
+        return
+    end
     CheckRedPointStatus(RedPointType.CardActivity_Task)
     local activityId = ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.CardActivity_Task)
     local allData = CardActivityManager.GetTask(activityId, TaskTypeDef.CardActivity_Task)
@@ -150,6 +178,10 @@ function this.SetTime()
     if this.timer then
         this.timer:Stop()
         this.timer = nil
+    end
+    -- 面板已销毁时不再起计时器（否则每秒都在往死节点上写 text）
+    if not Alive(this.time) then
+        return
     end
     local dayTimeDown = CalculateSecondsNowTo_N_OClock(24)
     local weekTimeDown = endtime - GetTimeStamp()

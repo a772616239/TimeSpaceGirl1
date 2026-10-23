@@ -3,6 +3,21 @@ local this = ScrollCycleView
 
 local reverse = table.reverse
 
+-- tolua 里 UnityEngine.Object 被 Destroy 之后**不是 nil**，而是一个 fake-null userdata：
+-- 直接取属性会抛 "attempt to index xxx on a nil value"（这句文案来自 tolua 生成代码的
+-- 兜底 toluaL_exception，见 Assets/Source/Generate/UnityEngine_RectTransformWrap.cs:851），
+-- 从 Lua 侧看既不像 nil 也过不了 `== nil` 判断，只能靠 IsNull 判活。
+-- 所以凡是把实例/节点缓存下来、事后还可能被回调使用的，操作前都必须先判活。
+local function Alive(obj)
+	if obj == nil then
+		return false
+	end
+	if type(obj) == "userdata" then
+		return not IsNull(obj)
+	end
+	return true
+end
+
 --表循环移动算法
 local function move(list, k)
 	k = k%#list
@@ -71,6 +86,9 @@ local function SetItemIndex(self, curIndex)
 end
 
 local function SetPosition(self, dv2)
+	if not Alive(self.dragGOTran) then
+		return
+	end
 	local av2 = self.dragGOTran.anchoredPosition
 	if self.dragType == 1 then
 		dv2.x = 0
@@ -265,8 +283,16 @@ end
 function ScrollCycleView:OnDestroy()
 end
 
+--实例是否还挂在活的节点上（界面关闭/销毁后为 false）
+function this:IsAlive()
+	return Alive(self.rectTransform) and Alive(self.dragGOTran)
+end
+
 --界面打开时调用（用于子类重写）
 function ScrollCycleView:OnOpen(itemGO, scrollBar, scrollSizeDeltaV2, dragType, fixedCount, spacingV2, itemGoScale, onUpdate, parentScroll)
+	if not Alive(self.gameObject) or not Alive(itemGO) then
+		return
+	end
 	self.item = itemGO --关联的预设
 	self.scrollBar = scrollBar --关联scrollBar组件
 	self.rectTransform.sizeDelta = scrollSizeDeltaV2 --滚动界面大小
@@ -326,6 +352,13 @@ function ScrollCycleView:OnOpen(itemGO, scrollBar, scrollSizeDeltaV2, dragType, 
 end
 
 function this:SetData(dataList, updateFunc, extData)
+    -- 🔴 界面已经关闭/销毁（CloseAll、切场景、延迟销毁）之后，旧回调仍可能触发一次刷新，
+    -- 此时 rectTransform / dragGOTran 已是 fake-null，下面取 .sizeDelta 会直接崩
+    -- （"attempt to index sizeDelta on a nil value"）。先判活，死了就放弃这次刷新。
+    if not self.cellItemList or not self:IsAlive() then
+        return
+    end
+
     -- FIX 1: Ensure dataList is never nil
     self.dataList = dataList or {}
     self.updateFunc = updateFunc
@@ -466,12 +499,15 @@ end
 function this:ForeachItemGO(func)
 	if not func or not self.goItemList then return end
 	for i = 1, math.min(#self.goItemList, self.dataCount) do
-		func(i, self.goItemList[i])
+		if Alive(self.goItemList[i]) then
+			func(i, self.goItemList[i])
+		end
 	end
 end
 
 -- 设置当前索引位置在最上层
 function this:SetIndex(curIndex)
+	if not self:IsAlive() then return end
 	local itemOffset = math.ceil(curIndex / self.fixedCount) - 1
 	if self.itemDis > 0 then
 		if self.dragType == 1 then
@@ -492,16 +528,19 @@ end
 
 -- 设置滚动区域
 function this:SetScrollRect(vec2)
+	if not self:IsAlive() then return end
 	self.rectTransform.sizeDelta = vec2
 	self:SetIndex(1)
 end
 
 -- 偏移
 function this:GetOffset()
+	if not self:IsAlive() then return Vector2.zero end
 	return self.dragGOTran.anchoredPosition
 end
 
 function this:SetOffset(offset)
+	if not self:IsAlive() then return end
 	self.dragGOTran.anchoredPosition = offset
 end
 

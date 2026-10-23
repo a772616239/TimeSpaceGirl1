@@ -179,7 +179,10 @@ def _creds() -> tuple[str, str, str]:
 
 def cmd_trigger(args) -> int:
     url, user, token = _creds()
-    owner = os.environ.get("TSG_LEASE_OWNER") or f"ASO-{datetime.now():%Y%m%d-%H%M%S}"
+    # 🔴 不要再往表单里塞 TSG_LEASE_OWNER：TS-Art-Restyle 的参数表里没有这个字段，
+    #    Jenkins 会静默忽略，看起来"有租约"其实毫无隔离（2026-10-23 实测，#28~#32
+    #    五个并发构建里 owner 全为空，02/03 因此拿到同一张回图）。
+    #    并发隔离改由该 job 的 options.disableConcurrentBuilds() 负责。
     form = {
         "ASSET": args.asset,
         "THEME": args.theme,
@@ -187,37 +190,128 @@ def cmd_trigger(args) -> int:
         "COMPOSITION": args.composition,
         "WRITE_BACK": "false",            # 🔴 商店图绝不写回工程资源
         "WATERMARK": args.watermark,
-        "TSG_LEASE_OWNER": owner,         # 并行租约必须能认出自己人
     }
     if args.layout:
         form["LAYOUT"] = args.layout
     if args.outfit:
         form["OUTFIT"] = args.outfit
+    if getattr(args, "frame", ""):
+        form["FRAME"] = args.frame
+    if getattr(args, "alpha_mode", ""):
+        form["ALPHA_MODE"] = args.alpha_mode
+    # 🔴 PROMPT_OVERRIDE 走 job 里「整段替换提示词」的分支。路径必须在这里读成文本再塞进表单：
+    #    job 只认 PROMPT_OVERRIDE 里的字面文本，传路径会被当成提示词原文粘进去。
+    pf = getattr(args, "prompt_file", "") or ""
+    if pf:
+        p = Path(pf) if Path(pf).is_absolute() else C.ROOT / pf
+        if not p.is_file():
+            raise SystemExit(f"--prompt-file 不存在：{p}")
+        form["PROMPT_OVERRIDE"] = p.read_text(encoding="utf-8").strip()
     if args.cdp_port:
         form["CDP_PORT"] = args.cdp_port
 
-    cmd = ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}",
+    cmd = ["curl", "-sS", "-D", "-", "-o", "/dev/null", "-w", "\nHTTP_CODE=%{http_code}",
            "-X", "POST", f"{url}/job/{JOB}/buildWithParameters",
            "-u", f"{user}:{token}"]
     for k, v in form.items():
         cmd += ["--data-urlencode", f"{k}={v}"]
 
-    print(f"[trigger] {JOB}  租约 owner={owner}")
+    print(f"[trigger] {JOB}（串行由调用侧保证：加 --wait 才会等这一张跑完）")
     for k, v in form.items():
         print(f"   {k} = {v[:110]}")
     if args.dry_run:
         print("\n[dry-run] 未发起请求。去掉 --dry-run 即触发。")
         return 0
 
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    code = (r.stdout or "").strip()
-    if code in ("200", "201"):
-        print(f"[trigger] 已排队（HTTP {code}）。产物会落在 _output/art_restyle/…")
-        return 0
-    print(f"[trigger] 失败 HTTP {code}  {r.stderr.strip()[:300]}")
-    if code == "403":
-        print("  403 一般是：Jenkins 用户权限 / job 名不对 / 需要 crumb")
-    return 4
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+    head, _, tail = (r.stdout or "").rpartition("HTTP_CODE=")
+    code = tail.strip()
+    if code not in ("200", "201"):
+        print(f"[trigger] 失败 HTTP {code}  {r.stderr.strip()[:300]}")
+        if code == "403":
+            print("  403 一般是：Jenkins 用户权限 / job 名不对 / 需要 crumb")
+        return 4
+
+    loc = ""
+    for line in head.splitlines():
+        if line.lower().startswith("location:"):
+            loc = line.split(":", 1)[1].strip()
+    print(f"[trigger] 已排队（HTTP {code}）。产物会落在 _output/art_restyle/…")
+
+    if getattr(args, "wait", False) and loc:
+        return _wait_build(url, user, token, loc)
+    return 0
+
+
+# --------------------------------------------------------------------------- #
+# --wait：等这一张真的出完再返回
+# --------------------------------------------------------------------------- #
+_build_cache: dict = {}
+
+
+def _wait_build(url: str, user: str, token: str, queue_loc: str) -> int:
+    """🔴 并发隔离的唯一可靠防线（2026-10-23 实测）。
+
+    为什么不靠 Jenkins 的 disableConcurrentBuilds：
+    本机 Jenkins 2.568 在 `POST /job/<n>/config.xml` 时**静默丢弃**
+    `<hudson.model.DisableConcurrentBuildsJobProperty/>`（HTTP 200，
+    但 /api/json 的 property 里只剩 ParametersDefinitionProperty），
+    Declarative `options { disableConcurrentBuilds() }` 也拦不住同时入队的构建。
+    而 TS-Art-Restyle 的出图阶段独占「本机 Chrome 登录态 + inbox 目录」，
+    并发就会串图：#28~#32 五个构建只差 5 秒，02 与 03 的 inbox/gen_web.png
+    落在同一个 md5 上。⇒ 由调用侧一张一张地触发。
+    """
+    import time
+    import urllib.request
+    import base64
+
+    auth = base64.b64encode(f"{user}:{token}".encode()).decode()
+    base = url.rstrip("/")
+    api = queue_loc.rstrip("/") + "/api/json"
+
+    def get(u: str) -> dict:
+        req = urllib.request.Request(u, headers={"Authorization": f"Basic {auth}"})
+        with urllib.request.urlopen(req, timeout=20) as fh:
+            return json.loads(fh.read().decode("utf-8"))
+
+    print("[wait] 等它出队…")
+    num = None
+    deadline = time.time() + 1800
+    while time.time() < deadline:
+        try:
+            it = get(api)
+        except Exception as exc:
+            print(f"[wait] 查询队列失败（{exc}），重试")
+            time.sleep(5)
+            continue
+        ex = it.get("executable") or {}
+        if ex.get("number"):
+            num = ex["number"]
+            break
+        if it.get("cancelled"):
+            print("[wait] 队列项已被取消")
+            return 6
+        time.sleep(3)
+
+    if num is None:
+        print("[wait] 超时：30 分钟还没出队")
+        return 7
+
+    print(f"[wait] 构建 #{num} 开跑，等它结束…")
+    burl = f"{base}/job/{JOB}/{num}/api/json?tree=building,result"
+    while time.time() < deadline:
+        try:
+            b = get(burl)
+        except Exception:
+            time.sleep(5)
+            continue
+        if not b.get("building"):
+            res = b.get("result")
+            print(f"[wait] 构建 #{num} 结束：{res}")
+            return 0 if res == "SUCCESS" else (5 if res == "UNSTABLE" else 8)
+        time.sleep(5)
+    print("[wait] 超时：构建没在 30 分钟内结束")
+    return 7
 
 
 # --------------------------------------------------------------------------- #
@@ -269,8 +363,19 @@ def main() -> int:
     p.add_argument("--watermark", choices=["auto", "off", "force"], default="auto")
     p.add_argument("--layout", default="", help="构图锁：保住原有文案与 UI 空区")
     p.add_argument("--outfit", default="")
+    p.add_argument("--prompt-file", default="",
+                   help="整段提示词文件（走 job 的 PROMPT_OVERRIDE，完全替换 theme_presets 拼出来的那段）。"
+                        "用于「种子只当画布、画面全靠文字描述」的原创立绘，避免模板里的"
+                        "『保持同一个角色身份』把新设计又拉回原图")
+    p.add_argument("--frame", choices=["none", "auto", "card", "gold"], default="",
+                   help="外框。design 构图下 job 的 FRAME=auto 会套游戏卡框，原创立绘要显式 none")
+    p.add_argument("--alpha-mode", choices=["source", "keep", "free"], default="",
+                   help="alpha 取法。空舞台种子是全幅不透明，原创立绘固定 keep")
     p.add_argument("--cdp-port", default="")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--wait", action="store_true",
+                   help="触发后等这一张真的跑完再返回（串行出图必加：本 job 的 inbox 与 "
+                        "浏览器登录态不隔离，并发会串图）")
     p.set_defaults(func=cmd_trigger)
 
     p = sub.add_parser("ingest")

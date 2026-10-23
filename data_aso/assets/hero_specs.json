@@ -1,0 +1,174 @@
+{
+  "_readme": "英雄特征卡：只描述「她是什么」，不描述原图的构图/姿势/镜头。文生图按这里造新画面，因此每张可以有自己的舞台与镜头。palette 由 scripts/aso/hero_features.py 从立绘量化得出，不要手改。",
+  "_pipeline": "立绘 → hero_features.py(量化配色/剪影) → 本文件(语义特征卡) → hero_keyart.py plates(空舞台板：只有画布/地平线/光池/底部留空，不含人物) → hero_keyart.py render(纯文字提示词 → Jenkins TS-Art-Restyle 的 PROMPT_OVERRIDE) → aso_assets.py heroes(压四语文案)。🔴 立绘**只贡献特征**，不当种子：立绘当种子会连姿势/服装/发色一起锁死。",
+  "heroes": [
+    {
+      "id": "01",
+      "name": "Flade",
+      "role": "assassin",
+      "hair": "very long straight ivory-white hair with a heavy side-swept fringe, one narrow braid falling over the shoulder",
+      "eyes": "crimson red, half-lidded and cold",
+      "outfit": [
+        "white plate corset armour with thin gold filigree trim",
+        "layered white armour skirt plates over a black under-bodice",
+        "black high-neck underlayer at the collar",
+        "white thigh-high armoured boots with gold edge trim"
+      ],
+      "weapon": "a pair of black-shafted polearms with crimson spearheads, held low and level",
+      "props": [
+        "a floating crimson energy ring",
+        "a low blood-red mist around her feet"
+      ],
+      "vibe": "regal, cold, executioner calm",
+      "palette_src": [
+        "#900C20",
+        "#C0AECC",
+        "#DDE6EF",
+        "#580509"
+      ],
+      "stage": "a rain-slicked elevated steel walkway at night, a huge blood-red moon low behind her, city lights blurred into bokeh below",
+      "camera": "low three-quarter angle, full body, the polearm shaft cutting a long diagonal across the frame",
+      "accent": "#E23A4E"
+    },
+    {
+      "id": "02",
+      "name": "Danding",
+      "role": "summoner",
+      "hair": "short choppy dark-red hair with two long side locks, one mechanical visor horn on the left temple",
+      "eyes": "amber orange with a ring-shaped iris",
+      "outfit": [
+        "segmented red-and-black mechanical armour plating over a dark bodysuit",
+        "an exposed cable spine running down the back",
+        "heavy asymmetric pauldrons, one side bladed",
+        "armoured greaves with glowing seam lines"
+      ],
+      "weapon": "four articulated blade-arms unfolding from her back plating",
+      "props": [
+        "a burning orange summoning circle cracked into the ground",
+        "molten slag floating upward"
+      ],
+      "vibe": "unstable, hungry, machine-priestess",
+      "palette_src": [
+        "#F8936B",
+        "#80363F",
+        "#E2B5A7",
+        "#F7E8DA"
+      ],
+      "stage": "the inside of an abandoned foundry, molten metal pouring in the background, orange light from below",
+      "camera": "slight low angle, full body, blade-arms fanned out to fill the upper frame",
+      "accent": "#FF7A3C"
+    },
+    {
+      "id": "03",
+      "name": "Hailun",
+      "role": "support",
+      "hair": "long pale-blonde hair with a soft centre part, ends drifting upward as if weightless",
+      "eyes": "violet-blue, gentle",
+      "outfit": [
+        "a white and lilac layered gown with translucent overlapping panels",
+        "silver corset lacing at the waist",
+        "a short cape attached at the shoulders",
+        "bare feet with thin silver anklets"
+      ],
+      "weapon": "a pale lavender paper parasol, held open",
+      "props": [
+        "violet ice shards orbiting her",
+        "rippling water surface far below"
+      ],
+      "vibe": "serene, protective, untouchable",
+      "palette_src": [
+        "#A29FD2",
+        "#B1DEF5",
+        "#CDC9DD",
+        "#DAEEF7"
+      ],
+      "stage": "a flooded glass atrium at night, water mirroring the neon above, soft volumetric shafts from the ceiling",
+      "camera": "straight-on full body, she floats a metre above the water, parasol arcing over her head",
+      "accent": "#8FE3FF"
+    },
+    {
+      "id": "04",
+      "name": "Huamulan",
+      "role": "striker",
+      "hair": "short black bob with blunt bangs, two thin red hair clips",
+      "eyes": "bright yellow-amber, sharp",
+      "outfit": [
+        "a white cropped track jacket with black sleeves over a black sports top",
+        "black running shorts with a side stripe",
+        "black knee pads and a mechanical shin rig",
+        "white high-top sneakers with yellow accents"
+      ],
+      "weapon": "a folding mechanical scythe-board she rides like a skateboard",
+      "props": [
+        "yellow speed streaks",
+        "wing-shaped thruster fins on her back rig"
+      ],
+      "vibe": "restless, cocky, always already moving",
+      "palette_src": [
+        "#E1D7CB",
+        "#F4EADE",
+        "#B08763",
+        "#353234"
+      ],
+      "stage": "a rain-soaked elevated rail track at night, neon signs streaking past in long exposure",
+      "camera": "side-on tracking angle, full body, motion blur trailing behind her",
+      "accent": "#FFD447"
+    },
+    {
+      "id": "05",
+      "name": "Fububanzang",
+      "role": "breaker",
+      "hair": "shoulder-length purple hair with an undercut on the right side, a single long strand over the eye",
+      "eyes": "cyan, narrowed",
+      "outfit": [
+        "a black cropped tank with a torn hem",
+        "an open mechanic's half-jacket with rolled sleeves",
+        "black shorts with a tool belt hanging loose",
+        "heavy armoured boots with exposed pistons"
+      ],
+      "weapon": "a huge two-handed chainsaw greatsword with a glowing cyan plasma edge",
+      "props": [
+        "showers of sparks",
+        "a wrecked mech chassis she just cut open"
+      ],
+      "vibe": "blunt, workmanlike, enjoys the noise",
+      "palette_src": [
+        "#E7D0C2",
+        "#444454",
+        "#B2959C",
+        "#725970"
+      ],
+      "stage": "a scrap yard of dead mechs at night, sparks raining from a severed cable above",
+      "camera": "low angle looking up, full body, chainsaw resting on her shoulder, blade edge catching the light",
+      "accent": "#43F5D6"
+    },
+    {
+      "id": "06",
+      "name": "Fuluoyide",
+      "role": "magician",
+      "hair": "waist-length pastel-pink hair with a soft wave, a small top-hat tilted over the right eye",
+      "eyes": "one visible rose-red eye, the other covered by a round dark lens patch",
+      "outfit": [
+        "a fitted black stage tailcoat with magenta lining",
+        "a white ruffled shirt and a narrow magenta bow tie",
+        "black shorts with gartered stockings",
+        "heeled ankle boots with crystal buckles"
+      ],
+      "weapon": "a slim magenta crystal-topped cane",
+      "props": [
+        "a fan of floating playing cards",
+        "a single spotlight beam"
+      ],
+      "vibe": "theatrical, teasing, always holding the last card",
+      "palette_src": [
+        "#46405D",
+        "#DBBBC0",
+        "#C492A8",
+        "#F0D1C0"
+      ],
+      "stage": "a neon theatre backstage, velvet curtains catching magenta light, dust in the spotlight",
+      "camera": "straight-on three-quarter, full body, cards arcing upward out of frame",
+      "accent": "#FF5FA2"
+    }
+  ]
+}

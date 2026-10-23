@@ -1,0 +1,19 @@
+{
+  "label": "中文标题改写（L 之上只动 zh-CN/zh-TW 标题）",
+  "role": "treatment",
+  "parent": "L",
+  "baseline": "L",
+  "cycle": "push-20261024-title-zh",
+  "generated_by": "手工派生（用户指定文案，非规则替换）",
+  "hypothesis": "只改中文标题：把与工程事实不符的「超时空美少女 / 放置战棋」换成「时空群英 / 放置阵型」。工程真因是 ① 阵容只有 3x3 九宫格 5 人上阵（FormationConfig.pos 仅 1~9），不存在 7x7 战棋；② 84 个角色男女混编（关羽/嬴政/凯撒/爱因斯坦），不是纯美少女。预期：标题去伪后点击率（商店页访问→安装）提升，且不损伤品类识别（保留「放置…RPG」）。",
+  "variables": [
+    "zh-CN/title: 超时空美少女：放置战棋RPG → 时空群英：放置阵型RPG",
+    "zh-TW/title: 超時空美少女：放置戰棋RPG → 時空群英：放置陣型RPG"
+  ],
+  "keep": [
+    "en-US / ja-JP 一律不动",
+    "zh-CN / zh-TW 的 shortDescription 与 fullDescription 一律不动（保持 L 原文，确保本轮只测标题一个变量）",
+    "icon / featureGraphic / phoneScreenshots / video 一律不动"
+  ],
+  "readout_window_days": 7
+}

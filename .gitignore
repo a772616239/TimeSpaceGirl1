@@ -101,3 +101,6 @@ data_execl/base_data/_backup_*/*.xlsx
 /data_aso/online/
 /data_aso/snapshots/
 /data_aso/reports/
+# 换皮管线用的构图种子：由 `aso_art.py seed` 从 promo.json 现场合成，不该进版本库。
+# 进库的是 data_aso/assets/gen/**（AI 出的底图，重出要烧额度）与 promo.json（种子配方）。
+/data_aso/assets/seeds/

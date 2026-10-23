@@ -50,6 +50,11 @@ $PY scripts/aso/aso_assets.py check --variant B
 - **`--promote`** = 写成 `derived/<变体>/<语言>/feature_01.png`（`aso_assets build` 用的同一文件名），
   顺手清掉该目录其它 `feature_*`、把真实 size/bytes/sha1 刷回 `index.json` ⇒
   `preview.html` / `index.json` / `aso_play.py push` 全不用改，也不会出现两张置顶图。
+- **多组候选走 `--pair <tag>`**：一次带出 `bg_<tag>.png` + 该组的框内取景（`fusion_pairs.json` 的
+  `screen`）+ 输出后缀，不写 `--promote`。🔴 10 组**不能** promote（会互相覆盖成一张）。
+- 🔴 **画面框里别全用同一段截图**：`shots.json` 只有 3 张干净合规图，10 组若共用同一 `band`
+  就是「一个画面重复十遍」。每组在 `fusion_pairs.json` 里配 `shot/band/zoom/focus_x` 拉开景别；
+  `band` 起点 0.30 起（再往上吃空景）、上限 0.90（再往下吃中文按钮行）。
 - 换图后验收页数字要刷：`$PY scripts/aso/aso_assets.py preview --variant B`（只重画 html，不动图）。
 - 版面全在 `data_aso/assets/fusion.json`（`frame`/`screen`/`title`/`copy`），改构图不改代码；
   `aso_fusion.py list` 看当前版面。

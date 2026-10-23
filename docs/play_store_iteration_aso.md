@@ -296,11 +296,14 @@ $P scripts/aso/aso_assets.py check --variant B
 四语文案，只换底图，铺 10 组让眼睛挑。角色组合写在 `data_aso/assets/fusion_pairs.json`：
 
 ```json
-{"tag":"0715","left":"07","right":"15","note":"东方蛇身创世神 × 赛博机车骑士：神话 vs 未来"}
+{"tag":"0715","left":"07","right":"15","note":"东方蛇身创世神 × 赛博机车骑士：神话 vs 未来",
+ "screen":{"shot":2,"band":[0.30,0.75],"focus":0.5,"focus_x":0.5,"zoom":1.0}}
 ```
 
 `tag` 必须是 `left+right` 拼起来的四位数——`cmd_duo` 的工作目录与底图名都按这个规则生成
 （`bg_0715.png` / `stage_duo_0715/`）。改 tag 会导致底图收不到。
+
+`screen` 决定**该组画面框里放哪一段实机画面**（见下面「10 组画面必须各不相同」）。
 
 ```bash
 # 1) 串行出全部 10 组底图（断点续跑：已存在的 bg_<tag>.png 默认跳过）
@@ -308,17 +311,44 @@ $P scripts/aso/hero_keyart.py batch
 $P scripts/aso/hero_keyart.py batch --only 0715,1217     # 只跑几组
 $P scripts/aso/hero_keyart.py batch --force --only 1217  # 重画某一组
 
-# 2) 每组单独拼装（--bg 覆盖底图，不必反复改 fusion.json；--tag 决定输出后缀）
+# 2) 每组单独拼装：--pair 一次带出底图 + 框内取景 + 输出后缀，不用手写 --bg/--tag
 for t in $(jq -r '.pairs[].tag' data_aso/assets/fusion_pairs.json); do
-  $P scripts/aso/aso_fusion.py build --layout duo --locales en-US,ja-JP,zh-CN,zh-TW \
-     --bg data_aso/assets/gen/fusion/bg_$t.png \
-     --out data_aso/derived/B/fusion10 --tag $t
+  $P scripts/aso/aso_fusion.py build --layout duo --pair $t \
+     --locales en-US,ja-JP,zh-CN,zh-TW --out data_aso/derived/B/fusion10
 done
 
 # 3) 验收页：10 组一页平铺，每组四语并排，点图看原图
 $P scripts/aso/fusion_page.py --variant B
 #   → data_aso/derived/B/fusion10.html
 ```
+
+#### 10 组画面必须各不相同（2026-10-23 用户指出）
+
+第一版 10 组画面框里全是 `shots.json` 第 3 张、同一段取景 ⇒ 缩略图上「同一个画面重复十遍」，
+一眼批量感。根因是 `fusion.json` 的 `screen.shot` 是一个全局值，10 组共用。
+
+现在 `fusion_pairs.json` 每组带一个 `screen`，`build` 逐字段合并（只覆盖 shot/band/zoom，
+描边色与圆角仍继承版面默认）：
+
+| 字段 | 作用 | 取值经验 |
+|---|---|---|
+| `shot` | `shots.json` 第几张截图 | 只有 3 张干净合规的（0=蓝紫工厂 7x7、1=红 BOSS 关、2=青蓝机械关） |
+| `band` | 切掉按钮行后，再取哪一段纵向区间 | 起点 **0.05~0.45**、高度 0.45~0.50；🔴 上限别超 0.90，再往下就是中文按钮行 |
+| `zoom` | 在 cover 基础上再推近 | 1.0=全景、1.2~1.4=中近景；>1.5 会切头 |
+| `focus_x` | 水平取景重心 | 默认 0.5；配合 zoom 用，单独用意义不大 |
+
+🔴 **这是「3 场战斗的 10 种取景」，不是 10 场不同战斗。** 干净真机截图只有 3 张，要做到
+10 场各不同，必须补截图（要英文/日文包真机重截，中文包会带中文 UI 上商店页）。
+
+选窗口的两条硬经验：
+
+- **能传达玩法的是俯视网格 + 血条数字 + 多个小人**（shot0 b0.30、shot2 b0.30/0.45）。
+  只截 BOSS 大特写（shot1 b0.05）画面上看不出是回合制战术，像动画过场——只留 1 组当冲击。
+- **窗口别往上抬过头**：`band` 起点 0.10~0.15 会吃到工厂空景，缩略后上半幅是空的。
+  shot0/shot2 的上空出现在 band<0.25，务必从 0.30 起。
+
+校验方式（不靠眼看）：同组四语「画面框区域」（y 12~349）像素差必须为 0；跨组两两最小平均
+像素差要 >50，否则说明有两组取景撞了。
 
 要点：
 

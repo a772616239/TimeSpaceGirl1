@@ -222,19 +222,28 @@ def _rounded(box: tuple[int, int, int, int], radius: int, size: tuple[int, int])
     return m
 
 
-def _cover(im: Image.Image, size: tuple[int, int], focus_y: float = 0.5) -> Image.Image:
+def _cover(im: Image.Image, size: tuple[int, int], focus_y: float = 0.5,
+           focus_x: float = 0.5, zoom: float = 1.0) -> Image.Image:
+    """铺满裁切。focus_x/focus_y 决定取景重心，zoom>1 再往里推一档。
+
+    zoom 是为了让「同一张实机截图」在不同组里给出不同景别（全景 / 中景 / 特写）：
+    干净的合规真机截图只有 3 张，10 组要不撞画面只能靠景别和重心拉开差异。
+    """
     tw, th = size
-    k = max(tw / im.width, th / im.height)
+    k = max(tw / im.width, th / im.height) * max(1.0, float(zoom))
     nw, nh = max(tw, int(round(im.width * k))), max(th, int(round(im.height * k)))
     im = im.resize((nw, nh), Image.LANCZOS)
-    x = (nw - tw) // 2
-    y = int(round((nh - th) * focus_y))
-    return im.crop((x, max(0, min(y, nh - th)), x + tw, max(0, min(y, nh - th)) + th))
+    x = int(round((nw - tw) * min(1.0, max(0.0, focus_x))))
+    y = int(round((nh - th) * min(1.0, max(0.0, focus_y))))
+    y = max(0, min(y, nh - th))
+    x = max(0, min(x, nw - tw))
+    return im.crop((x, y, x + tw, y + th))
 
 
 def draw_screen(canvas: Image.Image, box: tuple[int, int, int, int], shot_idx: int,
                 radius: int, glow: tuple, focus_y: float = 0.42,
-                band: tuple[float, float] | None = None) -> Image.Image:
+                band: tuple[float, float] | None = None,
+                focus_x: float = 0.5, zoom: float = 1.0) -> Image.Image:
     """框内实机画面：cover 裁切 + 屏内暗角 + 顶部一条高光（玻璃感）+ 双层描边。
 
     顺序很关键：**先贴画面再画描边**，否则描边会被画面盖掉一半；
@@ -249,7 +258,8 @@ def draw_screen(canvas: Image.Image, box: tuple[int, int, int, int], shot_idx: i
     layer = Image.new("RGBA", (W, H), tuple(glow) + (110,))
     canvas.paste(layer, (0, 0), halo.point(lambda v: int(v * 0.46)))
 
-    shot = _cover(_shot_image(shot_idx, band), (x1 - x0, y1 - y0), focus_y).convert("RGBA")
+    shot = _cover(_shot_image(shot_idx, band), (x1 - x0, y1 - y0), focus_y,
+                  focus_x, zoom).convert("RGBA")
 
     # 屏内暗角：四角压深，中间提亮，让画面「陷」进框里
     sw, sh = shot.size
@@ -464,7 +474,13 @@ def build(layout_key: str, locale: str, size: tuple[int, int],
     lay = dict(spec["layouts"][layout_key])
     if overrides:
         for k, v in overrides.items():
-            if v is not None:
+            if v is None:
+                continue
+            if k == "screen" and isinstance(v, dict):
+                # 逐字段合并：每组只覆盖「取哪张截图、取哪一段、景别多重」，
+                # 描边色 / 圆角 / 氛围底仍沿用版面默认，免得 10 组各写一遍。
+                lay["screen"] = {**(lay.get("screen") or {}), **v}
+            else:
                 lay[k] = v
     copy = (spec.get("copy") or {}).get(locale) or {}
     title = copy.get("title") or ""
@@ -520,7 +536,9 @@ def build(layout_key: str, locale: str, size: tuple[int, int],
     canvas = draw_screen(canvas, tuple(frame), int(screen.get("shot") or 0),
                          int(round(screen.get("radius", 0.01) * W * SS)), glow,
                          float(screen.get("focus", 0.42)),
-                         tuple(screen["band"]) if screen.get("band") else None)
+                         tuple(screen["band"]) if screen.get("band") else None,
+                         float(screen.get("focus_x", 0.5)),
+                         float(screen.get("zoom", 1.0)))
 
     # 立绘：远的（dim 大）先画，近的后画 ⇒ 有前后景的叠压关系
     for h in sorted(heroes, key=lambda o: -o.get("dim", 0)):
@@ -573,6 +591,9 @@ def main() -> int:
     ap.add_argument("--bg", default="",
                     help="覆盖 fusion.json 里的底图路径。批量出多组角色组合时用："
                          "每组一张 bg_<tag>.png，不必反复改配置。")
+    ap.add_argument("--pair", default="",
+                    help="从 fusion_pairs.json 取该组（tag）的底图与框内取景参数，"
+                         "一次出齐四语。10 组的差异就靠这里的 shot/band/zoom 拉开。")
     ap.add_argument("--promote", action="store_true",
                     help="写进 derived/<变体>/<语言>/feature_01.png（= aso_assets build 用的同一个文件名）。"
                          "这样 preview.html / index.json / aso_play.py push 都不用改，也不会出现两张置顶图。"
@@ -591,13 +612,29 @@ def main() -> int:
     if a.promote and (tw, th) != (1024, 500):
         print(f"🔴 --promote 只接受 1024x500（Play 对 featureGraphic 是死规定），当前 {tw}x{th}")
         return 2
+
+    ov: dict = {}
+    if a.bg:
+        ov["bg"] = a.bg
+    if a.pair:
+        spec_p = C.ASSETS_DIR / "fusion_pairs.json"
+        pairs = (C.load_json(spec_p).get("pairs") or []) if spec_p.is_file() else []
+        grp = next((p for p in pairs if str(p.get("tag")) == a.pair), None)
+        if grp is None:
+            print(f"🔴 fusion_pairs.json 里没有 tag={a.pair}")
+            return 2
+        ov["bg"] = f"data_aso/assets/gen/fusion/bg_{a.pair}.png"
+        if grp.get("screen"):
+            ov["screen"] = grp["screen"]
+        a.tag = a.tag or a.pair
+
     root = Path(a.out) if a.out else (C.DERIVED_DIR / a.variant / "fusion")
     root.mkdir(parents=True, exist_ok=True)
     sfx = f"_{a.tag}" if a.tag else ""
     promoted: dict[str, Path] = {}
     for loc in C.parse_locales(a.locales):
-        im = build(a.layout, loc, (tw, th), overrides={"bg": a.bg} if a.bg else None,
-                   require_bg=a.promote or bool(a.bg))
+        im = build(a.layout, loc, (tw, th), overrides=ov or None,
+                   require_bg=a.promote or bool(ov.get("bg")))
         p = root / f"feature_{a.layout}_{loc}{sfx}.png"
         im.save(p, optimize=True)
         try:

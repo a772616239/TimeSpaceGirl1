@@ -106,3 +106,11 @@ data_execl/base_data/_backup_*/*.xlsx
 /data_aso/assets/seeds/
 # 特征卡改错后重画时，旧图临时备份在这里对照，不进库。
 /data_aso/assets/gen/_v1/
+
+# 关键词周期（TS-ASO-Cycle）：进库的是「配置真源」与「历史账本」——
+#   seed_terms.json（品类先验词）、rewrite_rules.json（受控替换对）、
+#   ledger.jsonl（每轮动作与结论，丢了就等于没有历史可比）。
+# 不进库的是每轮生成的策略报告（data_aso/keywords/<周期>/）与机器状态。
+/data_aso/keywords/.state.json
+/data_aso/keywords/*/strategy.json
+/data_aso/keywords/*/strategy.md

@@ -11,6 +11,7 @@
     {"name":"PARENT","type":"string","default":"","description":"派生父本（真正被改的那一版）。留空=自动取最新 treatment（当前是 B）。🔴 不要填 A：A 自带 zh-TW 简体混排等已知缺陷，派生出来会继承一片红"},
     {"name":"LOCALES","type":"string","default":"","description":"语言子集：en,ja,zh-CN,zh-TW。留空=四语全做"},
     {"name":"EMIT","type":"bool","default":true,"description":"允许根据 rewrite_rules.json 派生新变体目录。规则未启用时不会产生任何变更（正常，rc=4）"},
+    {"name":"FULLTEXT","type":"bool","default":false,"description":"🔴 把 data_aso/keywords/fulltext/<语言>.txt 整体写进变体长描述。长描述改一个词没用（线上只用了 14%~53% 字数），所以走「成品整体替换」，不做替换对。成品必须先通过体检（≤4000 字、字符集正确），否则脚本拒绝落盘"},
     {"name":"ELEMENT","type":"choice","choices":["copy","screenshots","feature","icon"],"default":"copy","description":"本轮动的元素。本 job 只改文案 ⇒ 保持 copy；一次只测一个元素，否则读不出是谁的效果"},
     {"name":"READOUT_DAYS","type":"string","default":"14","description":"A/B 读数窗口天数（≥7 天。3 天的节奏只用于推进，不够下结论）"},
     {"name":"IGNORE_EXP_WINDOW","type":"bool","default":false,"description":"🔴 无视「上一个实验还没到期」强行推进。会把两个变量混在一个窗口里，正常别勾"},
@@ -50,6 +51,7 @@ pipeline {
           env.ASO_PARENT = params.PARENT.trim()
           env.ASO_LOCALE = params.LOCALES.trim()
           env.ASO_EMIT   = params.EMIT.toString()
+          env.ASO_FULLTEXT = params.FULLTEXT.toString()
           env.ASO_ELEMENT = params.ELEMENT.toString()
           env.ASO_DAYS   = params.READOUT_DAYS.trim() ?: '14'
           env.ASO_PUBLISH = params.PUBLISH.toString().startsWith('review') ? 'review' : 'none'
@@ -124,6 +126,24 @@ cp -f data_aso/online/$(ls -1t data_aso/online | head -1)/listings.json \
       }
     }
 
+    stage('②b 长描述体检') {
+      // 不论闸门是否放行都跑：这是只读检查，且查的是**线上**。
+      // zh-TW 线上长描述整篇是简体字 ⇒ 繁体搜索词一个都匹配不到，
+      // 这类问题不该等 3 天一轮才发现，每 6 小时的哨兵就该看得见。
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+LF=()
+[[ -n "${ASO_LOCALE:-}" ]] && LF=(--locales "$ASO_LOCALE")
+# rc=1 = 有字符集问题（这就是要报的），不当失败，标黄即可
+"$BASH" .jenkins/lib/run_stage.sh --name "长描述体检" \
+  --group "ASO" --slug aso-audit --timeout 120 --warn-ok \
+  -- "$PY" scripts/aso/aso_keyword_cycle.py audit "${LF[@]}"
+''')
+      }
+    }
+
     stage('③ 关键词策略与元数据设计') {
       when { expression { env.CYCLE_MODE == 'RUN' } }
       steps {
@@ -134,6 +154,7 @@ ARGS=(plan --baseline "$ASO_BASE" --cycle "$CYCLE_ID" --days "$CYCLE_DAYS")
 [[ -n "${ASO_PARENT:-}" ]] && ARGS+=(--parent "$ASO_PARENT")
 [[ -n "${ASO_LOCALE:-}" ]] && ARGS+=(--locales "$ASO_LOCALE")
 [[ "${ASO_EMIT,,}" == "true" ]] && ARGS+=(--emit-variant auto)
+[[ "${ASO_FULLTEXT,,}" == "true" ]] && ARGS+=(--with-fulltext)
 [[ "${IGNORE_EXP_WINDOW,,}" == "true" ]] && ARGS+=(--no-block-on-open-exp)
 echo "→ aso_keyword_cycle.py ${ARGS[*]}"
 # rc=4 = 没有命中任何已启用的改写规则 ⇒ 只出策略不派生变体，这不是失败，标黄。

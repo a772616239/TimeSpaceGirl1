@@ -184,6 +184,12 @@ def step_gen(cfg: dict, work: Path) -> list[str] | None:
            "--out", str(work / "inbox" / "gen_web.png")]
     if g.get("reuse_cdp", True):
         cmd.append("--reuse-cdp")
+    if g.get("headless"):
+        # 后台画：自建 Chrome 加 --headless=new（需把 reuse_cdp 设 false，否则连的是别人开的窗口）
+        # ⚠ 2026-10-24 实测被 Cloudflare 拦在「请稍候…」，出不了图；要后台请用 background
+        cmd.append("--headless")
+    if g.get("background"):
+        cmd.append("--background")
     if g.get("port"):
         cmd += ["--port", str(g["port"])]
     if g.get("timeout"):

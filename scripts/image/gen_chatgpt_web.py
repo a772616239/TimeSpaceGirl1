@@ -235,6 +235,17 @@ def main(argv: list[str] | None = None) -> int:
                     help="参考图先从顶部裁到这么高（超长条底板只把「英雄带」喂给模型；0=整幅）")
     ap.add_argument("--reuse-cdp", action="store_true",
                     help="复用已经在跑的 Chrome 调试端口（本机调试用，此时不启动也不关闭 Chrome）")
+    # 🔴 用户 2026-10-24 要求「后台画，不要每次都弹浏览器」：
+    #    自建 Chrome 时加 --headless=new ⇒ 无窗口跑，CDP 与 driver 完全一样（连的还是复制出来的 profile）。
+    #    注意它只对**自建**通道生效；--reuse-cdp / AdsPower 的 SunBrowser 是别人起的窗口，这里管不到。
+    ap.add_argument("--headless", action="store_true",
+                    help="自建 Chrome 以 --headless=new 后台跑（不弹窗，不占前台）；"
+                         "对 --reuse-cdp / AdsPower 通道无效。⚠ 实测 chatgpt.com 在 headless 下"
+                         "被反爬挡在「请稍候…」页（没有 input[type=file]）⇒ 出不了图，"
+                         "要「后台画但不弹窗」请用 --background")
+    ap.add_argument("--background", action="store_true",
+                    help="后台画：真窗口模式（能过 Cloudflare）但窗口摆到屏幕外不抢视线。"
+                         "比 --headless 实用：2026-10-24 实测 headless 被反爬拦死，本模式登录态正常")
     ap.add_argument("--grab-existing", action="store_true",
                     help="不发送，直接取当前 chatgpt 对话里已有的生成图。"
                          "图其实已经画好、只是 driver 没认出来时用它，别再烧一次额度")
@@ -991,6 +1002,9 @@ def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str
 
         if args.reuse_cdp:
             log(f"复用已运行的 Chrome（{args.port}）")
+            if args.headless:
+                log("⚠ --headless 对 --reuse-cdp 不生效：窗口是那台浏览器自己拉起来的，"
+                    "这里只连端口（要不弹窗就让本进程自己起 Chrome，去掉 --reuse-cdp 再来）")
             if not wait_cdp(args.port, time.time() + 5):
                 log("🔴 该端口上没有 CDP 服务")
                 return RC_WARN
@@ -1002,10 +1016,19 @@ def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str
                    "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
                    "--no-first-run", "--no-default-browser-check",
                    "--window-size=1440,1200"]
+            if args.headless:
+                # new 模式（不是老的 --headless）：保留完整渲染管线，ChatGPT 的前端与出图预览都正常
+                # 🔴 但 chatgpt.com 会把它判成机器人：页面停在「请稍候…」，input[type=file] 数量为 0。
+                cmd.append("--headless=new")
+                cmd.append("--hide-scrollbars")
+            elif args.background:
+                # 真窗口、只是摆到屏幕外：反爬与登录态和用户自己开浏览器完全一致
+                cmd.append("--window-position=-10000,-10000")
             if args.proxy:
                 cmd.append(f"--proxy-server={args.proxy}")
             cmd.append("about:blank")
-            log(f"启动 Chrome（profile={args.profile}，proxy={args.proxy or '系统/TUN'}）")
+            log(f"启动 Chrome（profile={args.profile}，proxy={args.proxy or '系统/TUN'}"
+                f"{'，headless 后台' if args.headless else ('，后台窗口(屏外)' if args.background else '')}）")
             chrome = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                       start_new_session=True)
             if not wait_cdp(args.port, time.time() + 30):

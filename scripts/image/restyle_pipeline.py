@@ -1625,7 +1625,8 @@ def cmd_publish(args) -> int:
 
     record = backup_and_replace(asset, src, theme=state.get("theme") or "unknown",
                                 note=args.note or "", backup_root=args.backup_root,
-                                variant=variant, work=str(work))
+                                variant=variant, work=str(work),
+                                frame=state.get("frame"), frame_rim=state.get("frame_rim"))
     if record is None:
         return RC_OK
     state["published"] = record
@@ -1644,7 +1645,8 @@ def cmd_publish(args) -> int:
 
 def backup_and_replace(asset: Path, src: Path, *, theme: str, note: str = "",
                        backup_root: str | None = None, variant: str = "auto",
-                       work: str = "", register_table: bool = True) -> dict | None:
+                       work: str = "", register_table: bool = True,
+                       frame: str | None = None, frame_rim: str | None = None) -> dict | None:
     """把 src 覆盖到 asset，**原图先搬进背包**，写台账；返回 record（幂等跳过返回 None）。
 
     publish 与 bottom_fade 共用一份实现：备份命名规则（「背包里是更早的原图，绝不能被这次
@@ -1696,8 +1698,8 @@ def backup_and_replace(asset: Path, src: Path, *, theme: str, note: str = "",
         "work": work,
         # 记下这一次的套框口径：下次同主题/其它主题沿用「有紫框用紫框、没有就不套」，
         # 靠的就是这两个字段（table1 收进 last_frame，export 时自动带到批量清单）。
-        "frame": state.get("frame"),
-        "frame_rim": state.get("frame_rim"),
+        "frame": frame,
+        "frame_rim": frame_rim,
     }
     mf = append_manifest(root, record)
     # 🔴 表1 登记：每次写回成功自动进台账（Jenkins 与 batch_restyle 都走本子命令 ⇒ 两链路都覆盖）。

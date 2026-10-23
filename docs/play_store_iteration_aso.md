@@ -3,6 +3,7 @@
 > 建立：2026-10-23
 > 配套：`google_play_upload_setup.md`（凭证与发版 API）、`android_release_runbook.md`（出包）、
 > `.workbuddy/skills/play-aab-release/SKILL.md`（打包发版）
+> 操作卡：**`.workbuddy/skills/aso-store-iteration/SKILL.md`**（简明版，含红线与 Jenkins 参数）
 > 本文件管的是**商店页本身**：文案、截图、置顶图、A/B。
 
 ---
@@ -37,6 +38,10 @@ P=/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python
 #   → 不碰 Play，只打印 diff
 （在 Jenkins 里点构建，MODE 保持 dry-run）
 
+# 要换置顶图为「左右角色 + 实机画面框」拼装版：额外勾 FUSION
+#   底图已出过 ⇒ 不勾 FUSION_RENDER（零额度，只重排版面 + 压字）
+#   要换角色/重画 ⇒ 勾 FUSION_RENDER，并填 FUSION_PAIR（如 04,06）
+
 # 本地单独跑某一段
 $P scripts/aso/aso_play.py list                       # 导出线上四语现状
 $P scripts/aso/aso_lint.py --all                      # 文案闸门
@@ -57,6 +62,9 @@ $P scripts/aso/aso_experiment.py status               # 实验台账
 | `ALLOW_WRITE` | 🔴 只有勾上才写 Play。不勾=只打印 diff |
 | `TRIGGER_ART` | 勾上则按缺图清单触发 `TS-Art-Restyle` |
 | `ART_THEME` | `cyber`（保持赛博原味）/ 节日题材 |
+| `FUSION` | 置顶图改走「左右角色 + 实机画面框」拼装版（§5.2），默认关 |
+| `FUSION_PAIR` | 拼装底图的两位英雄 id，`01,02` = 左 01 / 右 02 |
+| `FUSION_RENDER` | 🔴 重新按特征卡出双人底图（耗额度、约 90 秒/张、必须串行）。只重排版面时不要勾 |
 | `EXP_DAYS` | A/B 窗口天数，默认 14 |
 
 **三道闸门**：`ALLOW_WRITE`（允许写）→ `--yes`（job 内自动带）→ 上游 `MODE`（决定推哪些字段）。
@@ -229,6 +237,56 @@ $P scripts/aso/aso_assets.py check --variant B
   再叠长渐变 scrim 压深**；只压深不模糊等于把硬边原样留着（第一版就是这个毛病）
 - 卡片高度：脚底在 74%、文案块从 77.5% 起，两者只差 3.5% ⇒ 舞台描述里「全身入画」
   不能省，否则武器/裙摆会压到字上
+
+### 5.2 置顶图：拼装式（左右角色 + 实机画面框）（2026-10-23 定版）
+
+Play 的 `featureGraphic` 是 1024×500 横版，定版结构是**拼装**：左右各一个角色、中间一块
+圆角实机画面框、底部居中大标题。三层各用最可靠的手段，不让任何一层交给「AI 一次画完整张」：
+
+| 层 | 来源 | 为什么必须是它 |
+|---|---|---|
+| 左右角色 | `hero_keyart.py duo` → `TS-Art-Restyle` 按**特征卡**重绘 | 不拿立绘当参考图，画风/光源才能和背景统一 |
+| 中间画面 | 真实机截图（`shots.json` 的 `band` 取战斗横条） | 「这是真游戏」只能靠真图，AI 画的游戏画面一眼假 |
+| 文字 | 本地真字体（`aso_fusion.py`） | 模型画中/日/繁必错；改文案不该重出图 |
+
+```bash
+# 1) 出双人底图 1920×1080（左=前一个 id、右=后一个 id）——耗额度，实测 ~90 秒
+$P scripts/aso/hero_keyart.py duo --pair 01,02 --theme cyber --dry-run   # 先看提示词
+$P scripts/aso/hero_keyart.py duo --pair 01,02 --theme cyber --wait
+#   → data_aso/assets/gen/fusion/bg_0102.png
+
+# 2) 拼装 + 压四语标题（零额度，<1 秒/张）
+$P scripts/aso/aso_fusion.py build --layout duo --variant B \
+   --locales en-US,ja-JP,zh-CN,zh-TW --promote
+
+# 3) 复检规格（置顶图必须 1024×500）
+$P scripts/aso/aso_assets.py check --variant B
+```
+
+**`--promote` 是关键一步**：成品写成 `derived/B/<语言>/feature_01.png`——就是 `aso_assets build`
+用的那个文件名，同时把该目录下别的 `feature_*` 清掉、把真实 size/bytes/sha1 刷回 `index.json`。
+于是 `preview.html` / `index.json` / `aso_play.py push` 全都不用改，也不会出现两张置顶图
+（Play 的 featureGraphic 只收一张，目录里留两张会在推送时第二次上传 400）。
+`aso_assets.py preview` 可在换图后单独重画验收页（不动图，只刷数字）。
+
+**为什么不需要抠图**：管线只出整幅不透明图，chroma key 抠头发会发毛。改法是让底图中段
+**60% 被要求留空**，这块随后被画面框整块盖住 ⇒「角色由管线重绘」与「中间是真游戏画面」
+同时成立，alpha 通道完全不需要。
+
+要点与坑：
+
+- 🔴 **不能拿工程立绘直接贴**（`Assets/ManagedResources/Texture/Jingtailihui/` 里 1024~2048 自带
+  alpha 的图）。立绘与背景不同光源、不同画风，贴上去一眼剪贴画 —— 2026-10-23 用户当场否决。
+  所以 `--promote` 在缺底图时**直接报错**，不允许退回立绘兜底（`heroes` 分支只服务本地预览）。
+- 🔴 提示词要写死「两人都被**左右边缘裁切**、只露头肩胸、中间 60% 与底部 26% 留空」，
+  否则模型会把两个完整人物摆在正中，画面框没地方放。
+- 🔴 框内取景 `band` 取 `[0.40,0.80]`：取到 0.90 会把截图底部的中文「禁止」按钮带出来，
+  直接挂到英文商店页上。
+- 🔴 双人底图同样**必须 `--wait`**：与单人 `render` 共用本机 Chrome 登录态与 `inbox/`，并发必串图。
+- 换角色只改一行：`--pair 04,06` + 把 `fusion.json` 的 `bg` 指过去；`aso_fusion.py list` 看当前版面。
+- 版面参数全在 `data_aso/assets/fusion.json`（`frame` / `screen` / `title` / `copy`），改构图不改代码。
+- Jenkins 侧：`FUSION=true` 走 `③b 置顶图拼装（双人重绘）` 阶段；`FUSION_RENDER=true` 才会重出底图，
+  否则只重排版面 + 压字（零额度）。
 
 ---
 

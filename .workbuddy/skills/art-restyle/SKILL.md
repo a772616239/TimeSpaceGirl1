@@ -12,6 +12,11 @@ description: TimeSpaceGirl1 美术 UI 资源换节日风格 / 换皮肤 / 给整
 > 工具：`scripts/image/restyle_pipeline.py`、`scripts/image/batch_restyle.py`（批量）、
 > `scripts/image/preview_ingame.py`、`scripts/image/gen_chatgpt_web.py`、Jenkins `TS-Art-Restyle`。
 > 出图前必跑 `restyle_pipeline.py themes --check`（预设自检，能拦下「写死一条抱礼物的姿势」这类错）。
+>
+> 🎯 **本管线的一个下游消费者**：Play 商店置顶图的两侧角色 = 按特征卡重绘的「双人横版底图」
+> （`scripts/aso/hero_keyart.py duo --pair 01,02 --wait`，走本 job 的 `PROMPT_OVERRIDE`）。
+> 口径与红线见 skill `aso-store-iteration` 与 `docs/play_store_iteration_aso.md` §5.2：
+> **立绘只抽特征、不当参考图；双人底图中段 60% 必须留空**（之后被实机画面框盖住）。
 
 ## 什么时候用
 

@@ -1,6 +1,6 @@
 /**@META
 {
-  "description": "店面迭代（ASO）：**四语文案闸门 → 竖版截图/置顶图派生 → 规格体检 → 可选拼装置顶图（左右角色由 TS-Art-Restyle 按特征卡重绘 + 中间压实机画面框）→ 可选调用 TS-Art-Restyle 重绘 → 人眼验收页 → 推送 Play（默认只打印 diff）→ A/B 登记**。默认全程只读；只有勾 ALLOW_WRITE 才会写线上，且写完仍需人工去 Console 点「送审」（本账号是托管式发布，API 无权送审）。",
+  "description": "店面迭代（ASO）：**四语文案闸门 → 截图/置顶图派生（竖版 1080×1920 或横版 1024×520，由 SHOT_MODE 决定）→ 规格体检 → 可选拼装置顶图（左右角色由 TS-Art-Restyle 按特征卡重绘 + 中间压实机画面框）→ 可选调用 TS-Art-Restyle 重绘 → 人眼验收页 → 推送 Play（默认只打印 diff）→ A/B 登记**。默认全程只读；只有勾 ALLOW_WRITE 才会写线上，且写完仍需人工去 Console 点「送审」（本账号是托管式发布，API 无权送审）。",
   "concurrent": false,
   "keep": [30, 30],
   "params": [
@@ -9,6 +9,7 @@
     {"name":"BASELINE","type":"string","default":"A","description":"对照基线变体（A = 线上现状快照，别改它）"},
     {"name":"LOCALES","type":"string","default":"","description":"语言子集，逗号分隔：en,ja,zh-CN,zh-TW。留空=四语全做"},
     {"name":"FIT","type":"choice","choices":["cover","pad"],"default":"cover","description":"截图归一方式。cover=铺满裁切（默认，画面满、但会切边）；pad=整图装入+模糊补边（不裁内容、两侧留虚化底）"},
+    {"name":"SHOT_MODE","type":"choice","choices":["portrait（竖版 1080×1920）","landscape（横版 1024×520）"],"default":"portrait（竖版 1080×1920）","description":"手机截图走哪条路线。portrait=aso_assets build 从 shots.json 重排 1080×1920；landscape=把拼装置顶图补边到 1024×520（画面一个像素不动，比例 2.048→1.969 才过 Play 的 2:1 上限）。横版要求 fusion 底图已存在，张数与顺序取自 fusion_shots.py 的 DEFAULT_ORDER"},
     {"name":"ALLOW_WRITE","type":"bool","default":false,"description":"🔴 只有勾上才会真的写 Play（edits.listings / edits.images）。不勾=只打印 diff"},
     {"name":"IMAGE_TYPES","type":"choice","choices":["","phoneScreenshots","featureGraphic"],"default":"","description":"只推某一类图。留空=截图与置顶图都推；只换置顶图选 featureGraphic（否则会连带覆盖截图）"},
     {"name":"SHOTS","type":"string","default":"","description":"只推这几张手机截图，逗号分隔序号（如 0,1,2,5）。Play 每语上限 8 张，派生目录常有 9 张，留空则超上限只传前 8 张并告警"},
@@ -52,6 +53,8 @@ pipeline {
           env.ASO_LOCALES = params.LOCALES.trim()
           env.ASO_MODE    = params.MODE
           env.ASO_FIT     = params.FIT
+          // 横版/竖版二选一。choice 的中文标签只给人看，脚本侧只认这两个词。
+          env.ASO_SHOTMODE = params.SHOT_MODE.toString().startsWith('landscape') ? 'landscape' : 'portrait'
           env.ASO_WRITE   = params.ALLOW_WRITE.toString()
           env.ASO_IMGTYPE = params.IMAGE_TYPES.trim()
           env.ASO_SHOTS   = params.SHOTS.trim()
@@ -97,15 +100,59 @@ cp -f data_aso/reports/listing_lint.json "$TS_RUN_DIR/artifacts/" 2>/dev/null ||
       }
     }
 
-    stage('③ 素材派生（竖版截图 + 置顶图）') {
+    stage('③ 素材派生（截图 + 置顶图）') {
       steps {
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
-"$BASH" .jenkins/lib/run_stage.sh --name "素材派生 ${FIT}" \
+LOC_ARGS=()
+[[ -n "${ASO_LOCALES:-}" ]] && LOC_ARGS=(--locales "$ASO_LOCALES")
+
+# 先跑 build：它负责两件与截图路线无关的事 ——
+#   ① 出 index.json（每个语言的条目表，preview.html / push 都读它）
+#   ② 出置顶图（③b 勾了 FUSION 才会被拼装版覆盖）
+# 横版路线下它顺带产出的 1080×1920 竖版 shot_* 会在下一步被整批删掉，不留残图。
+"$BASH" .jenkins/lib/run_stage.sh --name "素材派生 ${ASO_SHOTMODE}" \
   --group "ASO" --slug aso-assets --timeout 600 \
   -- "$PY" scripts/aso/aso_assets.py build --variant "$ASO_VARIANT" \
        --fit "$ASO_FIT" ${ASO_LOCALES:+--locales "$ASO_LOCALES"}
+
+if [[ "$ASO_SHOTMODE" == "landscape" ]]; then
+  # ── 横版手机截图 ────────────────────────────────────────────────────────
+  # 置顶图 1024×500 的比例是 2.048，超过 Play 对 phoneScreenshots 的 2:1 上限；
+  # 差 12px 而已，补高到 520（1.969）就合规，画面一个像素不动。
+  # 张数与顺序全部取自 fusion_shots.py 的 DEFAULT_ORDER —— 和店面顺序同一真源，
+  # 不在 Jenkins 里再抄一份清单。
+  LOC="${ASO_LOCALES:-en-US,ja-JP,zh-CN,zh-TW}"
+  echo "→ 横版路线：置顶图补边 → 1024×520 手机截图"
+  # 🔴 拼装必须在「全部组出齐」之后再 promote：--promote 一次只写一组，
+  #    批量出图加 --promote 会被脚本直接拒绝（featureGraphic 每语言只允许一张）。
+  "$BASH" .jenkins/lib/run_stage.sh --name "横版截图源图（置顶图批量拼装）" \
+    --group "ASO" --slug aso-fusion-all --timeout 900 \
+    -- "$PY" scripts/aso/aso_fusion.py build --layout duo --variant "$ASO_VARIANT" \
+         --pairs shots --by-locale \
+         --out "data_aso/derived/$ASO_VARIANT/fusion_all" \
+         --locales "$LOC"
+
+  "$BASH" .jenkins/lib/run_stage.sh --name "横版截图合规化（1024×520）" \
+    --group "ASO" --slug aso-fusion-shots --timeout 300 \
+    -- "$PY" scripts/aso/fusion_shots.py --variant "$ASO_VARIANT" --locales "$LOC"
+
+  # 🔴 上面第一步的 build 会把 feature_01.png 换回「宣传图拼贴」版（它才是 build 的产物）。
+  #    横版路线下用户要的是拼装置顶图，这里立刻复原一次 —— 零额度、约 2 秒、不调模型。
+  #    （③b 若勾了 FUSION 会再按所选角色组合覆盖，顺序上以后者为准。）
+  "$BASH" .jenkins/lib/run_stage.sh --name "复原置顶图（拼装版）" \
+    --group "ASO" --slug aso-fusion-restore --timeout 300 \
+    -- "$PY" scripts/aso/aso_fusion.py build --layout duo --variant "$ASO_VARIANT" \
+         --locales "$LOC" --promote
+
+  # 验收页里的尺寸/体积/哈希是建页时写进去的；截图和置顶图都换了，不重画就是
+  # 「图换了数字没换」，看着像改动没生效。
+  "$PY" scripts/aso/aso_assets.py preview --variant "$ASO_VARIANT"
+else
+  echo "（竖版路线：上面 build 出的 1080×1920 就是最终截图）"
+fi
+
 "$BASH" .jenkins/lib/run_stage.sh --name "Play 规格体检" \
   --group "ASO" --slug aso-check --timeout 300 \
   -- "$PY" scripts/aso/aso_assets.py check --variant "$ASO_VARIANT"

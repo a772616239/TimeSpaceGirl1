@@ -37,6 +37,12 @@ except ImportError:  # pragma: no cover
     sys.stderr.write("缺 Pillow：<venv>/bin/pip install pillow\n")
     sys.exit(2)
 
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover
+    sys.stderr.write("缺 numpy：<venv>/bin/pip install numpy\n")
+    sys.exit(2)
+
 SHOT_SPEC = C.ASSETS_DIR / "shots.json"
 MAX_UPSCALE = 1.6          # 超过就标黄（1.6 倍以上 LANCZOS 也开始发糊）
 PLAY_MAX_BYTES = 8 * 1024 * 1024   # Play 单张图片上限 8 MB
@@ -1238,6 +1244,138 @@ def _soft_bottom(im: Image.Image, blur_ratio: float = 0.018,
     return Image.composite(dark_col, im, mask)
 
 
+def _draw_caption_land(canvas: Image.Image, caption: str, kicker: str,
+                       locale: str, tint: tuple) -> None:
+    """横版文案：压在**左侧空柱**里（左对齐、上细线 + 小标 + 两行口号）。
+
+    和竖版区别：竖版是「居中 + 底部」，横版左侧只有约 40% 宽度可用，
+    所以字号要按列宽自动降，不能沿用竖向的基准。
+    """
+    W, H = canvas.size
+    SS = 2
+    big = canvas.resize((W * SS, H * SS), Image.LANCZOS)
+    d = ImageDraw.Draw(big)
+
+    mx = int(W * 0.052) * SS
+    max_w = int(W * 0.40) * SS
+    lines = _parse_marked(caption)
+
+    size = int(W * 0.080)
+    lo = int(W * 0.034)
+    while size > lo:
+        f, _ = _font_hero(locale, size * SS)
+        widest = max(sum(d.textlength(ch, font=f) for ch, _ in ln) for ln in lines)
+        if widest <= max_w:
+            break
+        size -= 2
+    f_head, _ = _font_hero(locale, size * SS)
+
+    kick_sz = int(W * 0.0195) * SS
+    f_kick, _ = font_for(locale, kick_sz)
+
+    line_h = int(size * 1.20) * SS
+    gap = int(size * 0.42) * SS
+    block_h = gap + kick_sz + int(size * 0.30) * SS + len(lines) * line_h
+    bottom = int(H * 0.815) * SS       # 让文案块在左侧空柱里居中，而不是坠到底
+    top = bottom - block_h
+
+    # 细渐变线（品红→青），当品牌印记
+    rule_w = int(W * 0.052) * SS
+    for i in range(rule_w):
+        t = i / max(1, rule_w - 1)
+        c = tuple(int(BRAND_PINK[k] + (BRAND_CYAN[k] - BRAND_PINK[k]) * t) for k in range(3))
+        d.rectangle([mx + i, top, mx + i, top + max(2, SS * 2)], fill=c)
+
+    y = top + gap
+    if kicker:
+        x = mx
+        for ch in kicker:
+            d.text((x, y), ch, font=f_kick, fill=(228, 232, 240))
+            x += int(f_kick.size * (1.06 if ord(ch) > 0x2E80 else 1.0) * 0.98)
+        y += kick_sz + int(size * 0.30) * SS
+
+    for ln in lines:
+        _draw_rich(d, (mx, y), ln, f_head, (255, 255, 255), accent=tint,
+                   shadow=(0, 0, 0), compress_punct=True)
+        y += line_h
+
+    canvas.paste(big.resize((W, H), Image.LANCZOS), (0, 0))
+
+
+def _land_from_portrait(src: Image.Image, tw: int, th: int) -> Image.Image:
+    """竖版底图 → 横版画布（**零额度**兜底）。
+
+    直接裁 16:9 会把腿和武器全切掉，所以只能「延展」。做法：
+    主角整幅顶满高度贴右，左边空出来的地方用**主角左缘像素横向拉伸 + 重模糊**铺满。
+    关键在「取边界像素」——这样两侧在接缝处的颜色天然连续，
+    不会出现一个矩形贴片那种竖直硬边（第一版就是简单贴个模糊底图，缝一眼就能看见）。
+    """
+    # 竖版底图底部 20% 是「留给文案的暗带」，横过来会变成一条突兀的水平黑边 ⇒ 先切掉。
+    # 脚在 74% 高，切到 80% 不会碰到底盘。
+    src = src.crop((0, 0, src.width, max(1, int(src.height * 0.80))))
+
+    fw = max(1, int(round(src.width * th / src.height)))
+    fg = src.resize((fw, th), Image.LANCZOS).convert("RGB")
+    left_w = max(0, tw - fw)
+
+    canvas = Image.new("RGB", (tw, th), (8, 8, 14))
+    if left_w:
+        col_w = max(2, fw // 60)
+        edge = fg.crop((0, 0, col_w, th)).resize((left_w + col_w, th), Image.LANCZOS)
+        edge = edge.filter(ImageFilter.GaussianBlur(max(8, left_w / 9)))
+        edge = Image.eval(edge, lambda v: int(v * 0.70))
+        canvas.paste(edge.crop((0, 0, left_w, th)), (0, 0))
+
+    canvas.paste(fg, (left_w, 0))
+
+    # 交界再糊一道窄带，把可能残留的一像素色差吃掉
+    band = max(16, min(120, fw // 12))
+    if left_w:
+        seam = canvas.crop((left_w - band, 0, left_w + band, th))
+        seam = seam.filter(ImageFilter.GaussianBlur(band / 3.2))
+        mask = Image.new("L", (band * 2, th), 0)
+        md = ImageDraw.Draw(mask)
+        for i in range(band * 2):
+            k = 1.0 - abs(i - band) / band
+            md.line([(i, 0), (i, th)], fill=int(255 * max(0.0, k)))
+        canvas.paste(seam, (left_w - band, 0), mask)
+    return canvas
+
+
+def compose_hero_land(card: dict, size: tuple[int, int], caption: str,
+                      kicker: str, locale: str) -> Image.Image | None:
+    """横版英雄图（1920×1080）：AI 底图铺满 + 左侧压暗成干净空柱 + 左对齐文案。
+
+    优先用**管线原生横版**（gen/land/herocard_<id>.png，构图是另画的）；
+    额度不够时退回竖版底图延展（_land_from_portrait），画质略降但版式一致。
+    """
+    tw, th = size
+    tint = tuple(card.get("tint") or BRAND_PINK)
+    gen = GEN_DIR / "land" / f"herocard_{card['id']}.png"
+    port = GEN_DIR / f"herocard_{card['id']}.png"
+    if gen.is_file():
+        canvas = cover_resize(Image.open(gen).convert("RGB"), (tw, th), 0.55)
+    elif port.is_file():
+        canvas = _land_from_portrait(Image.open(port).convert("RGB"), tw, th)
+    else:
+        return None
+
+    # 左侧空柱：横向 smoothstep 压暗（右缘柔过渡，不留一刀切的黑边）
+    xs = np.linspace(0.0, 1.0, tw, dtype=np.float32)[None, :]
+    t = np.clip((xs - 0.30) / (0.58 - 0.30), 0.0, 1.0)
+    a = (1.0 - (t * t * (3 - 2 * t))) * 228.0
+    alpha = np.repeat(a, th, axis=0)
+    scrim = Image.fromarray(
+        np.dstack([np.full((th, tw), 8, np.uint8),
+                   np.full((th, tw), 8, np.uint8),
+                   np.full((th, tw), 14, np.uint8),
+                   alpha.clip(0, 255).astype(np.uint8)])
+    )
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), scrim).convert("RGB")
+    _draw_caption_land(canvas, caption, kicker, locale, tint)
+    return canvas
+
+
 def compose_hero(art_path: Path, card: dict, size: tuple[int, int], caption: str,
                  kicker: str, locale: str) -> Image.Image:
     """英雄卡：有换皮成品就用成品铺满（AI 画了环境），没有就退回工程立绘 + 品牌底图。"""
@@ -1293,8 +1431,11 @@ def compose_hero(art_path: Path, card: dict, size: tuple[int, int], caption: str
 def cmd_heroes(args) -> int:
     spec = C.load_json(C.ASSETS_DIR / "heroes.json")
     locales = C.parse_locales(args.locales)
+    land = getattr(args, "orient", "port") == "land"
     tw, th = _parse_size(args.size)
-    out_root = C.DERIVED_DIR / args.variant / "heroes"
+    if land and (tw, th) == (1080, 1920):      # 没显式给尺寸就走横版默认
+        tw, th = 1920, 1080
+    out_root = C.DERIVED_DIR / args.variant / ("heroes_land" if land else "heroes")
     only = {s.strip() for s in (getattr(args, "ids", "") or "").split(",") if s.strip()}
     n = 0
     for loc in locales:
@@ -1303,42 +1444,81 @@ def cmd_heroes(args) -> int:
         for h in spec.get("heroes", []):
             if only and h["id"] not in only:
                 continue
-            src = C.ROOT / h["art"]
-            if not src.is_file():
-                print(f"缺图：{h['art']}")
-                continue
             cap = (h.get("headlines") or {}).get(loc) or ""
             if loc.startswith("en"):
                 cap = cap.upper()
             kick = (h.get("kickers") or {}).get(loc) or ""
             if not cap:
                 continue
-            im = compose_hero(src, h, (tw, th), cap, kick, loc)
+            if land:
+                im = compose_hero_land(h, (tw, th), cap, kick, loc)
+                if im is None:
+                    print(f"缺横版底图：data_aso/assets/gen/land/herocard_{h['id']}.png")
+                    continue
+            else:
+                src = C.ROOT / h["art"]
+                if not src.is_file():
+                    print(f"缺图：{h['art']}")
+                    continue
+                im = compose_hero(src, h, (tw, th), cap, kick, loc)
             fn = d / f"hero_{h['id']}.png"
             im.save(fn, "PNG", optimize=True)
             n += 1
+            if land and getattr(args, "feature", False):
+                # 置顶图固定 1024×500（2.048:1）。从 16:9 上下各裁一点即可，
+                # 别从左右裁 —— 左边是文案区，裁掉就没字了。
+                fw, fh = 1024, 500
+                im2 = im
+                want = fw / fh
+                if im2.width / im2.height > want:
+                    nw = int(im2.height * want)
+                    im2 = im2.crop(((im2.width - nw) // 2, 0, (im2.width + nw) // 2, im2.height))
+                else:
+                    nh = int(im2.width / want)
+                    im2 = im2.crop((0, (im2.height - nh) // 2, im2.width, (im2.height + nh) // 2))
+                fd = C.DERIVED_DIR / args.variant / "heroes_feature" / loc
+                fd.mkdir(parents=True, exist_ok=True)
+                im2.resize((fw, fh), Image.LANCZOS).save(fd / f"hero_{h['id']}.png",
+                                                         "PNG", optimize=True)
         print(f"  {loc}: {len(list(d.glob('hero_*.png')))} 张")
-    print(f"[heroes] {out_root}  {n} 张")
+    print(f"[heroes] {out_root}  {n} 张  ({tw}x{th})")
     return 0
 
 
 def _check_heroes(root: Path, red: list, yellow: list) -> int:
-    d = root / "heroes"
-    if not d.is_dir():
-        return 0
+    """竖版 heroes/ 与横版 heroes_land/ 都查；两者长宽比都是 16:9，只是方向不同。"""
     total = 0
-    for sub in sorted(p for p in d.iterdir() if p.is_dir()):
-        for f in sorted(sub.glob("hero_*.png")):
-            total += 1
-            with Image.open(f) as im:
-                w, h = im.size
-            ratio = max(w, h) / min(w, h)
-            if abs(ratio - 16 / 9) > 0.02:
-                red.append(f"heroes/{sub.name}/{f.name}: 比例 {ratio:.3f}，必须 9:16")
-            if f.stat().st_size > PLAY_MAX_BYTES:
-                red.append(f"heroes/{sub.name}/{f.name}: {f.stat().st_size//1024}KB 超过 8MB")
+    for name, label in (("heroes", "9:16"), ("heroes_land", "16:9")):
+        d = root / name
+        if not d.is_dir():
+            continue
+        for sub in sorted(p for p in d.iterdir() if p.is_dir()):
+            for f in sorted(sub.glob("hero_*.png")):
+                total += 1
+                with Image.open(f) as im:
+                    w, h = im.size
+                ratio = max(w, h) / min(w, h)
+                if abs(ratio - 16 / 9) > 0.02:
+                    red.append(f"{name}/{sub.name}/{f.name}: 比例 {ratio:.3f}，必须 {label}")
+                if name == "heroes_land" and w < h:
+                    red.append(f"{name}/{sub.name}/{f.name}: 横版目录里放的是竖图 {w}x{h}")
+                if f.stat().st_size > PLAY_MAX_BYTES:
+                    red.append(f"{name}/{sub.name}/{f.name}: {f.stat().st_size//1024}KB 超过 8MB")
     if not total:
         yellow.append("heroes/: 没有英雄卡（先跑 heroes）")
+
+    # 横版顺带导出的置顶图：Play 要求**精确** 1024×500，差一个像素都会被拒
+    fd = root / "heroes_feature"
+    if fd.is_dir():
+        for sub in sorted(p for p in fd.iterdir() if p.is_dir()):
+            for f in sorted(sub.glob("hero_*.png")):
+                total += 1
+                with Image.open(f) as im:
+                    w, h = im.size
+                if (w, h) != (1024, 500):
+                    red.append(f"heroes_feature/{sub.name}/{f.name}: {w}x{h}，置顶图必须 1024x500")
+                if f.stat().st_size > PLAY_MAX_BYTES:
+                    red.append(f"heroes_feature/{sub.name}/{f.name}: {f.stat().st_size//1024}KB 超过 8MB")
     return total
 
 
@@ -1365,6 +1545,10 @@ def main() -> int:
     p.add_argument("--variant", required=True)
     p.add_argument("--locales", default="")
     p.add_argument("--ids", default="", help="只做这几张（逗号分隔）；留空=heroes.json 里全部")
+    p.add_argument("--orient", choices=["port", "land"], default="port",
+                   help="port=1080x1920 竖版（底部文案）；land=1920x1080 横版（左侧文案，对齐现网）")
+    p.add_argument("--feature", action="store_true",
+                   help="横版时顺带导出 1024x500 置顶图（Play 固定尺寸）")
     p.add_argument("--size", default="1080x1920")
     p.set_defaults(func=cmd_heroes)
 

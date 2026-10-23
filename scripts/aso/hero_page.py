@@ -51,14 +51,14 @@ h1{margin:0;font-size:21px;letter-spacing:.2px;font-weight:650}
 .hrole{font-size:11.5px;color:var(--dim);font-family:var(--mono);letter-spacing:.5px}
 .hmeta{margin-left:auto;font:11px/1 var(--mono);color:var(--dim)}
 
-.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.grid{display:grid;grid-template-columns:repeat(var(--cols,4),minmax(0,1fr));gap:18px}
 .cell{min-width:0}
 .phone{position:relative;border-radius:22px;overflow:hidden;
   border:1px solid var(--line2);
   box-shadow:0 18px 40px -22px rgba(0,0,0,.9),0 0 0 1px rgba(0,0,0,.5) inset;
   background:#000;cursor:zoom-in;transition:transform .18s ease,border-color .18s ease}
 .phone:hover{transform:translateY(-4px);border-color:rgba(86,232,226,.5)}
-.phone img{display:block;width:100%;aspect-ratio:9/16;object-fit:cover}
+.phone img{display:block;width:100%;aspect-ratio:var(--ar,9/16);object-fit:cover}
 .loc{display:flex;align-items:center;gap:7px;margin:9px 2px 0;
   font:10.5px/1 var(--mono);color:var(--dim);letter-spacing:.5px}
 .loc i{font-style:normal;width:6px;height:6px;border-radius:50%;background:var(--pink)}
@@ -78,6 +78,9 @@ code{font-family:var(--mono);font-size:11.5px;color:var(--muted);
   background:var(--surface2);padding:2px 6px;border-radius:5px}
 
 @media (max-width:1180px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.feature{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:6px}
+.feature .cell{border:1px solid var(--line2);border-radius:12px;overflow:hidden;background:#000}
+.feature img{display:block;width:100%;aspect-ratio:1024/500;object-fit:cover}
 @media (max-width:620px){.wrap{padding:22px 16px 60px}.grid{grid-template-columns:1fr}}
 """
 
@@ -95,10 +98,12 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')lb.classList.remove(
 """
 
 
-def build(variant: str) -> Path:
+def build(variant: str, orient: str = "port") -> Path:
     spec = C.load_json(C.ASSETS_DIR / "heroes.json")
+    land = orient == "land"
+    sub = "heroes_land" if land else "heroes"
+    out = C.DERIVED_DIR / variant / ("heroes_land.html" if land else "heroes.html")
     root = C.DERIVED_DIR / variant
-    out = root / "heroes.html"
     heroes = spec.get("heroes", [])
 
     rows, total = [], 0
@@ -106,16 +111,16 @@ def build(variant: str) -> Path:
         hid = h["id"]
         cells = []
         for loc, label in LOCALES:
-            p = root / "heroes" / loc / f"hero_{hid}.png"
+            p = root / sub / loc / f"hero_{hid}.png"
             if not p.is_file():
                 continue
             total += 1
             kb = p.stat().st_size // 1024
             cells.append(f"""
         <div class="cell">
-          <div class="phone" data-src="heroes/{loc}/hero_{hid}.png"
+          <div class="phone" data-src="{sub}/{loc}/hero_{hid}.png"
                data-cap="FILE {hid} · {loc} · {kb}KB">
-            <img src="heroes/{loc}/hero_{hid}.png" alt="hero {hid} {loc}" loading="lazy">
+            <img src="{sub}/{loc}/hero_{hid}.png" alt="hero {hid} {loc}" loading="lazy">
           </div>
           <div class="loc"><i></i><em>{label}</em> · {loc} · {kb}KB</div>
         </div>""")
@@ -128,7 +133,7 @@ def build(variant: str) -> Path:
         <span class="hid">FILE {hid}</span>
         <span class="hname">{h.get('name', '')}</span>
         <span class="hrole">{role}</span>
-        <span class="hmeta">1080×1920 · 9:16</span>
+        <span class="hmeta">{'1920×1080 · 16:9' if land else '1080×1920 · 9:16'}</span>
       </div>
       <div class="grid">{''.join(cells)}
       </div>
@@ -140,25 +145,27 @@ def build(variant: str) -> Path:
 <title>英雄卡验收 · {variant}</title>
 <style>{CSS}</style>
 </head><body>
-<div class="wrap">
+<div class="wrap" style="--cols:{2 if land else 4};--ar:{'16/9' if land else '9/16'}">
   <header>
     <div>
-      <h1>英雄卡验收 · 变体 {variant}</h1>
+      <h1>英雄卡验收 · 变体 {variant} · {'横版 16:9（对齐现网 1920×1080）' if land else '竖版 9:16'}</h1>
       <p class="sub">底图由 <b>TS-Art-Restyle</b> 按「特征卡 + 空舞台板」重画（立绘只贡献特征，不作种子）；
         文案本地压真字体，四语同版式。</p>
     </div>
     <div class="chips">
       <span class="chip"><b>{total}</b> 张</span>
-      <span class="chip">1080×1920</span>
-      <span class="chip">9:16</span>
+      <span class="chip">{'1920×1080' if land else '1080×1920'}</span>
+      <span class="chip">{'16:9' if land else '9:16'}</span>
       <span class="chip"><b>4</b> 语言</span>
     </div>
   </header>
   {''.join(rows)}
   <footer>
-    规格：最短边 ≥320 / 最长边 ≤3840 / 长宽比 ≤2:1 / 单张 ≤8MB —— 本页全部 9:16 1080×1920。<br>
-    重建：<code>python3 scripts/aso/hero_keyart.py render --ids … --wait</code> →
-    <code>collect</code> → <code>aso_assets.py heroes --variant {variant}</code> → 本页。<br>
+    规格：最短边 ≥320 / 最长边 ≤3840 / 长宽比 ≤2:1 / 单张 ≤8MB —— 本页全部
+    {'16:9 1920×1080（横版，与线上 phoneScreenshots 一致）' if land else '9:16 1080×1920'}。<br>
+    重建：<code>python3 scripts/aso/hero_keyart.py render --ids … --size {'1920x1080' if land else '1080x1920'} --wait</code> →
+    <code>collect --size {'1920x1080' if land else '1080x1920'}</code> →
+    <code>aso_assets.py heroes --variant {variant}{' --orient land --feature' if land else ''}</code> → 本页。<br>
     体检：<code>python3 scripts/aso/aso_assets.py check --variant {variant}</code>
   </footer>
 </div>
@@ -173,8 +180,9 @@ def build(variant: str) -> Path:
 def main() -> int:
     ap = argparse.ArgumentParser(description="英雄卡验收页")
     ap.add_argument("--variant", default="B")
+    ap.add_argument("--orient", choices=["port", "land"], default="port")
     a = ap.parse_args()
-    p = build(a.variant)
+    p = build(a.variant, a.orient)
     print(f"[hero_page] {p}")
     return 0
 

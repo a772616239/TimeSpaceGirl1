@@ -1,0 +1,125 @@
+{
+  "_readme": "拼装式店面图版面：立绘位置 + 画面框 + 底部标题。坐标一律是画布比例（0~1），改版面不用改代码。立绘名对应 Assets/ManagedResources/Texture/Jingtailihui/cn2-Jingtailihui_<name>.png（自带 alpha）。",
+  "_why": "店面图的核心是「角色必须就是游戏里的角色」。AI 重绘再准也会偏发色/瞳色/服装，而工程里有高清透明立绘 ⇒ 直接拼贴保真 100%、零额度、可反复重排。背景氛围与画面框内的实机截图负责「这是真游戏」的可信度，文字一律本地真字体压。",
+  "canvas": [
+    1024,
+    500
+  ],
+  "layouts": {
+    "duo": {
+      "_note": "左右各站角色、中间压一块实机画面框、底部居中大标题——Play 商店置顶图的通用结构。frame = 画面框 [x0,y0,x1,y1]；heroes 的 x 是角色「内侧边缘」落点，base 是脚底 y（>1 表示腿伸出画布）。",
+      "frame": [
+        0.2,
+        0.022,
+        0.8,
+        0.7
+      ],
+      "screen": {
+        "shot": 2,
+        "radius": 0.006,
+        "glow": "#FFC978",
+        "focus": 0.5,
+        "band": [
+          0.4,
+          0.8
+        ],
+        "atmo": "data_aso/assets/gen/land/herocard_01.png"
+      },
+      "heroes": [
+        {
+          "art": "bulutusi",
+          "side": "right",
+          "x": 0.7,
+          "h": 1.12,
+          "base": 1.12,
+          "dim": 0.0,
+          "rim": "#EFE6FF"
+        },
+        {
+          "art": "danding",
+          "side": "left",
+          "x": 0.302,
+          "h": 1.22,
+          "base": 1.22,
+          "dim": 0.0,
+          "rim": "#FFB48A"
+        }
+      ],
+      "title": {
+        "bar": 0.706,
+        "kicker_y": 0.75,
+        "title_y": 0.798,
+        "scrim": 0.86
+      },
+      "bg": "data_aso/assets/gen/fusion/bg_0102.png",
+      "_bg_note": "由 hero_keyart.py duo --pair 01,02 经 TS-Art-Restyle 按特征卡重绘：左 01 Flade、右 02 Danding，中间 60% 与底部 26% 留空。存在即优先于下面的 heroes 立绘兜底。"
+    },
+    "trio": {
+      "_note": "三娘同框（左二右一换成左二右二没有意义：1024 宽下四个角色会互相重叠到看不清）。trio 用更窄的画面框给角色腾空间。",
+      "frame": [
+        0.212,
+        0.026,
+        0.788,
+        0.786
+      ],
+      "screen": {
+        "shot": 0,
+        "radius": 0.01,
+        "glow": "#5AE8E2"
+      },
+      "heroes": [
+        {
+          "art": "huamulan",
+          "side": "right",
+          "x": 0.78,
+          "h": 1.34,
+          "base": 1.06,
+          "dim": 0.3,
+          "rim": "#FFE9A8"
+        },
+        {
+          "art": "fuluoyide",
+          "side": "right",
+          "x": 0.995,
+          "h": 1.52,
+          "base": 1.1,
+          "dim": 0.0,
+          "rim": "#C9E4FF"
+        },
+        {
+          "art": "fububanzang",
+          "side": "left",
+          "x": 0.208,
+          "h": 1.52,
+          "base": 1.1,
+          "dim": 0.0,
+          "rim": "#9FF0FF"
+        }
+      ],
+      "title": {
+        "bar": 0.756,
+        "kicker_y": 0.796,
+        "title_y": 0.844,
+        "scrim": 0.86
+      }
+    }
+  },
+  "copy": {
+    "en-US": {
+      "kicker": "100+ LIVE2D HEROINES",
+      "title": "SUMMON. DEPLOY. CRUSH."
+    },
+    "ja-JP": {
+      "kicker": "100体以上のLive2D少女",
+      "title": "召喚・配置・殲滅"
+    },
+    "zh-CN": {
+      "kicker": "百余位 Live2D 少女",
+      "title": "召唤 · 布阵 · 碾压"
+    },
+    "zh-TW": {
+      "kicker": "百餘位 Live2D 少女",
+      "title": "召喚 · 佈陣 · 碾壓"
+    }
+  }
+}

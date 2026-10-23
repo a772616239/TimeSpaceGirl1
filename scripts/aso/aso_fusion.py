@@ -1,0 +1,545 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""拼装式店面图（Play featureGraphic / 宣传图）：立绘 + 实机画面框 + 本地压字。
+
+为什么是「拼装」而不是让 AI 画整张
+------------------------------------
+店面图最重要的不是画得多漂亮，而是**角色必须就是游戏里的角色**。AI 重绘再准，
+发色/瞳色/服装细节也会偏（前面六张英雄卡返工两次就是这个原因）。工程里本来就有
+高清透明立绘（Assets/ManagedResources/Texture/Jingtailihui，1024~2048，自带 alpha），
+直接抠图拼贴：保真 100%、零额度、可反复重排、改文案不用重出图。
+
+层次（从下到上）
+----------------
+1. 氛围底 —— 程序化：角色主色的径向光 + 斜向光带 + 噪点 + 暗角。
+   不用 AI 底图：底图只要「氛围」，要的是可控、可复现、零额度。
+2. 画面框 —— 圆角 + 双描边 + 外发光，框内铺实机截图（cover 裁切 + 屏内暗角）。
+3. 立绘 —— 压在框**之上**（角色站在画面前面），带轮廓光与落地阴影。
+4. 标题带 —— 底部黑渐变 scrim + 字距拉开的小标 + 带描边/发光/渐变的大标题。
+
+🔴 红线：文字一律本地真字体压。模型画中文/日文字形必错，而且改文案不该重出图。
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import aso_common as C  # noqa: E402
+
+FUSION_SPEC = C.ASSETS_DIR / "fusion.json"
+LIHUI_DIR = C.ROOT / "Assets" / "ManagedResources" / "Texture" / "Jingtailihui"
+LIHUI_TPL = "cn2-Jingtailihui_{}.png"
+
+SS = 2          # 超采样倍数：1024×500 内部按 2048×1000 画，描边/羽化才够细
+
+FONT_FACE = {
+    "en-US": ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 0),
+    "ja-JP": ("/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc", 0),
+    "zh-CN": ("/System/Library/Fonts/STHeiti Medium.ttc", 1),   # Heiti SC
+    "zh-TW": ("/System/Library/Fonts/STHeiti Medium.ttc", 0),   # Heiti TC
+}
+
+_cache: dict[tuple, object] = {}
+
+
+def font_for(locale: str, size: int):
+    key = ("font", locale, size)
+    if key not in _cache:
+        face = FONT_FACE.get(locale) or (None, 0)
+        f = None
+        if face[0] and Path(face[0]).is_file():
+            try:
+                f = ImageFont.truetype(face[0], size, index=face[1])
+            except Exception:  # noqa: BLE001
+                f = None
+        if f is None:
+            for p in C.LOCALES[locale]["fonts"]:
+                if Path(p).is_file():
+                    try:
+                        f = ImageFont.truetype(p, size)
+                        break
+                    except Exception:  # noqa: BLE001
+                        continue
+        _cache[key] = f or ImageFont.load_default()
+    return _cache[key]
+
+
+# ---------------------------------------------------------------- 素材
+
+def load_lihui(name: str) -> Image.Image:
+    """读立绘并按 alpha 收紧。画布里角色只占中间一块，不收会白占空白。"""
+    key = ("lihui", name)
+    if key not in _cache:
+        p = LIHUI_DIR / LIHUI_TPL.format(name)
+        if not p.is_file():
+            raise SystemExit(f"找不到立绘：{p}")
+        im = Image.open(p).convert("RGBA")
+        bb = im.getchannel("A").getbbox()
+        _cache[key] = im.crop(bb) if bb else im
+    return _cache[key]
+
+
+def _shot_image(idx: int, band: tuple[float, float] | None = None) -> Image.Image:
+    """实机截图：按 shots.json 的 crop_bottom 切掉按钮行与世界聊天。
+
+    商店页上挂着中文世界聊天是最掉价的粗糙感，所以框内只留战斗画面。
+
+    `band` 再在剩下的图里取一段纵向区间（y0~y1，比例）当「战斗特写」：
+    竖版截图整幅塞进横框只会被缩成一条没人看得清的小图，直接取战斗区横条
+    再放大铺满，框里才有「画面」而不是「缩略图」。
+    """
+    key = ("shot", idx, band)
+    if key not in _cache:
+        spec = C.load_json(C.ASSETS_DIR / "shots.json")
+        shots = spec.get("shots") or []
+        item = shots[idx % len(shots)]
+        src = C.ROOT / item["src"]
+        im = Image.open(src).convert("RGB")
+        top = int(im.height * float(item.get("crop_top") or 0))
+        bot = int(im.height * (1.0 - float(item.get("crop_bottom") or 0)))
+        im = im.crop((0, top, im.width, max(top + 8, bot)))
+        if band:
+            h = im.height
+            im = im.crop((0, int(h * band[0]), im.width, max(int(h * band[0]) + 8,
+                                                            int(h * band[1]))))
+        _cache[key] = im
+    return _cache[key]
+
+
+def _hex(s: str) -> tuple[int, int, int]:
+    s = s.lstrip("#")
+    return tuple(int(s[i:i + 2], 16) for i in (0, 2, 4))
+
+
+# ---------------------------------------------------------------- 底层氛围
+
+def _backdrop(size: tuple[int, int], tint: tuple, glow: tuple,
+              atmo: Image.Image | None = None) -> Image.Image:
+    """氛围底：有 atmo 图就用它虚化压暗当底，没有才退化成纯程序化渐变。
+
+    🔴 纯程序化渐变做出来的底一定是「一块纯色」，角色贴上去永远像剪贴画。
+    真实作业法是拿**同一张实机截图**放大模糊 + 压暗当背景：色温、光源方向、
+    饱和度都和框内画面同源，画面才像「一张图」而不是「一张图贴在另一张上」。
+    """
+    W, H = size
+    ys = np.linspace(0.0, 1.0, H, dtype=np.float32)[:, None]
+    xs = np.linspace(0.0, 1.0, W, dtype=np.float32)[None, :]
+
+    if atmo is not None:
+        blur_r = max(8, int(W * 0.009))
+        base = _cover(atmo.convert("RGB"), (W, H), 0.34)
+        base = base.filter(ImageFilter.GaussianBlur(blur_r))
+        # 双色调（duotone）：虚化后的截图本身是灰蓝色，直接压暗只会得到「一块脏灰」，
+        # 和暖色角色完全不在一个色温里。把亮度重映射到「深紫黑 → 暗红」两色之间，
+        # 背景就一定是暖的、暗的，也只保留大块明暗关系（细节被模糊掉了，正好当氛围）。
+        rgb = np.asarray(base, np.float32) / 255.0
+        lum = (rgb[..., 0] * 0.299 + rgb[..., 1] * 0.587 + rgb[..., 2] * 0.114)[..., None]
+        lum = np.clip(lum ** 1.15, 0.0, 1.0)
+        # 暗端紫黑、亮端霓虹紫蓝：游戏本身就是 neon cyberpunk，冷底 + 暖角色才有对比。
+        # （早期试过暗红底：框内战术网格是青绿色，和暗红底直接打架，整张图发土。）
+        dark_c = np.array([8, 6, 18], np.float32)
+        light_c = np.array([58, 30, 96], np.float32) + np.array(tint, np.float32) * 0.06
+        img = dark_c + (light_c - dark_c) * lum
+        img *= (1.0 - 0.22 * (ys[..., None] ** 1.4))
+    else:
+        top = np.array([18, 14, 30], np.float32)
+        mid = np.array([10, 9, 18], np.float32)
+        bot = np.array([6, 5, 10], np.float32)
+        t = ys[..., None]
+        img = np.where(t < 0.55,
+                       top + (mid - top) * (t / 0.55),
+                       mid + (bot - mid) * ((t - 0.55) / 0.45))
+
+    # 中央偏上的大光池。🔴 颜色别用角色的 rim 高光色（粉白）：大面积加高亮色
+    # 会把整块暗红底洗成脏灰，实测就是这么灰的。用「暖光色 × 低强度」只提一点空气感。
+    d2 = ((xs - 0.5) / 0.62) ** 2 + ((ys - 0.42) / 0.75) ** 2
+    wc = np.array(glow, np.float32) * 0.80 + np.array(tint, np.float32) * 0.20
+    pool = np.exp(-d2 * 1.9)[..., None] * (wc * 0.30)
+    img = img + pool
+
+    # 斜向光带：三条不同相位/宽度的，营造体积感而不是脏
+    beams = np.zeros((H, W), dtype=np.float32)
+    for k, (off, wid, amp) in enumerate(((0.06, 0.055, 1.0), (0.30, 0.030, 0.55),
+                                         (-0.22, 0.038, 0.40))):
+        u = xs * 0.42 + ys * 0.58 - 0.62 + off
+        beams += (np.exp(-(u ** 2) / (2 * wid ** 2)) * amp).astype(np.float32)
+    beams = np.repeat(beams[..., None], 3, axis=2) * (np.array(glow, np.float32) * 0.16)
+
+    img = img + beams
+
+    # 噪点：极低幅度，只为了不出现 8bit 色带
+    rng = np.random.default_rng(7)
+    img = img + rng.normal(0.0, 2.2, (H, W, 1)).astype(np.float32)
+
+    # 暗角
+    d3 = ((xs - 0.5) / 0.62) ** 2 + ((ys - 0.5) / 0.72) ** 2
+    vig = 1.0 - np.clip(d3 * 0.52, 0.0, 0.66)
+    img = img * vig[..., None]
+    return Image.fromarray(np.clip(img, 0, 255).astype(np.uint8), "RGB").convert("RGBA")
+
+
+def _radial(size: tuple[int, int], center: tuple[float, float], radius: float,
+            color: tuple, alpha: int) -> Image.Image:
+    """低分辨率画圆再放大模糊：全尺寸高斯在这个尺寸上慢到不可用。"""
+    W, H = size
+    sw, sh = max(4, W // 6), max(4, H // 6)
+    g = Image.new("L", (sw, sh), 0)
+    cx, cy, r = center[0] / 6, center[1] / 6, max(2.0, radius / 6)
+    ImageDraw.Draw(g).ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
+    g = g.filter(ImageFilter.GaussianBlur(max(3, r * 0.55))).resize((W, H), Image.BICUBIC)
+    layer = Image.new("RGBA", (W, H), tuple(color) + (alpha,))
+    out = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    out.paste(layer, (0, 0), g)
+    return out
+
+
+# ---------------------------------------------------------------- 画面框
+
+def _rounded(box: tuple[int, int, int, int], radius: int, size: tuple[int, int]) -> Image.Image:
+    m = Image.new("L", size, 0)
+    ImageDraw.Draw(m).rounded_rectangle(box, radius=radius, fill=255)
+    return m
+
+
+def _cover(im: Image.Image, size: tuple[int, int], focus_y: float = 0.5) -> Image.Image:
+    tw, th = size
+    k = max(tw / im.width, th / im.height)
+    nw, nh = max(tw, int(round(im.width * k))), max(th, int(round(im.height * k)))
+    im = im.resize((nw, nh), Image.LANCZOS)
+    x = (nw - tw) // 2
+    y = int(round((nh - th) * focus_y))
+    return im.crop((x, max(0, min(y, nh - th)), x + tw, max(0, min(y, nh - th)) + th))
+
+
+def draw_screen(canvas: Image.Image, box: tuple[int, int, int, int], shot_idx: int,
+                radius: int, glow: tuple, focus_y: float = 0.42,
+                band: tuple[float, float] | None = None) -> Image.Image:
+    """框内实机画面：cover 裁切 + 屏内暗角 + 顶部一条高光（玻璃感）+ 双层描边。
+
+    顺序很关键：**先贴画面再画描边**，否则描边会被画面盖掉一半；
+    外发光要在画面之下，否则会糊住画面内容。
+    """
+    W, H = canvas.size
+    x0, y0, x1, y1 = box
+    mask = _rounded(box, radius, (W, H))
+
+    # 外发光（画在画面之下）
+    halo = mask.filter(ImageFilter.GaussianBlur(max(6, int(W * 0.010))))
+    layer = Image.new("RGBA", (W, H), tuple(glow) + (110,))
+    canvas.paste(layer, (0, 0), halo.point(lambda v: int(v * 0.46)))
+
+    shot = _cover(_shot_image(shot_idx, band), (x1 - x0, y1 - y0), focus_y).convert("RGBA")
+
+    # 屏内暗角：四角压深，中间提亮，让画面「陷」进框里
+    sw, sh = shot.size
+    sx = np.linspace(-1, 1, sw, dtype=np.float32)[None, :]
+    sy = np.linspace(-1, 1, sh, dtype=np.float32)[:, None]
+    vig = 1.0 - np.clip((sx ** 2 * 0.34 + sy ** 2 * 0.46), 0, 1) ** 1.35 * 0.62
+    arr = np.asarray(shot.convert("RGB"), np.float32) * vig[..., None]
+    # 框内外色温必须一致：截图是蓝冷调，直接放进暖色背景里会像「另一张图贴上去」。
+    # 乘一个暖增益 + 提对比，画面立刻落进同一个色系。
+    arr = arr * np.array([1.04, 0.99, 0.94], np.float32)
+    arr = (arr - 118.0) * 1.08 + 118.0
+    shot = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB").convert("RGBA")
+
+    # 顶部玻璃高光：一条极淡的横向亮带，模拟屏幕反光
+    gl = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(gl)
+    gd.rectangle([0, 0, sw, max(2, int(sh * 0.16))], fill=(255, 255, 255, 30))
+    shot.alpha_composite(gl.filter(ImageFilter.GaussianBlur(max(2, sh * 0.02))))
+
+    canvas.paste(shot, (x0, y0), _rounded((0, 0, sw, sh), radius, (sw, sh)))
+
+    # 描边：外圈 3px 亮线 + 内圈 1px 暗线（内暗线负责把边框和画面「掰开」）
+    d = ImageDraw.Draw(canvas)
+    lw = max(2, int(W * 0.0022))
+    d.rounded_rectangle(box, radius=radius, outline=tuple(glow) + (238,), width=lw)
+    d.rounded_rectangle([box[0] + lw, box[1] + lw, box[2] - lw, box[3] - lw],
+                        radius=max(2, radius - lw), outline=(8, 6, 14, 190), width=1)
+
+    # 四角角标：小三角，装饰性但成本极低，比整圈花边干净
+    s = int(W * 0.016)
+    for cx, cy, sx_, sy_ in ((box[0], box[1], 1, 1), (box[2], box[1], -1, 1),
+                             (box[0], box[3], 1, -1), (box[2], box[3], -1, -1)):
+        d.polygon([(cx, cy), (cx + sx_ * s, cy), (cx, cy + sy_ * s)],
+                  fill=tuple(glow) + (215,))
+    return canvas
+
+
+# ---------------------------------------------------------------- 立绘
+
+def _rim(alpha: Image.Image, color: tuple, width: int = 2) -> Image.Image:
+    """轮廓光：alpha 与其腐蚀版的差集，就是内侧 1~2px 的边。
+
+    比「往外描一圈」自然：外描边会让角色边缘变粗发脏，内发光才像被背景灯打着。
+    """
+    er = alpha.filter(ImageFilter.MinFilter(width * 2 + 1))
+    edge = ImageChops.subtract(alpha, er)
+    edge = edge.filter(ImageFilter.GaussianBlur(0.6))
+    layer = Image.new("RGBA", alpha.size, tuple(color) + (255,))
+    out = Image.new("RGBA", alpha.size, (0, 0, 0, 0))
+    out.paste(layer, (0, 0), edge.point(lambda v: int(v * 0.85)))
+    return out
+
+
+def place_hero(canvas: Image.Image, name: str, side: str, x: float, h: float,
+               base: float, dim: float = 0.0, rim: tuple | None = None,
+               accent: tuple = (255, 90, 120), feather: float = 0.14) -> Image.Image:
+    """把立绘摆进画布。
+
+    side/x 决定**内侧边缘**落点：right 是右缘、left 是左缘，x 是画布比例。
+    角色宽度由 h（相对画布高）和立绘自身宽高比决定，所以「角色会伸到哪」是结果不是输入
+    —— 想控制占宽就换 h，或换一张更瘦的立绘（见 layout 注释）。
+
+    base > 1 表示腿伸出画布，露出来的自然就是上半身，不用去猜腰在哪。
+    """
+    W, H = canvas.size
+    art = load_lihui(name)
+    th = max(1, int(round(h * H)))
+    tw = max(1, int(round(art.width * th / art.height)))
+    art = art.resize((tw, th), Image.LANCZOS)
+
+    ax = int(round(x * W))
+    px = ax if side == "right" else ax - tw     # x 是**内侧边缘**：right 取左缘、left 取右缘
+    py = int(round(base * H)) - th
+
+    # 底部羽化：角色脚部淡出，不会在画布边缘留一条硬切
+    if feather > 0:
+        a = art.getchannel("A")
+        fh = max(2, int(th * feather))
+        col = Image.new("L", (1, th), 255)
+        cp = col.load()
+        for i in range(fh):
+            cp[0, th - 1 - i] = int(255 * (i / fh) ** 0.75)
+        art.putalpha(ImageChops.multiply(a, col.resize((tw, th), Image.BILINEAR)))
+
+    # 背光由 build() 统一在**画面框之下**打，这里不再重复 —— 否则角色身上会叠两层光过曝
+    if rim is not None:
+        art.alpha_composite(_rim(art.getchannel("A"), rim, max(2, int(W * 0.0018))))
+
+    if dim > 0:
+        dark = Image.new("RGBA", art.size, (8, 6, 14, int(255 * dim)))
+        art.alpha_composite(Image.composite(dark, Image.new("RGBA", art.size, (0, 0, 0, 0)),
+                                            art.getchannel("A")))
+
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    layer.alpha_composite(art, (px, py))
+    canvas.alpha_composite(layer)
+    return canvas
+
+
+# ---------------------------------------------------------------- 标题
+
+def _vgrad(size: tuple[int, int], y0: float, y1: float, invert: bool = False,
+           gamma: float = 1.0) -> Image.Image:
+    W, H = size
+    col = Image.new("L", (1, H))
+    px = col.load()
+    span = max(1e-6, y1 - y0)
+    for y in range(H):
+        t = (y / max(1, H - 1) - y0) / span
+        t = 0.0 if t < 0 else (1.0 if t > 1 else t)
+        v = int(round((t ** gamma) * 255))
+        px[0, y] = 255 - v if invert else v
+    return col.resize((W, H), Image.BILINEAR)
+
+
+def _text_mask(size: tuple[int, int], xy: tuple[int, int], text: str, font,
+               stroke: int = 0) -> Image.Image:
+    m = Image.new("L", size, 0)
+    ImageDraw.Draw(m).text(xy, text, font=font, fill=255,
+                           stroke_width=stroke, stroke_fill=255)
+    return m
+
+
+def _tracked_w(d, text: str, font, tracking: float) -> float:
+    return sum(d.textlength(ch, font=font) for ch in text) + tracking * max(0, len(text) - 1)
+
+
+def draw_caption(canvas: Image.Image, kicker: str, title: str, locale: str,
+                 bar: float, kicker_y: float, title_y: float, accent: tuple) -> None:
+    """底部标题带：黑渐变 scrim → 字距小标 → 带描边/发光/纵向渐变的大标题。
+
+    参考图那种「小标在上、大字在下」的双层结构最好用：
+    小标负责说清是什么（品类/规模），大字负责给一个记得住的动作。
+    """
+    W, H = canvas.size
+    d = ImageDraw.Draw(canvas)
+
+    # scrim：从 bar 位置渐入全黑，gamma 让过渡集中在下半段，上缘不显脏
+    scrim = Image.new("RGBA", (W, H), (4, 3, 8, 255))
+    canvas.alpha_composite(Image.composite(
+        scrim, Image.new("RGBA", (W, H), (0, 0, 0, 0)), _vgrad((W, H), bar * 0.94, 1.0, gamma=1.55)))
+
+    # ---- kicker：字距拉开的细标
+    if kicker:
+        ks = int(H * 0.052)
+        kf = font_for(locale, ks)
+        tr = ks * 0.16
+        kw = _tracked_w(d, kicker, kf, tr)
+        x = (W - kw) / 2
+        y = int(H * kicker_y)
+        for ch in kicker:
+            d.text((x, y), ch, font=kf, fill=(240, 243, 250, 255),
+                   stroke_width=max(1, int(ks * 0.10)), stroke_fill=(0, 0, 0, 170))
+            x += d.textlength(ch, font=kf) + tr
+
+    # ---- 主标题：先缩到能放进 88% 宽
+    if not title:
+        return
+    ty = int(H * title_y)
+    size = int(H * 0.118)
+    floor = int(H * 0.062)
+    max_w = W * 0.88
+    while size > floor:
+        f = font_for(locale, size)
+        if d.textlength(title, font=f) <= max_w:
+            break
+        size -= 2
+    f = font_for(locale, size)
+    tw = d.textlength(title, font=f)
+    tx = (W - tw) / 2
+    asc, desc = f.getmetrics()
+    stroke = max(2, int(size * 0.070))
+
+    mask = _text_mask((W, H), (int(tx), ty), title, f, stroke)
+
+    # 外发光（accent）+ 硬投影（黑，偏移 2~3px），两者都在字面之下
+    halo = mask.filter(ImageFilter.GaussianBlur(max(3, size * 0.16)))
+    hl = Image.new("RGBA", (W, H), tuple(accent) + (255,))
+    canvas.alpha_composite(Image.composite(hl, Image.new("RGBA", (W, H), (0, 0, 0, 0)),
+                                           halo.point(lambda v: int(v * 0.55))))
+    sh = mask.filter(ImageFilter.GaussianBlur(max(1, size * 0.030)))
+    sl = Image.new("RGBA", (W, H), (0, 0, 0, 235))
+    canvas.alpha_composite(Image.composite(sl, Image.new("RGBA", (W, H), (0, 0, 0, 0)), sh),
+                           (0, max(2, int(size * 0.045))))
+
+    # 字面：上白下浅灰的纵向渐变 + 黑色描边（描边先铺，字面后压）
+    ys = np.linspace(0.0, 1.0, H, dtype=np.float32)[:, None, None]
+    ramp = np.array([255, 255, 255], np.float32) + (
+        np.array([184, 188, 204], np.float32) - np.array([255, 255, 255], np.float32)) * ys
+    rgba = np.concatenate([np.repeat(ramp, W, axis=1),
+                           np.full((H, W, 1), 255.0, np.float32)], axis=2)
+    body = Image.fromarray(rgba.astype(np.uint8), "RGBA")
+    canvas.alpha_composite(Image.composite(Image.new("RGBA", (W, H), (10, 8, 16, 255)),
+                                           Image.new("RGBA", (W, H), (0, 0, 0, 0)),
+                                           _text_mask((W, H), (int(tx), ty), title, f, stroke)))
+    canvas.alpha_composite(Image.composite(body, Image.new("RGBA", (W, H), (0, 0, 0, 0)),
+                                           _text_mask((W, H), (int(tx), ty), title, f, 0)))
+
+
+# ---------------------------------------------------------------- 组装
+
+def build(layout_key: str, locale: str, size: tuple[int, int],
+          overrides: dict | None = None) -> Image.Image:
+    spec = C.load_json(FUSION_SPEC)
+    lay = dict(spec["layouts"][layout_key])
+    if overrides:
+        for k, v in overrides.items():
+            if v is not None:
+                lay[k] = v
+    copy = (spec.get("copy") or {}).get(locale) or {}
+    title = copy.get("title") or ""
+    kicker = copy.get("kicker") or ""
+    if locale.startswith("en"):
+        title, kicker = title.upper(), kicker.upper()
+
+    W, H = size
+    big = (W * SS, H * SS)
+
+    screen = lay.get("screen") or {}
+    glow = _hex(screen.get("glow") or "#FF5A3C")
+    heroes = lay.get("heroes") or []
+    tint = _hex((heroes[0].get("rim") if heroes else None) or "#FF5A3C")
+
+    atmo = None
+    if screen.get("atmo"):
+        ap = C.ROOT / screen["atmo"]
+        if ap.is_file():
+            atmo = Image.open(ap).convert("RGB")
+    if atmo is None:
+        atmo = _shot_image(int(screen.get("shot") or 0))
+    canvas = _backdrop(big, tint, glow, atmo=atmo)
+
+    # 底图分支：有「管线按特征卡重绘的双人横版底图」就直接铺满，不再贴工程立绘。
+    # 这是首选路径 —— 角色是重绘的、和背景同光源同画风，不会有剪贴感。
+    bg_path = lay.get("bg")
+    if bg_path and (C.ROOT / bg_path).is_file():
+        canvas = _cover(Image.open(C.ROOT / bg_path).convert("RGB"), big, 0.5).convert("RGBA")
+        heroes = []                     # 底图里已经有角色，别再叠立绘
+
+    # 角色背光先垫在最底下（角色自己要盖在框之上，但光要透到框边外）
+    for h in heroes:
+        if h.get("dim", 0) >= 0.5:
+            continue
+        art = load_lihui(h["art"])
+        th_ = max(1, int(round(h["h"] * big[1])))
+        tw_ = max(1, int(round(art.width * th_ / art.height)))
+        ax = int(round(h["x"] * big[0]))
+        cx = ax + tw_ * 0.5 if h["side"] == "right" else ax - tw_ * 0.5
+        # 🔴 背光统一用画面框的描边色。角色 rim 是各自的局部高光色（淡青/淡粉/橙），
+        # 拿它铺大面积会把底洗成灰；两三种互相冲突的暖光叠在一起更是直接变土褐。
+        bgl = glow
+        canvas.alpha_composite(_radial(big, (cx, h["base"] * big[1] - th_ * 0.55),
+                                       tw_ * 0.95, bgl, 52))
+
+    frame = [int(round(v * (W if i % 2 == 0 else H) * SS)) for i, v in enumerate(lay["frame"])]
+    canvas = draw_screen(canvas, tuple(frame), int(screen.get("shot") or 0),
+                         int(round(screen.get("radius", 0.01) * W * SS)), glow,
+                         float(screen.get("focus", 0.42)),
+                         tuple(screen["band"]) if screen.get("band") else None)
+
+    # 立绘：远的（dim 大）先画，近的后画 ⇒ 有前后景的叠压关系
+    for h in sorted(heroes, key=lambda o: -o.get("dim", 0)):
+        place_hero(canvas, h["art"], h["side"], h["x"], h["h"], h["base"],
+                   dim=h.get("dim", 0.0), rim=_hex(h["rim"]) if h.get("rim") else None,
+                   accent=_hex(h["rim"]) if h.get("rim") else glow)
+
+    t = lay["title"]
+    draw_caption(canvas, kicker, title, locale, t["bar"], t["kicker_y"], t["title_y"], glow)
+
+    return canvas.convert("RGB").resize((W, H), Image.LANCZOS)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="拼装式店面图")
+    ap.add_argument("action", choices=["build", "list"])
+    ap.add_argument("--layout", default="duo")
+    ap.add_argument("--locales", default="en-US")
+    ap.add_argument("--size", default="1024x500")
+    ap.add_argument("--variant", default="B")
+    ap.add_argument("--out", default="")
+    ap.add_argument("--tag", default="")
+    a = ap.parse_args()
+
+    spec = C.load_json(FUSION_SPEC)
+    if a.action == "list":
+        for k, v in spec["layouts"].items():
+            print(f"{k}: {v.get('_note', '')[:60]}")
+            for h in v.get("heroes", []):
+                print(f"   {h['side']:5s} {h['art']:14s} x={h['x']:.3f} h={h['h']:.2f}")
+        return 0
+
+    tw, th = (int(x) for x in a.size.lower().split("x"))
+    root = Path(a.out) if a.out else (C.DERIVED_DIR / a.variant / "fusion")
+    root.mkdir(parents=True, exist_ok=True)
+    sfx = f"_{a.tag}" if a.tag else ""
+    for loc in C.parse_locales(a.locales):
+        im = build(a.layout, loc, (tw, th))
+        p = root / f"feature_{a.layout}_{loc}{sfx}.png"
+        im.save(p, optimize=True)
+        try:
+            shown = p.relative_to(C.ROOT)
+        except ValueError:
+            shown = p
+        print(f"{shown}  {im.size[0]}x{im.size[1]}  {p.stat().st_size / 1024:.0f} KB")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

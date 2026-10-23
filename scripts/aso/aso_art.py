@@ -36,6 +36,77 @@ import aso_assets as A  # noqa: E402
 CREDS = Path.home() / ".jenkins" / ".qclaw-creds"
 JOB = "TS-Art-Restyle"
 REQ_DIR = C.ASO_ROOT / "reports" / "art_requests"
+SEED_DIR = C.ASSETS_DIR / "seeds"
+PROMO = C.ASSETS_DIR / "promo.json"
+
+
+# --------------------------------------------------------------------------- #
+# seed：给换皮管线造「构图种子」
+# --------------------------------------------------------------------------- #
+def _promo() -> dict:
+    return C.load_json(PROMO) if PROMO.is_file() else {}
+
+
+def cmd_seed(args) -> int:
+    """造种子图。
+
+    换皮管线的输出尺寸 = 种子图尺寸（`cover_resize` 归位到原图尺寸），
+    所以要出 1080×1920 的竖版首图，种子本身就得是 1080×1920。
+    宣传图是 1920×1080 的横版，直接喂进去只会得到横版 —— 于是这里先按
+    「角色上半 + 游戏画面 inset + 底部留白放标题」拼一张竖版构图给模型当骨架。
+
+    🔴 种子里**不能有字**：模型的 TEXT 段默认要求「保持每个字」，种子里有字它就会
+    去描那行字（甚至自己编一句）。所以 crop 一律避开标题条，底部只留纯渐变。
+    """
+    import aso_assets as A
+    from PIL import Image, ImageDraw
+
+    spec = _promo()
+    locales = C.parse_locales(args.locales)
+    SEED_DIR.mkdir(parents=True, exist_ok=True)
+    made = []
+
+    for loc in locales:
+        d = spec["locales"].get(loc)
+        if not d:
+            print(f"[seed] {loc} 没在 promo.json 里配置，跳过")
+            continue
+        src = C.ROOT / d["art1920"]
+        art = Image.open(src).convert("RGB")
+
+        if args.kind == "hero":
+            tw, th = spec.get("heroOut", [1080, 1920])
+            canvas = Image.new("RGB", (tw, th), (10, 9, 18))
+            # 角色：裁左半边全身，铺满上 65%
+            char = art.crop(tuple(d["charCrop"]))
+            canvas.paste(A.cover_resize(char, (tw, int(th * 0.66)), 0.28), (0, 0))
+            # 游戏画面：右下角嵌一块，给模型「有 UI 截图」的语义
+            panel = art.crop(tuple(d["panelCrop"]))
+            pw, ph = int(tw * 0.70), int(th * 0.22)
+            canvas.paste(A.cover_resize(panel, (pw, ph), 0.5), (tw - pw - 40, int(th * 0.66) - 60))
+            # 底部纯留白：标题位，绝不写字
+            band = Image.new("RGBA", (tw, int(th * 0.30)), (0, 0, 0, 0))
+            dd = ImageDraw.Draw(band)
+            for i in range(band.height):
+                a = int(255 * min(1.0, (i / max(1, band.height - 1)) * 1.6))
+                dd.line([(0, i), (tw, i)], fill=(10, 9, 18, a))
+            canvas = canvas.convert("RGBA")
+            canvas.alpha_composite(band, (0, th - band.height))
+            out = canvas.convert("RGB")
+        else:  # feature
+            tw, th = spec.get("featureOut", [1024, 500])
+            crop = tuple(d.get("artCrop") or [0, 0, art.width, int(art.height * 0.70)])
+            out = A.cover_resize(art.crop(crop), (tw, th), 0.5)
+
+        fn = SEED_DIR / f"{args.kind}_{loc}_{out.width}x{out.height}.png"
+        out.save(fn, "PNG", optimize=True)
+        made.append(fn)
+        print(f"[seed] {fn.relative_to(C.ROOT)}  {out.size}  {fn.stat().st_size // 1024} KB")
+
+    if not made:
+        return 2
+    print("\n  下一步：aso_art.py trigger --asset <上面某个种子> --composition design --no-text-layout")
+    return 0
 
 
 # --------------------------------------------------------------------------- #
@@ -175,6 +246,11 @@ def cmd_ingest(args) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="缺图盘点 / 触发 TS-Art-Restyle / 回收成品")
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("seed", help="造换皮管线用的构图种子（竖版首图 / 无字置顶底图）")
+    p.add_argument("--kind", choices=["hero", "feature"], required=True)
+    p.add_argument("--locales", default="")
+    p.set_defaults(func=cmd_seed)
 
     p = sub.add_parser("plan")
     p.add_argument("--variant", required=True)

@@ -141,6 +141,132 @@ def compose_shot(src_im: Image.Image, size: tuple[int, int], caption: str,
 
 
 # --------------------------------------------------------------------------- #
+# 首图/置顶图排版：AI 只画画面，字一律由这里用真字体压上去
+# --------------------------------------------------------------------------- #
+# 🔴 为什么字不交给模型：中/日/繁三语的字形 AI 十有八九画错（缺笔画、错字、间距乱），
+#    而且每个语言要同一套排版才像一家人。所以生成图一律要求「无字」，
+#    标题用系统字体在这里排 —— 换文案不用重新出图，改一个字也不用烧一次额度。
+GEN_DIR = C.ASSETS_DIR / "gen"
+PROMO = C.ASSETS_DIR / "promo.json"
+
+
+def _promo() -> dict:
+    return C.load_json(PROMO) if PROMO.is_file() else {}
+
+
+def hero_art(loc: str) -> Path | None:
+    """AI 出的竖版底图：优先语言专属，其次通用一张。"""
+    for name in (f"hero_{loc}.png", "hero.png"):
+        p = GEN_DIR / name
+        if p.is_file():
+            return p
+    return None
+
+
+def _tracked_w(d, text: str, font, tracking: float) -> float:
+    return sum(d.textlength(ch, font=font) for ch in text) + tracking * max(0, len(text) - 1)
+
+
+def _draw_tracked(d, xy, text: str, font, fill, tracking: float = 0.0, shadow=None):
+    """带字距的绘制。PIL 没有 letter-spacing，英文全大写标题不加字距会挤成一坨。"""
+    x, y = xy
+    for ch in text:
+        if shadow:
+            d.text((x + 2, y + 3), ch, font=font, fill=shadow)
+        d.text((x, y), ch, font=font, fill=fill)
+        x += d.textlength(ch, font=font) + tracking
+
+
+def _accent_bar(im: Image.Image, y: int, x0: int, x1: int) -> Image.Image:
+    d = ImageDraw.Draw(im)
+    d.rectangle([x0, y, x1, y + 3], fill=(53, 214, 208, 255))
+    d.rectangle([x0, y, x0 + 120, y + 3], fill=(255, 45, 149, 255))
+    return im
+
+
+def compose_headline(art: Image.Image, loc: str, spec: dict, kind: str) -> Image.Image:
+    """在生成图上压标题。
+
+    hero（1080×1920）：底部 30% 三段式 —— 字距拉开的小标 / 主标题 / 斜线分隔的 tagline。
+    feature（1024×500）：底部 20% 两段 —— 主标题 + 细 tagline，左侧竖条强调。
+    """
+    d0 = spec["locales"].get(loc, {})
+    head = d0.get("headline") or ""
+    sub = d0.get("subline") or ""
+    tag = d0.get("tagline") or ""
+    im = art.convert("RGBA")
+    w, h = im.size
+
+    if kind == "hero":
+        band_h = int(h * 0.30)
+        # 底部压深，保证白字在任何底图上都读得清（渐变而不是硬切）
+        ov = Image.new("RGBA", (w, band_h), (0, 0, 0, 0))
+        od = ImageDraw.Draw(ov)
+        for i in range(band_h):
+            a = int(235 * min(1.0, (i / max(1, band_h - 1)) ** 1.25))
+            od.line([(0, i), (w, i)], fill=(8, 7, 14, a))
+        im.alpha_composite(ov, (0, h - band_h))
+        d = ImageDraw.Draw(im)
+
+        y = h - int(band_h * 0.16)
+        if tag:
+            f = font_for(loc, 26)[0]
+            tw = _tracked_w(d, tag, f, 3)
+            _draw_tracked(d, ((w - tw) / 2, y - 28), tag, f, (150, 158, 186, 255), 3)
+            y -= 62
+        if sub:
+            f = font_for(loc, 40)[0]
+            tw = _tracked_w(d, sub, f, 1.5)
+            _draw_tracked(d, ((w - tw) / 2, y - 46), sub, f, (53, 214, 208, 255), 1.5)
+            y -= 74
+        if head:
+            f, _, size = _fit_font(loc, head, int(w * 0.88), start=104, floor=56)
+            tw = _tracked_w(d, head, f, 2)
+            _draw_tracked(d, ((w - tw) / 2, y - size - 10), head, f,
+                          (255, 255, 255, 255), 2, shadow=(0, 0, 0, 200))
+            y -= size + 26
+        _accent_bar(im, y - 6, int(w * 0.30), int(w * 0.70))
+    else:
+        band_h = int(h * 0.24)
+        ov = Image.new("RGBA", (w, band_h), (0, 0, 0, 0))
+        od = ImageDraw.Draw(ov)
+        for i in range(band_h):
+            a = int(225 * min(1.0, (i / max(1, band_h - 1)) ** 1.2))
+            od.line([(0, i), (w, i)], fill=(8, 7, 14, a))
+        im.alpha_composite(ov, (0, h - band_h))
+        d = ImageDraw.Draw(im)
+        x0 = int(w * 0.055)
+        if tag:
+            f = font_for(loc, 17)[0]
+            _draw_tracked(d, (x0, h - 34), tag, f, (140, 148, 178, 255), 2.2)
+        if head:
+            f, _, size = _fit_font(loc, head, int(w * 0.62), start=52, floor=26)
+            _draw_tracked(d, (x0, h - 34 - size - 14), head, f, (255, 255, 255, 255), 1.6,
+                          shadow=(0, 0, 0, 190))
+            d.rectangle([x0 - 14, h - 34 - size - 14, x0 - 10, h - 40], fill=(53, 214, 208, 255))
+    return im.convert("RGB")
+
+
+def cmd_headline(args) -> int:
+    """单独跑排版（不重出图）：改文案后即时看效果。"""
+    spec = _promo()
+    src = Path(args.art).expanduser()
+    if not src.is_absolute():
+        src = C.ROOT / src
+    if not src.is_file():
+        print(f"底图不存在：{src}")
+        return 2
+    im = compose_headline(Image.open(src), args.locale, spec, args.kind)
+    out = Path(args.out) if args.out else src.with_name(f"{src.stem}_typed_{args.locale}.png")
+    if not out.is_absolute():
+        out = C.ROOT / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    im.save(out, "PNG", optimize=True)
+    print(f"[headline] {src.name} + {args.locale} → {out}  {im.size}")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # fetch：把线上原图抓下来
 # --------------------------------------------------------------------------- #
 def cmd_fetch(args) -> int:
@@ -232,6 +358,18 @@ def cmd_build(args) -> int:
                             "bytes": fn.stat().st_size, "sha1": sha1_of(fn)})
             if upscale > MAX_UPSCALE:
                 notes.append(f"{loc} {fn.name}: 源图 {im.width}px 放大到 {tw}px（{upscale:.1f}×），会发糊")
+
+        # 首图（shot_00）：AI 出的竖版底图 + 本地化标题。没有底图就没有首图，
+        # 不拿半成品凑数 —— 宁可少一张，也别把没排版的裸图推上去。
+        hsrc = hero_art(loc)
+        if hsrc:
+            him = cover_resize(Image.open(hsrc).convert("RGB"), (tw, th), 0.5)
+            him = compose_headline(him, loc, _promo(), "hero")
+            fn = d / "shot_00.png"
+            him.save(fn, "PNG", optimize=True)
+            entries.insert(0, {"file": fn.name, "src": str(hsrc.relative_to(C.ROOT)),
+                            "size": list(him.size), "upscale": 1.0, "caption": "",
+                            "bytes": fn.stat().st_size, "sha1": sha1_of(fn)})
 
         # 置顶图
         feat_src = (spec.get("feature") or {}).get(loc) or ""
@@ -735,6 +873,13 @@ def main() -> int:
     p.add_argument("--variant", required=True)
     p.add_argument("--strict", action="store_true")
     p.set_defaults(func=cmd_check)
+
+    p = sub.add_parser("headline", help="在生成图上压本地化标题（改文案不重出图）")
+    p.add_argument("--art", required=True, help="AI 出的无字底图")
+    p.add_argument("--locale", required=True)
+    p.add_argument("--kind", choices=["hero", "feature"], default="hero")
+    p.add_argument("--out", default="")
+    p.set_defaults(func=cmd_headline)
 
     p = sub.add_parser("preview", help="只看预览（不重建）")
     p.add_argument("--variant", required=True)

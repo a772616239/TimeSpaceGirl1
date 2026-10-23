@@ -238,11 +238,13 @@ def latin_terms(text: str, known_phrases: set[str]) -> list[str]:
 def cjk_terms(text: str, known: set[str]) -> list[str]:
     """中日文：先用词表做最长优先遮蔽，再在遮蔽区外按「同类字符连续段」抽 2~4 字。
 
-    🔴 两个坑（第一版都踩了）：
+    🔴 三个坑（前两版都踩了）：
       1. 直接对整句抽 n-gram ⇒ 「タク」「クテ」「置タ」这类词内/跨词碎片霸榜。
          修法：汉字段与片假名段分开抽，平假名段整段丢弃（日语关键词几乎不用平假名）。
       2. 纯 n-gram 抓不到品牌名（「超时空美少女」6 字 > 上限 4）。
          修法：词表（含 brand）先命中并遮蔽，命中词本身以高权重计入。
+      3. 片假名段也抽 n-gram ⇒ 「クター」（キャラクター 尾巴）、「ラク」混进前排。
+         修法：片假名整段当一个词，不再切；复合词靠词表命中补充。
     """
     n = len(text)
     masked = [False] * n
@@ -271,7 +273,14 @@ def cjk_terms(text: str, known: set[str]) -> list[str]:
         while j < n and not masked[j] and _char_class(text[j]) == cls:
             j += 1
         seg = text[i:j]
-        if len(seg) >= 2:
+        # 片假名：整段就是一个词（キャラクター / サイバー / タクティカルバトル）。
+        # 这里再抽 n-gram 只会掉进「クター」「ラク」「ティ」这类词内碎片 —— 第三版
+        # 就是没分开处理，日语前 12 名里混进了两个纯噪声。复合词靠「词表命中」
+        # 补回来，不靠乱切。
+        if cls == "kata":
+            if len(seg) >= 3 and not any(ch in CJK_STOP for ch in seg):
+                out.append(seg)
+        elif len(seg) >= 2:
             for ln in (2, 3, 4):
                 for k in range(len(seg) - ln + 1):
                     g = seg[k:k + ln]

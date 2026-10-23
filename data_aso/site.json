@@ -1,0 +1,46 @@
+{
+  "_readme": "店面管线里「每个项目都不一样」的东西全集中在这一个文件。换项目只改这里，Python 一行不动；缺字段自动回落到 aso_common._DEFAULTS。",
+  "_why": "原来包名/物料目录/语言集/截图尺寸都写死在 aso_common.py 里，复用到别的项目等于把整套脚本抄一遍再各自维护 —— 那是分叉，不是复用。",
+
+  "brand": "时空美少女",
+  "package": "com.Warera.timespace",
+
+  "shot_size": [1080, 1920],
+  "feature_size": [1024, 500],
+
+  "_locales_note": "键 = Play 的 locale 码（edits.listings 用的那个）。label 只给人看；material_dirs 是找原图/宣传图的相对工程根目录，按顺序回落；fonts 是该语言压字优先用的字体绝对路径。",
+  "locales": {
+    "en-US": {
+      "label": "英语",
+      "material_dirs": ["时空美少女物料/en", "时空美少女物料"],
+      "fonts": [
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc"
+      ]
+    },
+    "ja-JP": {
+      "label": "日语",
+      "material_dirs": ["时空美少女物料/jp", "时空美少女物料"],
+      "fonts": [
+        "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc"
+      ]
+    },
+    "zh-CN": {
+      "label": "简中",
+      "material_dirs": ["时空美少女物料/zh", "时空美少女物料"],
+      "fonts": [
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc"
+      ]
+    },
+    "zh-TW": {
+      "label": "繁中",
+      "material_dirs": ["时空美少女物料/tw", "时空美少女物料"],
+      "fonts": [
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc"
+      ]
+    }
+  }
+}

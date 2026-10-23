@@ -33,8 +33,41 @@ ONLINE_DIR = ASO_ROOT / "online"
 EXPERIMENTS_DIR = ASO_ROOT / "experiments"
 DERIVED_DIR = ASO_ROOT / "derived"
 ASSETS_DIR = ASO_ROOT / "assets"
+SITE_FILE = ASO_ROOT / "site.json"
 
-PACKAGE = "com.Warera.timespace"
+
+# --------------------------------------------------------------------------- #
+# 站点配置：把「每个项目都不一样」的东西集中到 data_aso/site.json
+#
+# 为什么要这一步 —— 这套店面管线本来只服务《时空美少女》，包名、物料目录、
+# 语言集、截图尺寸全写死在代码里。要复用到别的项目，就得改 Python 源码，
+# 那是「抄一遍再各自维护」，不是复用。
+# 现在：新项目放一份自己的 site.json（见 docs/promo_shots_pipeline.md），
+# 代码一行不改。缺字段就回落到下面这套默认值（= 本工程现状），所以老项目零影响。
+# --------------------------------------------------------------------------- #
+_DEFAULTS = {
+    "brand": "时空美少女",
+    "package": "com.Warera.timespace",
+    "shot_size": [1080, 1920],
+    "feature_size": [1024, 500],
+}
+
+
+def _load_site() -> dict:
+    site = dict(_DEFAULTS)
+    if SITE_FILE.is_file():
+        try:
+            site.update(json.loads(SITE_FILE.read_text(encoding="utf-8")))
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"site.json 语法错误 {SITE_FILE}:{exc.lineno}:{exc.colno} — {exc.msg}")
+    for k in ("_readme", "_why"):
+        site.pop(k, None)
+    return site
+
+
+SITE = _load_site()
+BRAND = SITE["brand"]
+PACKAGE = SITE["package"]
 
 # Play 的硬上限（按 Unicode 码位计；中文/日文都是 1 字 1 位）
 LIMITS = {"title": 30, "shortDescription": 80, "fullDescription": 4000}
@@ -67,6 +100,15 @@ LOCALES = {
                   "/System/Library/Fonts/Hiragino Sans GB.ttc"],
     },
 }
+
+# site.json 可以整体替换语言表（别的项目可能只做英/日，或加 ko-KR）。
+# 只给了部分字段时按语言逐个 merge，不会把 fonts 冲掉。
+for _code, _ov in (SITE.get("locales") or {}).items():
+    if not isinstance(_ov, dict):
+        continue
+    LOCALES.setdefault(_code, {}).update(_ov)
+    LOCALES[_code].setdefault("label", _code)
+
 LOCALE_CODES = list(LOCALES)
 LOCALE_ALIASES = {
     "en": "en-US", "en-us": "en-US", "en_us": "en-US",
@@ -76,8 +118,8 @@ LOCALE_ALIASES = {
 }
 
 # 截图/置顶图的交付规格
-SHOT_SIZE = (1080, 1920)        # 9:16
-FEATURE_SIZE = (1024, 500)      # Play 要求的置顶大图
+SHOT_SIZE = tuple(SITE["shot_size"])        # 竖版路线 1080×1920（9:16）
+FEATURE_SIZE = tuple(SITE["feature_size"])  # Play 要求的置顶大图 1024×500
 ICON_SIZE = (512, 512)
 
 

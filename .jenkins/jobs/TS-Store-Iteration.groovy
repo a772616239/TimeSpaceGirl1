@@ -157,12 +157,16 @@ done
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
-PREV="data_aso/derived/$ASO_VARIANT/preview.html"
-if [[ -f "$PREV" ]]; then
-  cp "$PREV" "$TS_RUN_DIR/artifacts/preview.html"
-  echo "验收页：$PREV（归档到证据目录，构建页可直接点开）"
+SRC="data_aso/derived/$ASO_VARIANT"
+if [[ -f "$SRC/preview.html" ]]; then
+  # 整目录归档：验收页用的是相对路径引图（en-US/shot_01.png），
+  # 只 cp 那个 html 过去就是一堆 404 —— 曾经这么错过。
+  rm -rf "$TS_RUN_DIR/artifacts/preview"
+  mkdir -p "$TS_RUN_DIR/artifacts/preview"
+  cp -R "$SRC"/. "$TS_RUN_DIR/artifacts/preview/"
+  echo "验收页：$SRC/preview.html（整目录已归档，构建页可直接点开）"
   "$PY" .jenkins/lib/stage_report.py add --run "$TS_RUN_DIR" \
-    --name "验收页" --group "交付" --status pass --detail "preview.html 已归档"
+    --name "验收页" --group "交付" --status pass --detail "preview/ 整目录已归档（含素材）"
 else
   echo "🔴 没有 preview.html —— 素材派生没跑成？"
   "$PY" .jenkins/lib/stage_report.py add --run "$TS_RUN_DIR" \

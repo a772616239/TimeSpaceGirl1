@@ -37,10 +37,11 @@ IMAGE_TYPES = ["phoneScreenshots", "featureGraphic"]
 class Edit:
     """一个 Play edit 会话。退出时若未 commit 就删掉，避免留下脏 edit。"""
 
-    def __init__(self, service, package: str, dry_run: bool):
+    def __init__(self, service, package: str, dry_run: bool, auto_review: bool = False):
         self.service = service
         self.package = package
         self.dry_run = dry_run
+        self.auto_review = auto_review
         self.id = None
         self.committed = False
 
@@ -56,12 +57,29 @@ class Edit:
         if self.dry_run:
             C.load_pu().log("[edit] dry-run：不 commit")
             return
-        self.service.edits().commit(
-            packageName=self.package, editId=self.id,
-            changesNotSentForReview=True,   # 🔴 托管式发布：不带它 commit 会 400
-        ).execute()
+        kwargs = {"packageName": self.package, "editId": self.id}
+        if self.auto_review:
+            # 该包是「提交即自动送审」模式：**不能**带 changesNotSentForReview，
+            # 带了会 400。commit 一发出就进审核队列 ⇒ 必须先拿到用户明确同意。
+            pass
+        else:
+            kwargs["changesNotSentForReview"] = True
+        try:
+            self.service.edits().commit(**kwargs).execute()
+        except Exception as e:  # noqa: BLE001
+            msg = str(e)
+            if "sent for review automatically" in msg:
+                C.load_pu().log(
+                    "🔴 这个包是「提交即自动送审」模式，不能带 changesNotSentForReview。\n"
+                    "   本次改动未提交（edit 已作废，线上没有变化）。\n"
+                    "   确认要直接进审核队列，重跑并加 --auto-review。")
+                raise SystemExit(4) from None
+            raise
         self.committed = True
-        C.load_pu().log("[edit] 已 commit（changesNotSentForReview=true ⇒ 仍待人工送审）")
+        if self.auto_review:
+            C.load_pu().log("[edit] 已 commit（自动送审 ⇒ 已进审核队列）")
+        else:
+            C.load_pu().log("[edit] 已 commit（changesNotSentForReview=true ⇒ 仍待人工送审）")
 
     def __exit__(self, exc_type, exc, tb):
         if self.committed:
@@ -163,7 +181,8 @@ def cmd_push(args) -> int:
     do_text = not getattr(args, "images_only", False)
     do_images = bool(getattr(args, "with_images", False)) or bool(
         getattr(args, "images_only", False))
-    with Edit(service, args.package, dry_run=not args.allow_write) as ed:
+    with Edit(service, args.package, dry_run=not args.allow_write,
+              auto_review=getattr(args, "auto_review", False)) as ed:
         for loc in locales:
             listing = C.load_listing(variant, loc)
             body = C.text_fields(listing)
@@ -223,7 +242,8 @@ def _push_images(service, ed, args, loc) -> None:
         C.load_pu().log(f"[{loc}] 没有派生素材目录（{base}），跳过图片")
         return
     pu = C.load_pu()
-    for it in IMAGE_TYPES:
+    # 只传某一类（例如只换 featureGraphic，不动 16 张截图）：--image-types featureGraphic
+    for it in (getattr(args, "image_types", None) or IMAGE_TYPES):
         files = sorted([p for p in base.glob("*.png") if p.name.startswith(_prefix_of(it))])
         if not files:
             continue
@@ -267,6 +287,12 @@ def main() -> int:
     p.add_argument("--with-images", action="store_true", help="文案 + 图片都推")
     p.add_argument("--allow-write", action="store_true", help="🔴 才会写线上")
     p.add_argument("--yes", action="store_true", help="跳过交互确认")
+    p.add_argument("--image-types", default="",
+                   help="只传指定图片类型（逗号分隔：phoneScreenshots,featureGraphic）；"
+                        "缺省全传。只换置顶图务必写 featureGraphic。")
+    p.add_argument("--auto-review", action="store_true",
+                   help="🔴 自动送审：去掉 changesNotSentForReview 提交。"
+                        "只对「提交即自动送审」的包有效，一提交就进审核队列，改不回来。")
     p.add_argument("--package", default=C.PACKAGE)
     p.add_argument("--service-account", default=None)
     p.set_defaults(func=cmd_push)
@@ -276,6 +302,10 @@ def main() -> int:
     p.add_argument("--locales", default="")
     p.add_argument("--allow-write", action="store_true")
     p.add_argument("--yes", action="store_true")
+    p.add_argument("--image-types", default="",
+                   help="只传指定图片类型（phoneScreenshots,featureGraphic）；只换置顶图写 featureGraphic。")
+    p.add_argument("--auto-review", action="store_true",
+                   help="🔴 自动送审：一提交就进审核队列（该包不允许 changesNotSentForReview）。")
     p.add_argument("--package", default=C.PACKAGE)
     p.add_argument("--service-account", default=None)
     p.set_defaults(func=cmd_push, images_only=True, text_only=False, with_images=False)
@@ -283,6 +313,12 @@ def main() -> int:
     args = ap.parse_args()
     for k in ("text_only", "images_only", "with_images"):
         setattr(args, k, bool(getattr(args, k, False)))
+    picks = [x.strip() for x in (getattr(args, "image_types", "") or "").split(",") if x.strip()]
+    bad = [x for x in picks if x not in IMAGE_TYPES]
+    if bad:
+        print(f"🔴 未知 image-type：{bad}（可选 {IMAGE_TYPES}）", file=sys.stderr)
+        return 2
+    args.image_types = picks or IMAGE_TYPES
     return args.func(args)
 
 

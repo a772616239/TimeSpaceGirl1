@@ -18,11 +18,28 @@
 | 传截图 / 置顶图 / 图标 | ✅ 能 | `edits.images.upload`（imageType = `phoneScreenshots` / `featureGraphic` / `icon` …） |
 | 读线上现有文案与图片 | ✅ 能 | `edits.listings.get` / `edits.images.list` |
 | **建商店页 A/B 实验、看实验结论** | ❌ **不能** | 没有公开 API，只能在 Console 网页做 |
-| **点「送审 / 开始发布」** | ❌ 不能 | 账号是托管式发布，API 无权送审（`changesNotSentForReview` 已证实） |
+| **点「送审 / 开始发布」** | ⚠️ 会**被动**触发 | 本包是「提交即自动送审」模式：`edits.commit` 一成功就进审核队列，**不能**带 `changesNotSentForReview`（带了 400，见下） |
 | 回复评论、应用内容问卷、测试人员名单 | ❌ 不能 | 网页 |
 
 ⇒ 所以本 job 的定位是：**把 90% 的准备与巡检自动化，把必须人点的那几下（送审 / 建实验 / 看结论）留给人**，
 并且每次构建都告诉你「现在轮到你点哪一下」。
+
+### 🔴 送审模式实测（2026-10-23 更正）
+
+早先文档写「托管式发布，API 无权送审」——**实测反了**。第一次真传图时 `commit` 直接 400：
+
+```
+Changes are sent for review automatically. The query parameter changesNotSentForReview must not be set.
+```
+
+含义：`com.warera.timespace` 是**自动送审**模式，`edits.commit` 一成功，改动**立刻进审核队列**，
+没有「先存草稿、人工再点送审」这个中间态。所以：
+
+- `aso_play.py` 默认仍带 `changesNotSentForReview=True`（对托管式发布的包才正确），
+  对本包会被 400 打回，**此时线上没有任何变化**（edit 自动作废，可用 sha1 对比确认）。
+- 要真提交必须显式加 `--auto-review`：一提交就进审核 ⇒ **上线类操作，先问用户**。
+- 上传前先 `aso_play.py list` 导出线上 sha1，对比 `derived/<变体>/<locale>/feature_01.png`
+  的本地 sha1 —— 一致才算生效，别只看日志「已传 1 张」（那只是 upload，不含 commit）。
 
 ---
 

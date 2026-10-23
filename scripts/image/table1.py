@@ -181,6 +181,15 @@ def record_publish(published: dict, note_prefix: str = "publish") -> str:
     }
     it["size"] = published.get("size") or it.get("size")
     it["mode"] = published.get("mode") or it.get("mode")
+    # 「最后一次是否套紫框」必须留痕：下一轮换主题要按它沿用（有紫框用紫框、没有就不套），
+    # 并且宁可记在台账里，也不要靠翻 _output 的 state.json 反推。
+    if published.get("frame") or published.get("frame_rim"):
+        it["last_frame"] = {
+            "frame": published.get("frame"),
+            "frame_rim": published.get("frame_rim"),
+            "theme": theme,
+            "at": today,
+        }
     it["updated_at"] = today
     save(data)
     return f"{action}: {Path(asset).name} += {theme}"
@@ -304,8 +313,22 @@ def cmd_export(args) -> int:
         if args.theme in (it.get("themes_done") or {}):
             continue
         entry = {"asset": it["asset"], "theme": args.theme}
+        # 套框口径沿用该资产「最后一次写回」的选择：有紫框的继续紫框，上次没套的继续不套。
+        # 没有历史（从没换过）才落到 defaults。
+        lf = it.get("last_frame") or {}
+        if lf.get("frame"):
+            pp = {"frame": lf["frame"]}
+            # frame=none 时把 rim 一并钉成 none，否则 defaults 的 violet 会被 step_postprocess
+            # 传成 `--frame none --frame-rim violet`，口径自相矛盾。
+            pp["frame_rim"] = lf.get("frame_rim") or ("none" if lf["frame"] == "none" else None)
+            entry["postprocess"] = {k: v for k, v in pp.items() if v}
         if it.get("overrides"):
-            entry.update(it["overrides"])
+            ov = dict(it["overrides"])
+            if "postprocess" in ov:
+                merged = dict(entry.get("postprocess") or {})
+                merged.update(ov.pop("postprocess") or {})
+                entry["postprocess"] = merged
+            entry.update(ov)
         items.append(entry)
     if not items:
         print(f"表1 里没有欠 {args.theme} 的活跃条目")
@@ -330,6 +353,10 @@ def cmd_check(args) -> int:
     presets_file = HERE / "theme_presets.json"
     known = set(json.loads(presets_file.read_text(encoding="utf-8"))["themes"].keys())
     for it in data["items"]:
+        # retired = 已下线/已退轮换（如源图被 psd 取代、标题类误入），
+        # 不再要求资产存在、也不要求 kind 已定；否则历史台账会永久拖红 check。
+        if it.get("status") != "active":
+            continue
         full = ROOT / it["asset"]
         if not full.is_file():
             errs.append(f"资产不存在：{it['asset']}")

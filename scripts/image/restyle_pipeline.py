@@ -1668,6 +1668,10 @@ def backup_and_replace(asset: Path, src: Path, *, theme: str, note: str = "",
         "mode": im.mode,
         "note": note,
         "work": work,
+        # 记下这一次的套框口径：下次同主题/其它主题沿用「有紫框用紫框、没有就不套」，
+        # 靠的就是这两个字段（table1 收进 last_frame，export 时自动带到批量清单）。
+        "frame": state.get("frame"),
+        "frame_rim": state.get("frame_rim"),
     }
     mf = append_manifest(root, record)
     # 🔴 表1 登记：每次写回成功自动进台账（Jenkins 与 batch_restyle 都走本子命令 ⇒ 两链路都覆盖）。

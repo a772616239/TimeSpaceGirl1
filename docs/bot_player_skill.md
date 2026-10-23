@@ -1,6 +1,6 @@
 # 虚拟玩家（机器人）：在线数 / 世界喊话 / 英雄公告 / AI 回话
 
-> 更新时间：2026-10-23（新增 §4.4 晒卡换人 / §4.5 醒来重试与 per-bot 抖动 / §4.6 冷清补话 / §4.7 窗口硬闸与提问语料分池）
+> 更新时间：2026-10-23（§4.4 晒卡换人 / §4.5 醒来重试与 per-bot 抖动 / §4.6 冷清补话 / §4.7 窗口硬闸与提问语料分池 / §4.8 重启不复读与配置同步）
 > 关联：`server_ops_runbook.md`（线上热补丁口径）、`scripts/bot/dsh_bridge.py`（DSH 桥接）、
 > `scripts/bot/start_bridge.sh`（桥接启停）、`scripts/bot/bot_console.py` + `console.html`（可视化后台）、
 > `scripts/bot/testserver.sh`（测试服隧道+控制台）、
@@ -431,10 +431,10 @@ if (!online.contains(p.uid)) { nextActiveAt.put(p.uid, now + sec(gapSec)); conti
   日志：`[bot] 世界频道账本还原：真人 32 小时前 | 机器人 Nova（3 小时前）`。
 - `BOT_STATUS` 新增 `world` 块：`lastSpeakerName / humanIdleSec / idleTalk / pendingSays`，排查「怎么一直是同一个号」直接看这里。
 
-### 防刷屏的六道闸
+### 防刷屏的七道闸
 
 各来源（喊话 / AI 回复 / GM 手动 / 公告后换人接话 / 冷清补话）各自有间隔，但**不互相避让**时会挤在几秒内连发，
-玩家看到的就是「机器人自说自话」。现在六道闸：
+玩家看到的就是「机器人自说自话」。现在七道闸：
 
 1. **醒来总闸**（`activeMin/MaxSec`）：一个机器人 20~240 分钟才醒一次，一次只做一件事。
    这是最粗也是最有效的一道 —— 频率根本高不起来。
@@ -451,6 +451,12 @@ if (!online.contains(p.uid)) { nextActiveAt.put(p.uid, now + sec(gapSec)); conti
    （期间被别的机器人重新认领过），这次回复直接丢弃 —— 不会对着自己的话再说一遍，也不会为同一条消息二次付费。
 6. **换人 + 不自接**（10-23 加）：公告后的接话**必须换人**（`excludeUid`），冷清补话时醒来的是最后发言者
    就改让另一个在线号说、只剩自己在线就闭嘴。这条不是节流，是「不许自己跟自己聊」。
+7. **重启不复读**（10-23 加）：`recentChatter` 原来只在内存里，重启即清零 ⇒ 重启后第一条闲聊完全可能
+   抽到重启前刚说过的那句。实测连续两条一样（`mid=72` 21:24:05 与 `mid=73` 21:27:46，
+   都是 `todays rng is cursed`），中间只隔了一次重启。现在 `seedWorldLedger` 扫
+   `CHAT_QUEUE:world` 尾部 200 条时，顺手把其中的机器人发言按时间顺序回填进 `recentChatter`
+   （保留 `RECENT_CHATTER_KEEP` 条）—— 队列本身就是持久的，不需要另建存储。
+   启动日志会打「已记住最近说过 N 句」，N=0 就说明还原没走到。
 
 实测（临时把醒来间隔压到 60~120 秒验证链路）：
 
@@ -514,6 +520,57 @@ private boolean worldSayBudgetOk(long now) {                          // 闲聊/
 
 `BOT_STATUS.world` 新增 `saysInWindow / sayWindowSec / sayWindowMax / askLinesAllowed`，
 排查「怎么又连发三条」先看 `saysInWindow`，排查「怎么空服还在问 who got the new hero」先看 `askLinesAllowed`。
+
+### 4.8 重启不复读 + 配置同步（2026-10-23，复盘「怎么又说 server feels alive」）
+
+10-23 21:20 又看到 `server feels alive today ngl`。查下来**不是同一个 bug 复发**，是两件独立的事：
+
+**① 配置漂移：补丁只上了一半（本机测试服）**
+
+```
+本机 jar   2026-10-22 01:06      ← 当天四次线上补丁一次都没同步
+本机 conf  chatterLines 15 条，第 51 行就是 "server feels alive today ngl"
+现网 conf  grep -c "feels alive" → 0，12:48 之后没再出现
+```
+
+`scripts/bot/patch_local.sh` 原来只 `zip` class 到本地 jar，**不同步 conf**。语料和闸门参数全在
+conf 里，所以「新代码 + 旧语料」可以长期并存 —— 线上早删掉的句子照样在本机说出来。
+现在 `do_deploy` 会先比对仓库 conf 与本机 conf，不一致就备份后覆盖（一致则打印「配置已一致，跳过」）。
+
+> 判定口径：`BOT_STATUS.config.chatterLines` 是**条数**，看到 15 就说明 conf 是旧的（新版应为 10）。
+> 另外 `world` 块不存在 ⇒ jar 还是旧版。
+
+**② 去重记忆不持久：重启后立刻复读**
+
+日志实测：
+
+```
+21:24:05  bot=Kai mid=72 "todays rng is cursed"
+21:27:46  bot=Kai mid=73 "todays rng is cursed"   ← 中间只隔了一次重启
+```
+
+`recentChatter` 是纯内存 `ConcurrentLinkedDeque`，重启清零 ⇒ 去重记忆失效。
+现网当天重启过 4 次，同样有病，只是恰好没抽中。
+修法：`seedWorldLedger` 本来就在扫 `CHAT_QUEUE:world` 尾部 200 条还原 `lastHuman/lastBot`，
+顺手把机器人发言按时间顺序回填 `recentChatter`（`RECENT_CHATTER_KEEP` 条），零新增存储。
+
+**③ 附带：拦截日志必须点名闸门**
+
+原来只说「想闲聊，但刚说过话，跳过」，分不清是 `chatterMinSec`(180s) 还是 `minSpeakGapSec`(45s)，
+调参时极易误判成「配置没热加载」（10-23 因此误判两次）。现在：
+
+```
+[bot] Kai 醒来 -> 想闲聊，但 chatterMinSec=180s 未到（已过 4s，还差 176s），跳过
+```
+
+**本机实测（21:33 重启后）**
+
+```
+[bot] 世界频道账本还原：真人 7 小时前 | 机器人 Kai（1 分钟前）| 已记住最近说过 10 句
+[bot] Nova 抽到高星英雄 → 公告后 135 秒由另一个机器人接话 "nice pull fr"（不是 Nova 自己说）
+[bot] 世界发言 bot=Kai mid=75 text="one more stage then i sleep"   ← 不在最近 10 句里
+```
+
 
 ### 机器人账号数据（个人面板不空的关键）
 

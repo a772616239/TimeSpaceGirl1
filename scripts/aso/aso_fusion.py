@@ -1,27 +1,43 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""拼装式店面图（Play featureGraphic / 宣传图）：立绘 + 实机画面框 + 本地压字。
+"""拼装式店面图（Play featureGraphic）：重绘双人底图 + 实机画面框 + 本地压字。
 
 为什么是「拼装」而不是让 AI 画整张
 ------------------------------------
-店面图最重要的不是画得多漂亮，而是**角色必须就是游戏里的角色**。AI 重绘再准，
-发色/瞳色/服装细节也会偏（前面六张英雄卡返工两次就是这个原因）。工程里本来就有
-高清透明立绘（Assets/ManagedResources/Texture/Jingtailihui，1024~2048，自带 alpha），
-直接抠图拼贴：保真 100%、零额度、可反复重排、改文案不用重出图。
+让 AI 直接画「角色 + 游戏画面 + 标题」的整张店面图，三件事都会失控：角色会漂移、
+游戏画面是编的（一眼假）、中/日/繁的字形必错。所以把三件事拆开，各自用最可靠的手段：
+
+| 层 | 来源 | 为什么 |
+|---|---|---|
+| 左右角色 | `hero_keyart.py duo` → TS-Art-Restyle 按**特征卡**重绘 | 不拿立绘当参考图，画风/光源才能和背景统一 |
+| 中间画面 | 真实机截图（`shots.json`，按 `band` 取战斗横条） | 「这是真游戏」的可信度只能靠真图 |
+| 文字 | 本地真字体渲染 | 模型画中/日/繁必错；改文案不该重出图 |
+
+🔴 **不能拿工程里的现成立绘直接贴**（`Assets/.../Jingtailihui/`，1024~2048 自带 alpha）。
+2026-10-23 试过，用户当场否决：立绘和背景不同光源、不同画风，贴上去一眼剪贴画。
+立绘只用来**抽特征**（`hero_features.py` → `hero_specs.json`），不参与成像。
+代码里保留的 `heroes` 分支只是没有底图时的本地预览兜底，`--promote` 时会直接拒绝。
+
+关键取巧点（整个方案成立的原因）
+--------------------------------
+双人底图的中段 60% 是被**要求留空**的，这块随后被实机画面框整块盖住 ⇒
+「角色由管线重绘」与「中间是真游戏画面」同时成立，而**不需要抠图** ——
+管线只出整幅不透明图，chroma key 抠不干净，这条路绕开了它。
 
 层次（从下到上）
 ----------------
-1. 氛围底 —— 程序化：角色主色的径向光 + 斜向光带 + 噪点 + 暗角。
-   不用 AI 底图：底图只要「氛围」，要的是可控、可复现、零额度。
-2. 画面框 —— 圆角 + 双描边 + 外发光，框内铺实机截图（cover 裁切 + 屏内暗角）。
-3. 立绘 —— 压在框**之上**（角色站在画面前面），带轮廓光与落地阴影。
-4. 标题带 —— 底部黑渐变 scrim + 字距拉开的小标 + 带描边/发光/渐变的大标题。
+1. 底图 —— `hero_keyart.py duo` 出的 1920×1080（角色被左右边缘裁切、中段与底部留空）。
+   没底图时才退到程序化氛围底 + 立绘。
+2. 画面框 —— 圆角 + 双描边 + 外发光，框内铺实机截图（cover 裁切 + 屏内暗角 + 暖/冷调统一）。
+3. 标题带 —— 底部黑渐变 scrim + 字距拉开的小标 + 带描边/发光/渐变的大标题。
 
 🔴 红线：文字一律本地真字体压。模型画中文/日文字形必错，而且改文案不该重出图。
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import sys
 from pathlib import Path
 
@@ -436,7 +452,14 @@ def draw_caption(canvas: Image.Image, kicker: str, title: str, locale: str,
 # ---------------------------------------------------------------- 组装
 
 def build(layout_key: str, locale: str, size: tuple[int, int],
-          overrides: dict | None = None) -> Image.Image:
+          overrides: dict | None = None,
+          require_bg: bool = False) -> Image.Image:
+    """出一张拼装店面图。
+
+    require_bg=True 时，缺「管线重绘的双人底图」直接报错，**不允许退回立绘拼贴**。
+    立绘拼贴只是本地预览兜底：现成立绘和背景不同光源/不同画风，贴上去一眼剪贴画，
+    早被用户否决过。上线路径必须是 AI 按特征卡重画的底图。
+    """
     spec = C.load_json(FUSION_SPEC)
     lay = dict(spec["layouts"][layout_key])
     if overrides:
@@ -472,6 +495,11 @@ def build(layout_key: str, locale: str, size: tuple[int, int],
     if bg_path and (C.ROOT / bg_path).is_file():
         canvas = _cover(Image.open(C.ROOT / bg_path).convert("RGB"), big, 0.5).convert("RGBA")
         heroes = []                     # 底图里已经有角色，别再叠立绘
+    elif require_bg:
+        raise SystemExit(
+            f"🔴 缺双人底图 {bg_path or '(fusion.json 没写 bg)'}\n"
+            f"   先跑：scripts/aso/hero_keyart.py duo --pair <左,右> --wait\n"
+            f"   --promote 只认管线按特征卡重绘的底图；工程立绘拼贴不得上商店页。")
 
     # 角色背光先垫在最底下（角色自己要盖在框之上，但光要透到框边外）
     for h in heroes:
@@ -506,6 +534,33 @@ def build(layout_key: str, locale: str, size: tuple[int, int],
     return canvas.convert("RGB").resize((W, H), Image.LANCZOS)
 
 
+def _patch_index(variant: str, promoted: dict[str, Path]) -> None:
+    """把 promote 后的 feature_01.png 真实 size/bytes/sha1 写回 index.json。
+
+    不刷这一步的话，验收页上显示的仍然是 aso_assets build 当时那张图的字节数与哈希 ——
+    图换了、数字没换，看起来像「拼装没生效」。
+    """
+    idx_p = C.DERIVED_DIR / variant / "index.json"
+    if not idx_p.is_file():
+        return
+    idx = C.load_json(idx_p)
+    for loc, path in promoted.items():
+        ents = (idx.get("locales") or {}).get(loc)
+        if not isinstance(ents, list):
+            continue
+        ent = next((e for e in ents if str(e.get("file", "")).startswith("feature_")), None)
+        if ent is None:
+            ent = {"file": path.name, "caption": ""}
+            ents.append(ent)
+        ent["file"] = path.name
+        ent["src"] = f"data_aso/assets/gen/fusion/bg (拼装 · {variant}/{loc})"
+        ent["size"] = list(Image.open(path).size)
+        ent["upscale"] = 1.0
+        ent["bytes"] = path.stat().st_size
+        ent["sha1"] = hashlib.sha1(path.read_bytes()).hexdigest()
+    idx_p.write_text(json.dumps(idx, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="拼装式店面图")
     ap.add_argument("action", choices=["build", "list"])
@@ -515,6 +570,10 @@ def main() -> int:
     ap.add_argument("--variant", default="B")
     ap.add_argument("--out", default="")
     ap.add_argument("--tag", default="")
+    ap.add_argument("--promote", action="store_true",
+                    help="写进 derived/<变体>/<语言>/feature_01.png（= aso_assets build 用的同一个文件名）。"
+                         "这样 preview.html / index.json / aso_play.py push 都不用改，也不会出现两张置顶图。"
+                         "开启时缺管线底图直接报错，不退回立绘拼贴。")
     a = ap.parse_args()
 
     spec = C.load_json(FUSION_SPEC)
@@ -526,11 +585,15 @@ def main() -> int:
         return 0
 
     tw, th = (int(x) for x in a.size.lower().split("x"))
+    if a.promote and (tw, th) != (1024, 500):
+        print(f"🔴 --promote 只接受 1024x500（Play 对 featureGraphic 是死规定），当前 {tw}x{th}")
+        return 2
     root = Path(a.out) if a.out else (C.DERIVED_DIR / a.variant / "fusion")
     root.mkdir(parents=True, exist_ok=True)
     sfx = f"_{a.tag}" if a.tag else ""
+    promoted: dict[str, Path] = {}
     for loc in C.parse_locales(a.locales):
-        im = build(a.layout, loc, (tw, th))
+        im = build(a.layout, loc, (tw, th), require_bg=a.promote)
         p = root / f"feature_{a.layout}_{loc}{sfx}.png"
         im.save(p, optimize=True)
         try:
@@ -538,6 +601,20 @@ def main() -> int:
         except ValueError:
             shown = p
         print(f"{shown}  {im.size[0]}x{im.size[1]}  {p.stat().st_size / 1024:.0f} KB")
+        if a.promote:
+            dest = C.DERIVED_DIR / a.variant / loc / "feature_01.png"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            # 同名覆盖，先把别的 feature_* 清掉：Play 的 featureGraphic 只收一张，
+            # 目录里留两张会在 push 时上传两次，第二次必定 400。
+            for old in dest.parent.glob("feature_*.png"):
+                if old.name != dest.name:
+                    old.unlink()
+            im.convert("RGB").save(dest, "PNG", optimize=True)
+            promoted[loc] = dest
+            print(f"  → 已写入 {dest.relative_to(C.ROOT)}（{dest.stat().st_size / 1024:.0f} KB）")
+    if promoted:
+        _patch_index(a.variant, promoted)
+        print("\n下一步：aso_assets.py check --variant %s 复检规格" % a.variant)
     return 0
 
 

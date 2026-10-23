@@ -1,6 +1,6 @@
 /**@META
 {
-  "description": "店面迭代（ASO）：**四语文案闸门 → 竖版截图/置顶图派生 → 规格体检 → 可选调用 TS-Art-Restyle 重绘 → 人眼验收页 → 推送 Play（默认只打印 diff）→ A/B 登记**。默认全程只读；只有勾 ALLOW_WRITE 才会写线上，且写完仍需人工去 Console 点「送审」（本账号是托管式发布，API 无权送审）。",
+  "description": "店面迭代（ASO）：**四语文案闸门 → 竖版截图/置顶图派生 → 规格体检 → 可选拼装置顶图（左右角色由 TS-Art-Restyle 按特征卡重绘 + 中间压实机画面框）→ 可选调用 TS-Art-Restyle 重绘 → 人眼验收页 → 推送 Play（默认只打印 diff）→ A/B 登记**。默认全程只读；只有勾 ALLOW_WRITE 才会写线上，且写完仍需人工去 Console 点「送审」（本账号是托管式发布，API 无权送审）。",
   "concurrent": false,
   "keep": [30, 30],
   "params": [
@@ -13,6 +13,9 @@
     {"name":"TRIGGER_ART","type":"bool","default":false,"description":"勾上则按缺图清单触发 TS-Art-Restyle 出图（不等待，产物下一轮用 ingest 收回）"},
     {"name":"ART_THEME","type":"choice","choices":["cyber","christmas","newyear","halloween","valentine","summer_surf","provence","thanksgiving","explore"],"default":"cyber","description":"触发换皮时用的题材。cyber=保持赛博原风味；其余为节日/场景主题"},
     {"name":"ART_PROVIDER","type":"choice","choices":["chatgpt_web","manual"],"default":"chatgpt_web","description":"出图通道，透传给 TS-Art-Restyle"},
+    {"name":"FUSION","type":"bool","default":false,"description":"置顶图改走「左右角色 + 实机画面框」拼装版（1024x500）。角色必须由 TS-Art-Restyle 按特征卡重绘；缺底图会直接失败，不会退回立绘拼贴"},
+    {"name":"FUSION_PAIR","type":"string","default":"01,02","description":"拼装底图的两位英雄 id（前=左、后=右），对应 data_aso/assets/hero_specs.json。换角色只改这里"},
+    {"name":"FUSION_RENDER","type":"bool","default":false,"description":"🔴 重新按特征卡出双人底图：耗账号池额度、实测约 90 秒/张、且必须串行。只重排版面或改文案时不要勾"},
     {"name":"EXP_DAYS","type":"string","default":"14","description":"A/B 窗口天数（单窗口建议 ≥7 天，默认 14）"},
     {"name":"EXP_HYPOTHESIS","type":"text","default":"","description":"本次实验假设（留空=用变体 meta.json 里的 hypothesis）"}
   ]
@@ -103,6 +106,54 @@ cd "$PROJ"
   --group "ASO" --slug aso-check --timeout 300 \
   -- "$PY" scripts/aso/aso_assets.py check --variant "$ASO_VARIANT"
 cp -f "data_aso/derived/$ASO_VARIANT/index.json" "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
+''')
+      }
+    }
+
+    stage('③b 置顶图拼装（双人重绘）') {
+      when {
+        expression { params.FUSION.toString() == 'true' }
+      }
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+# 语言口径：ASO_LOCALES 留空 = 四语全做（aso_assets 的默认），这里要显式补全，
+# 否则 aso_fusion 会退回它自己的默认值（只出 en-US），另外三语就没有拼装置顶图。
+LOC="${ASO_LOCALES:-en-US,ja-JP,zh-CN,zh-TW}"
+export TSG_LEASE_OWNER="$JOB_NAME-$BUILD_NUMBER"
+
+if [[ "${FUSION_RENDER,,}" == "true" ]]; then
+  echo "→ 按特征卡重绘双人底图：$FUSION_PAIR  主题 $ART_THEME（约 90s，串行等待）"
+  # 🔴 --wait 必须带：本 job 出图独占本机 Chrome 登录态与 inbox/，
+  #    并发会串图（#28~#32 里 02/03 的 gen_web.png 落在同一 md5）。
+  #    Jenkins 2.568 会静默丢弃 DisableConcurrentBuildsJobProperty，
+  #    options{disableConcurrentBuilds()} 也拦不住同时入队 ⇒ 串行只能在调用侧保证。
+  "$BASH" .jenkins/lib/run_stage.sh --name "双人底图重绘 $FUSION_PAIR" \
+    --group "美术" --slug aso-fusion-render --timeout 1800 \
+    -- "$PY" scripts/aso/hero_keyart.py duo --pair "$FUSION_PAIR" \
+         --theme "$ART_THEME" --wait
+else
+  echo "（未勾 FUSION_RENDER：沿用现有双人底图，只重排版面 + 本地压字，零额度）"
+fi
+
+"$BASH" .jenkins/lib/run_stage.sh --name "拼装置顶图 $FUSION_PAIR" \
+  --group "ASO" --slug aso-fusion --timeout 300 \
+  -- "$PY" scripts/aso/aso_fusion.py build --layout duo --variant "$ASO_VARIANT" \
+       --locales "$LOC" --promote
+
+# 验收页里的尺寸/体积/哈希是 ③ 建页时写进去的；上面刚把 feature_01.png 换掉了，
+# 不重画就会「图换了数字没换」，看着像拼装没生效。
+"$PY" scripts/aso/aso_assets.py preview --variant "$ASO_VARIANT"
+
+# 写进 feature_01.png 之后再体检一次：Play 对 featureGraphic 只认 1024×500 一张
+"$BASH" .jenkins/lib/run_stage.sh --name "置顶图规格复检" \
+  --group "ASO" --slug aso-fusion-check --timeout 300 \
+  -- "$PY" scripts/aso/aso_assets.py check --variant "$ASO_VARIANT"
+
+mkdir -p "$TS_RUN_DIR/artifacts/fusion"
+cp -f "data_aso/derived/$ASO_VARIANT"/fusion/*.png "$TS_RUN_DIR/artifacts/fusion/" 2>/dev/null || true
+echo "拼装图：data_aso/derived/$ASO_VARIANT/fusion/ ；已 promote 到各语言 feature_01.png"
 ''')
       }
     }

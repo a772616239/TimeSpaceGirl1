@@ -1138,6 +1138,24 @@ render();
 # --------------------------------------------------------------------------- #
 # check
 # --------------------------------------------------------------------------- #
+def cmd_preview(args) -> int:
+    """只重画验收页（不动任何图片）。
+
+    用途：别的环节把图换掉之后（例如 aso_fusion.py --promote 用拼装置顶图覆盖
+    feature_01.png），验收页里内嵌的尺寸/体积/哈希就过期了 —— 图换了、数字没换，
+    看着像「拼装没生效」。这一步从当前 index.json + 目录里的真实文件重画一遍。
+    """
+    root = C.DERIVED_DIR / args.variant
+    if not (root / "index.json").is_file():
+        print(f"没有 index.json：{root}（先跑 build）")
+        return 2
+    idx = C.load_json(root / "index.json")
+    locales = [l for l in (idx.get("locales") or {}) if l in C.LOCALES]
+    _write_preview(root, locales, [])
+    print(f"[preview] {root / 'preview.html'}（{len(locales)} 语）")
+    return 0
+
+
 def cmd_check(args) -> int:
     root = C.DERIVED_DIR / args.variant
     if not root.is_dir():
@@ -1564,9 +1582,9 @@ def main() -> int:
     p.add_argument("--out", default="")
     p.set_defaults(func=cmd_headline)
 
-    p = sub.add_parser("preview", help="只看预览（不重建）")
+    p = sub.add_parser("preview", help="只重画验收页（改了图/文案之后刷数字用，不动任何图片）")
     p.add_argument("--variant", required=True)
-    p.set_defaults(func=lambda a: (print(C.DERIVED_DIR / a.variant / "preview.html"), 0)[1])
+    p.set_defaults(func=cmd_preview)
 
     args = ap.parse_args()
     return args.func(args)

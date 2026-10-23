@@ -99,6 +99,28 @@ def main() -> int:
 
     tags = [t.strip() for t in a.tags.split(",") if t.strip()] or DEFAULT_ORDER
     src_root = C.DERIVED_DIR / a.variant / (a.src or SRC_DIR)
+
+    # 🔴 画面框必须各不相同（2026-10-24 用户两次指出「截屏重复」）。
+    # 校验 fusion_pairs.json 里每个 tag 的 screen.shot，重复就直接拒绝：
+    # 靠眼睛在 1024×500 缩略图上查不出来，只能机器拦。
+    pairs_file = C.ASSETS_DIR / "fusion_pairs.json"
+    if pairs_file.is_file():
+        screen_of = {str(p["tag"]): (p.get("screen") or {}).get("shot")
+                     for p in (C.load_json(pairs_file).get("pairs") or [])}
+        seen: dict = {}
+        for t in tags:
+            s = screen_of.get(t)
+            if s is None:
+                continue
+            seen.setdefault(s, []).append(t)
+        dup = {k: v for k, v in seen.items() if len(v) > 1}
+        if dup:
+            print("🔴 画面框截图重复，Play 商店页会像同一张图刷了 8 遍：")
+            for s, ts in dup.items():
+                print(f"   shots.json #{s} 被 {', '.join(ts)} 共用")
+            print("   到 fusion_pairs.json 里改 screen.shot（可用 #0~#7 共 8 条不同素材）")
+            return 2
+
     manifest = {}
     total = 0
 

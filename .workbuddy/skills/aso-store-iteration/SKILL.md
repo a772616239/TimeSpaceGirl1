@@ -78,10 +78,16 @@ $PY scripts/aso/aso_assets.py preview --variant B        # 只重画验收页
   9 张 `shot_*.png`，全推必 400 ⇒ 上传用 `--shots 0,1,...,7` 挑。
 - 🔴 **横版路线（用户偏好这个）**：置顶图 1024×500 比例 2.048 只超上限 0.048，
   **补边到 1024×520（1.969）就能当 phoneScreenshots**，画面一个像素不动。
-  `fusion_shots.py --variant B` 一步出 8 张 × 四语，顺序即展示顺序（默认把
-  combat/world/guild/map 四类文案轮换开，别 8 张全是同一句）。
+  `fusion_shots.py --variant B` 一步出 8 张 × 四语。
   ⚠️ 用过它之后**别再跑 `aso_assets.py build`**，会把 shot_* 覆盖回竖版；
   `preview` 可以随便跑。
+- 🔴 **截图和文案都必须两两不同**（用户两次指出）：
+  - 画面：每组在 `fusion_pairs.json` 里**独占**一个 `screen.shot`（`shots.json` #0~#7 共 8 条刚好够）。
+    只调 `focus_x`/`zoom` 拉景别没用——景别不同但内容还是同一场战斗。
+  - 文案：每组写自己的 `copy`（四语），别靠 `category` 复用——7 组 combat 会得到 7 张同一句话。
+  - `fusion_shots.py` 有护栏：两组共用同一个 `screen.shot` 直接退出码 2。
+  - 竖版长图取 `band` 要逐张看：#0 `[0.55,0.85]`、#1 `[0.45,0.75]`、#2 `[0.55,0.85]`，
+    取错会得到「一片漆黑的工厂空景」。
 
 ## 3. 文案与推送
 

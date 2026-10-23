@@ -1,198 +1,370 @@
 {
-  "_readme": "置顶图角色组合候选（10 组）。每组两位英雄 id 对应 hero_specs.json；left 站画面左侧、right 站右侧。tag 决定底图文件名 bg_<tag>.png 与成品后缀 feature_duo_<locale>_<tag>.png。screen 覆盖该组画面框里取哪张实机截图、取哪一段（band）、景别多重（zoom）、重心在哪（focus_x）。",
-  "_why": "10 组用同一套版面（fusion.json 的 duo）与同一套四语文案，只换底图 —— 这样横向可比：看得出「哪两位组合在 1024x500 里最抓眼」，而不是被排版差异干扰判断。",
-  "_screen_why": "干净的合规真机截图只有 3 张（shots.json），10 组如果都读同一张、同一段，缩略图上就是「同一个画面重复十遍」，一眼批量感（2026-10-23 用户指出）。所以在 3 张源图里各取 3 个纵向窗口（上=远景/中=群像/下=近景），再叠 zoom 与 focus_x 拉开景别，做出 10 个互不相同的取景。⚠️ 这是素材上限下的取景差异，不是 10 场不同战斗：真要 10 场各不同，需要补 7 张真机截图。窗口取值说明：s0=蓝紫工厂 7x7 网格、s1=红 BOSS 关、s2=青蓝机械关；band 是「切掉按钮行之后剩余高度」里的比例，[0.45,0.95] 已贴着按钮行下沿，不要再往下压，否则会把中文 UI 挂进英文商店页。",
-  "pairs": [
-    {
-      "tag": "0102",
-      "left": "01",
-      "right": "02",
-      "note": "东方剑客 × 丹顶鹤巫女：最初的定版组合，用作基准对照",
-      "screen": {
-        "shot": 3,
-        "band": [
-          0.0,
-          1.0
-        ],
-        "focus": 0.5,
-        "focus_x": 0.5,
-        "zoom": 1.0,
-        "warm": [
-          1,
-          1,
-          1
-        ]
-      },
-      "category": "combat"
+ "_readme": "置顶图角色组合候选（10 组）。每组两位英雄 id 对应 hero_specs.json；left 站画面左侧、right 站右侧。tag 决定底图文件名 bg_<tag>.png 与成品后缀 feature_duo_<locale>_<tag>.png。screen 覆盖该组画面框里取哪张实机截图、取哪一段（band）、景别多重（zoom）、重心在哪（focus_x）。",
+ "_why": "10 组用同一套版面（fusion.json 的 duo）与同一套四语文案，只换底图 —— 这样横向可比：看得出「哪两位组合在 1024x500 里最抓眼」，而不是被排版差异干扰判断。",
+ "_screen_why": "干净的合规真机截图只有 3 张（shots.json），10 组如果都读同一张、同一段，缩略图上就是「同一个画面重复十遍」，一眼批量感（2026-10-23 用户指出）。所以在 3 张源图里各取 3 个纵向窗口（上=远景/中=群像/下=近景），再叠 zoom 与 focus_x 拉开景别，做出 10 个互不相同的取景。⚠️ 这是素材上限下的取景差异，不是 10 场不同战斗：真要 10 场各不同，需要补 7 张真机截图。窗口取值说明：s0=蓝紫工厂 7x7 网格、s1=红 BOSS 关、s2=青蓝机械关；band 是「切掉按钮行之后剩余高度」里的比例，[0.45,0.95] 已贴着按钮行下沿，不要再往下压，否则会把中文 UI 挂进英文商店页。",
+ "pairs": [
+  {
+   "tag": "0102",
+   "left": "01",
+   "right": "02",
+   "note": "东方剑客 × 丹顶鹤巫女：最初的定版组合，用作基准对照",
+   "screen": {
+    "shot": 0,
+    "band": [
+     0.55,
+     0.85
+    ],
+    "focus": 0.5,
+    "focus_x": 0.5,
+    "zoom": 1.0,
+    "warm": [
+     1.0,
+     0.99,
+     0.97
+    ]
+   },
+   "category": "combat",
+   "copy": {
+    "en-US": {
+     "kicker": "TACTICAL GRID",
+     "title": "7x7. POSITION WINS."
     },
-    {
-      "tag": "0715",
-      "left": "07",
-      "right": "15",
-      "note": "东方蛇身创世神 × 赛博机车骑士：神话 vs 未来",
-      "screen": {
-        "shot": 4,
-        "band": [
-          0.0,
-          1.0
-        ],
-        "focus": 0.45,
-        "focus_x": 0.5,
-        "zoom": 1.0,
-        "warm": [
-          1,
-          1,
-          1
-        ]
-      },
-      "category": "world"
+    "ja-JP": {
+     "kicker": "戦術グリッド",
+     "title": "7×7、配置が生死を分ける"
     },
-    {
-      "tag": "0823",
-      "left": "08",
-      "right": "23",
-      "note": "金甲战神 × 黑翼魔王：光 vs 暗，金白对撞",
-      "screen": {
-        "shot": 6,
-        "band": [
-          0.0,
-          1.0
-        ],
-        "focus": 0.5,
-        "focus_x": 0.5,
-        "zoom": 1.0,
-        "warm": [
-          1,
-          1,
-          1
-        ]
-      },
-      "category": "guild"
+    "zh-CN": {
+     "kicker": "战术战场",
+     "title": "七乘七，站位定生死"
     },
-    {
-      "tag": "0922",
-      "left": "09",
-      "right": "22",
-      "note": "机械龙母 × 人造人：双机械，玫红 vs 银蓝",
-      "screen": {
-        "shot": 5,
-        "band": [
-          0.0,
-          1.0
-        ],
-        "focus": 0.5,
-        "focus_x": 0.85,
-        "zoom": 1.0
-      },
-      "category": "combat"
-    },
-    {
-      "tag": "1013",
-      "left": "10",
-      "right": "13",
-      "note": "橙红小皇帝 × 蓝白圣女旗：暖冷对撞，双十字",
-      "screen": {
-        "shot": 5,
-        "band": [
-          0.0,
-          1.0
-        ],
-        "focus": 0.5,
-        "focus_x": 0.15,
-        "zoom": 1.0
-      },
-      "category": "combat"
-    },
-    {
-      "tag": "1125",
-      "left": "11",
-      "right": "25",
-      "note": "篮球少女 × 军乐队号手：现代流行 vs 制服仪仗",
-      "screen": {
-        "shot": 5,
-        "band": [
-          0.0,
-          1.0
-        ],
-        "focus": 0.5,
-        "focus_x": 0.35,
-        "zoom": 1.15
-      },
-      "category": "combat"
-    },
-    {
-      "tag": "1426",
-      "left": "14",
-      "right": "26",
-      "note": "银发巨镰 × 黑猫爪刃：双刺客，银黑对比",
-      "screen": {
-        "shot": 0,
-        "band": [
-          0.35,
-          0.8
-        ],
-        "focus": 0.5,
-        "focus_x": 0.5,
-        "zoom": 1.0
-      },
-      "category": "combat"
-    },
-    {
-      "tag": "1624",
-      "left": "16",
-      "right": "24",
-      "note": "巨拳近战 × 能量炮远程：紫金对青紫",
-      "screen": {
-        "shot": 5,
-        "band": [
-          0.0,
-          1.0
-        ],
-        "focus": 0.5,
-        "focus_x": 0.5,
-        "zoom": 1.0
-      },
-      "category": "combat"
-    },
-    {
-      "tag": "1821",
-      "left": "18",
-      "right": "21",
-      "note": "森林弓手 × 提灯战地护士：绿金对绿白",
-      "screen": {
-        "shot": 7,
-        "band": [
-          0.0,
-          1.0
-        ],
-        "focus": 0.5,
-        "focus_x": 0.5,
-        "zoom": 1.0,
-        "warm": [
-          1,
-          1,
-          1
-        ]
-      },
-      "category": "map"
-    },
-    {
-      "tag": "2019",
-      "left": "20",
-      "right": "19",
-      "note": "白绿诗剑仙 × 蓝红军团长：东方 vs 西方",
-      "screen": {
-        "shot": 1,
-        "band": [
-          0.1,
-          0.55
-        ],
-        "focus": 0.5,
-        "focus_x": 0.5,
-        "zoom": 1.0
-      },
-      "category": "combat"
+    "zh-TW": {
+     "kicker": "戰術戰場",
+     "title": "七乘七，站位定生死"
     }
-  ],
-  "_category_why": "category 指向 fusion_copy.json 的文案分类（combat/world/guild/map）。文案必须跟画面走 —— 画面换了主城/公会/地图还挂「召唤·布阵·碾压」就是文不对图。"
+   },
+   "_screen_note": "独占 shots.json #0，8 组互不重复"
+  },
+  {
+   "tag": "0715",
+   "left": "07",
+   "right": "15",
+   "note": "东方蛇身创世神 × 赛博机车骑士：神话 vs 未来",
+   "screen": {
+    "shot": 4,
+    "band": [
+     0.0,
+     1.0
+    ],
+    "focus": 0.5,
+    "focus_x": 0.5,
+    "zoom": 1.0,
+    "warm": [
+     1,
+     1,
+     1
+    ]
+   },
+   "category": "world",
+   "copy": {
+    "en-US": {
+     "kicker": "NEON CAPITAL",
+     "title": "A CITY THAT NEVER SLEEPS"
+    },
+    "ja-JP": {
+     "kicker": "ネオン都市",
+     "title": "眠らないサイバー都市"
+    },
+    "zh-CN": {
+     "kicker": "赛博都市",
+     "title": "霓虹不夜的主城"
+    },
+    "zh-TW": {
+     "kicker": "賽博都市",
+     "title": "霓虹不夜的主城"
+    }
+   },
+   "_screen_note": "独占 shots.json #4，8 组互不重复"
+  },
+  {
+   "tag": "0823",
+   "left": "08",
+   "right": "23",
+   "note": "金甲战神 × 黑翼魔王：光 vs 暗，金白对撞",
+   "screen": {
+    "shot": 6,
+    "band": [
+     0.0,
+     1.0
+    ],
+    "focus": 0.5,
+    "focus_x": 0.5,
+    "zoom": 1.0,
+    "warm": [
+     1,
+     1,
+     1
+    ]
+   },
+   "category": "guild",
+   "copy": {
+    "en-US": {
+     "kicker": "GUILD SYSTEM",
+     "title": "BUILD. UNITE. RULE."
+    },
+    "ja-JP": {
+     "kicker": "ギルド機能",
+     "title": "結成・連合・頂点へ"
+    },
+    "zh-CN": {
+     "kicker": "公会系统",
+     "title": "建会结盟，共争天下"
+    },
+    "zh-TW": {
+     "kicker": "公會系統",
+     "title": "建會結盟，共爭天下"
+    }
+   },
+   "_screen_note": "独占 shots.json #6，8 组互不重复"
+  },
+  {
+   "tag": "0922",
+   "left": "09",
+   "right": "22",
+   "note": "机械龙母 × 人造人：双机械，玫红 vs 银蓝",
+   "screen": {
+    "shot": 2,
+    "band": [
+     0.55,
+     0.85
+    ],
+    "focus": 0.5,
+    "focus_x": 0.5,
+    "zoom": 1.0,
+    "warm": [
+     1.04,
+     0.99,
+     0.94
+    ]
+   },
+   "category": "combat",
+   "copy": {
+    "en-US": {
+     "kicker": "TWO FRONTS",
+     "title": "BOTH LINES MOVE UP"
+    },
+    "ja-JP": {
+     "kicker": "二正面作戦",
+     "title": "前衛と後衛、同時に押せ"
+    },
+    "zh-CN": {
+     "kicker": "双线交火",
+     "title": "前后排一起压上"
+    },
+    "zh-TW": {
+     "kicker": "雙線交火",
+     "title": "前後排一起壓上"
+    }
+   },
+   "_screen_note": "独占 shots.json #2，8 组互不重复"
+  },
+  {
+   "tag": "1013",
+   "left": "10",
+   "right": "13",
+   "note": "橙红小皇帝 × 蓝白圣女旗：暖冷对撞，双十字",
+   "screen": {
+    "shot": 3,
+    "band": [
+     0.0,
+     1.0
+    ],
+    "focus": 0.5,
+    "focus_x": 0.5,
+    "zoom": 1.0,
+    "warm": [
+     1,
+     1,
+     1
+    ]
+   },
+   "category": "combat",
+   "copy": {
+    "en-US": {
+     "kicker": "SNOW FRONT",
+     "title": "FROZEN FIELD, REAL FIGHT"
+    },
+    "ja-JP": {
+     "kicker": "雪原戦線",
+     "title": "氷の戦場で殴り合え"
+    },
+    "zh-CN": {
+     "kicker": "雪原战场",
+     "title": "冰封前线，硬碰硬"
+    },
+    "zh-TW": {
+     "kicker": "雪原戰場",
+     "title": "冰封前線，硬碰硬"
+    }
+   },
+   "_screen_note": "独占 shots.json #3，8 组互不重复"
+  },
+  {
+   "tag": "1125",
+   "left": "11",
+   "right": "25",
+   "note": "篮球少女 × 军乐队号手：现代流行 vs 制服仪仗",
+   "screen": {
+    "shot": 5,
+    "band": [
+     0.0,
+     1.0
+    ],
+    "focus": 0.5,
+    "focus_x": 0.35,
+    "zoom": 1.15
+   },
+   "category": "combat"
+  },
+  {
+   "tag": "1426",
+   "left": "14",
+   "right": "26",
+   "note": "银发巨镰 × 黑猫爪刃：双刺客，银黑对比",
+   "screen": {
+    "shot": 0,
+    "band": [
+     0.35,
+     0.8
+    ],
+    "focus": 0.5,
+    "focus_x": 0.5,
+    "zoom": 1.0
+   },
+   "category": "combat"
+  },
+  {
+   "tag": "1624",
+   "left": "16",
+   "right": "24",
+   "note": "巨拳近战 × 能量炮远程：紫金对青紫",
+   "screen": {
+    "shot": 5,
+    "band": [
+     0.0,
+     1.0
+    ],
+    "focus": 0.5,
+    "focus_x": 0.5,
+    "zoom": 1.0,
+    "warm": [
+     1.03,
+     0.99,
+     0.95
+    ]
+   },
+   "category": "combat",
+   "copy": {
+    "en-US": {
+     "kicker": "LIVE COMBAT",
+     "title": "100+ HEROINES, ONE FIGHT"
+    },
+    "ja-JP": {
+     "kicker": "リアルタイム戦闘",
+     "title": "100人の少女が同時に戦う"
+    },
+    "zh-CN": {
+     "kicker": "实时战斗",
+     "title": "百位少女同时开打"
+    },
+    "zh-TW": {
+     "kicker": "即時戰鬥",
+     "title": "百位少女同時開打"
+    }
+   },
+   "_screen_note": "独占 shots.json #5，8 组互不重复"
+  },
+  {
+   "tag": "1821",
+   "left": "18",
+   "right": "21",
+   "note": "森林弓手 × 提灯战地护士：绿金对绿白",
+   "screen": {
+    "shot": 7,
+    "band": [
+     0.0,
+     1.0
+    ],
+    "focus": 0.5,
+    "focus_x": 0.5,
+    "zoom": 1.0,
+    "warm": [
+     1,
+     1,
+     1
+    ]
+   },
+   "category": "map",
+   "copy": {
+    "en-US": {
+     "kicker": "WORLD MAP",
+     "title": "SQUARE BY SQUARE"
+    },
+    "ja-JP": {
+     "kicker": "ワールドマップ",
+     "title": "一マスずつ制圧せよ"
+    },
+    "zh-CN": {
+     "kicker": "世界地图",
+     "title": "从第一格打到最后一格"
+    },
+    "zh-TW": {
+     "kicker": "世界地圖",
+     "title": "從第一格打到最後一格"
+    }
+   },
+   "_screen_note": "独占 shots.json #7，8 组互不重复"
+  },
+  {
+   "tag": "2019",
+   "left": "20",
+   "right": "19",
+   "note": "白绿诗剑仙 × 蓝红军团长：东方 vs 西方",
+   "screen": {
+    "shot": 1,
+    "band": [
+     0.45,
+     0.75
+    ],
+    "focus": 0.5,
+    "focus_x": 0.5,
+    "zoom": 1.0,
+    "warm": [
+     1.04,
+     0.99,
+     0.94
+    ]
+   },
+   "category": "combat",
+   "copy": {
+    "en-US": {
+     "kicker": "BOSS FIGHT",
+     "title": "PLAN BEFORE YOU PUSH"
+    },
+    "ja-JP": {
+     "kicker": "ボス戦",
+     "title": "策を練ってから挑め"
+    },
+    "zh-CN": {
+     "kicker": "首领战",
+     "title": "每一场都得先算"
+    },
+    "zh-TW": {
+     "kicker": "首領戰",
+     "title": "每一場都得先算"
+    }
+   },
+   "_screen_note": "独占 shots.json #1，8 组互不重复"
+  }
+ ],
+ "_category_why": "category 指向 fusion_copy.json 的文案分类（combat/world/guild/map）。文案必须跟画面走 —— 画面换了主城/公会/地图还挂「召唤·布阵·碾压」就是文不对图。"
 }

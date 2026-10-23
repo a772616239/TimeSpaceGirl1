@@ -3,47 +3,57 @@
   "shots": [
     {
       "src": "时空美少女物料/c9588e7f-a0d4-4184-b144-02a5ab9bc89b.png",
-      "crop_bottom": 0.34,
+      "crop_bottom": 0.44,
       "focus_y": 0.34,
       "captions": {
         "en-US": "7x7 grid. Placement decides who survives.",
         "ja-JP": "7×7マス。置き方で生死が決まる。",
         "zh-CN": "7x7 网格，站位决定谁能活下来",
         "zh-TW": "7x7 網格，站位決定誰能活下來"
-      }
+      },
+      "kickers": {
+        "en-US": "Tactical grid",
+        "ja-JP": "戦術グリッド",
+        "zh-CN": "战术网格",
+        "zh-TW": "戰術網格"
+      },
+      "crop_top": 0.06
     },
     {
       "src": "时空美少女物料/MuMu20240719160634.png",
-      "crop_bottom": 0.0,
+      "crop_bottom": 0.4,
       "focus_y": 0.4,
       "captions": {
         "en-US": "Boss fights you have to plan for.",
         "ja-JP": "対策を考えるボス戦。",
         "zh-CN": "需要提前算的 BOSS 战",
         "zh-TW": "需要提前算的 BOSS 戰"
-      }
+      },
+      "kickers": {
+        "en-US": "Boss battles",
+        "ja-JP": "ボス戦",
+        "zh-CN": "BOSS 战",
+        "zh-TW": "BOSS 戰"
+      },
+      "crop_top": 0.05
     },
     {
       "src": "时空美少女物料/39a68891-fc16-4d98-a91c-61f50223d65c.png",
-      "crop_bottom": 0.35,
+      "crop_bottom": 0.44,
       "focus_y": 0.36,
       "captions": {
         "en-US": "Front line, back line, skill coverage.",
         "ja-JP": "前衛・後衛・スキル範囲を見極める。",
         "zh-CN": "前排、后排、技能覆盖范围",
         "zh-TW": "前排、後排、技能覆蓋範圍"
-      }
-    },
-    {
-      "src": "时空美少女物料/3dc7c72c-3c2a-4c6b-b511-c37756f532b6.png",
-      "crop_bottom": 0.35,
-      "focus_y": 0.45,
-      "captions": {
-        "en-US": "Idle growth while you are offline.",
-        "ja-JP": "オフラインでも育成は進む。",
-        "zh-CN": "离线也在成长，不用天天刷",
-        "zh-TW": "離線也在成長，不用天天刷"
-      }
+      },
+      "kickers": {
+        "en-US": "Front & back row",
+        "ja-JP": "前衛と後衛",
+        "zh-CN": "前后排",
+        "zh-TW": "前後排"
+      },
+      "crop_top": 0.06
     }
   ],
   "feature": {
@@ -53,5 +63,7 @@
     "zh-TW": "data_aso/assets/gen/feature_zh-TW.png"
   },
   "_feature_note": "三语置顶图取『新版本宣传图』的 1024 版（角色立绘+嵌框游戏画面+标题条，专业排版）。原来用的是 1024*500 目录里的拼贴（米黄底板+红白斜切+错字英文），已废弃。zh-TW 没有本地化版 ⇒ 走 aso_art.py 重绘无字底图再叠繁中标题。",
-  "_dropped_note": "8e238228-*.png 是登录/选服界面，带「使用条款 / 个人信息 / 切换账号」按钮 ⇒ 不适合上商店页，已从清单移除。它是这堆竖版图里唯一 454px 宽的（放大 2.4×）。"
+  "_dropped_note": "8e238228-*.png 是登录/选服界面，带「使用条款 / 个人信息 / 切换账号」按钮 ⇒ 不适合上商店页，已从清单移除。它是这堆竖版图里唯一 454px 宽的（放大 2.4×）。 | 另：3dc7c72c-*.png（原 4 号图）20%~42% 压着游戏内中文提示气泡「英雄等级提升可大幅提高战斗力！」，裁哪儿都躲不开，en/ja 商店页会直接露中文 ⇒ 已剔除，留 3 张玩法图 + 1 张首图。要补回第 4 张，得用英文/日文包真机重截。",
+  "_kicker_note": "kicker 是卖点条上方那行小标（字距拉开的全大写/小标），负责分类；captions 才是主句。两者都进 shots.json，改文案不用重出图。",
+  "_crop_note": "crop_bottom 不是「裁掉多少聊天」，而是「卡片底边落在哪」：源图 55%~62% 是按钮行、65% 以下是世界聊天，切在按钮行中间就会在卡片底边露出半个按钮（最刺眼的粗糙感）。实测取 0.40~0.44 落在战斗画面里，底边是角色/地面，看起来就是视窗边界。"
 }

@@ -57,7 +57,24 @@ def load_spec() -> dict:
     return C.load_json(SHOT_SPEC)
 
 
+FONT_FACE = {
+    # 语言 → (字体文件, TTC 面序号)。🔴 面序号不能省：STHeiti Medium.ttc 的
+    # 0 号面是 Heiti TC（繁体字形），简中直接用它会出现繁体骨架；
+    # 而各 .ttc 的 0 号面往往是最细的一档，标题就发虚。
+    "en-US": ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 0),
+    "ja-JP": ("/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc", 0),
+    "zh-CN": ("/System/Library/Fonts/STHeiti Medium.ttc", 1),   # Heiti SC
+    "zh-TW": ("/System/Library/Fonts/STHeiti Medium.ttc", 0),   # Heiti TC
+}
+
+
 def font_for(locale: str, size: int):
+    face = FONT_FACE.get(locale)
+    if face and Path(face[0]).is_file():
+        try:
+            return ImageFont.truetype(face[0], size, index=face[1]), face[0]
+        except Exception:  # noqa: BLE001
+            pass
     for f in C.LOCALES[locale]["fonts"]:
         if Path(f).is_file():
             try:
@@ -104,39 +121,256 @@ def pad_resize(im: Image.Image, size: tuple[int, int]) -> Image.Image:
     return bg
 
 
-def compose_shot(src_im: Image.Image, size: tuple[int, int], caption: str,
-                 locale: str, focus_y: float) -> tuple[Image.Image, int]:
-    """截图画布 = 上方内容区 + 下方卖点条。
 
-    🔴 一开始是把文字**叠在**画面上（渐变遮罩），实测很脏：这游戏的截图底部
-    1/3 挂世界聊天，遮罩压不住，文字会和聊天行糊在一起。改成**预留一条实心条**：
-    内容区先按 9:(16-band) 归一，再把卖点写在条里，画面一点不被挡。
-    返回 (成品, 内容区高度)。
+BRAND_CYAN = (86, 232, 226)
+BRAND_PINK = (255, 45, 149)
+_CJK_LOCALES = ("ja-JP", "zh-CN", "zh-TW")
+CARD_INSET_X = 0.048    # 截图卡左右留白（占画布宽）
+CARD_TOP = 0.044
+CARD_H = 0.715
+_BG_CACHE: dict = {}
+
+# 全角标点的步进是 1em，但字形只占左边一小块，右边留白极大 ——
+# 直接画出来就是「网格 ，  站位」这种散开的观感。按墨迹宽度收紧步进。
+_PUNCT = set("，。、；：！？）」』】》〉…·,.")
+
+
+def _draw_cjk_line(d, xy, text: str, font, fill, shadow: tuple | None = None) -> None:
+    """按字推进并压缩全角标点步进。PIL 没有 kerning 控制，只能自己走字。"""
+    x, y = xy
+    em = font.size
+    for ch in text:
+        if shadow:
+            d.text((x + shadow[0], y + shadow[1]), ch, font=font, fill=shadow[2])
+        d.text((x, y), ch, font=font, fill=fill)
+        adv = d.textlength(ch, font=font)
+        if ch in _PUNCT:
+            # 全角标点步进 1em，但「，」的墨迹只有 11px（97px 字号下）——
+            # getbbox 报的是整字框、量不出留白。压到 0.68em：字距收紧，
+            # 又不至于让标点贴住下一个字（压到 0.5em 实测粘连）。
+            adv = min(adv, em * 0.68)
+        x += adv
+
+
+def _split_units(text: str) -> list[str]:
+    """切成「不许从中间拆开」的最小单元：拉丁词/数字串整体，CJK 一字一个。
+
+    直接按字符宽度累加会在单词中间断行（`Placem|ent`），按空格断又会让
+    中文整段算一个词。这里两种都照顾。
+    """
+    out: list[str] = []
+    buf = ""
+    for ch in text:
+        if ch.isascii() and (ch.isalnum() or ch in "'’.,/%+&-–—:!"):
+            buf += ch
+        else:
+            if buf:
+                out.append(buf)
+                buf = ""
+            out.append(ch)
+    if buf:
+        out.append(buf)
+    return out
+
+
+def _wrap(d, text: str, font, max_w: float) -> list[str]:
+    lines: list[str] = []
+    cur = ""
+    for u in _split_units(text):
+        if u.isspace() and not cur:
+            continue
+        cand = cur + u
+        if not cur or d.textlength(cand, font=font) <= max_w:
+            cur = cand
+        else:
+            lines.append(cur.rstrip())
+            cur = u.lstrip()
+    if cur.strip():
+        lines.append(cur.rstrip())
+    for i in range(1, len(lines)):          # 避头尾：不让「，。」落到行首
+        while lines[i] and lines[i][0] in "，。、；：！？）」』】%…":
+            if len(lines[i - 1]) < 2:
+                break
+            lines[i - 1] += lines[i][0]
+            lines[i] = lines[i][1:]
+    return lines
+
+
+def _fit_block(d, locale: str, text: str, max_w: float, max_lines: int = 2,
+               hi: int = 90, lo: int = 44):
+    """在 max_lines 行内塞下 text 的最大字号。
+
+    优先找「正好排满 max_lines 行」的字号 —— 四张截图的画布尺寸一样，
+    有的句子一行、有的两行，看起来就不是一套东西。统一成两行最整齐。
+    """
+    fallback = None
+    size = hi
+    while size >= lo:
+        f, _ = font_for(locale, size)
+        lines = _wrap(d, text, f, max_w)
+        if len(lines) == max_lines:
+            return f, lines, size
+        if fallback is None and len(lines) < max_lines:
+            fallback = (f, lines, size)
+        size -= 2
+    f, _ = font_for(locale, lo)
+    return fallback or (f, _wrap(d, text, f, max_w), lo)
+
+
+def _lerp(a, b, t: float) -> tuple:
+    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
+
+
+def _brand_backdrop(size: tuple[int, int]) -> Image.Image:
+    """商店页底图：深紫罗兰渐变 + 三颗霓虹光斑。
+
+    🔴 为什么不再用「截图 + 底部黑条」：源图 55%~62% 是按钮行、65% 以下是世界
+    聊天，怎么裁都会切到 UI，切完再把下半截刷成纯黑，看着就是「图被裁断了」。
+    换成卡片式版式后，切边变成**卡片边界**（本来就该结束），底色由我们自己画，
+    不再受源图配色影响，四张图才像一套。
+    光斑在 1/4 尺寸上画完再放大：全尺寸高斯会把单张图拖到几秒。
+    """
+    key = tuple(size)
+    if key in _BG_CACHE:
+        return _BG_CACHE[key].copy()
+    tw, th = size
+    top, mid, bot = (10, 9, 20), (30, 18, 56), (8, 7, 16)
+    strip = Image.new("RGB", (1, th))
+    sd = ImageDraw.Draw(strip)
+    for y in range(th):
+        t = y / max(1, th - 1)
+        sd.point((0, y), fill=_lerp(top, mid, t / 0.62) if t < 0.62
+                 else _lerp(mid, bot, (t - 0.62) / 0.38))
+    img = strip.resize((tw, th), Image.BILINEAR).convert("RGBA")
+
+    sw, sh = max(2, tw // 4), max(2, th // 4)
+    glow = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    for cx, cy, rr, col, a in ((0.90, 0.05, 0.62, BRAND_PINK, 92),
+                               (0.02, 0.55, 0.50, BRAND_CYAN, 54),
+                               (0.55, 1.00, 0.72, (118, 76, 255), 80)):
+        R = int(rr * sw)
+        gd.ellipse([cx * sw - R, cy * sh - R, cx * sw + R, cy * sh + R], fill=col + (a,))
+    glow = glow.filter(ImageFilter.GaussianBlur(max(6, sw * 0.20)))
+    img = Image.alpha_composite(img, glow.resize((tw, th), Image.BICUBIC))
+    out = img.convert("RGB")
+    _BG_CACHE[key] = out
+    return out.copy()
+
+
+def _round_mask(size: tuple[int, int], radius: int) -> Image.Image:
+    m = Image.new("L", size, 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, size[0] - 1, size[1] - 1],
+                                        radius=max(2, radius), fill=255)
+    return m
+
+
+def _neon_gradient(size: tuple[int, int]) -> Image.Image:
+    """卡片描边用的品红→青渐变。只露 3~4 px，等于一圈霓虹细边。"""
+    w, h = size
+    strip = Image.new("RGB", (1, h))
+    sd = ImageDraw.Draw(strip)
+    for y in range(h):
+        sd.point((0, y), fill=_lerp(BRAND_PINK, BRAND_CYAN, y / max(1, h - 1)))
+    return strip.resize((w, h), Image.BILINEAR)
+
+
+def _draw_caption(canvas: Image.Image, top: int, height: int, tw: int,
+                  caption: str, kicker: str, locale: str) -> None:
+    """文案区：左侧竖色条 + 字距拉开的小标 + 两行主文案。
+
+    2× 超采样再缩回：直接按最终尺寸描字，中/日文的撇捺边缘会发毛，
+    字距一拉开更明显。放大一倍画完用 LANCZOS 落回，边缘才干净。
+    """
+    SS = 2
+    pad = int(tw * 0.052)
+    W, H = tw * SS, height * SS
+    meas = ImageDraw.Draw(Image.new("RGBA", (4, 4)))
+    bar_w = max(6, int(tw * 0.0070) * SS)
+    text_x = pad * SS + bar_w + int(tw * 0.026) * SS
+    max_w = tw * SS - text_x - pad * SS
+    scale = 1.06 if locale in _CJK_LOCALES else 1.0   # 同字号下 CJK 视觉偏小
+    f_head, lines, hs = _fit_block(meas, locale, caption, max_w, 2,
+                                   hi=int(tw * 0.086 * scale) * SS,
+                                   lo=int(tw * 0.044 * scale) * SS)
+    line_h = int(round(hs * 1.16))
+    head_h = line_h * len(lines)
+    ks = int(tw * 0.0255) * SS
+    kgap = int(ks * 0.95)
+    block_h = head_h + (ks + kgap if kicker else 0)
+    bottom_pad = int(height * SS * 0.13)
+    top_y = H - bottom_pad - block_h
+
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    body = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd, bd = ImageDraw.Draw(shadow), ImageDraw.Draw(body)
+
+    if kicker:
+        fk, _ = font_for(locale, ks)
+        _draw_tracked(bd, (text_x, top_y), kicker.upper(), fk, BRAND_CYAN + (255,),
+                      tracking=ks * 0.18)
+    y = top_y + (ks + kgap if kicker else 0)
+    cjk = locale in _CJK_LOCALES
+    for ln in lines:
+        if cjk:
+            _draw_cjk_line(sd, (text_x, y + max(2, hs * 0.018)), ln, f_head,
+                           (0, 0, 0, 120))
+            _draw_cjk_line(bd, (text_x, y), ln, f_head, (255, 255, 255, 255))
+        else:
+            sd.text((text_x, y + max(2, hs * 0.018)), ln, font=f_head,
+                    fill=(0, 0, 0, 120))
+            bd.text((text_x, y), ln, font=f_head, fill=(255, 255, 255, 255))
+        y += line_h
+    shadow = shadow.filter(ImageFilter.GaussianBlur(max(3, hs * 0.075)))
+
+    bar = Image.new("RGBA", (bar_w, max(1, block_h)), (0, 0, 0, 0))
+    bd2 = ImageDraw.Draw(bar)
+    for i in range(bar.height):
+        bd2.line([(0, i), (bar_w, i)],
+                 fill=_lerp(BRAND_PINK, BRAND_CYAN, i / max(1, bar.height - 1)) + (255,))
+    body.alpha_composite(bar, (pad * SS, top_y))
+
+    region = canvas.crop((0, top, tw, top + height)).convert("RGBA")
+    region.alpha_composite(shadow.resize((tw, height), Image.LANCZOS))
+    region.alpha_composite(body.resize((tw, height), Image.LANCZOS))
+    canvas.paste(region.convert("RGB"), (0, top))
+
+
+def compose_shot(src_im: Image.Image, size: tuple[int, int], caption: str,
+                 locale: str, focus_y: float, kicker: str = "") -> tuple[Image.Image, int]:
+    """一张商店截图 = 品牌底图 + 圆角霓虹卡片 + 底部文案区。
+
+    返回 (成品, 卡片下沿 y)，后者给 `--fit pad` 分支沿用。
     """
     tw, th = size
-    band_h = 0 if not caption else int(round(th * 0.22))
-    content_h = th - band_h
-    canvas = Image.new("RGB", (tw, th), (13, 11, 20))
-    content = cover_resize(src_im, (tw, content_h), focus_y)
-    canvas.paste(content, (0, 0))
-    if band_h:
-        band = Image.new("RGBA", (tw, band_h), (0, 0, 0, 0))
-        d = ImageDraw.Draw(band)
-        # 从内容底色过渡到深色，避免出现一条生硬的横切线
-        for i in range(band_h):
-            t = i / max(1, band_h - 1)
-            a = int(255 * min(1.0, t * 2.4))
-            d.line([(0, i), (tw, i)], fill=(13, 11, 20, a))
-        canvas = canvas.convert("RGBA")
-        canvas.alpha_composite(band, (0, content_h))
-        f, _, _ = _fit_font(locale, caption, int(tw * 0.86))
-        d = ImageDraw.Draw(canvas)
-        box = d.textbbox((0, 0), caption, font=f)
-        tw_, th_ = box[2] - box[0], box[3] - box[1]
-        x = (tw - tw_) // 2 - box[0]
-        y = content_h + (band_h - th_) // 2 - box[1]
-        d.text((x, y), caption, font=f, fill=(255, 255, 255, 255))
-        canvas = canvas.convert("RGB")
+    canvas = _brand_backdrop((tw, th))
+    cx = int(tw * CARD_INSET_X)
+    cw = tw - 2 * cx
+    cy = int(th * CARD_TOP)
+    chh = int(th * (CARD_H if caption else 0.86))
+    r = max(20, int(cw * 0.034))
+
+    shadow = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+    off = int(cw * 0.014)
+    ImageDraw.Draw(shadow).rounded_rectangle([cx, cy + off, cx + cw, cy + chh + off],
+                                             r, fill=(0, 0, 0, 170))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(int(cw * 0.030)))
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), shadow).convert("RGB")
+
+    canvas.paste(_neon_gradient((cw, chh)), (cx, cy), _round_mask((cw, chh), r))
+    inset = max(3, int(cw * 0.0035))
+    inner = (cw - 2 * inset, chh - 2 * inset)
+    shot = cover_resize(src_im, inner, focus_y)
+    # 源图大多 597~720px 宽，进卡片要放大 1.5~1.7 倍，直接 LANCZOS 会发软。
+    # 只对「确实放大了」的图补一点 unsharp（半径别大，大了出白边）。
+    if src_im.width and inner[0] / src_im.width > 1.25:
+        shot = shot.filter(ImageFilter.UnsharpMask(radius=1.5, percent=62, threshold=3))
+    canvas.paste(shot, (cx + inset, cy + inset), _round_mask(inner, max(8, r - inset)))
+
+    if caption:
+        _draw_caption(canvas, cy + chh, th - (cy + chh), tw, caption, kicker, locale)
+    return canvas, cy + chh
+
     return canvas, content_h
 
 
@@ -337,24 +571,30 @@ def cmd_build(args) -> int:
                 continue
             im = Image.open(src).convert("RGB")
             crop_bottom = float(shot.get("crop_bottom") or 0)
-            if crop_bottom > 0:
-                im = im.crop((0, 0, im.width, int(im.height * (1 - crop_bottom))))
+            crop_top = float(shot.get("crop_top") or 0)
+            if crop_bottom > 0 or crop_top > 0:
+                # 顶边也要裁：源图最上面那 5% 是状态栏/回合数，卡片顶边切进去
+                # 就会露出半截图标 —— 跟底边切到按钮行是同一个毛病。
+                im = im.crop((0, int(im.height * crop_top), im.width,
+                              int(im.height * (1 - crop_bottom))))
             upscale = (tw / im.width)
             cap = "" if args.no_caption else (shot.get("captions", {}).get(loc) or "")
+            kick = "" if args.no_caption else (shot.get("kickers", {}).get(loc) or "")
             out, content_h = compose_shot(im, (tw, th), cap, loc,
-                                          float(shot.get("focus_y", 0.5)))
+                                          float(shot.get("focus_y", 0.5)), kick)
             if args.fit == "pad":
                 # pad 模式：内容区整图装入（不裁），与 caption 条并存
                 body = pad_resize(im, (tw, content_h))
                 out = Image.new("RGB", (tw, th), (13, 11, 20))
                 out.paste(body, (0, 0))
                 if content_h < th:
-                    band = compose_shot(im, (tw, th), cap, loc, 0.5)[0]
+                    band = compose_shot(im, (tw, th), cap, loc, 0.5, kick)[0]
                     out.paste(band.crop((0, content_h, tw, th)), (0, content_h))
             fn = d / f"shot_{i:02d}.png"
             out.save(fn, "PNG", optimize=True)
             entries.append({"file": fn.name, "src": shot["src"], "size": list(out.size),
                             "upscale": round(upscale, 2), "caption": cap,
+                            "kicker": kick,
                             "bytes": fn.stat().st_size, "sha1": sha1_of(fn)})
             if upscale > MAX_UPSCALE:
                 notes.append(f"{loc} {fn.name}: 源图 {im.width}px 放大到 {tw}px（{upscale:.1f}×），会发糊")
@@ -600,11 +840,12 @@ h1{margin:0;font-size:21px;font-weight:650;letter-spacing:-.01em}
 .shot:hover{transform:translateY(-3px);border-color:rgba(139,123,255,.45);
   box-shadow:0 16px 34px -16px rgba(139,123,255,.5)}
 .shot img{width:100%;display:block;aspect-ratio:9/16;object-fit:cover}
-.shot .ord{position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:10px;
+.shot .ord{position:absolute;top:8px;left:8px;z-index:2;font-family:var(--mono);font-size:10px;
   background:rgba(0,0,0,.62);color:#fff;padding:2px 7px;border-radius:6px;
   backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.14)}
-.shot .chips{position:absolute;left:0;right:0;bottom:0;padding:22px 9px 8px;display:flex;
-  flex-wrap:wrap;gap:4px;background:linear-gradient(transparent,rgba(0,0,0,.86) 55%)}
+.shot .chips{position:absolute;left:0;right:0;top:0;padding:8px 9px 20px;display:flex;
+  flex-wrap:wrap;gap:4px;justify-content:flex-end;
+  background:linear-gradient(rgba(0,0,0,.80),transparent 62%)}
 .shot .chips i{font-style:normal;font-family:var(--mono);font-size:9.5px;color:#c9cddd;
   background:rgba(255,255,255,.1);padding:1px 5px;border-radius:4px}
 .shot .chips i.up{color:#ffd9a0;background:rgba(245,181,69,.22)}

@@ -104,25 +104,38 @@ Play 硬上限：**标题 30、短描述 80、长描述 4000**（按 Unicode 字
 
 ---
 
-## 4. 素材：为什么是「派生」不是「重画」
+## 4. 素材：为什么是「派生 + 卡片版式」
 
-`aso_assets.py build` 做的事：竖版源图 → 裁掉底部世界聊天 → 归一到 9:16 → 下方预留一条卖点条。
+`aso_assets.py build` 做的事：裁掉顶部状态栏与底部聊天/按钮 → 放进圆角霓虹卡片 →
+底部独立文案区（小标 / 两行主文案 / 竖色条）。
 
-两个设计决定，都是踩出来的：
+三条设计决定，全是踩出来的：
 
-1. **卖点条是「预留」不是「叠加」**。最初把文字压渐变叠在画面上，实测很脏：
-   这游戏的截图底部 1/3 挂世界聊天，遮罩压不住，文字和聊天行糊在一起。
-   现在内容区按 `1080×1500` 归一，下面 420px 是实心条。
-2. **`crop_bottom` 必须按图配**。不同截图聊天区高度不同（0～35%），
-   清单里逐张写，别指望一刀切。
+1. **不再「截图铺满 + 底部垫黑条」**。源图 55%~62% 是按钮行、65% 以下是世界聊天，
+   怎么裁都会切到 UI；切完再把下半截刷成近黑，看着就是「图被裁断了垫块黑纸」。
+   换成卡片后，切边变成**卡片边界**（本来就该结束），底色由我们自己画，四张才像一套。
+2. **顶部也要裁**（`crop_top` 0.05~0.06）。只裁底部时，卡片顶边正好切进状态栏，
+   露出半截图标 —— 和底边切到按钮是同一个毛病。
+3. **`crop_bottom` 是「卡片底边落在哪」**，不是「裁掉多少聊天」。落在战斗画面里
+   （0.40~0.44）最好看；落在按钮行中间就会露半个按钮。
+
+踩坑记录（都写进代码注释了）：
+
+- 🔴 把 RGB 图带 L 遮罩 `paste` 进 RGBA 画布，PIL 会把**目标 alpha 覆写成遮罩值**，
+  之后 `alpha_composite` 按半透明去解 ⇒ 接缝被算成死黑。全程走 RGB + `Image.composite`。
+- 🔴 中文别用 `PingFang.ttc`（本机不存在）；`STHeiti Medium.ttc` 的 **0 号面是繁体**，
+  简中要用 1 号面，繁中用 0 号面。面序号不写就等于随机拿字重。
+- 🔴 全角标点步进 1em 但墨迹只有 11px（97px 字号下），不压就是「网格 ， 站位」散开；
+  压到 0.5em 又会让标点贴住下一个字，**0.68em 是实测可用的值**。
 
 产物与体检：
 - 手机截图 `1080×1920`（9:16），Play 规定最短边 ≥320、最长边 ≤3840、长宽比 ≤2:1、单张 ≤8MB
 - 置顶图 `1024×500`
 - `preview.html` 四语并排的人眼验收页（job 会自动归档到证据目录）
 
-**源图分辨率是要盯的**：现有竖版源图只有 597～720px 宽，放大到 1080 是 1.8×，
-`build` 会把超过 1.6× 的逐条标黄。真正的解法是真机/模拟器直接出 1080×1920 截图。
+**源图分辨率是要盯的**：现有竖版源图只有 597～720px 宽，进卡片放大 1.5~1.7×，
+`build` 会把超过 1.6× 的逐条标黄，并对放大图补一点 unsharp（`radius=1.5 / 62%`）。
+真正的解法是真机/模拟器直接出 1080×1920 截图。
 
 ---
 
@@ -166,6 +179,56 @@ $P scripts/aso/aso_assets.py headline --art <无字底图> --locale ja-JP --kind
 - 置顶图三语直接用 `时空美少女物料/新版本宣传图/*_1024/`（专业排版，比早期 `1024*500` 拼贴强得多），
   只有繁中是重画 + 压字（`data_aso/assets/gen/feature_zh-TW.png`）
 - 本 job **不等待**换皮完成；下一轮 `build` 会把新底图自动带上
+
+### 5.1 英雄立绘：只抽特征，不拿立绘当种子（2026-10-23 定版）
+
+`restyle` 本质是「照着种子改」，provider 一定会把 `ASSET` 当参考图上传。拿英雄立绘当种子
+⇒ 姿势/服装/发色全被锁死，实测 05 被画成白发机甲、06 被画成金发，等于换了个人；同一批 5 张
+构图还都是一个模子。
+
+正确链路：**立绘只贡献特征，画面 100% 由文字重画**。
+
+```bash
+# 1) 立绘 → 量化配色（发色/主色/点缀），人工再补语义特征卡
+$P scripts/aso/hero_features.py extract --art Assets/ManagedResources/Texture/Jingtailihui/cn2-Jingtailihui_fulade.png
+#    语义写进 data_aso/assets/hero_specs.json：只写「她是什么」，不写原图的姿势/镜头
+
+# 2) 造空舞台板：只有画布 1080×1920、地平线、光池、底部 24% 留空，**不含人物**
+$P scripts/aso/hero_keyart.py plates --ids 01,02,03,05,06
+
+# 3) 出图：提示词整段走 job 的 PROMPT_OVERRIDE，种子只当画布
+$P scripts/aso/hero_keyart.py render --ids 01 --dry-run      # 先看提示词
+$P scripts/aso/hero_keyart.py render --ids 01 02 03 04 05 06 --wait
+
+# 4) 成品 → data_aso/assets/gen/herocard_<id>.png → 压四语文案 → 验收页
+$P scripts/aso/hero_keyart.py collect
+$P scripts/aso/aso_assets.py heroes --variant B
+$P scripts/aso/hero_page.py --variant B      # → data_aso/derived/B/heroes.html
+$P scripts/aso/aso_assets.py check --variant B
+```
+
+实测：单张 ~90 秒（#39~#44）。六张全出、四语 24 张卡、体检 44 张图全绿。
+`hero_page.py` 是单独的验收页（一英雄一行、四语并排 + 灯箱），**不要塞进 preview.html**——
+那张是商店截图的验收台，混进 24 张 9:16 会把它的节奏打散。
+
+要点与坑：
+- 🔴 **必须 `--frame none`**：`COMPOSITION=design` 下 job 的 `FRAME=auto` 会套游戏卡框，
+  商店图不要框（第一版就带着金框出图）
+- 🔴 **必须 `--wait` 逐张跑**：本 job 的出图阶段独占「本机 Chrome 登录态 + `inbox/`」，
+  并发会串图（#28~#32 五个并发构建里 02/03 的 `gen_web.png` 落在同一 md5）。Jenkins 2.568
+  会**静默丢弃** `DisableConcurrentBuildsJobProperty`，`options{disableConcurrentBuilds()}`
+  也拦不住同时入队 ⇒ 串行只能在调用侧保证
+- 🔴 提示词里必须写死「输入是**空舞台板**，不含人物/道具/文字，只锁画布与地平线」，
+  否则模型会把它当参考图照着改，白折腾
+- 提示词里必须带 `NO lettering`：字一律本地压（`aso_assets.py heroes`），模型画中/日/繁必错
+- 成品落 `_output/art_restyle/stage_<id>/cyber_design/out/*.png`，`collect` 拷到
+  `data_aso/assets/gen/herocard_<id>.png` 后，`aso_assets.py heroes` 会自动走「铺满成品」分支
+  （没有成品时退回「透明立绘 + 品牌底图」的旧版式，两版并排一眼就露馅 ⇒ 六张要一起出）
+- 🔴 **底部接缝**：模型会把「留给文案的底带」直接画成纯黑，接缝处一行亮度差十几级，
+  缩略图里像一条被裁断的黑条。`compose_hero` 现在走 `_soft_bottom()`——**先渐进高斯糊开、
+  再叠长渐变 scrim 压深**；只压深不模糊等于把硬边原样留着（第一版就是这个毛病）
+- 卡片高度：脚底在 74%、文案块从 77.5% 起，两者只差 3.5% ⇒ 舞台描述里「全身入画」
+  不能省，否则武器/裙摆会压到字上
 
 ---
 

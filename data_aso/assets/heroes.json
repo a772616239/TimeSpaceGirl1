@@ -1,0 +1,136 @@
+{
+  "_comment": "英雄档案卡：立绘取自工程内 Assets/ManagedResources/Texture/Jingtailihui（2048×2048 透明底全身图），按店面同一套版式（品牌底图 + 底部文案区）出 1080×1920。用「编号 + 职能 + 卖点」而不是逐字英雄名——四语英雄名在压缩过的 Language.lua 里，没有可靠映射，硬猜会出错字。",
+  "canvas": [
+    1080,
+    1920
+  ],
+  "heroes": [
+    {
+      "id": "01",
+      "art": "Assets/ManagedResources/Texture/Jingtailihui/cn2-Jingtailihui_fulade.png",
+      "tint": [
+        255,
+        64,
+        104
+      ],
+      "kickers": {
+        "en-US": "Assassin",
+        "ja-JP": "アサシン",
+        "zh-CN": "刺客",
+        "zh-TW": "刺客"
+      },
+      "headlines": {
+        "en-US": "ONE THRUST.\n*BACK LINE GONE.*",
+        "ja-JP": "一突きで、\n*後衛壊滅。*",
+        "zh-CN": "一枪过去，\n*后排没了*",
+        "zh-TW": "一槍過去，\n*後排沒了*"
+      }
+    },
+    {
+      "id": "02",
+      "art": "Assets/ManagedResources/Texture/Jingtailihui/cn2-Jingtailihui_danding.png",
+      "tint": [
+        255,
+        96,
+        64
+      ],
+      "kickers": {
+        "en-US": "Summoner",
+        "ja-JP": "サモナー",
+        "zh-CN": "召唤师",
+        "zh-TW": "召喚師"
+      },
+      "headlines": {
+        "en-US": "STACK CURSES.\n*WATCH THEM MELT.*",
+        "ja-JP": "呪いを盛って、\n*溶かす。*",
+        "zh-CN": "诅咒叠满，\n*直接融化*",
+        "zh-TW": "詛咒疊滿，\n*直接融化*"
+      }
+    },
+    {
+      "id": "03",
+      "art": "Assets/ManagedResources/Texture/Jingtailihui/cn2-Jingtailihui_hailun.png",
+      "tint": [
+        96,
+        172,
+        255
+      ],
+      "kickers": {
+        "en-US": "Support",
+        "ja-JP": "サポート",
+        "zh-CN": "辅助",
+        "zh-TW": "輔助"
+      },
+      "headlines": {
+        "en-US": "SHIELD FIRST.\n*FLOOD THE FIELD.*",
+        "ja-JP": "まず守って、\n*戦場を沈める。*",
+        "zh-CN": "先罩队友，\n*再淹战场*",
+        "zh-TW": "先罩隊友，\n*再淹戰場*"
+      }
+    },
+    {
+      "id": "04",
+      "art": "Assets/ManagedResources/Texture/Jingtailihui/cn2-Jingtailihui_huamulan.png",
+      "tint": [
+        255,
+        186,
+        84
+      ],
+      "kickers": {
+        "en-US": "Striker",
+        "ja-JP": "ストライカー",
+        "zh-CN": "突击手",
+        "zh-TW": "突擊手"
+      },
+      "headlines": {
+        "en-US": "SHE'S ALREADY THERE.\n*YOU'RE STILL LOADING.*",
+        "ja-JP": "彼女はもう着いてる。\n*こっちはまだロード中。*",
+        "zh-CN": "她已经到了，\n*你还在读条*",
+        "zh-TW": "她已經到了，\n*你還在讀條*"
+      }
+    },
+    {
+      "id": "05",
+      "art": "Assets/ManagedResources/Texture/Jingtailihui/cn2-Jingtailihui_fububanzang.png",
+      "tint": [
+        64,
+        232,
+        232
+      ],
+      "kickers": {
+        "en-US": "Breaker",
+        "ja-JP": "ブレイカー",
+        "zh-CN": "破阵者",
+        "zh-TW": "破陣者"
+      },
+      "headlines": {
+        "en-US": "ARMOR?\n*CUT THROUGH IT.*",
+        "ja-JP": "装甲ごと、\n*両断。*",
+        "zh-CN": "有甲？\n*照样切*",
+        "zh-TW": "有甲？\n*照樣切*"
+      }
+    },
+    {
+      "id": "06",
+      "art": "Assets/ManagedResources/Texture/Jingtailihui/cn2-Jingtailihui_fuluoyide.png",
+      "tint": [
+        172,
+        112,
+        255
+      ],
+      "kickers": {
+        "en-US": "Magician",
+        "ja-JP": "マジシャン",
+        "zh-CN": "魔术师",
+        "zh-TW": "魔術師"
+      },
+      "headlines": {
+        "en-US": "PICK A CARD.\n*YOU LOSE.*",
+        "ja-JP": "カードを引いて。\n*どうせ負ける。*",
+        "zh-CN": "挑张牌吧，\n*反正你会输*",
+        "zh-TW": "挑張牌吧，\n*反正你會輸*"
+      }
+    }
+  ],
+  "_copy_note": "口号式文案：短句 + 换行由 \\n 显式控制（不靠自动断行），*星号* 包住的是关键词，用卡片主色画。原来那种「One thrust, and the back line is gone.」是产品说明书的语气，不是游戏。"
+}

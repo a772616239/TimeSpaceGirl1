@@ -133,6 +133,9 @@ _BG_CACHE: dict = {}
 # 全角标点的步进是 1em，但字形只占左边一小块，右边留白极大 ——
 # 直接画出来就是「网格 ，  站位」这种散开的观感。按墨迹宽度收紧步进。
 _PUNCT = set("，。、；：！？）」』】》〉…·,.")
+# 允许在其「之后」断行的字符：标点 + 日文助词/终助词。
+_BREAK_STRONG = set("，。、；：！？）」』】》〉…・ ,.!?;:")
+_BREAK_AFTER = _BREAK_STRONG | set("はがをにでとへもやのねよか")
 
 
 def _draw_cjk_line(d, xy, text: str, font, fill, shadow: tuple | None = None) -> None:
@@ -174,19 +177,43 @@ def _split_units(text: str) -> list[str]:
 
 
 def _wrap(d, text: str, font, max_w: float) -> list[str]:
+    """断行：拉丁按词，CJK 优先断在标点/助词之后。
+
+    🔴 逐字续行会把词劈开（日文实测「一突きで、後衛は消 / える。」）。
+    所以先记下所有「可断点」，超宽时回退到最近的可断点；实在没有才硬断。
+    """
+    units = _split_units(text)
     lines: list[str] = []
-    cur = ""
-    for u in _split_units(text):
+    cur: list[str] = []
+    width = 0.0
+    for u in units:
         if u.isspace() and not cur:
             continue
-        cand = cur + u
-        if not cur or d.textlength(cand, font=font) <= max_w:
-            cur = cand
-        else:
-            lines.append(cur.rstrip())
-            cur = u.lstrip()
-    if cur.strip():
-        lines.append(cur.rstrip())
+        w = d.textlength(u, font=font)
+        if cur and width + w > max_w:
+            joined = "".join(cur)
+            cut = None
+            # 标点处的断点优先于助词处的断点：日文里「あと / は仲間…」这种
+            # 把助词甩到下一行的断法很丑，而「…抜けば、/ あとは…」是对的。
+            for chars, ratio in ((_BREAK_STRONG, 0.45), (_BREAK_AFTER, 0.60)):
+                for i in range(len(cur) - 1, 0, -1):
+                    if cur[i - 1] and cur[i - 1][-1] in chars:
+                        if d.textlength("".join(cur[:i]), font=font) >= max_w * ratio:
+                            cut = i
+                        break
+                if cut:
+                    break
+            if cut:
+                lines.append("".join(cur[:cut]).rstrip())
+                cur = cur[cut:]
+            else:
+                lines.append(joined.rstrip())
+                cur = []
+            width = d.textlength("".join(cur), font=font)
+        cur.append(u)
+        width += w
+    if "".join(cur).strip():
+        lines.append("".join(cur).rstrip())
     for i in range(1, len(lines)):          # 避头尾：不让「，。」落到行首
         while lines[i] and lines[i][0] in "，。、；：！？）」』】%…":
             if len(lines[i - 1]) < 2:
@@ -275,9 +302,56 @@ def _neon_gradient(size: tuple[int, int]) -> Image.Image:
     return strip.resize((w, h), Image.BILINEAR)
 
 
+def _font_hero(locale: str, size: int):
+    """标题字：英文用 Arial Black（游戏海报那种厚度），CJK 用现有重字。"""
+    if locale.startswith("en"):
+        pth = "/System/Library/Fonts/Supplemental/Arial Black.ttf"
+        if Path(pth).is_file():
+            try:
+                return ImageFont.truetype(pth, size), pth
+            except Exception:  # noqa: BLE001
+                pass
+    return font_for(locale, size)
+
+
+def _parse_marked(text: str) -> list[list[tuple[str, bool]]]:
+    """把 "A *B* C\nD" 解析成逐字符 (字, 是否强调) 的行数组。"""
+    out = []
+    for ln in text.split("\n"):
+        chars, on = [], False
+        for ch in ln:
+            if ch == "*":
+                on = not on
+                continue
+            chars.append((ch, on))
+        out.append(chars)
+    return out
+
+
+def _draw_rich(d, xy, chars, font, fill, accent=None, shadow=None,
+               compress_punct: bool = False) -> float:
+    """逐字画（这样才能给个别词上主色），返回行宽。"""
+    x, y = xy
+    em = font.size
+    for ch, hot in chars:
+        if shadow:
+            d.text((x + shadow[0], y + shadow[1]), ch, font=font, fill=shadow[2])
+        d.text((x, y), ch, font=font,
+               fill=(accent if (hot and accent) else fill))
+        adv = d.textlength(ch, font=font)
+        if compress_punct and ch in _PUNCT:
+            adv = min(adv, em * 0.68)
+        x += adv
+    return x - xy[0]
+
+
 def _draw_caption(canvas: Image.Image, top: int, height: int, tw: int,
-                  caption: str, kicker: str, locale: str) -> None:
-    """文案区：左侧竖色条 + 字距拉开的小标 + 两行主文案。
+                  caption: str, kicker: str, locale: str,
+                  tint: tuple | None = None, heavy: bool = False) -> None:
+    """文案区：左侧竖色条 + 字距拉开的小标 + 主文案。
+
+    caption 里可以用 `\n` 硬断行、用 `*…*` 标出要上主色的关键词 —— 英雄卡靠这个
+    做「口号 + 关键词」的游戏味；没有 `\n` 时退回自动断行（商店截图那条路径）。
 
     2× 超采样再缩回：直接按最终尺寸描字，中/日文的撇捺边缘会发毛，
     字距一拉开更明显。放大一倍画完用 LANCZOS 落回，边缘才干净。
@@ -289,11 +363,29 @@ def _draw_caption(canvas: Image.Image, top: int, height: int, tw: int,
     bar_w = max(6, int(tw * 0.0070) * SS)
     text_x = pad * SS + bar_w + int(tw * 0.026) * SS
     max_w = tw * SS - text_x - pad * SS
-    scale = 1.06 if locale in _CJK_LOCALES else 1.0   # 同字号下 CJK 视觉偏小
-    f_head, lines, hs = _fit_block(meas, locale, caption, max_w, 2,
-                                   hi=int(tw * 0.086 * scale) * SS,
-                                   lo=int(tw * 0.044 * scale) * SS)
-    line_h = int(round(hs * 1.16))
+    cjk = locale in _CJK_LOCALES
+    scale = 1.06 if cjk else 1.0
+    pick = _font_hero if heavy else font_for
+
+    hard = "\n" in caption
+    if hard:
+        lines = _parse_marked(caption)
+        hi = int(tw * (0.104 if heavy else 0.086) * scale) * SS
+        lo = int(tw * 0.044 * scale) * SS
+        size = hi
+        while size > lo:
+            f = pick(locale, size)[0]
+            if all(meas.textlength("".join(c for c, _ in ln), font=f) <= max_w for ln in lines):
+                break
+            size -= 2
+        # 🔴 只取 [0]：_font_hero 的第二返回值是字体路径，不是字号（拿它当 hs 会炸在 line_h）
+        f_head, hs = pick(locale, size)[0], size
+    else:
+        f_head, plain, hs = _fit_block(meas, locale, caption, max_w, 2,
+                                       hi=int(tw * 0.086 * scale) * SS,
+                                       lo=int(tw * 0.044 * scale) * SS)
+        lines = _parse_marked("\n".join(plain))
+    line_h = int(round(hs * (1.04 if heavy else 1.16)))
     head_h = line_h * len(lines)
     ks = int(tw * 0.0255) * SS
     kgap = int(ks * 0.95)
@@ -307,19 +399,16 @@ def _draw_caption(canvas: Image.Image, top: int, height: int, tw: int,
 
     if kicker:
         fk, _ = font_for(locale, ks)
-        _draw_tracked(bd, (text_x, top_y), kicker.upper(), fk, BRAND_CYAN + (255,),
+        kc = tint or BRAND_CYAN
+        _draw_tracked(bd, (text_x, top_y), kicker.upper(), fk, tuple(kc) + (255,),
                       tracking=ks * 0.18)
+    accent = tuple(min(255, int(c + (255 - c) * 0.30)) for c in tint) if tint else None
     y = top_y + (ks + kgap if kicker else 0)
-    cjk = locale in _CJK_LOCALES
     for ln in lines:
-        if cjk:
-            _draw_cjk_line(sd, (text_x, y + max(2, hs * 0.018)), ln, f_head,
-                           (0, 0, 0, 120))
-            _draw_cjk_line(bd, (text_x, y), ln, f_head, (255, 255, 255, 255))
-        else:
-            sd.text((text_x, y + max(2, hs * 0.018)), ln, font=f_head,
-                    fill=(0, 0, 0, 120))
-            bd.text((text_x, y), ln, font=f_head, fill=(255, 255, 255, 255))
+        _draw_rich(sd, (text_x, y + max(2, hs * 0.018)), ln, f_head,
+                   (0, 0, 0, 120))
+        _draw_rich(bd, (text_x, y), ln, f_head, (255, 255, 255, 255),
+                   accent=accent, compress_punct=cjk)
         y += line_h
     shadow = shadow.filter(ImageFilter.GaussianBlur(max(3, hs * 0.075)))
 
@@ -327,7 +416,8 @@ def _draw_caption(canvas: Image.Image, top: int, height: int, tw: int,
     bd2 = ImageDraw.Draw(bar)
     for i in range(bar.height):
         bd2.line([(0, i), (bar_w, i)],
-                 fill=_lerp(BRAND_PINK, BRAND_CYAN, i / max(1, bar.height - 1)) + (255,))
+                 fill=_lerp(tint or BRAND_PINK, BRAND_CYAN,
+                            i / max(1, bar.height - 1)) + (255,))
     body.alpha_composite(bar, (pad * SS, top_y))
 
     region = canvas.crop((0, top, tw, top + height)).convert("RGBA")
@@ -1050,6 +1140,8 @@ def cmd_check(args) -> int:
     red, yellow = [], []
     total = 0
     for d in sorted(p for p in root.iterdir() if p.is_dir()):
+        if d.name not in C.LOCALES:      # heroes/ 是英雄卡，规格单独查
+            continue
         files = sorted(d.glob("*.png"))
         if not files:
             red.append(f"{d.name}: 一张图都没有")
@@ -1079,6 +1171,7 @@ def cmd_check(args) -> int:
                         yellow.append(f"{f.parent.name}/{f.name}: 比例 {ratio:.2f} 非 16:9/9:16")
             if f.stat().st_size > PLAY_MAX_BYTES:
                 red.append(f"{f.parent.name}/{f.name}: {f.stat().st_size // 1024 // 1024} MB > 8 MB")
+    total += _check_heroes(root, red, yellow)
     print(f"[check] {total} 张图")
     for r in red:
         print(f"  🔴 {r}")
@@ -1089,6 +1182,164 @@ def cmd_check(args) -> int:
     if args.strict and red:
         return 1
     return 0 if not red else 1
+
+
+# --------------------------------------------------------------------------- #
+# 英雄档案卡：工程内立绘 → 店面同级版式
+# --------------------------------------------------------------------------- #
+def _radial_glow(size: tuple[int, int], center: tuple[float, float],
+                 radius: float, color: tuple, alpha: int) -> Image.Image:
+    """低分辨率画椭圆再放大模糊：全尺寸高斯在这个尺寸上会慢到不可用。"""
+    w, h = size
+    sw, sh = max(2, w // 4), max(2, h // 4)
+    g = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+    cx, cy, r = center[0] / 4, center[1] / 4, max(2.0, radius / 4)
+    ImageDraw.Draw(g).ellipse([cx - r, cy - r, cx + r, cy + r], fill=tuple(color) + (alpha,))
+    g = g.filter(ImageFilter.GaussianBlur(max(4, r * 0.55)))
+    return g.resize((w, h), Image.BICUBIC)
+
+
+def _vgrad_mask(size: tuple[int, int], y0: float, y1: float, gamma: float = 1.0) -> Image.Image:
+    """竖向渐变遮罩：y0 处 0（黑），y1 处 255（白），中间按 gamma 曲线过渡。
+
+    用来做「底部柔化/压深」，代替过去那段 for 循环逐行画线——逐行画出来的
+    其实是同一条 alpha 曲线，但只压深不模糊，模型画的**硬横边**会原样留着。
+    """
+    tw, th = size
+    col = Image.new("L", (1, th))
+    px = col.load()
+    span = max(1e-6, y1 - y0)
+    for y in range(th):
+        t = (y / max(1, th - 1) - y0) / span
+        t = 0.0 if t < 0 else (1.0 if t > 1 else t)
+        px[0, y] = int(round((t ** gamma) * 255))
+    return col.resize((tw, th), Image.BILINEAR)
+
+
+def _soft_bottom(im: Image.Image, blur_ratio: float = 0.018,
+                 blur_from: float = 0.58, blur_to: float = 0.84,
+                 dark_from: float = 0.60, dark_to: float = 1.0,
+                 dark_max: int = 214, gamma: float = 1.32) -> Image.Image:
+    """底部「先柔化再压深」。
+
+    🔴 只压深不模糊 = 硬横边原样保留。02 那张就是这样：模型把留给文案的底带
+    直接画成纯黑，接缝处一行亮度差 13 级，缩略图里看着像一条被裁断的黑条。
+    这里先用渐进高斯把那条边糊开（越靠下越糊），再叠一层长渐变 scrim 压深，
+    白字才立得住，观感也从「硬接缝」变成「画面自然沉下去」。
+    """
+    tw, th = im.size
+    r = max(2, int(tw * blur_ratio))
+    soft = im.filter(ImageFilter.GaussianBlur(r))
+    im = Image.composite(soft, im, _vgrad_mask((tw, th), blur_from, blur_to, 1.0))
+    dark_col = Image.new("RGB", (tw, th), (9, 8, 15))
+    mask = _vgrad_mask((tw, th), dark_from, dark_to, gamma)
+    if dark_max < 255:
+        mask = mask.point(lambda v: int(v * dark_max / 255))
+    return Image.composite(dark_col, im, mask)
+
+
+def compose_hero(art_path: Path, card: dict, size: tuple[int, int], caption: str,
+                 kicker: str, locale: str) -> Image.Image:
+    """英雄卡：有换皮成品就用成品铺满（AI 画了环境），没有就退回工程立绘 + 品牌底图。"""
+    tw, th = size
+    tint = tuple(card.get("tint") or BRAND_PINK)
+    gen = GEN_DIR / f"herocard_{card['id']}.png"
+
+    if gen.is_file():
+        canvas = cover_resize(Image.open(gen).convert("RGB"), (tw, th), 0.5)
+        # 文案区先柔化再压深：白字才立得住，接缝也不会留成一条硬边
+        canvas = _soft_bottom(canvas)
+    else:
+        canvas = _brand_backdrop((tw, th)).convert("RGBA")
+        art = Image.open(art_path).convert("RGBA")
+        bb = art.getchannel("A").getbbox()
+        if bb:
+            art = art.crop(bb)      # 2048 画布里角色只占中间一块，先按 alpha 收紧
+        base_y = int(th * 0.745)
+        target_h = base_y - int(th * 0.052)
+        k = target_h / art.height
+        if art.width * k > tw * 1.30:
+            k = (tw * 1.30) / art.width
+        art = art.resize((max(1, int(art.width * k)), max(1, int(art.height * k))),
+                         Image.LANCZOS)
+        x = (tw - art.width) // 2
+        y = base_y - art.height
+        canvas.alpha_composite(_radial_glow((tw, th), (tw * 0.5, y + art.height * 0.42),
+                                            tw * 0.62, tint, 96))
+        canvas.alpha_composite(_radial_glow((tw, th), (tw * 0.5, base_y + int(tw * 0.01)),
+                                            tw * 0.40, tint, 70))
+        feet = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+        ImageDraw.Draw(feet).ellipse([tw * 0.20, base_y - int(tw * 0.030),
+                                      tw * 0.80, base_y + int(tw * 0.060)],
+                                     fill=(0, 0, 0, 175))
+        canvas.alpha_composite(feet.filter(ImageFilter.GaussianBlur(int(tw * 0.034))))
+        canvas.alpha_composite(art, (x, y))
+        canvas = canvas.convert("RGB")
+
+    lab = Image.new("RGBA", (tw * 2, int(th * 0.06) * 2), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(lab)
+    f, _ = font_for(locale, int(tw * 0.024) * 2)
+    _draw_tracked(ld, (int(tw * 0.055) * 2, 0), f"FILE {card.get('id', '')}",
+                  f, BRAND_CYAN + (232,), tracking=int(tw * 0.004) * 2)
+    canvas = canvas.convert("RGBA")
+    canvas.alpha_composite(lab.resize((tw, int(th * 0.06)), Image.LANCZOS), (0, int(th * 0.042)))
+
+    out = canvas.convert("RGB")
+    _draw_caption(out, int(th * 0.775), th - int(th * 0.775), tw, caption, kicker,
+                  locale, tint=tint, heavy=True)
+    return out
+
+
+def cmd_heroes(args) -> int:
+    spec = C.load_json(C.ASSETS_DIR / "heroes.json")
+    locales = C.parse_locales(args.locales)
+    tw, th = _parse_size(args.size)
+    out_root = C.DERIVED_DIR / args.variant / "heroes"
+    only = {s.strip() for s in (getattr(args, "ids", "") or "").split(",") if s.strip()}
+    n = 0
+    for loc in locales:
+        d = out_root / loc
+        d.mkdir(parents=True, exist_ok=True)
+        for h in spec.get("heroes", []):
+            if only and h["id"] not in only:
+                continue
+            src = C.ROOT / h["art"]
+            if not src.is_file():
+                print(f"缺图：{h['art']}")
+                continue
+            cap = (h.get("headlines") or {}).get(loc) or ""
+            if loc.startswith("en"):
+                cap = cap.upper()
+            kick = (h.get("kickers") or {}).get(loc) or ""
+            if not cap:
+                continue
+            im = compose_hero(src, h, (tw, th), cap, kick, loc)
+            fn = d / f"hero_{h['id']}.png"
+            im.save(fn, "PNG", optimize=True)
+            n += 1
+        print(f"  {loc}: {len(list(d.glob('hero_*.png')))} 张")
+    print(f"[heroes] {out_root}  {n} 张")
+    return 0
+
+
+def _check_heroes(root: Path, red: list, yellow: list) -> int:
+    d = root / "heroes"
+    if not d.is_dir():
+        return 0
+    total = 0
+    for sub in sorted(p for p in d.iterdir() if p.is_dir()):
+        for f in sorted(sub.glob("hero_*.png")):
+            total += 1
+            with Image.open(f) as im:
+                w, h = im.size
+            ratio = max(w, h) / min(w, h)
+            if abs(ratio - 16 / 9) > 0.02:
+                red.append(f"heroes/{sub.name}/{f.name}: 比例 {ratio:.3f}，必须 9:16")
+            if f.stat().st_size > PLAY_MAX_BYTES:
+                red.append(f"heroes/{sub.name}/{f.name}: {f.stat().st_size//1024}KB 超过 8MB")
+    if not total:
+        yellow.append("heroes/: 没有英雄卡（先跑 heroes）")
+    return total
 
 
 def main() -> int:
@@ -1109,6 +1360,13 @@ def main() -> int:
                    help="cover=铺满裁切（默认）；pad=整图装入+模糊补边")
     p.add_argument("--no-caption", action="store_true")
     p.set_defaults(func=cmd_build)
+
+    p = sub.add_parser("heroes", help="工程内英雄立绘 → 店面档案卡")
+    p.add_argument("--variant", required=True)
+    p.add_argument("--locales", default="")
+    p.add_argument("--ids", default="", help="只做这几张（逗号分隔）；留空=heroes.json 里全部")
+    p.add_argument("--size", default="1080x1920")
+    p.set_defaults(func=cmd_heroes)
 
     p = sub.add_parser("check", help="Play 规格体检")
     p.add_argument("--variant", required=True)

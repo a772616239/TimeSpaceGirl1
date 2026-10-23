@@ -38,6 +38,18 @@ pipeline {
 
   options {
     timestamps()
+    // 出图阶段独占「本机 Chrome 登录态 + _output/art_restyle/<asset>/<theme>/inbox」
+    // 两样共享资源，没有按构建隔离 ⇒ 并发会串图：#28~#32 五个构建只差 5 秒，
+    // 02 与 03 的 inbox/gen_web.png 落在同一个 md5 上，02 的角色被画成了 03。
+    //
+    // 🔴 但这条**不足以保证不串图**（2026-10-23 实测）：#33/#34/#35 同时入队时
+    //    三个构建仍然同时在跑，本行对「同一瞬间入队」的情况无效。META 里的
+    //    "concurrent": false 更没用 —— 线上 properties 只剩
+    //    ParametersDefinitionProperty，DisableConcurrentBuildsJobProperty 被静默丢弃。
+    //    ⇒ 真正的防线在调用侧：scripts/aso/aso_art.py trigger --wait 逐张等完成，
+    //      hero_keyart.py render --wait 就是按这个写的。
+    //    这里保留本行只为挡住「后来的构建插进正在跑的这一轮」。
+    disableConcurrentBuilds(abortPrevious: false)
     // 出图阶段的换号链预算 960s，加上本机号那一轮，光出图就可能 30 分钟 ⇒ 全局给到 75 分钟
     timeout(time: 75, unit: 'MINUTES')
     buildDiscarder(logRotator(daysToKeepStr: '30', numToKeepStr: '40'))

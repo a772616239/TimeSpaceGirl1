@@ -115,7 +115,9 @@ def cmd_list(args) -> int:
                 listings[loc] = {k: body.get(k, "") for k in
                                  ("title", "shortDescription", "fullDescription", "video")}
             except Exception as e:  # noqa: BLE001
-                listings[loc] = {"error": str(e)}
+                # 404 = 该语言还没开通（可以新建），跟真错误分开标
+                listings[loc] = ({"missing": True} if "not found" in str(e).lower()
+                                 else {"error": str(e)})
             images[loc] = {}
             for it in IMAGE_TYPES:
                 try:
@@ -139,6 +141,9 @@ def cmd_list(args) -> int:
     rows = []
     for loc in locales:
         d = listings.get(loc, {})
+        if d.get("missing"):
+            rows.append([loc, C.LOCALES[loc]["label"], "未开通", "-", "-", "可新建"])
+            continue
         if "error" in d:
             rows.append([loc, "ERR", "-", "-", "-", d["error"][:40]])
             continue
@@ -152,7 +157,7 @@ def cmd_list(args) -> int:
     C.print_table(rows, ["locale", "语言", "标题", "短描述", "长描述", "截图数"])
     print()
     for loc in locales:
-        if "error" in listings.get(loc, {}):
+        if "error" in listings.get(loc, {}) or listings.get(loc, {}).get("missing"):
             continue
         print(f"--- {loc} title: {listings[loc]['title']}")
         print(f"    short: {listings[loc]['shortDescription']}")
@@ -168,6 +173,24 @@ def _diff_line(field: str, old: str, new: str) -> str:
     return (f"  ≠ {field}: {C.char_count(old)} 字 → {C.char_count(new)} 字\n"
             f"      旧: {(old or '(空)')[:90]}\n"
             f"      新: {(new or '(空)')[:90]}")
+
+
+def _get_listing(service, edit_id: str, package: str, loc: str) -> tuple[dict, bool]:
+    """读线上某语言 listing。返回 (body, 是否存在)。
+
+    🔴 404 = 这个语言还没开通（本包原来只有 en/zh-CN），不是错误。
+       新增语种时 listings.update 会**创建**该语言，所以这里必须容忍 404，
+       否则「扩语言」这条路永远走不通（旧版直接 return 4 退出）。
+    """
+    try:
+        body = (service.edits().listings()
+                .get(packageName=package, editId=edit_id, language=loc)
+                .execute())
+        return body, True
+    except Exception as e:  # noqa: BLE001
+        if "not found" in str(e).lower() or "404" in str(e):
+            return {}, False
+        raise
 
 
 def cmd_push(args) -> int:
@@ -189,13 +212,13 @@ def cmd_push(args) -> int:
             listing = C.load_listing(variant, loc)
             body = C.text_fields(listing)
             try:
-                cur = (service.edits().listings()
-                       .get(packageName=args.package, editId=ed.id, language=loc)
-                       .execute())
+                cur, exists = _get_listing(service, ed.id, args.package, loc)
             except Exception as e:  # noqa: BLE001
                 print(f"[{loc}] 读线上失败：{e}")
                 return 4
             print(f"\n=== {loc} ===")
+            if not exists:
+                print(f"  ＋ 该语言线上还没有 listing —— 本次会**新建**（{C.LOCALES[loc]['label']}）")
             if do_text:
                 for f in ("title", "shortDescription", "fullDescription"):
                     print(_diff_line(f, (cur.get(f) or "").strip(), body.get(f, "")))

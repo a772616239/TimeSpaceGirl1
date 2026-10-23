@@ -23,11 +23,20 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-ASO_ROOT = ROOT / "data_aso"
+
+# 多站点：一套管线服务多个包。
+#   ASO_SITE=capybara ⇒ 数据根切到 data_aso/sites/capybara/，
+#   里面的 site.json / variants / online / keywords / derived 与主项目完全隔离。
+#   不设 ASO_SITE ⇒ 老行为（data_aso/ 直挂工程根），《时空美少女》零影响。
+# 为什么不用「复制一套脚本」：脚本里对目录的假设（ONLINE_DIR / VARIANTS_DIR …）
+# 全都挂在 ASO_ROOT 下面，改这一个根就够；复制脚本等于以后每次修 bug 修两遍。
+SITE_NAME = (os.environ.get("ASO_SITE") or "").strip()
+ASO_ROOT = (ROOT / "data_aso" / "sites" / SITE_NAME) if SITE_NAME else (ROOT / "data_aso")
 VARIANTS_DIR = ASO_ROOT / "variants"
 ONLINE_DIR = ASO_ROOT / "online"
 EXPERIMENTS_DIR = ASO_ROOT / "experiments"
@@ -55,12 +64,16 @@ _DEFAULTS = {
 
 def _load_site() -> dict:
     site = dict(_DEFAULTS)
+    if SITE_NAME and not SITE_FILE.is_file():
+        raise SystemExit(
+            f"ASO_SITE={SITE_NAME} 但缺少站点配置：{SITE_FILE}\n"
+            f"新项目照 data_aso/site.json 抄一份，至少给 brand / package / locales。")
     if SITE_FILE.is_file():
         try:
             site.update(json.loads(SITE_FILE.read_text(encoding="utf-8")))
         except json.JSONDecodeError as exc:
             raise SystemExit(f"site.json 语法错误 {SITE_FILE}:{exc.lineno}:{exc.colno} — {exc.msg}")
-    for k in ("_readme", "_why"):
+    for k in ("_readme", "_why", "_locales_note", "_note"):
         site.pop(k, None)
     return site
 
@@ -103,7 +116,19 @@ LOCALES = {
 
 # site.json 可以整体替换语言表（别的项目可能只做英/日，或加 ko-KR）。
 # 只给了部分字段时按语言逐个 merge，不会把 fonts 冲掉。
-for _code, _ov in (SITE.get("locales") or {}).items():
+#
+# 🔴 两种模式的区别很实在：
+#   （默认）merge   —— 只在默认四语上做增量覆盖。默认四语之外的包不适用：
+#                     Play 上没开通的语言，listings.get 直接 404，push 也会读失败。
+#   "locales_mode": "replace" —— 语言集完全由 site.json 决定，缺的字段按码回落默认值。
+#                     换项目（包）时几乎一定要用这个，否则会把本工程的 ja/zh-TW 带过去。
+_LOCALE_DEFAULTS = {code: dict(v) for code, v in LOCALES.items()}
+_LOCALES_OVERRIDE = {code: v for code, v in (SITE.get("locales") or {}).items()
+                     if isinstance(v, dict)}
+if (SITE.get("locales_mode") or "").strip() == "replace":
+    LOCALES = {code: {**_LOCALE_DEFAULTS.get(code, {}), **ov}
+               for code, ov in _LOCALES_OVERRIDE.items()}
+for _code, _ov in _LOCALES_OVERRIDE.items():
     if not isinstance(_ov, dict):
         continue
     LOCALES.setdefault(_code, {}).update(_ov)
@@ -168,9 +193,15 @@ def norm_locale(x: str) -> str:
     if k in LOCALES:
         return k
     v = LOCALE_ALIASES.get(k.lower())
-    if not v:
-        raise SystemExit(f"未知语言代码：{x}（可选 {', '.join(LOCALE_CODES)}）")
-    return v
+    if v and v in LOCALES:
+        return v
+    # 通用回落：site.json 自己加的语种（ko-KR / fr-FR …）不必再改上面那张别名表，
+    # 只要写语种前缀（`--locales ko`）就能命中。
+    prefix = k.lower().replace("_", "-").split("-")[0]
+    for code in LOCALE_CODES:
+        if code.lower().split("-")[0] == prefix:
+            return code
+    raise SystemExit(f"未知语言代码：{x}（可选 {', '.join(LOCALE_CODES)}）")
 
 
 def parse_locales(spec: str | None) -> list[str]:

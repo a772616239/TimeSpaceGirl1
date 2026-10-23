@@ -107,8 +107,20 @@ function this.GetActivityRewardRequest(type, index)
             end)
             Game.GlobalEvent:DispatchEvent(GameEvent.Activity.GetRewardRefresh, this.onlineData)
         elseif type == ActivityTypeDef.EightDayGift then
+            -- 领到奖励 = 今天签到成功。只有走到这个成功回调才落盘，
+            -- 否则会出现「签到了但奖励没到」的丢奖励。
+            EightDaySignMarkSigned()
             this.sevenDayGetRewardState[index] = 1
+            local eightInfo = this.GetActivityTypeInfo(ActivityTypeDef.EightDayGift)
+            if eightInfo and eightInfo.mission then
+                for i = 1, #eightInfo.mission do
+                    if eightInfo.mission[i].missionId == index then
+                        eightInfo.mission[i].state = 1
+                    end
+                end
+            end
             CheckRedPointStatus(RedPointType.CourtesyDress_SevenDay)
+            CheckRedPointStatus(RedPointType.EightTheLogin)
             table.sort(this.sevenDayData, function(a, b)
                 if this.sevenDayGetRewardState[a.Id] == this.sevenDayGetRewardState[b.Id] then
                     return a.Id < b.Id
@@ -233,23 +245,25 @@ function this.CheckChapterRed()
 end
 
 function this.CheckEightRedPoint()
-    local curDay = math.ceil((CalculateSecondsNowTo_N_OClock(24) + GetTimeStamp() - PlayerManager.userCreateTime)/86400)
-    if curDay > 8 then
-        curDay = 8
+    local isActivityOpen = this.IsActivityTypeOpen(ActivityTypeDef.EightDayGift)
+    if not isActivityOpen then
+        return false
     end
-    local isActivityOpen = ActivityGiftManager.IsActivityTypeOpen(ActivityTypeDef.EightDayGift)
-    if isActivityOpen then
-        local activityInfo = ActivityGiftManager.GetActivityTypeInfo(ActivityTypeDef.EightDayGift)
-        for i = 1, #activityInfo.mission do
-            local isCanGet = activityInfo.mission[i].state--是否可领取
-            if isCanGet == 0 then
-                if curDay >= i then
-                    return true
-                end
-            end
-        end
+    local activityInfo = this.GetActivityTypeInfo(ActivityTypeDef.EightDayGift)
+    -- 签到制：只有「今天还没签到，且还有没领的天」才亮，跟面板里的红点同一口径
+    local _, _, canSign = EightDaySignProgress(activityInfo)
+    return canSign
+end
+
+--- 八日礼包的可领天数（签到口径）。
+--- 旧实现直接读服务端下发的 mission.progress（= 建号自然日），
+--- 会让福利面板比 EightDayGiftPanel 宽松，两个入口能领的天数对不上。
+function this.GetEightCanRewardDay()
+    local activityInfo = this.GetActivityTypeInfo(ActivityTypeDef.EightDayGift)
+    if not activityInfo then
+        return this.canRewardDay or 0
     end
-    return false
+    return EightDaySignCanRewardDay(activityInfo)
 end
 
 function this.CheckEightRedPoint_2()
@@ -463,22 +477,16 @@ function this.CheckRedFunc(redType)
         return false
     end
     if redType == RedPointType.CourtesyDress_SevenDay then
-        if this.mission[ActivityTypeDef.EightDayGift] then
-            local number = 0
-            for i, v in pairs(this.sevenDayGetRewardState) do
-                if v == 1 then
-                    number = number + 1
-                end
-            end
-            local curDay =  math.ceil((CalculateSecondsNowTo_N_OClock(24) + GetTimeStamp() - PlayerManager.userCreateTime)/86400)
-            if number < curDay then
-                return true
-            else
-                return false
-            end
-        else
+        -- 不直接用 this.mission[ActivityTypeDef.EightDayGift]：mission 表的 key 是
+        -- GlobalActivity 的 Id，不等于 Type；按活动配置查才稳。
+        if not this.IsActivityTypeOpen(ActivityTypeDef.EightDayGift) then
             return false
         end
+        -- 签到制：旧算法是「已领数 < 建号自然日数」，离线也在涨 ⇒ 红点天天亮。
+        -- 现在跟 EightDayGiftPanel / 福利面板同一口径：今天还能签才有红点。
+        local activityInfo = this.GetActivityTypeInfo(ActivityTypeDef.EightDayGift)
+        local _, _, canSign = EightDaySignProgress(activityInfo)
+        return canSign
     elseif redType == RedPointType.CourtesyDress_Chapter then
         local isShowRed = false
         for i = 1, table.nums(this.chapterGetRewardState) do

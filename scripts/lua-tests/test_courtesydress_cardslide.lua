@@ -167,6 +167,8 @@ ActivityGiftManager = {
     CheckChapterRed = function() return false end,
     onlineOpen = false, sevenDayOpen = false, chapterOpen = false,
     canRewardDay = 0, currentTimeIndex = 0, cuOnLineTimestamp = 0,
+    -- 八日礼包改成签到制后，面板不再读 canRewardDay，改调这个（见 ActivityGiftManager）
+    GetEightCanRewardDay = function() return 0 end,
 }
 Game = { GlobalEvent = { AddEvent = function() end, RemoveEvent = function() end } }
 GameEvent = { Activity = { GetRewardRefresh = 1 }, CloseUI = { OnClose = 2 } }

@@ -24,7 +24,8 @@ local CardColor = {
 local ItemList = {}--奖励List
 local ItemViewList = {}
 local rewardData--后端数据
-local curDay--当前天数
+local curDay--当前可签到/可领取的那一天（签到制的推进结果）
+local canSignToday--今天是否还能签到（每天最多一次）
 
 --初始化组件（用于子类重写）
 function this:InitComponent()
@@ -82,11 +83,25 @@ function this:OnDestroy()
 end
 
 function this:Refresh()
-    rewardData = ActivityGiftManager.GetActivityTypeInfo(ActivityTypeDef.EightDayGift)
-    curDay = math.ceil((CalculateSecondsNowTo_N_OClock(24) + GetTimeStamp() - PlayerManager.userCreateTime)/86400)
-    if curDay > 8 then
-        curDay = 8
+    -- 先停掉上一轮挂在那张卡上的倒计时：跨天刷新后那张卡不再是「待签卡」，
+    -- 旧 timer 还在跑的话会继续往它的 day.text 里写时间
+    if self.localTimer then
+        self.localTimer:Stop()
+        self.localTimer = nil
     end
+    rewardData = ActivityGiftManager.GetActivityTypeInfo(ActivityTypeDef.EightDayGift)
+    if not rewardData or not rewardData.mission then
+        curDay = 1
+        canSignToday = false
+        return
+    end
+    -- 签到制：天数只由「玩家主动签到」累加，不再按建号自然日往前推。
+    -- curDay = 第一个还没领的天，也就是「今天可以签到的那一天」；
+    -- 今天已经签过 ⇒ canSignToday=false，这一天要等明天 0 点才解锁。
+    -- 断签不重置进度：漏签几天回来还是接着上一次的天数继续 +1。
+    local nextDay, _, canSign = EightDaySignProgress(rewardData)
+    curDay = nextDay
+    canSignToday = canSign
     this:SetAllReward()
 end
 
@@ -118,12 +133,14 @@ function this:SetSingleReward(item, i)
     local mask = Util.GetGameObject(item, "kuang/reward/mask")
     local transparency = Util.GetGameObject(item, "kuang/reward/transparency")
     local transImg = transparency:GetComponent("Image")
-    local isCanGet = rewardData.mission[i].state--是否可领取
+    local isCanGet = rewardData.mission[i].state--0：未领 1：已领
+    local isTodayCard = (i == curDay)--今天要签到的那一张
+    local canClaim = isTodayCard and canSignToday and isCanGet == 0--此刻能不能点（= 今天还能签到）
 
-    day.text = TimeToHMS(CalculateSecondsNowTo_N_OClock(24))
-    if i == curDay+1 then
-       this:SetRemainTime(day,i)
-       dayImg.enabled = false
+    if isTodayCard and not canSignToday then
+        -- 今天已经签过了：这一张要等明天 0 点才解锁，倒计时挂在这里
+        this:SetRemainTime(day, i)
+        dayImg.enabled = false
     else
         dayImg.enabled = true
         day.text = --[[GetLanguageStrById(10311)..NumToSimplenessFont[i]..]]GetLanguageStrById(10021)
@@ -142,7 +159,7 @@ function this:SetSingleReward(item, i)
         kuang.enabled = true--isCanGet == 0 and curDay >= i
     end
 
-    get:SetActive(isCanGet == 0 and curDay >= i)
+    get:SetActive(canClaim)
     mask:SetActive(isCanGet == 1)
 
     --先铺默认态（未达成 / 未来天数），再按状态覆盖
@@ -154,65 +171,60 @@ function this:SetSingleReward(item, i)
     transImg.color = CardColor.scrim
     transparency:SetActive(false)
 
-    if i <= curDay then
-        if isCanGet == 1 then--已领取：压暗降饱和，但文字仍保持可读（不再用 50% 白）
-            body.color = CardColor.bodyDone
-            band.color = CardColor.bandDone
-            dayImg.color = CardColor.textDone
-            day.color = CardColor.textDone
-            ItemViewList[i].num.color = CardColor.textDone
-            transparency:SetActive(true)
-        else--今日可领：暖金卡 + 深棕字，跟新底板的红金圣诞调子走
-            body.color = CardColor.bodyReady
-            band.color = CardColor.bandReady
-            dayImg.color = CardColor.textReady
-            day.color = CardColor.textReady
-            ItemViewList[i].num.color = CardColor.textReady
-        end
+    if isCanGet == 1 then--已领取（含旧数据里已经领过的天）：压暗降饱和，但文字仍保持可读
+        body.color = CardColor.bodyDone
+        band.color = CardColor.bandDone
+        dayImg.color = CardColor.textDone
+        day.color = CardColor.textDone
+        ItemViewList[i].num.color = CardColor.textDone
+        transparency:SetActive(true)
+    elseif canClaim then--今天可签到：暖金卡 + 深棕字，跟新底板的红金圣诞调子走
+        body.color = CardColor.bodyReady
+        band.color = CardColor.bandReady
+        dayImg.color = CardColor.textReady
+        day.color = CardColor.textReady
+        ItemViewList[i].num.color = CardColor.textReady
     end
 
-    redPoint:SetActive(false)
-    if isCanGet == 0 then
-        if curDay >= i then
-            redPoint:SetActive(true)
-        end
-    end
+    redPoint:SetActive(canClaim)
 
     Util.AddOnceClick(get,function()
-        if isCanGet ~= 0 then
+        if not canClaim then
             return
         end
-        if curDay >= i then
-            NetManager.GetActivityRewardRequest(rewardData.mission[i].missionId, rewardData.activityId, function(drop)
-                --获得英雄表现
-                if drop.Hero ~= nil and #drop.Hero > 0 then
-                    local itemDataList = {}
-                    local itemDataStarList = {}
-                    for i = 1, #drop.Hero do
-                        local heroData = ConfigManager.TryGetConfigDataByKey(ConfigName.HeroConfig, "Id", drop.Hero[i].heroId)
-                        table.insert(itemDataList, heroData)
-                        table.insert(itemDataStarList, drop.Hero[i].star)
-                    end
-                    UIManager.OpenPanel(UIName.PublicGetHeroPanel, itemDataList, itemDataStarList,function ()
-                        UIManager.OpenPanel(UIName.RewardItemPopup,drop,1,function()
-                            ActivityGiftManager.sevenDayGetRewardState[i] = 1
-                            this:SetAllReward()
-                            Game.GlobalEvent:DispatchEvent(GameEvent.EightDay.GetRewardSuccess)
-                            CheckRedPointStatus(RedPointType.EightTheLogin)
-                        end)
-                    end)
-                else
+        NetManager.GetActivityRewardRequest(rewardData.mission[i].missionId, rewardData.activityId, function(drop)
+            -- 领到奖励才算签到成功：先落本地签到日期，再同步本地 state。
+            -- 请求失败走不到这个回调 ⇒ 不会出现「签到成功却没奖励」。
+            EightDaySignMarkSigned()
+            rewardData.mission[i].state = 1
+            --获得英雄表现
+            if drop.Hero ~= nil and #drop.Hero > 0 then
+                local itemDataList = {}
+                local itemDataStarList = {}
+                for i = 1, #drop.Hero do
+                    local heroData = ConfigManager.TryGetConfigDataByKey(ConfigName.HeroConfig, "Id", drop.Hero[i].heroId)
+                    table.insert(itemDataList, heroData)
+                    table.insert(itemDataStarList, drop.Hero[i].star)
+                end
+                UIManager.OpenPanel(UIName.PublicGetHeroPanel, itemDataList, itemDataStarList,function ()
                     UIManager.OpenPanel(UIName.RewardItemPopup,drop,1,function()
                         ActivityGiftManager.sevenDayGetRewardState[i] = 1
-                        this:SetAllReward()
+                        this:Refresh()
                         Game.GlobalEvent:DispatchEvent(GameEvent.EightDay.GetRewardSuccess)
                         CheckRedPointStatus(RedPointType.EightTheLogin)
+                        CheckRedPointStatus(RedPointType.CourtesyDress_SevenDay)
                     end)
-                end
-            end)
-        else
-            PopupTipPanel.ShowTipByLanguageId(10472)
-        end
+                end)
+            else
+                UIManager.OpenPanel(UIName.RewardItemPopup,drop,1,function()
+                    ActivityGiftManager.sevenDayGetRewardState[i] = 1
+                    this:Refresh()
+                    Game.GlobalEvent:DispatchEvent(GameEvent.EightDay.GetRewardSuccess)
+                    CheckRedPointStatus(RedPointType.EightTheLogin)
+                    CheckRedPointStatus(RedPointType.CourtesyDress_SevenDay)
+                end)
+            end
+        end)
     end)
 end
 

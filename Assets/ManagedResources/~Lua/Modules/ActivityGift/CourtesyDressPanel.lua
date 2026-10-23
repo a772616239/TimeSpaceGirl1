@@ -305,7 +305,7 @@ end
 function CourtesyDressPanel:JumpOpenActivity()
     if this.ActivityId == ActivityTypeDef.EightDayGift then
         local getRewardState = ActivityGiftManager.sevenDayGetRewardState
-        local canRewardIndex = ActivityGiftManager.canRewardDay
+        local canRewardIndex = ActivityGiftManager.GetEightCanRewardDay()
         local activityType = ActivityTypeDef.EightDayGift
         local data = ActivityGiftManager.sevenDayData
         this:OnShowActivityData(data, activityType, getRewardState, canRewardIndex)
@@ -350,7 +350,7 @@ function CourtesyDressPanel:OpenActivityPage()
             self.selected3:SetActive(false)
         elseif ActivityGiftManager.sevenDayOpen and ActivityGiftManager.CheckSevenDayRed() then
             local getRewardState = ActivityGiftManager.sevenDayGetRewardState
-            local canRewardIndex = ActivityGiftManager.canRewardDay
+            local canRewardIndex = ActivityGiftManager.GetEightCanRewardDay()
             local activityType = ActivityTypeDef.EightDayGift
             local data = ActivityGiftManager.sevenDayData
             this:OnShowActivityData(data, activityType, getRewardState, canRewardIndex)
@@ -381,7 +381,7 @@ function CourtesyDressPanel:OpenActivityPage()
             self.selected3:SetActive(false)
         elseif ActivityGiftManager.sevenDayOpen then
             local getRewardState = ActivityGiftManager.sevenDayGetRewardState
-            local canRewardIndex = ActivityGiftManager.canRewardDay
+            local canRewardIndex = ActivityGiftManager.GetEightCanRewardDay()
             local activityType = ActivityTypeDef.EightDayGift
             local data = ActivityGiftManager.sevenDayData
             this:OnShowActivityData(data, activityType, getRewardState, canRewardIndex)
@@ -603,7 +603,7 @@ function CourtesyDressPanel:BindEvent()
     Util.AddClick(self.sevenDayBtn, function()
         this.nextPlayIsSwitch = true   -- 切页签走更慢更柔的那套（见 PlayCardSlideIn）
         local getRewardState = ActivityGiftManager.sevenDayGetRewardState
-        local canRewardIndex = ActivityGiftManager.canRewardDay
+        local canRewardIndex = ActivityGiftManager.GetEightCanRewardDay()
         local activityType = ActivityTypeDef.EightDayGift
         local data = ActivityGiftManager.sevenDayData
         this:OnShowActivityData(data, activityType, getRewardState, canRewardIndex)
@@ -670,7 +670,7 @@ function CourtesyDressPanel:OnRefreshPageDataShow()
     if selectIndex == ActivityTypeDef.EightDayGift then
         activityData = ActivityGiftManager.sevenDayData
         getRewardState = ActivityGiftManager.sevenDayGetRewardState
-        canRewardIndex = ActivityGiftManager.canRewardDay
+        canRewardIndex = ActivityGiftManager.GetEightCanRewardDay()
     elseif selectIndex == ActivityTypeDef.OnlineGift then
         activityData = ActivityGiftManager.onlineData
         getRewardState = ActivityGiftManager.onlineGetRewardState

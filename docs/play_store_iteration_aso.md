@@ -367,6 +367,33 @@ $P scripts/aso/fusion_page.py --variant B
 - 换角色组合就改 `fusion_pairs.json`，不用碰代码。新角色要先在 `hero_specs.json` 加特征卡
   （id 从 `07` 起续编），配色跑 `hero_features.py extract --art <立绘>` 得到，**不要手填**。
 
+#### 交付结构：目录即语言，文案跟画面分类（2026-10-23 用户要求）
+
+```bash
+$P scripts/aso/aso_fusion.py build --layout duo --pair 1217 \
+   --locales en-US,ja-JP,zh-CN,zh-TW --by-locale --out data_aso/derived/B/fusion_all
+#   → fusion_all/en-US/feature_duo_1217.png
+#     fusion_all/ja-JP/feature_duo_1217.png …（与 derived/<变体>/<locale>/feature_01.png 同构）
+```
+
+🔴 **必须 `--by-locale`**：44 张平铺在一个目录时，`feature_duo_zh-CN_1217.png` 和
+`feature_duo_zh-TW_1217.png` 只能靠文件名区分，上传/交图时极易拿错语言（简繁尤其）。目录分语言后
+文件名统一成 `feature_duo_<tag>.png`。`fusion_page.py` 两种结构都认。
+
+🔴 **底部文案必须跟画面分类走**（`data_aso/assets/fusion_copy.json`）。画面换成主城/公会/世界地图，
+还挂「召唤·布阵·碾压」就是文不对图：
+
+| category | 画面 | 四语 title |
+|---|---|---|
+| `combat` | 战斗网格 + 血条 | SUMMON. DEPLOY. CRUSH. / 召唤·布阵·碾压 |
+| `world` | 主城霓虹 | A CITY BUILT FOR WAR. / 为战斗而生的城市 |
+| `guild` | 公会徽章 | BUILD. UNITE. RULE. / 建会·结盟·称王 |
+| `map` | 世界关卡地图 | CLEAR EVERY SQUARE. / 一格一格推平地图 |
+
+优先级：`pair.copy`（组内覆盖）> `pair.category` 指到的分类文案 > `fusion.json` 的 `copy` 默认四语。
+`draw_caption` 会按 88% 宽自动缩字号，但**不同组字号不一致会显得参差** ⇒ 四语各条控制在同量级
+（英文 ~20 字符、中日文 8~10 字）。
+
 ---
 
 

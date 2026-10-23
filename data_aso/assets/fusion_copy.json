@@ -1,0 +1,35 @@
+{
+  "_readme": "置顶图底部文案，按「画面内容类别」分组，每组四语。fusion_pairs.json 里每组用 category 指向这里；pair 自己写 copy 可覆盖（个别组要单独文案时用）。",
+  "_why": "置顶图下半部分是唯一说人话的地方：kicker 说清这是什么（品类/系统），title 给一个记得住的动作。画面换成主城/公会/地图时，还挂「召唤·布阵·碾压」就是文不对图（2026-10-23 用户指出「下面的文字没有变化，也应该分好类」）。所以文案跟画面走：战斗归 combat、世界观归 world、公会归 guild、地图归 map。",
+  "_length_note": "title 会被 draw_caption 自动缩到 88% 宽（最小约 0.062*H），但不同组字号不一致会显得参差 ⇒ 四语各条尽量控制在同等字符量（英文 ~20 字符、中文 8~10 字、日文 8~10 字）。改文案前先量长度。",
+  "categories": {
+    "combat": {
+      "_note": "战斗画面（网格 + 血条 + 多人）—— 主打玩法，用作大多数组的默认类。",
+      "en-US": {"kicker": "LIVE COMBAT", "title": "SUMMON. DEPLOY. CRUSH."},
+      "ja-JP": {"kicker": "実戦投入", "title": "召喚・配置・殲滅"},
+      "zh-CN": {"kicker": "实战演示", "title": "召唤 · 布阵 · 碾压"},
+      "zh-TW": {"kicker": "實戰演示", "title": "召喚 · 佈陣 · 碾壓"}
+    },
+    "world": {
+      "_note": "主城 / 世界观点位（霓虹赛博城市），卖的是「世界」，不是玩法。",
+      "en-US": {"kicker": "NEON CITY", "title": "A CITY BUILT FOR WAR."},
+      "ja-JP": {"kicker": "霓虹都市", "title": "戦うために造られた街"},
+      "zh-CN": {"kicker": "霓虹之城", "title": "为战斗而生的城市"},
+      "zh-TW": {"kicker": "霓虹之城", "title": "為戰鬥而生的城市"}
+    },
+    "guild": {
+      "_note": "公会 / 联盟系统（GUILD 徽章），卖的是长线社交。",
+      "en-US": {"kicker": "GUILD SYSTEM", "title": "BUILD. UNITE. RULE."},
+      "ja-JP": {"kicker": "ギルド", "title": "築け・結べ・統べよ"},
+      "zh-CN": {"kicker": "公会系统", "title": "建会 · 结盟 · 称王"},
+      "zh-TW": {"kicker": "公會系統", "title": "建會 · 結盟 · 稱王"}
+    },
+    "map": {
+      "_note": "世界关卡地图，卖的是内容量与推进感。",
+      "en-US": {"kicker": "WORLD MAP", "title": "CLEAR EVERY SQUARE."},
+      "ja-JP": {"kicker": "ワールドマップ", "title": "一マスずつ制圧せよ"},
+      "zh-CN": {"kicker": "世界地图", "title": "一格一格推平地图"},
+      "zh-TW": {"kicker": "世界地圖", "title": "一格一格推平地圖"}
+    }
+  }
+}

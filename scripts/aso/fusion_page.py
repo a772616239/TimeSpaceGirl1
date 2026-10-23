@@ -83,7 +83,11 @@ def main() -> int:
         right = specs.get(p["right"], {})
         rows = []
         for loc, label in LOCALES:
-            f = src / f"feature_duo_{loc}_{tag}.png"
+            # 支持两种落盘结构：分语言目录（<src>/<loc>/feature_duo_<tag>.png，推荐）
+            # 与平铺（<src>/feature_duo_<loc>_<tag>.png，早期产物）。
+            f = src / loc / f"feature_duo_{tag}.png"
+            if not f.is_file():
+                f = src / f"feature_duo_{loc}_{tag}.png"
             if f.is_file():
                 total += 1
                 rel = f.relative_to(out.parent) if out.parent in f.parents else f

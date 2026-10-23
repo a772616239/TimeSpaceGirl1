@@ -467,9 +467,27 @@ def draw_caption(canvas: Image.Image, kicker: str, title: str, locale: str,
 
 # ---------------------------------------------------------------- 组装
 
+def _category_copy(grp: dict) -> dict:
+    """按 pair 的 category 从 fusion_copy.json 取四语文案。
+
+    返回 {locale: {"kicker":..., "title":...}}；没有 category 或文件缺失时返回 {}，
+    build 会回落到 fusion.json 的 copy —— 老的候选目录不受影响。
+    """
+    cat = grp.get("category")
+    if not cat:
+        return {}
+    p = C.ASSETS_DIR / "fusion_copy.json"
+    if not p.is_file():
+        return {}
+    block = (C.load_json(p).get("categories") or {}).get(cat) or {}
+    return {k: v for k, v in block.items()
+            if not k.startswith("_") and isinstance(v, dict)}
+
+
 def build(layout_key: str, locale: str, size: tuple[int, int],
           overrides: dict | None = None,
-          require_bg: bool = False) -> Image.Image:
+          require_bg: bool = False,
+          copy_override: dict | None = None) -> Image.Image:
     """出一张拼装店面图。
 
     require_bg=True 时，缺「管线重绘的双人底图」直接报错，**不允许退回立绘拼贴**。
@@ -489,6 +507,10 @@ def build(layout_key: str, locale: str, size: tuple[int, int],
             else:
                 lay[k] = v
     copy = (spec.get("copy") or {}).get(locale) or {}
+    if copy_override:
+        # 文案要跟画面走：战斗/主城/公会/地图各一套（见 fusion_copy.json），
+        # 全组死用一句「召唤·布阵·碾压」会文不对图。
+        copy = {**copy, **{k: v for k, v in copy_override.items() if v}}
     title = copy.get("title") or ""
     kicker = copy.get("kicker") or ""
     if locale.startswith("en"):
@@ -600,8 +622,11 @@ def main() -> int:
                     help="覆盖 fusion.json 里的底图路径。批量出多组角色组合时用："
                          "每组一张 bg_<tag>.png，不必反复改配置。")
     ap.add_argument("--pair", default="",
-                    help="从 fusion_pairs.json 取该组（tag）的底图与框内取景参数，"
+                    help="从 fusion_pairs.json 取该组（tag）的底图、框内取景与文案分类，"
                          "一次出齐四语。10 组的差异就靠这里的 shot/band/zoom 拉开。")
+    ap.add_argument("--by-locale", action="store_true",
+                    help="按语言分子目录：<out>/<locale>/feature_duo_<tag>.png。"
+                         "交图/上传时不会拿错语言；不加则平铺成 feature_duo_<locale>_<tag>.png。")
     ap.add_argument("--promote", action="store_true",
                     help="写进 derived/<变体>/<语言>/feature_01.png（= aso_assets build 用的同一个文件名）。"
                          "这样 preview.html / index.json / aso_play.py push 都不用改，也不会出现两张置顶图。"
@@ -622,6 +647,7 @@ def main() -> int:
         return 2
 
     ov: dict = {}
+    cat_copy: dict = {}
     if a.bg:
         ov["bg"] = a.bg
     if a.pair:
@@ -634,6 +660,10 @@ def main() -> int:
         ov["bg"] = f"data_aso/assets/gen/fusion/bg_{a.pair}.png"
         if grp.get("screen"):
             ov["screen"] = grp["screen"]
+        # 文案：pair 自己写 copy > category 指向 fusion_copy.json > fusion.json 的默认四语
+        cat_copy = _category_copy(grp)
+        if grp.get("copy"):
+            cat_copy = {**cat_copy, **grp["copy"]}
         a.tag = a.tag or a.pair
 
     root = Path(a.out) if a.out else (C.DERIVED_DIR / a.variant / "fusion")
@@ -641,9 +671,17 @@ def main() -> int:
     sfx = f"_{a.tag}" if a.tag else ""
     promoted: dict[str, Path] = {}
     for loc in C.parse_locales(a.locales):
+        cov = cat_copy.get(loc) if cat_copy else None
         im = build(a.layout, loc, (tw, th), overrides=ov or None,
-                   require_bg=a.promote or bool(ov.get("bg")))
-        p = root / f"feature_{a.layout}_{loc}{sfx}.png"
+                   require_bg=a.promote or bool(ov.get("bg")), copy_override=cov)
+        if a.by_locale:
+            # 目录即语言：<out>/<locale>/feature_duo_<tag>.png。
+            # 和 aso_assets build 的 derived/<变体>/<locale>/feature_01.png 同构，
+            # 交图/上传时不会拿错语言。
+            p = root / loc / f"feature_{a.layout}{sfx}.png"
+            p.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            p = root / f"feature_{a.layout}_{loc}{sfx}.png"
         im.save(p, optimize=True)
         try:
             shown = p.relative_to(C.ROOT)

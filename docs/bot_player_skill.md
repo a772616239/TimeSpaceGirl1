@@ -1,6 +1,6 @@
 # 虚拟玩家（机器人）：在线数 / 世界喊话 / 英雄公告 / AI 回话
 
-> 更新时间：2026-10-22
+> 更新时间：2026-10-23（新增 §4.4 晒卡换人 / §4.5 醒来重试与 per-bot 抖动 / §4.6 冷清补话）
 > 关联：`server_ops_runbook.md`（线上热补丁口径）、`scripts/bot/dsh_bridge.py`（DSH 桥接）、
 > `scripts/bot/start_bridge.sh`（桥接启停）、`scripts/bot/bot_console.py` + `console.html`（可视化后台）、
 > `scripts/bot/testserver.sh`（测试服隧道+控制台）、
@@ -162,15 +162,19 @@ TS_REDIS_PORT=16379 TS_SERVER_ID=10001 python3 scripts/bot/clean_fake_chat.py
 | `minSpeakGapSec` | 45 | **任意两条机器人发言**的最小间隔（喊话/回复/手动/晒卡互相避让），防刷屏 |
 | `replyFreshSec` | 14400 | 只回 4 小时内的消息（= 醒来间隔上限，否则醒来时全过期，永远回不了） |
 | `activeMinSec` / `activeMaxSec` | 1200 / 14400 | 🔴 **节奏总闸**：每个机器人独立随机「醒来」间隔 = 20~240 分钟 |
-| `announceChancePct` | 40 | 醒来时抽到「发英雄公告」的概率（%） |
-| `chatterChancePct` | 40 | 醒来时抽到「世界闲聊」的概率（%）；剩下 20% 就是纯挂机 |
+| `announceChancePct` | 40（线上 15） | 醒来时抽到「发英雄公告」的概率（%） |
+| `chatterChancePct` | 40（线上 30） | 醒来时抽到「世界闲聊」的概率（%）；剩下的就是纯挂机 |
 | `maxReplyChars` | 40 | 回复硬上限（按 code point 截断，尽量切在空格） |
 | `contextHours` | 72 | 喂给 AI 的上下文时间窗 = **3 天** |
 | `contextMaxLines` | 40 | 上下文最多带多少条 |
 | `chatterMin/MaxSec` | 180 / 720 | 闲聊的额外下限（醒来还要再过这道闸才发） |
 | `announceMin/MaxSec` | 1500 / 4500 | 公告的额外下限（同上） |
-| `onlineFlipMin/MaxSec` | 600 / 1800 | 上下线抖动间隔（至少保留 1 个在线） |
-| `realActionEnabled` / `realActionChancePct` | true / 50 | 醒来时「真的升一级英雄 / 抽一个没有的英雄」的概率（改库，面板看得见） |
+| `onlineFlipMin/MaxSec` | 600 / 1800 | 上下线抖动间隔，**每个机器人各自独立翻**（见 §4.5） |
+| `wakeRetryMin/MaxSec` / `wakeRetryMaxTimes` | 180 / 480 / 3 | 🔴 醒来撞离线时 3~8 分钟重试，连试 3 次才认命（见 §4.5） |
+| `idleTalkEnabled` / `idleTalkAfterSec` | true / 345600 | 🔴 真人 4 天没说话就算冷清：改由**另一个**机器人接话（见 §4.6） |
+| `announceReactDelayMin/MaxSec` / `announceReactChancePct` | 60 / 180 / 40 | 公告后由**另一个在线机器人**接一句的延迟与概率（见 §4.4） |
+| `chatterLines` / `idleReactLines` / `announceReactLines` | 15 / 10 / 6 句 | 三个语料池**共用同一条去重记忆**（最近说过的不再抽） |
+| `realActionEnabled` / `realActionChancePct` | true / 50（线上 30） | 醒来时「真的升一级英雄 / 抽一个没有的英雄」的概率（改库，面板看得见） |
 | `arenaEnabled` | true | 醒来时会不会顺路去打一场竞技场（**只打系统机器人**，见 §4.3） |
 | `arenaChancePct` | 70 | 竞技场到期后真的开打的概率（%） |
 | `arenaMin/MaxGapSec` | 14400 / 36000 | 同一个机器人两次竞技场的间隔 = **4~10 小时** |
@@ -349,10 +353,84 @@ mongosh ... --eval 'db.user.findOne({_id:90000001},{arenaManager:1}).arenaManage
 分数名次同时进 AI 提示词的「Your account: ... arena rank #N on this server」，
 并明确要求**不许吹自己是第一**。
 
-### 防刷屏的四道闸
+### 4.4 「自己接自己」的第二次修：晒卡换人 + 延迟（2026-10-23）
 
-各来源（喊话 / AI 回复 / GM 手动 / 公告后晒卡）各自有间隔，但**不互相避让**时会挤在几秒内连发，
-玩家看到的就是「机器人自说自话」。现在四道闸：
+§4.2 修的是「AI 回复自己」，但线上玩家看到的「自问自答」其实是**另一条路**：公告后的晒卡。
+
+老代码（`announceHero()` 尾部）：
+
+```java
+if (rnd.nextInt(100) < 40 && 过了 minSpeakGapSec) {
+    String[] lines = { "finally got her lol", "took me forever", "worth it ngl",
+                       "lucky pull fr", "gg rng", "back to grinding i guess" };
+    sendBotChat(bot, CH_WORLD, lines[rnd.nextInt(lines.length)], false, "say");  // 同一个 bot
+}
+```
+
+三个毛病叠在一起，玩家看到的就是「Nova 说自己抽到了 → Nova 又说终于到手了」：
+
+| 毛病 | 后果 |
+|---|---|
+| 同一个 `bot` 发 | 公告是「我抽到卡」，下一句是「我 finally got her」= 字面自问自答 |
+| **同一毫秒**发 | 中间没有任何「别人可能插话」的窗口，连成一串 |
+| 6 句硬编码数组、**完全没去重** | 线上连着两天各说一次 `gg rng` |
+
+现在的写法：**公告的人不许自己接话**，改成 60~180 秒后由「另一个在线机器人」说一句旁观者口吻的话
+（`grats` / `gz` / `nice pull fr` / `lucky lol` / `wtf nice` / `gg rng lol`），两人都不在线就不说。
+
+- 队列是 `pendingSays`（tick 里 `drainPendingSays()` 发），带 `excludeUid`，`pickOtherOnlineBot()` 挑人；
+- 语料走 `announceReactLines`，和闲聊共用同一条 `recentChatter` 去重记忆；
+- 日志：`[bot] 公告后 137 秒由另一个机器人接话 "grats"（不是 Nova 自己说）`
+  → `[bot] 世界发言 bot=Kai mid=97 reply=false text="grats"`。
+
+> 为什么保留「晒卡」这个动作而不是直接删掉：世界上「我抽到卡 → 队友一句 grats」是有互动感的；
+> 「我抽到卡 → 我自己补一句」才是自问自答。差别只在**换人 + 延迟**。
+
+### 4.5 醒来撞离线不再作废 + 上下线抖动改成 per-bot（2026-10-23）
+
+```java
+// 老写法：不在线就把下一次醒来推满 20~240 分钟 —— 一整次醒来全废
+if (!online.contains(p.uid)) { nextActiveAt.put(p.uid, now + sec(gapSec)); continue; }
+```
+
+线上实测（10-22 06:35 → 10-23 11:07）：**Kai 21 次醒来里 13 次撞上自己离线（62%），Nova 只有 5/17（29%）**。
+两人在线时长其实差不多（62% / 70%），所以不是谁被永久关掉，而是**空窗成块出现**：
+
+`maybeFlipOnline()` 原来是「全局一个排期 + 随机挑一个号翻牌」，它是个**有记忆的随机游走**：
+
+- 在线集合只剩一个人时，抽到他自己什么都不会发生（`size()>1` 才允许删），抽到另一个才会变两个；
+- 要从「只有 A 在线」变成「只有 B 在线」，得**连续两次抽到指定的人**；
+- 结果独苗身份非常黏 —— 日志里出现过连续 6 次都停在 `[90000001]`，另一个号被压离线 2.5 小时。
+
+现在两道改：
+
+1. `nextFlipAt` 改成**每个机器人各自的排期**（10~30 分钟独立翻），只额外保证「至少一个在线」；
+2. 醒来撞离线 → `now + 3~8 分钟` 重试，连试 `wakeRetryMaxTimes`（3）次才回到正常节奏。
+   日志：`[bot] Kai 醒来 -> 不在线，357 秒后重试（第 1/3 次）`。
+
+### 4.6 冷清补话：四天没真人说话，让另一个机器人接话（2026-10-23，P2-8）
+
+需求原话：**「如果四天没人说话，这个时候应该让另一个机器人说话。不要自问自答。」**
+
+实现（`sayChatterOrContinue()` / `idleTalkTarget()`）：
+
+| 条件 | 谁开口 | 说什么 |
+|---|---|---|
+| 不是冷清（真人最近说过话） | 醒来的那个 | `chatterLines` 随机一句 |
+| 冷清 + 醒来的**不是**最后发言者 | 醒来的那个 | `idleReactLines`（接上一句） |
+| 冷清 + 醒来的**正好是**最后发言者 | 另一个在线机器人 | `idleReactLines`；另一个不在线就**不说** |
+| 世界上一条消息都没有 | 醒来的那个 | `chatterLines`（没有可接的话，正常开场） |
+
+- 「冷清」= `now - lastHumanWorldAt >= idleTalkAfterSec`（默认 4 天）；历史里一个真人都没有也算冷清。
+- 🔴 `lastHumanWorldAt` / `lastWorldSpeakerUid` **从 `CHAT_QUEUE:world` 还原**（`seedWorldLedger()`，init 时跑一次），
+  否则每次重启都把冷清计时清零，四天阈值永远达不到。
+  日志：`[bot] 世界频道账本还原：真人 32 小时前 | 机器人 Nova（3 小时前）`。
+- `BOT_STATUS` 新增 `world` 块：`lastSpeakerName / humanIdleSec / idleTalk / pendingSays`，排查「怎么一直是同一个号」直接看这里。
+
+### 防刷屏的五道闸
+
+各来源（喊话 / AI 回复 / GM 手动 / 公告后换人接话 / 冷清补话）各自有间隔，但**不互相避让**时会挤在几秒内连发，
+玩家看到的就是「机器人自说自话」。现在五道闸：
 
 1. **醒来总闸**（`activeMin/MaxSec`）：一个机器人 20~240 分钟才醒一次，一次只做一件事。
    这是最粗也是最有效的一道 —— 频率根本高不起来。
@@ -362,6 +440,8 @@ mongosh ... --eval 'db.user.findOne({_id:90000001},{arenaManager:1}).arenaManage
    不更新 `lastHumanMsgId`，不触发回复。号段兜底是为了**别的服**的机器人（uid 同样是 9xxxxxxx）。
 4. **认领账本 + 回调二次校验**：接单立刻写 `repliedHumanMsgId`，DSH 回来时若这个值已经不是自己认领的那个
    （期间被别的机器人重新认领过），这次回复直接丢弃 —— 不会对着自己的话再说一遍，也不会为同一条消息二次付费。
+5. **换人 + 不自接**（10-23 加）：公告后的接话**必须换人**（`excludeUid`），冷清补话时醒来的是最后发言者
+   就改让另一个在线号说、只剩自己在线就闭嘴。这条不是节流，是「不许自己跟自己聊」。
 
 实测（临时把醒来间隔压到 60~120 秒验证链路）：
 
@@ -720,6 +800,13 @@ open http://127.0.0.1:18766/
 2. 热补丁沿用 runbook：`zip -u` 就地替换 class，**不要整包重打**；重启会踢线，先确认在线人数。
 3. 线上 2C/3.6G，`dsh_bridge` 不要跑在服务器上（node + 模型推理扛不住），
    建议 `replyEnabled=false` 先只上「在线数 + 喊话 + 公告」，或者把 `dshUrl` 指向内网的另一台机器。
+   🔴 **2026-10-23 实测过这个坑**：线上 `replyEnabled` 一直是 true，但 `127.0.0.1:18765` 根本没监听
+   （`ss -lntp` 只有 7916），于是每条「AI 回复」都在 20ms 内退化成 `BotText.EN_FALLBACK` 那 26 句固定短句
+   （日志 `source=fallback`）。已经改成 `replyEnabled=false`；要开 AI 回话，**先把桥接起起来再改回去**。
+   关掉后 §4.6 的冷清补话照常工作，不依赖 DSH。
 4. 首次上线保持 `activeMinSec/activeMaxSec = 1200/14400`（20~240 分钟）的躺平节奏，
    先观察一天日志里有没有重复文案、有没有玩家抱怨；觉得太冷清就把 `activeMaxSec` 往下调，
    **不要**去动 `chatterMinSec`（那只是醒来后的第二道闸，改它治不了冷清）。
+5. 排查「怎么一直是同一个号在说话」：先看 `BOT_STATUS` 的 `world` 块（`lastSpeakerName` / `idleTalk` /
+   `pendingSays`）和每个 bot 的 `nextWakeInSec`，再对日志 `醒来 ->` 那一行 ——
+   `醒来 -> 不在线，N 秒后重试` 说明撞了离线（§4.5），不是被代码锁死。

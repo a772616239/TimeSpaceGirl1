@@ -290,6 +290,51 @@ $P scripts/aso/aso_assets.py check --variant B
 
 ---
 
+### 5.3 10 组角色组合候选（2026-10-23）
+
+置顶图真正难的不是排版，是**选哪两位角色**。所以把「选人」独立成一轮：同一版面、同一套
+四语文案，只换底图，铺 10 组让眼睛挑。角色组合写在 `data_aso/assets/fusion_pairs.json`：
+
+```json
+{"tag":"0715","left":"07","right":"15","note":"东方蛇身创世神 × 赛博机车骑士：神话 vs 未来"}
+```
+
+`tag` 必须是 `left+right` 拼起来的四位数——`cmd_duo` 的工作目录与底图名都按这个规则生成
+（`bg_0715.png` / `stage_duo_0715/`）。改 tag 会导致底图收不到。
+
+```bash
+# 1) 串行出全部 10 组底图（断点续跑：已存在的 bg_<tag>.png 默认跳过）
+$P scripts/aso/hero_keyart.py batch
+$P scripts/aso/hero_keyart.py batch --only 0715,1217     # 只跑几组
+$P scripts/aso/hero_keyart.py batch --force --only 1217  # 重画某一组
+
+# 2) 每组单独拼装（--bg 覆盖底图，不必反复改 fusion.json；--tag 决定输出后缀）
+for t in $(jq -r '.pairs[].tag' data_aso/assets/fusion_pairs.json); do
+  $P scripts/aso/aso_fusion.py build --layout duo --locales en-US,ja-JP,zh-CN,zh-TW \
+     --bg data_aso/assets/gen/fusion/bg_$t.png \
+     --out data_aso/derived/B/fusion10 --tag $t
+done
+
+# 3) 验收页：10 组一页平铺，每组四语并排，点图看原图
+$P scripts/aso/fusion_page.py --variant B
+#   → data_aso/derived/B/fusion10.html
+```
+
+要点：
+
+- 🔴 **`batch` 必须串行**（内部逐组 `--wait`）。同机 Chrome 登录态与 `inbox/` 不隔离，两路并发必串图。
+- 🔴 **候选目录不是线上目录**。10 组写在 `derived/B/fusion10/`，**不要 `--promote`**：
+  promote 会把 `feature_01.png` 覆盖成一张并清掉别的 `feature_*`，10 组进去只剩最后一组。
+  选定某一组后，再对那一组的 `bg_<tag>.png` 单独跑 `--promote` 上线。
+- 一组实测 89~126 秒；若某组卡到 6~8 分钟，是在**踩坏号**（日志里 `cdp:xxxxx 不可用（rc=1）→ 换下一个号`），
+  不是模型慢，等它自己换号即可，别手动 kill（kill 掉这张就废了，只能 `--force` 重画）。
+- 中途额度耗尽：`batch` 会把失败的 tag 列在汇总里，恢复后原命令重跑即可，成功的组自动跳过。
+- 换角色组合就改 `fusion_pairs.json`，不用碰代码。新角色要先在 `hero_specs.json` 加特征卡
+  （id 从 `07` 起续编），配色跑 `hero_features.py extract --art <立绘>` 得到，**不要手填**。
+
+---
+
+
 ## 6. A/B：能测什么，怎么读数
 
 ### 6.1 纪律

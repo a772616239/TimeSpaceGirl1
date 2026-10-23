@@ -10,6 +10,8 @@
     {"name":"LOCALES","type":"string","default":"","description":"语言子集，逗号分隔：en,ja,zh-CN,zh-TW。留空=四语全做"},
     {"name":"FIT","type":"choice","choices":["cover","pad"],"default":"cover","description":"截图归一方式。cover=铺满裁切（默认，画面满、但会切边）；pad=整图装入+模糊补边（不裁内容、两侧留虚化底）"},
     {"name":"ALLOW_WRITE","type":"bool","default":false,"description":"🔴 只有勾上才会真的写 Play（edits.listings / edits.images）。不勾=只打印 diff"},
+    {"name":"IMAGE_TYPES","type":"choice","choices":["","phoneScreenshots","featureGraphic"],"default":"","description":"只推某一类图。留空=截图与置顶图都推；只换置顶图选 featureGraphic（否则会连带覆盖截图）"},
+    {"name":"SHOTS","type":"string","default":"","description":"只推这几张手机截图，逗号分隔序号（如 0,1,2,5）。Play 每语上限 8 张，派生目录常有 9 张，留空则超上限只传前 8 张并告警"},
     {"name":"TRIGGER_ART","type":"bool","default":false,"description":"勾上则按缺图清单触发 TS-Art-Restyle 出图（不等待，产物下一轮用 ingest 收回）"},
     {"name":"ART_THEME","type":"choice","choices":["cyber","christmas","newyear","halloween","valentine","summer_surf","provence","thanksgiving","explore"],"default":"cyber","description":"触发换皮时用的题材。cyber=保持赛博原风味；其余为节日/场景主题"},
     {"name":"ART_PROVIDER","type":"choice","choices":["chatgpt_web","manual"],"default":"chatgpt_web","description":"出图通道，透传给 TS-Art-Restyle"},
@@ -51,6 +53,8 @@ pipeline {
           env.ASO_MODE    = params.MODE
           env.ASO_FIT     = params.FIT
           env.ASO_WRITE   = params.ALLOW_WRITE.toString()
+          env.ASO_IMGTYPE = params.IMAGE_TYPES.trim()
+          env.ASO_SHOTS   = params.SHOTS.trim()
           env.ASO_DAYS    = (params.EXP_DAYS.trim() ?: '14')
           env.ASO_HYPO    = params.EXP_HYPOTHESIS.trim()
         }
@@ -239,6 +243,9 @@ cd "$PROJ"
 PUSH_ARGS=(push --variant "$ASO_VARIANT")
 [[ -n "${ASO_LOCALES:-}" ]] && PUSH_ARGS+=(--locales "$ASO_LOCALES")
 [[ "$ASO_WRITE" == "true" ]] && PUSH_ARGS+=(--allow-write --yes)
+# 图片类型/截图白名单：Play 每语 phoneScreenshots 上限 8 张，派生目录常有 9 张
+[[ -n "${ASO_IMGTYPE:-}" ]] && PUSH_ARGS+=(--image-types "$ASO_IMGTYPE")
+[[ -n "${ASO_SHOTS:-}"   ]] && PUSH_ARGS+=(--shots "$ASO_SHOTS")
 case "$ASO_MODE" in
   text*)   PUSH_ARGS+=(--text-only) ;;
   images*) PUSH_ARGS+=(--images-only) ;;

@@ -5,7 +5,7 @@
     aso_assets.py fetch  --locales en-US,ja-JP          # 把线上原图抓下来当基线
     aso_assets.py build  --variant B                    # 按 data_aso/assets/shots.json 派生
     aso_assets.py check  --variant B                    # Play 规格体检
-    aso_assets.py preview --variant B                   # 拼一张 contact sheet（人眼验收用）
+    aso_assets.py preview --variant B                   # 打开验收台（真机模拟 + 合规检查 + 文案计数）
 
 为什么不是「换皮」而是「派生」
 ------------------------------
@@ -21,8 +21,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -254,7 +256,7 @@ def cmd_build(args) -> int:
 
     (out_root / "index.json").write_text(
         json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    _write_preview(out_root, locales)
+    _write_preview(out_root, locales, notes)
 
     print(f"[build] {out_root}  画布 {tw}×{th}  fit={args.fit}")
     for loc in locales:
@@ -275,29 +277,387 @@ def _parse_size(s: str) -> tuple[int, int]:
         raise SystemExit(f"尺寸写法应是 1080x1920，收到：{s}")
 
 
-def _write_preview(out_root: Path, locales: list[str]) -> None:
-    """拼一张 HTML contact sheet：四个人眼一起看，别一张张点。"""
-    rows = []
+# 「某张截图被放大」这种逐图提醒在验收台里会被「合规检查」按张数汇总掉，
+# 留着只会同一句话说三遍，所以这里过滤掉，只保留语言级提醒（如置顶图缺本地化）。
+_SHOT_NOTE_RE = re.compile(r"shot_\d+\.png")
+
+
+def _write_preview(out_root: Path, locales: list[str], notes: list[str] | None = None) -> None:
+    """生成验收台：一份 HTML，把「图上真机什么样」和「文案还剩几个字」放在同一屏。
+
+    为什么不再是一排缩略图：验收要回答三个具体问题——
+      1. 用户在商店页第一屏到底看到什么（真机比例 + 标题 + 短描述）；
+      2. 每张图合不合规（尺寸/比例/放大倍数/体积），不合规的是哪一张；
+      3. 文案离上限还有多少余量、跟线上 A 差在哪。
+    缩略图这三件事一件都答不了，所以重做成带导航、检查项、文案计数和灯箱的结构。
+    """
+    notes = notes or []
+    variant = out_root.name
+    idx = C.load_json(out_root / "index.json")
+    meta = C.load_variant_meta(variant)
+    data: dict = {
+        "variant": variant,
+        "canvas": idx.get("canvas") or list(C.SHOT_SIZE),
+        "featureSize": list(C.FEATURE_SIZE),
+        "limits": C.LIMITS,
+        "builtAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "meta": {k: meta.get(k) for k in ("label", "note", "hypothesis") if meta.get(k)},
+        "locales": {},
+    }
     for loc in locales:
-        cells = "".join(
-            f'<figure><img src="{loc}/{f.name}"><figcaption>{f.name}</figcaption></figure>'
-            for f in sorted((out_root / loc).glob("*.png")))
-        rows.append(f'<section><h2>{loc} · {C.LOCALES[loc]["label"]}</h2>'
-                    f'<div class="row">{cells}</div></section>')
-    html = f"""<!doctype html><meta charset="utf-8">
-<title>店面素材 · {out_root.name}</title>
-<style>
-body{{background:#111216;color:#e8e8ef;font:14px/1.5 -apple-system,"PingFang SC",sans-serif;margin:24px}}
-h2{{font-size:15px;color:#9aa0b4;margin:28px 0 10px;font-weight:600}}
-.row{{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}}
-figure{{margin:0;flex:0 0 auto}}
-img{{height:360px;border-radius:8px;display:block;background:#000}}
-figcaption{{font-size:11px;color:#7b8098;margin-top:6px}}
-</style>
-<h1 style="font-size:18px">店面素材派生 · {out_root.name}</h1>
-{''.join(rows)}
-"""
+        try:
+            live = C.text_fields(C.load_listing(variant, loc))
+        except SystemExit:
+            live = {}
+        base: dict = {}
+        if variant != "A":
+            try:
+                base = C.text_fields(C.load_listing("A", loc))
+            except SystemExit:
+                base = {}
+        ents = idx["locales"].get(loc, [])
+        shots = [e for e in ents if e["file"].startswith("shot")]
+        feats = [e for e in ents if e["file"].startswith("feature")]
+        data["locales"][loc] = {
+            "code": loc,
+            "label": C.LOCALES[loc]["label"],
+            "shots": shots,
+            "feature": feats[0] if feats else None,
+            "copy": live,
+            "base": base,
+            "notes": [n for n in notes
+                      if n.startswith(loc) and not _SHOT_NOTE_RE.search(n)],
+        }
+
+    html = (
+        "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        f"<title>店面验收台 · {variant}</title><style>{_PREVIEW_CSS}</style></head><body>"
+        "<aside class=\"side\">"
+        "<div class=\"brand\"><span class=\"mark\"></span>"
+        "<span><b>店面验收台</b><i>Store Iteration</i></span></div>"
+        "<div class=\"pills\">"
+        f"<span class=\"pill accent\">变体 {variant}</span>"
+        f"<span class=\"pill\">{data['canvas'][0]}×{data['canvas'][1]}</span></div>"
+        "<nav id=\"nav\"></nav>"
+        "<div class=\"side-foot\">"
+        f"<div>生成于 {data['builtAt']}</div>"
+        "<div class=\"mono\">data_aso/derived/" + variant + "</div>"
+        "<div class=\"tip\">点任意截图看原尺寸 · Esc 关闭</div>"
+        "</div></aside>"
+        "<main><header class=\"topbar\">"
+        "<div><h1>商店页素材与文案</h1>"
+        "<p id=\"topmeta\" class=\"sub\"></p></div>"
+        "<div id=\"health\" class=\"health\"></div></header>"
+        "<div id=\"panels\"></div>"
+        "<footer class=\"foot\">A 组为线上基线（只读）· 推送需 ALLOW_WRITE · 送审只能人工点</footer>"
+        "</main>"
+        "<div id=\"lightbox\" class=\"lightbox\"><img alt=\"\"><span class=\"hint\">Esc / 点击关闭</span></div>"
+        f"<script>const DATA={json.dumps(data, ensure_ascii=False)};</script>"
+        f"<script>{_PREVIEW_JS}</script></body></html>"
+    )
     (out_root / "preview.html").write_text(html, encoding="utf-8")
+
+
+_PREVIEW_CSS = r"""
+:root{
+  --bg:#0a0b10;--surface:#12141c;--surface2:#171a24;--surface3:#1d2130;
+  --line:rgba(255,255,255,.075);--line2:rgba(255,255,255,.14);
+  --text:#e9ebf2;--muted:#8b90a6;--dim:#5f6478;
+  --violet:#8b7bff;--cyan:#35d6d0;--amber:#f5b545;--red:#ff6b6b;--green:#4ade80;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  --side:252px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--text);
+  font:14px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",sans-serif;
+  -webkit-font-smoothing:antialiased;display:flex;align-items:flex-start}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(820px 520px at 4% -8%,rgba(139,123,255,.17),transparent 62%),
+             radial-gradient(760px 460px at 100% -4%,rgba(53,214,208,.10),transparent 58%)}
+.mono{font-family:var(--mono);font-size:11px}
+/* ---------- 侧栏 ---------- */
+.side{position:sticky;top:0;flex:0 0 var(--side);width:var(--side);height:100vh;z-index:2;
+  padding:22px 16px;display:flex;flex-direction:column;gap:18px;
+  background:linear-gradient(180deg,rgba(23,26,36,.92),rgba(10,11,16,.92));
+  border-right:1px solid var(--line);backdrop-filter:blur(12px)}
+.brand{display:flex;align-items:center;gap:10px;font-size:15px}
+.brand .mark{width:26px;height:26px;border-radius:9px;flex:0 0 auto;
+  background:conic-gradient(from 210deg,var(--violet),var(--cyan),var(--violet));
+  box-shadow:0 0 22px rgba(139,123,255,.45)}
+.brand i{display:block;font-style:normal;font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim)}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line2);
+  color:var(--muted);font-family:var(--mono)}
+.pill.accent{color:#cdc7ff;border-color:rgba(139,123,255,.4);background:rgba(139,123,255,.12)}
+#nav{display:flex;flex-direction:column;gap:2px;overflow:auto;flex:1}
+#nav button{all:unset;cursor:pointer;display:flex;align-items:center;gap:9px;
+  padding:9px 11px;border-radius:10px;color:var(--muted);font-size:13px;transition:.16s}
+#nav button:hover{background:rgba(255,255,255,.05);color:var(--text)}
+#nav button.on{background:rgba(139,123,255,.14);color:#fff;
+  box-shadow:inset 0 0 0 1px rgba(139,123,255,.32)}
+#nav button .code{font-family:var(--mono);font-size:10px;color:var(--dim);margin-left:auto}
+#nav button.on .code{color:#cdc7ff}
+#nav .dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex:0 0 auto}
+#nav .dot.warn{background:var(--amber)}
+.side-foot{font-size:11px;color:var(--dim);line-height:1.8;border-top:1px solid var(--line);padding-top:12px}
+.side-foot .tip{color:#4a4f60}
+/* ---------- 主区 ---------- */
+main{flex:1;min-width:0;padding:26px 30px 60px;position:relative;z-index:1}
+.topbar{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;
+  padding-bottom:16px;margin-bottom:22px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+h1{margin:0;font-size:21px;font-weight:650;letter-spacing:-.01em}
+.sub{margin:5px 0 0;font-size:12px;color:var(--dim)}
+.health{display:flex;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:5px 11px;
+  border-radius:9px;border:1px solid var(--line2);color:var(--muted);background:var(--surface)}
+.chip b{font-family:var(--mono);font-size:13px;color:var(--text)}
+.chip.ok{border-color:rgba(74,222,128,.3);background:rgba(74,222,128,.09)}
+.chip.ok b{color:var(--green)}
+.chip.warn{border-color:rgba(245,181,69,.32);background:rgba(245,181,69,.1)}
+.chip.warn b{color:var(--amber)}
+.panel{display:none;animation:fade .22s ease}
+.panel.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.panel-head{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.panel-head h2{margin:0;font-size:16px;font-weight:600;display:flex;align-items:center;gap:9px}
+.panel-head h2 .code{font-family:var(--mono);font-size:11px;color:var(--violet);
+  background:rgba(139,123,255,.12);border:1px solid rgba(139,123,255,.28);
+  padding:2px 8px;border-radius:7px}
+.grid2{display:grid;grid-template-columns:minmax(320px,1fr) minmax(280px,.85fr);gap:16px;margin-bottom:16px}
+.card{background:linear-gradient(180deg,var(--surface),var(--bg));border:1px solid var(--line);
+  border-radius:16px;padding:18px;margin-bottom:16px}
+.card>h3{margin:0 0 14px;font-size:12px;font-weight:600;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:8px}
+.card>h3 .count{font-family:var(--mono);font-size:11px;color:var(--dim);text-transform:none;letter-spacing:0}
+/* 真机模拟 */
+.store-body{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
+.phone{width:236px;flex:0 0 auto;border-radius:26px;padding:8px;position:relative;
+  background:linear-gradient(160deg,#2a2e3d,#12141c);
+  box-shadow:0 22px 48px -18px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.09)}
+.phone img{width:100%;display:block;border-radius:19px;aspect-ratio:9/16;object-fit:cover;cursor:zoom-in}
+.store-text{flex:1;min-width:210px}
+.store-title{font-size:17px;font-weight:600;line-height:1.35}
+.store-dev{font-size:12px;color:var(--cyan);margin-top:3px}
+.store-meta{font-size:11.5px;color:var(--dim);margin-top:7px;display:flex;gap:10px;flex-wrap:wrap}
+.store-short{font-size:12.5px;color:var(--muted);margin-top:11px;line-height:1.6}
+.store-btn{margin-top:14px;display:inline-block;font-size:12px;font-weight:600;color:#0a0b10;
+  background:linear-gradient(135deg,var(--cyan),#7de8b8);padding:7px 22px;border-radius:999px}
+/* 检查项 */
+.checklist{display:flex;flex-direction:column;gap:9px}
+.check{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;line-height:1.5}
+.check .ic{width:15px;height:15px;border-radius:50%;flex:0 0 auto;margin-top:2px;
+  display:grid;place-items:center;font-size:9px;font-weight:700}
+.check.ok .ic{background:rgba(74,222,128,.16);color:var(--green)}
+.check.warn .ic{background:rgba(245,181,69,.16);color:var(--amber)}
+.check.bad .ic{background:rgba(255,107,107,.16);color:var(--red)}
+.check span{color:var(--muted)}
+.check b{color:var(--text);font-weight:600}
+/* 截图卡 */
+.shots{display:grid;grid-template-columns:repeat(var(--cols,4),minmax(0,1fr));gap:14px}
+.shot{position:relative;border-radius:13px;overflow:hidden;border:1px solid var(--line);
+  background:#000;transition:.18s;cursor:zoom-in}
+.shot:hover{transform:translateY(-3px);border-color:rgba(139,123,255,.45);
+  box-shadow:0 16px 34px -16px rgba(139,123,255,.5)}
+.shot img{width:100%;display:block;aspect-ratio:9/16;object-fit:cover}
+.shot .ord{position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:10px;
+  background:rgba(0,0,0,.62);color:#fff;padding:2px 7px;border-radius:6px;
+  backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.14)}
+.shot .chips{position:absolute;left:0;right:0;bottom:0;padding:22px 9px 8px;display:flex;
+  flex-wrap:wrap;gap:4px;background:linear-gradient(transparent,rgba(0,0,0,.86) 55%)}
+.shot .chips i{font-style:normal;font-family:var(--mono);font-size:9.5px;color:#c9cddd;
+  background:rgba(255,255,255,.1);padding:1px 5px;border-radius:4px}
+.shot .chips i.up{color:#ffd9a0;background:rgba(245,181,69,.22)}
+.feature{border-radius:12px;overflow:hidden;border:1px solid var(--line);cursor:zoom-in;
+  max-width:920px}
+.feature img{width:100%;display:block;aspect-ratio:1024/500;object-fit:cover}
+/* 文案 */
+.field{padding:14px 0;border-top:1px dashed var(--line)}
+.field:first-of-type{border-top:0;padding-top:0}
+.field-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.field-head .k{font-size:12px;color:var(--muted);letter-spacing:.03em}
+.field-head .n{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+.field-head .n.over{color:var(--red)}
+.field-head .n.full{color:var(--amber)}
+.bar{height:3px;border-radius:99px;background:rgba(255,255,255,.07);margin:8px 0 11px;overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:99px;
+  background:linear-gradient(90deg,var(--violet),var(--cyan));transition:width .3s}
+.bar.over>i{background:var(--red)}
+.field .txt{font-size:13px;line-height:1.72;color:#d7dae6;white-space:pre-wrap;
+  word-break:break-word;max-width:86ch}
+.field .txt.clamp{max-height:132px;overflow:hidden;
+  mask-image:linear-gradient(#000 62%,transparent)}
+.field .txt.clamp.open{max-height:none;mask-image:none}
+.field .more{all:unset;cursor:pointer;font-size:11.5px;color:var(--violet);margin-top:8px;display:inline-block}
+.field .base{font-size:11.5px;color:var(--dim);margin-top:8px;padding-left:10px;
+  border-left:2px solid rgba(255,255,255,.1);line-height:1.6}
+.field .base b{color:var(--amber);font-weight:500}
+/* 提示 */
+.note{display:flex;gap:9px;font-size:12.5px;color:var(--muted);padding:7px 0;line-height:1.55}
+.note::before{content:"!";flex:0 0 auto;width:15px;height:15px;border-radius:50%;margin-top:2px;
+  display:grid;place-items:center;font-size:9px;font-weight:700;
+  background:rgba(245,181,69,.16);color:var(--amber)}
+.foot{font-size:11px;color:#3f4453;text-align:center;padding-top:10px}
+/* 灯箱 */
+.lightbox{position:fixed;inset:0;z-index:50;display:none;place-items:center;
+  background:rgba(6,7,11,.93);backdrop-filter:blur(6px);cursor:zoom-out;padding:32px}
+.lightbox.on{display:grid}
+.lightbox img{max-width:100%;max-height:100%;border-radius:8px;
+  box-shadow:0 30px 80px -20px #000}
+.lightbox .hint{position:fixed;bottom:18px;left:0;right:0;text-align:center;
+  font-size:11px;color:var(--dim)}
+@media(max-width:1080px){
+  body{display:block}
+  .side{position:static;width:auto;height:auto;flex-direction:row;flex-wrap:wrap;
+    align-items:center;gap:10px;border-right:0;border-bottom:1px solid var(--line)}
+  #nav{flex-direction:row;overflow-x:auto;flex:0 0 100%;order:3}
+  .side-foot{display:none}
+  main{padding:18px 16px 40px}
+  .grid2{grid-template-columns:1fr}
+  .shots{--cols:2 !important}
+}
+"""
+
+_PREVIEW_JS = r"""
+const D=DATA, $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const kb=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.round(n/1024)+' KB';
+const len=s=>(s||'').length;
+const LOCS=Object.keys(D.locales);
+
+/* 单个语言的检查项：只列能自动判定的，不猜 */
+function checks(L){
+  const out=[];
+  const n=L.shots.length;
+  out.push(n>=2?{k:'ok',t:`截图数量 <b>${n}</b> 张，满足 Play 最少 2 张`}
+               :{k:'bad',t:`截图只有 <b>${n}</b> 张，Play 要求至少 2 张`});
+  const badRatio=L.shots.filter(s=>Math.abs(s.size[0]/s.size[1]-9/16)>0.005);
+  out.push(badRatio.length?{k:'bad',t:`比例不是 9:16：${badRatio.map(s=>s.file).join('、')}`}
+                          :{k:'ok',t:`全部 <b>9:16</b>，手机商店页无黑边`});
+  const over=L.shots.filter(s=>s.bytes>8*1024*1024);
+  out.push(over.length?{k:'bad',t:`超过 Play 单张 8MB：${over.map(s=>s.file).join('、')}`}
+                      :{k:'ok',t:`单张最大 <b>${kb(Math.max(...L.shots.map(s=>s.bytes),0))}</b>，上限 8MB`});
+  const up=L.shots.filter(s=>(s.upscale||1)>1.6);
+  if(up.length) out.push({k:'warn',t:`<b>${up.length}</b> 张由低分辨率源放大（最高 ${Math.max(...up.map(s=>s.upscale)).toFixed(1)}×），真机会发糊`});
+  out.push(L.feature?{k:'ok',t:`置顶图 <b>${L.feature.size[0]}×${L.feature.size[1]}</b>`}
+                    :{k:'warn',t:'没有置顶图（featureGraphic），商店页首屏会空一块'});
+  const lim=D.limits;
+  ['title','shortDescription','fullDescription'].forEach(k=>{
+    const v=L.copy[k]||'', n=len(v), mx=lim[k];
+    if(!v) return out.push({k:'bad',t:`<b>${k}</b> 是空的`});
+    out.push(n>mx?{k:'bad',t:`<b>${k}</b> ${n}/${mx}，超 ${n-mx} 个字符，Play 会直接拒`}
+      :n>=mx?{k:'warn',t:`<b>${k}</b> ${n}/${mx} 顶格，加字必须先减字`}
+      :{k:'ok',t:`<b>${k}</b> ${n}/${mx}，余 ${mx-n}`});
+  });
+  return out;
+}
+function statusOf(L){
+  const cs=checks(L);
+  return {bad:cs.filter(c=>c.k==='bad').length, warn:cs.filter(c=>c.k==='warn').length, cs};
+}
+
+function field(k,label,lim){
+  const v=D.locales[ACT].copy[k]||'', n=len(v), p=Math.min(100,n/lim*100);
+  const cls=n>lim?'over':(n>=lim?'full':'');
+  const b=D.locales[ACT].base[k];
+  let base='';
+  if(b!==undefined && b!==v){
+    const bn=len(b);
+    base=`<div class="base">线上 A（${bn} 字）：${esc(b.length>240?b.slice(0,240)+'…':b)}</div>`;
+  }
+  const long=k==='fullDescription';
+  return `<div class="field">
+    <div class="field-head"><span class="k">${label}</span>
+      <span class="n ${cls}">${n} / ${lim}</span></div>
+    <div class="bar ${n>lim?'over':''}"><i style="width:${p}%"></i></div>
+    <div class="txt ${long?'clamp':''}" id="t_${k}">${esc(v)||'<em style="color:#5f6478">（空）</em>'}</div>
+    ${long&&n>260?`<button class="more" data-t="${k}">展开全文 ↓</button>`:''}
+    ${base}</div>`;
+}
+
+function shotCard(s,i){
+  const up=(s.upscale||1)>1.6;
+  return `<div class="shot" data-src="${ACT}/${s.file}" title="${esc(s.file)}">
+    <img src="${ACT}/${s.file}" alt="${esc(s.caption||s.file)}">
+    <span class="ord">#${i+1}</span>
+    <div class="chips"><i class="${up?'up':''}">${s.size[0]}×${s.size[1]}</i>
+      <i class="${up?'up':''}">${kb(s.bytes)}</i>
+      ${up?`<i class="up">放大 ${s.upscale}×</i>`:''}</div></div>`;
+}
+
+let ACT=(()=>{const h=(location.hash||'').replace('#','');return LOCS.includes(h)?h:LOCS[0];})();
+function render(){
+  const L=D.locales[ACT], st=statusOf(L);
+  $('#nav').innerHTML=LOCS.map(l=>{
+    const s=statusOf(D.locales[l]);
+    const k=s.bad?'bad':(s.warn?'warn':'');
+    return `<button data-loc="${l}" class="${l===ACT?'on':''}">
+      <span class="dot ${s.bad?'warn':''}" style="${k==='bad'?'background:#ff6b6b':''}"></span>
+      ${D.locales[l].label}<span class="code">${l}</span></button>`;}).join('');
+  const tot=LOCS.reduce((a,l)=>{const s=statusOf(D.locales[l]);return {b:a.b+s.bad,w:a.w+s.warn};},{b:0,w:0});
+  $('#health').innerHTML=`<span class="chip ${tot.b?'warn':'ok'}">问题 <b>${tot.b}</b></span>
+    <span class="chip ${tot.w?'warn':''}">提醒 <b>${tot.w}</b></span>
+    <span class="chip">语言 <b>${LOCS.length}</b></span>`;
+  const nimg=L.shots.length+(L.feature?1:0);
+  $('#topmeta').textContent=`${L.label} ${L.code} · ${nimg} 张图 · 画布 ${D.canvas[0]}×${D.canvas[1]} · 变体 ${D.variant}`;
+  const first=L.shots[0];
+  const html=`
+  <div class="panel on">
+    <div class="panel-head"><h2>${L.label}<span class="code">${L.code}</span></h2>
+      <div class="health"><span class="chip ${st.bad?'warn':'ok'}">问题 <b>${st.bad}</b></span>
+      <span class="chip ${st.warn?'warn':''}">提醒 <b>${st.warn}</b></span></div></div>
+
+    <div class="grid2">
+      <div class="card"><h3>Play 商店页 · 真机比例</h3>
+        <div class="store-body">
+          <div class="phone">${first?`<img src="${ACT}/${first.file}" alt="首图">`:''}</div>
+          <div class="store-text">
+            <div class="store-title">${esc(L.copy.title)||'—'}</div>
+            <div class="store-dev">Warera · 策略</div>
+            <div class="store-meta"><span>4.6 ★</span><span>1万+ 次下载</span><span>含广告</span></div>
+            <div class="store-short">${esc(L.copy.shortDescription)}</div>
+            <span class="store-btn">安装</span>
+          </div>
+        </div></div>
+      <div class="card"><h3>合规检查</h3><div class="checklist">
+        ${st.cs.map(c=>`<div class="check ${c.k}"><span class="ic">${c.k==='ok'?'✓':(c.k==='warn'?'!':'×')}</span><span>${c.t}</span></div>`).join('')}
+      </div></div>
+    </div>
+
+    <div class="card"><h3>截图序列<span class="count">${L.shots.length} 张 · 按弹窗顺序</span></h3>
+      <div class="shots" style="--cols:${Math.min(L.shots.length,5)||1}">${L.shots.map(shotCard).join('')||'<p class="sub">没有截图</p>'}</div></div>
+
+    ${L.feature?`<div class="card"><h3>置顶图<span class="count">${L.feature.size[0]}×${L.feature.size[1]} · ${kb(L.feature.bytes)}</span></h3>
+      <div class="feature" data-src="${ACT}/${L.feature.file}"><img src="${ACT}/${L.feature.file}" alt="置顶图"></div></div>`:''}
+
+    <div class="card"><h3>商店文案<span class="count">Play 上限 30 / 80 / 4000</span></h3>
+      ${field('title','标题',D.limits.title)}
+      ${field('shortDescription','短描述',D.limits.shortDescription)}
+      ${field('fullDescription','长描述',D.limits.fullDescription)}</div>
+
+    ${L.notes.length?`<div class="card"><h3>本语言提醒</h3>
+      ${L.notes.map(n=>`<div class="note"><span>${esc(n.replace(L.code+': ',''))}</span></div>`).join('')}</div>`:''}
+  </div>`;
+  $('#panels').innerHTML=html;
+  bind();
+}
+function bind(){
+  $('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    ACT=b.dataset.loc;
+    try{history.replaceState(null,'','#'+ACT)}catch(e){}
+    render();});
+  document.querySelectorAll('[data-src]').forEach(el=>el.onclick=()=>{
+    $('#lightbox').querySelector('img').src=el.dataset.src; $('#lightbox').classList.add('on');});
+  document.querySelectorAll('.more').forEach(b=>b.onclick=()=>{
+    const t=document.getElementById('t_'+b.dataset.t); t.classList.toggle('open');
+    b.textContent=t.classList.contains('open')?'收起 ↑':'展开全文 ↓';});
+}
+$('#lightbox').onclick=()=>$('#lightbox').classList.remove('on');
+addEventListener('keydown',e=>{if(e.key==='Escape')$('#lightbox').classList.remove('on');});
+render();
+"""
 
 
 # --------------------------------------------------------------------------- #

@@ -1,6 +1,6 @@
 # TimeSpaceGirl1 长期记忆（索引·红线）
 
-> 细节在同目录 `REF-*.md`（server-ops / local-server / shard10002 / android-release / config-tables / server-name-i18n / jenkins-ci / monetization / art-restyle / client-ui / client-misc / ops-redlines / game-domain）与 `YYYY-MM-DD.md`。这里只留「不知道就会踩坑」的条目。
+> 细节在同目录 `REF-*.md`（server-ops / local-server / shard10002 / android-release / config-tables / server-name-i18n / jenkins-ci / monetization / art-pipeline / art-restyle / art-translate / **promo-shots** / client-ui / client-misc / ops-redlines / game-domain）与 `YYYY-MM-DD.md`。这里只留「不知道就会踩坑」的条目。
 
 ## 环境
 - Unity `6000.6.5f1`（国际版号）；batchmode 显式 `-buildTarget Android`。
@@ -26,26 +26,22 @@
 - 三条必记：出图并行靠**浏览器租约**不靠串行；`gpt_layout` 必须禁模型自译；字被切只能 **lock 之前 refit**。
 
 ## 店面 / ASO（Play 商店页）
-- 🔴 **Play 的能力边界别按印象说**：`edits.listings`（标题/短描述/长描述/video）与 `edits.images`（imageType: phoneScreenshots/featureGraphic/icon…）都能 API 改；但**商店页 A/B 实验没有公开 API**（建实验/看结论只能网页）。**送审模式实测更正（10-23）**：`com.warera.timespace` 是**「提交即自动送审」**，`edits.commit` 带 `changesNotSentForReview` 直接 400（"Changes are sent for review automatically…"），不带就会自动进审核队列 ⇒ 传图=上线，必须先问用户；`aso_play.py` 要加 `--auto-review` 才会真提交。核对是否生效**看 sha1**（`aso_play.py list` 导出 vs `derived/<变体>/<locale>/feature_01.png`），日志「已传 1 张」只是 upload、不含 commit。只换置顶图要 `--image-types featureGraphic`，否则连带覆盖 16 张截图。
-- 入口 Jenkins `TS-Store-Iteration`；脚本 `scripts/aso/`（common/play/lint/assets/art/experiment）；文案真源 `data_aso/variants/{A,B}/<locale>.json`，A = 线上快照**禁改**；runbook `docs/play_store_iteration_aso.md`。
-- 🔴 传图张数：`phoneScreenshots` ≤**8 张/语**、`featureGraphic` ≤**1 张**；`shots.json` 8 条会派生 9 张，全推必 400 ⇒ `aso_play.py --shots 0,1,...,7` 挑（`MAX_IMAGES` 兜底会告警）。`deleteall+upload` 是替换语义，推几张剩几张。核验看 **sha1**，不看张数。
-- 🔴 **用户偏好横版截图**（10-24 明确否决竖版）⇒ 手机截图走 `fusion_shots.py`：置顶图 1024×500 比例 2.048 只超 0.048，**补边到 1024×520（1.969）即可**，画面不动、补边用首末行高斯模糊（不要纯色条）。**定稿 6 组序 `0102,2019,1013,0922,0715,1821`**（前三战斗、后三换口味）；`0823`/`1624` 画面素材不合格已标 `_retired`，`1125` 题材偏、`1426` 深 V 最险，都没上。⚠️ 跑过 `fusion_shots.py` 后**别再跑 `aso_assets.py build`**（会覆盖回竖版并把 `feature_01.png` 换回拼贴版）；`preview` 可随便跑。竖版路线（`aso_assets build`）仍在 git 历史里可切回。
-- 🔴 **管线已工程化，可复用到其它项目**：项目特异性全在 `data_aso/site.json`（包名/品牌/语言/尺寸），换项目只改它 + Jenkins 的 `PROJ`/`PY`；通用 runbook `docs/promo_shots_pipeline.md`。批量出图用 `aso_fusion.py --pairs shots`（= `fusion_shots.DEFAULT_ORDER`，与商店页顺序同一真源）/ `all` / 逗号 tag；`--promote` 与多组**互斥**（每语只准一张 featureGraphic，脚本 exit 2）。Jenkins `SHOT_MODE=landscape` 跑完 ③ 的顺序：`aso_assets build`（产 index.json）→ `--pairs shots --by-locale --out fusion_all` → `fusion_shots` → **复原拼装置顶图** → `preview`（复原那步必需，build 会把置顶图换回拼贴版）。
-- 🔴 `aso_assets.py build` 会连带覆盖 `feature_01.png`，且 `aso_fusion.py --locales` 默认**只有 en-US** ⇒ 恢复置顶图必须显式写 `--locales en-US,ja-JP,zh-CN,zh-TW`，否则只 promote 一个语言。
-- 硬上限：标题 30 / 短描述 80 / 长描述 4000（码位）。Play 截图最短边 ≥320、最长边 ≤3840、**长宽比 ≤2:1**（9:19.5 的原始竖截会被拒）、单张 ≤8MB；置顶图固定 1024×500。
-- 🔴 这游戏是**纯竖版**（`defaultScreenOrientation=0`，只允许 Portrait），而线上 4 张 phoneScreenshots 全是 1920×1080 横版 ⇒ 手机商店页两条黑边、首图面积浪费一半。竖版源图在 `时空美少女物料/`（uuid 命名的 597~720px 宽），放大 1.8× 才到 1080。
-- 🔴 截图底部 1/3 常挂**中文世界聊天**，上商店页必须按图配 `crop_bottom` 裁掉；卖点条要**预留**在画布下方，不能叠在画面上（叠加会被聊天行糊穿）。
-- A/B 读数纪律：单窗口 ≥7 天且 ≥1000 访问才读，否则脚本直接报「数据不足」，不输出 uplift；且是顺序窗口对比，非随机分流。
-- 换皮链路：`aso_art.py plan/seed/trigger/ingest`；`TS-Art-Restyle` 的 `ASSET` 是相对工程根路径，`WRITE_BACK` 必须 false；并行靠浏览器租约，`TSG_LEASE_OWNER=$JOB_NAME-$BUILD_NUMBER`。
-- 🔴 **从立绘池选角色必须逐张放大看图**：立绘 123 张基础图（156 含表情差分），光看名字会挑错——`韩信/尼禄/霍恩海姆/亚瑟/帕里斯/西巴达/法姆贡/海明威/荣芙/运动员` 在游戏里都是**男性**。选人后配色走 `hero_features.py extract --art` 现算，原图暴露的改写成不透明覆盖版。多组候选：`fusion_pairs.json`（**tag 必须是 left+right 拼的四位数**，否则底图收不到）+ `hero_keyart.py batch`（串行/断点续跑/`--force`）+ `aso_fusion.py --bg`（覆盖底图，别反复改 fusion.json）+ `fusion_page.py` 验收页；候选目录**禁 `--promote`**（会把 feature_01 覆盖成一张并清掉其它）。一组 89~126s，卡到 8 分钟是踩坏号（`cdp:xxxxx 不可用 → 换下一个号`），**别 kill**。
-- 🔴 **置顶图拼装链路（定版，2026-10-23）**：三层拆分——两侧角色 `hero_keyart.py duo --pair 01,02 --wait`（管线按**特征卡**重绘，立绘只抽特征、**禁止贴立绘**）→ 中间压实机截图框 → 底部本地压字；`aso_fusion.py build --promote` 把成品写成 `derived/<变体>/<语言>/feature_01.png`（同 `aso_assets build` 文件名）并清掉其它 `feature_*`、刷 `index.json` 哈希 ⇒ preview/push 不用改、不会出现两张置顶图。**无需抠图**的取巧点：底图中段 60% 留空后被画面框整块盖住。Jenkins `TS-Store-Iteration` ③b 阶段，参数 `FUSION` / `FUSION_PAIR` / `FUSION_RENDER`（只有 RENDER 才耗额度）。换图后必须 `aso_assets.py preview` 刷验收页数字。skill `aso-store-iteration`。
-- 🔴 店面图口径：**AI 只画画面，标题一律本地真字体压**（`aso_assets.py headline`）——中/日/繁字形模型会画错、四语排版要统一、改文案不该重出图。宣传图真源 `时空美少女物料/新版本宣传图/*_{1920,1024}/`（专业排版，远超 `1024*500/` 那张拼贴）；配方 `data_aso/assets/promo.json`，AI 底图 `data_aso/assets/gen/`（进库），`seeds/` 不进库。
-- 🔴 画店面图三坑：`LAYOUT` 必须写死「NO text + 底部 N% 留空」（否则面板压到底、标题没处放）；主题 `outfit` 句会把角色原服装换掉 ⇒ `OUTFIT` 逐件点名保留；design 构图自动套金卡框 ⇒ `postprocess --frame none --alpha-mode keep` 复用生成图重跑。实测出图 ~90s。
-- 🔴 **置顶图左右角色不许贴现成立绘**（用户否决：不同光源/画风，一眼剪贴画）⇒ `hero_keyart.py duo --pair 01,02` 按特征卡重绘双人底图（两人都被左右边缘裁切、中间 60%+底部 26% 留空）。中间那块之后被实机截图整块盖掉 ⇒ 不需要抠图（管线不出透明角色，chroma key 抠不干净）。版面 `aso_fusion.py` + `data_aso/assets/fusion.json`；框内取景 `band` 必须避开截图底部按钮行（取 `[0.40,0.80]`，否则中文「禁止」会挂到英文商店页）。
-- 🔴 **立绘特征卡里的 `bare legs/bare feet` 会画出高开叉露胯**（Play 必拒）⇒ 一律写及踝长裙/高腰不透明衬裙；`hero_prompt.py` 有 `DRESS CODE` 硬约束段（groin/buttocks 必须覆盖、开叉不过膝、列 forbidden 词），单人/双人模板都带。
-- ⚠️ Jenkins job META 里布尔参数 **必须写 `type:"bool"`**，写 `"boolean"` 会渲染成字符串参数 ⇒ `when { expression { params.X } }` 恒真（TS-Store-Iteration #1 踩到）。
-- 🔴 置顶图 10 组候选**不能共用同一段画面**：`fusion.json` 的 `screen.shot/band` 是全局值，所有组都读它 ⇒ 缩略图「同一画面重复十遍」（10-23 用户指出）。每组在 `fusion_pairs.json` 里带 `screen{shot,band,focus_x,zoom}`，`aso_fusion.py --pair <tag>` 一次出齐。干净合规真机截图只有 3 张 ⇒ 只能做「3 场战斗的 10 种景别」，要 10 场不同必须补真机截图；`band` 0.30 起（更低吃空景）、0.90 封顶（再往上是中文按钮行）。
-- 🔴 验收页 `data_aso/derived/<变体>/preview.html` 是**验收台**（真机模拟+合规检查+文案计数+灯箱），不是缩略图墙；**改任何前端都要先无头截图自己看一眼**再交付（Chrome `--headless=new --user-data-dir=/tmp/x --screenshot`，不带 user-data-dir 会静默不出图）。⑤ 归档必须 `cp -R` 整目录，只 cp 那个 html 就是满屏 404。
+- 🔴 **Play 能力边界别按印象说**：`edits.listings`（title/short/full/video）与 `edits.images`（phoneScreenshots/featureGraphic/icon…）都能 API 改；**A/B 实验无公开 API**（建/看结论只能网页）。`com.warera.timespace` 是**「提交即自动送审」**：`edits.commit` 带 `changesNotSentForReview` 直接 400，不带就进审核队列 ⇒ **传图=上线，必须先问用户**；`aso_play.py` 加 `--auto-review` 才真提交。核对生效看 **sha1**（list 导出 vs `derived/`），日志「已传 1 张」只是 upload 不含 commit。只换置顶图写 `--image-types featureGraphic`，否则连带覆盖 16 张截图。
+- 入口 Jenkins `TS-Store-Iteration`；脚本 `scripts/aso/`；文案真源 `data_aso/variants/<变体>/<locale>.json`，**A = 线上快照禁改**；runbook `docs/play_store_iteration_aso.md`。
+- 🔴 **关键词周期 `TS-ASO-Cycle`（每 3 日，10-24 建）**：补原三件套缺的「设计」环。`aso_keyword_cycle.py`（gate 未到期 rc=3 / plan 无变更 rc=4 / lint-gate **增量口径** / record+ledger）；词表 `data_aso/keywords/{seed_terms,rewrite_rules}.json`（规则默认 `enabled=false` 人审关口）。cron 每 6h 探针 + 72h 闸门（**别用日字段 `*/3`，跨月会抖成 1~3 天**）。派生父本默认最新 treatment 而非 A。发布双确认 `PUBLISH=review` + `CONFIRM_PACKAGE`=包名。
+- 分词红线：**片假名整段当一个词**（切了就出 `クター`/`ラク`）；汉字段才 n-gram + 词表最长优先遮蔽；来源分按**种类**不按份数（快照越攒越多会让所有词都变「来源 10」）。`repeat_warning` 只跟「真动过」的轮次比。
+- 🔴 **长描述走「成品整体替换」不走替换对**：`data_aso/keywords/fulltext/<locale>.txt` + `--with-fulltext`（Jenkins 参数 `FULLTEXT`，默认 false）。替换对撑不起缺口，成段补内容必须语义连贯。落盘前强检 ≤4000 字 + 字符集。`audit` 体检「字数/首屏80/品类词覆盖/字符集」，`probe` 字段在 seed_terms.json。
+- 🔴 **线上与变体的长描述不是同一份**：`audit` 查**线上**，`plan` 查**父本**。10-24 线上 zh-TW 曾简体混排（29 字，繁体品类词 3/15 ⇒ 搜「放置/陣容/聲優」匹配不到，属**搜索可见性故障**，不参与 A/B 只能直修），已随 L 修好。另「利用率低」**≠** 该加字：中文 900 字已装完卖点，堆到 3000 是注水降转化，收益只在「缺的品类词补上」。
+- 🔴 传图张数：`phoneScreenshots` ≤**8/语**、`featureGraphic` ≤**1**；`shots.json` 8 条派生 9 张，全推必 400 ⇒ `--shots 0,1,...,7` 挑。`deleteall+upload` 是替换语义，推几张剩几张。
+- 🔴 **用户偏好横版截图**（10-24 否决竖版）⇒ 走 `fusion_shots.py`：置顶图 1024×500 比例 2.048 只超 0.048，**补边到 1024×520（1.969）即可**，画面不动、补边用首末行高斯模糊。**定稿 6 组序 `0102,2019,1013,0922,0715,1821`**；`0823`/`1624` 素材不合格已 `_retired`，`1125`/`1426` 没上。
+- 🟢 **10-24 已上线变体 L（四语全量文案）**：title/short 沿用 B，长描述换成 `fulltext` 成品。实验 `aso-20261024-copy-L`（A→L，14 天）；旧 B 窗口标 `superseded`（从未上线，别用 `close`——它强制填 winner）。⚠️ 一次动三元素 ⇒ **归因不纯**，只能回答「L 整体是否优于 A」。
+- 硬上限：标题 30 / 短描述 80 / 长描述 4000（码位）。截图最短边 ≥320、最长 ≤3840、**长宽比 ≤2:1**、单张 ≤8MB；置顶图固定 1024×500。
+- 🔴 这游戏**纯竖版**（`defaultScreenOrientation=0`）但线上 4 张手机截图是 1920×1080 横版 ⇒ 两条黑边、首图浪费一半面积。竖版源图在 `时空美少女物料/`（597~720px 宽，要放大 1.8×）。
+- 🔴 截图底部 1/3 常挂**中文世界聊天**，必须按图配 `crop_bottom` 裁；卖点条**预留**在画布下方，不能叠画面（会被聊天行糊穿）。
+- A/B 读数：单窗口 ≥7 天且 ≥1000 访问才读，否则直接报「数据不足」；是顺序窗口对比，非随机分流。
+- 换皮：`aso_art.py plan/seed/trigger/ingest`；`TS-Art-Restyle` 的 `ASSET` 是相对工程根路径，`WRITE_BACK` 必须 false；并行靠浏览器租约 `TSG_LEASE_OWNER=$JOB_NAME-$BUILD_NUMBER`。
+- 🎨 截图/置顶图/店面图全流程 → **详见 `REF-promo-shots.md`**（可复用链路、③ 阶段顺序、选角色、三层拼装、`band` 取景、店面图三坑、合规、验收页）。只记两条在此：**两侧角色禁止直接贴立绘**（按特征卡重绘）；**特征卡禁写 `bare legs/bare feet`**（会画高开叉露胯，Play 必拒）。
+- ⚠️ Jenkins META 布尔参数**必须写 `type:"bool"`**，写 `"boolean"` 会变字符串参数 ⇒ `when { expression { params.X } }` 恒真。
 
 ## 资源构建
 - 🔴 导表/资源构建一律走 Jenkins `TS-Resource-Build`（独立 clone `TimeSpaceGirl1-build` 里跑），**不要让用户关 Unity 编辑器**（10-21 用户纠正：开发工程开着也能导）。本地 `resource_build.sh` 才会被同 `-projectpath` 进程拒绝。打包目录从 origin 无条件 reset ⇒ **先 commit+push 再触发**（`EXPORT_TABLES=true SYNC_BYTES=true REBUILD_AB=true SERVER_ENV=正式服`），产物再手工 copy 回开发目录。`REBUILD_AB=false` 时 ⑤ 新鲜度闸门必红（正常）。

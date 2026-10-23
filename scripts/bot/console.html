@@ -409,6 +409,7 @@ function renderMetrics(st){
     <div class="metric"><div class="k">平均耗时</div><div class="v">${s.dshMsAvg?(s.dshMsAvg/1000).toFixed(1):"—"}<small>s</small></div></div>
     <div class="metric"><div class="k">最大耗时</div><div class="v">${s.dshMsMax?(s.dshMsMax/1000).toFixed(1):"—"}<small>s</small></div></div>
     <div class="metric"><div class="k">日常喊话</div><div class="v">${s.chatter||0}<small>条</small></div></div>
+    <div class="metric"><div class="k">接话/晒卡</div><div class="v">${s.react||0}<small>条</small></div></div>
     <div class="metric"><div class="k">英雄公告</div><div class="v">${s.announce||0}<small>次</small></div></div>`;
 }
 
@@ -435,8 +436,8 @@ function renderSpark(st){
   $("sparkMeta").textContent = `最近 ${evs.length} 次 · 峰值 ${(max/1000).toFixed(1)}s`;
 }
 
-const EV_COLOR = {reply:"#3fb950", chatter:"#4c9aff", say:"#4c9aff", announce:"#d29922", inject:"#a371f7", toggle:"#f85149", manual:"#8ec1ff"};
-const EV_LABEL = {reply:"回复", chatter:"喊话", say:"说话", announce:"公告", inject:"玩家", toggle:"开关", manual:"手动"};
+const EV_COLOR = {reply:"#3fb950", chatter:"#4c9aff", say:"#4c9aff", react:"#39c5cf", announce:"#d29922", inject:"#a371f7", toggle:"#f85149", manual:"#8ec1ff"};
+const EV_LABEL = {reply:"回复", chatter:"喊话", say:"说话", react:"接话", announce:"公告", inject:"玩家", toggle:"开关", manual:"手动"};
 function renderEvents(st){
   const evs = ((st && st.events) || []).slice().reverse();
   const box = $("events");

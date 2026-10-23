@@ -28,6 +28,29 @@ public class CLIBuilder
     }
 
     /// <summary>
+    /// CLI 口径名 → 枚举。两侧**命名本来就不一致**：CLI 侧（build_apk.sh / aab_release.sh /
+    /// Jenkins 的 EXPECT_PROFILE）统一用 release / minimal / dev / full，而枚举成员叫
+    /// Release / <b>MinimalGmOff</b> / Dev / <b>FullTemplate</b>。
+    ///
+    /// 🔴 只靠 Enum.TryParse 会出事（2026-10-23 实测）：TS_RELEASE_PROFILE="minimal" 解析失败
+    ///    ⇒ 静默回落 Release ⇒ 测试包被打成「关日志的正式包」⇒ 包内核验判
+    ///    「期望 minimal，实际命中 release」整轮 FAILURE（TS-Android-TestPackage #20 / #21）。
+    ///    这个 bug 的症状是「参数明明传了、日志也印了口径、产物却是另一套」，极难靠读脚本看出来。
+    /// </summary>
+    static bool TryParseCliProfile(string raw, out ReleaseBuildSettings.ReleaseProfile profile)
+    {
+        switch ((raw ?? string.Empty).Trim().ToLowerInvariant())
+        {
+            case "minimal": profile = ReleaseBuildSettings.ReleaseProfile.MinimalGmOff; return true;
+            case "full":    profile = ReleaseBuildSettings.ReleaseProfile.FullTemplate; return true;
+            case "release": profile = ReleaseBuildSettings.ReleaseProfile.Release;      return true;
+            case "dev":     profile = ReleaseBuildSettings.ReleaseProfile.Dev;          return true;
+        }
+        profile = ReleaseBuildSettings.ReleaseProfile.Release;
+        return false;
+    }
+
+    /// <summary>
     /// 命令行出包口径。**由环境变量 TS_RELEASE_PROFILE 决定**（release / minimal / dev / full），
     /// 下发方：scripts/aab_release.sh --profile、.jenkins/lib/build_apk.sh --profile。
     ///
@@ -50,9 +73,15 @@ public class CLIBuilder
             return kDefault;
         }
 
+        // 先按 CLI 口径名映射（minimal/full 与枚举名不同名），再退回枚举原名/数字的常规解析。
         ReleaseBuildSettings.ReleaseProfile parsed;
-        if (System.Enum.TryParse(raw, true, out parsed)
-            && System.Enum.IsDefined(typeof(ReleaseBuildSettings.ReleaseProfile), parsed))
+        bool ok = TryParseCliProfile(raw, out parsed);
+        if (!ok)
+        {
+            ok = System.Enum.TryParse(raw, true, out parsed)
+                 && System.Enum.IsDefined(typeof(ReleaseBuildSettings.ReleaseProfile), parsed);
+        }
+        if (ok)
         {
             UnityEngine.Debug.Log($"[CLIBuilder] 出包口径 = {parsed}（来自 TS_RELEASE_PROFILE={raw}）");
             return parsed;

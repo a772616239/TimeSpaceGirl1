@@ -116,6 +116,7 @@ grep "\[bot\]" $HOME/home/java/logs/gameserver.log | tail
 | `bot reply` | 跳过等待立刻回一次 |
 | `bot act <uid>` | 跳过等待立刻做一次真实游戏操作（升级英雄 / 抽卡） |
 | `bot arena <uid>` | 跳过 4~10 小时排期、不掷概率，立刻去竞技场打一场（额度/封顶/名次判定照旧，打完顺延下次排期） |
+| `bot wake <uid>` | **跳过 20~240 分钟排期，立刻「醒一次」**：走完整 `onActive` 优先级（回话 > 竞技场 > 真实操作 > 公告 > 闲聊/冷清补话）。验证某个分支不用再等半小时 |
 | `bot team <uid>` | 复刻客户端个人面板的服务端路径，打印 `name/level/vip/head/force/heroes/...`，用来查「面板空白」 |
 
 ```bash

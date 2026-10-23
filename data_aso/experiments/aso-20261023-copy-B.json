@@ -1,7 +1,7 @@
 {
   "id": "aso-20261023-copy-B",
-  "created": "2026-10-23T15:30:14",
-  "status": "planned",
+  "created": "2026-10-23T20:35:32",
+  "status": "superseded",
   "baseline": "A",
   "variant": "B",
   "element": "copy",
@@ -26,11 +26,13 @@
     }
   ],
   "readout": null,
-  "note": "",
+  "note": "\n被 20261024 推的 L 取代（本变体从未上线，无读数）；线上已直接进入 L，本窗口未开测。",
   "rules": [
     "单窗口 ≥ 7 天且 ≥ 1000 次商店页访问才读数",
     "🔴 一次只动一个元素（文案/截图/图标分开测），否则分不清是谁的效果",
     "切变体时先在 Console 确认「上一版已生效」，再记窗口起点",
     "Play 原生实验没有 API ⇒ 若要严格随机分流，去 Console 手动建实验，本脚本只做记录"
-  ]
+  ],
+  "superseded_at": "2026-10-24T01:56:06",
+  "superseded_by": "aso-20261024-copy-L"
 }

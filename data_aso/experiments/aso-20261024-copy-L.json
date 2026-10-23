@@ -1,0 +1,36 @@
+{
+  "id": "aso-20261024-copy-L",
+  "created": "2026-10-24T01:56:11",
+  "status": "planned",
+  "baseline": "A",
+  "variant": "L",
+  "element": "copy",
+  "locales": [
+    "en-US",
+    "ja-JP",
+    "zh-CN",
+    "zh-TW"
+  ],
+  "hypothesis": "L = B 的全量修正 + 四语长描述扩容（覆盖 16/16、16/16、14/14、14/14）。预期：① zh-TW 恢复全繁体后繁体关键词可被检索，该语种商店页访问量应上升；② 长描述补齐 afk/gacha/ソシャゲ/挂机等长尾词，搜索曝光上升；③ 标题卖点词前置（放置战棋）与短描述去冗余，转化率不降。",
+  "window_days": 14,
+  "windows": [
+    {
+      "variant": "A",
+      "start": "2026-10-24",
+      "end": null
+    },
+    {
+      "variant": "L",
+      "start": "2026-10-24",
+      "end": null
+    }
+  ],
+  "readout": null,
+  "note": "一次推了三件套（title/short/fullDescription），归因不纯：无法区分是标题关键词、短描述重排还是长描述扩容起作用。baseline A 是推送前线上快照（含 zh-TW 简体混排故障）。",
+  "rules": [
+    "单窗口 ≥ 7 天且 ≥ 1000 次商店页访问才读数",
+    "🔴 一次只动一个元素（文案/截图/图标分开测），否则分不清是谁的效果",
+    "切变体时先在 Console 确认「上一版已生效」，再记窗口起点",
+    "Play 原生实验没有 API ⇒ 若要严格随机分流，去 Console 手动建实验，本脚本只做记录"
+  ]
+}

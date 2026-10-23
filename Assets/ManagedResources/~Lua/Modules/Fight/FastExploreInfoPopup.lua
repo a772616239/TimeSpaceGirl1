@@ -187,22 +187,12 @@ end
 
 -- 刷新道具数量
 function this.RefreshItemNum()
-    local fastMaxNum = PrivilegeManager.GetPrivilegeNumber(33)
-    local fastBuyNum = PrivilegeManager.GetPrivilegeRemainValue(33)
+    --按钮文字显示「今日剩余次数（X/每日上限）」，日限用完后置灰
+    local leftTimes = AdventureManager.GetTrainLeftTimes()
+    this.trainTime.text = string.format(GetLanguageStrById(11021), leftTimes, AdventureManager.TRAIN_DAILY_MAX)
+    Util.SetGray(this.btnTrain, leftTimes <= 0)
 
-    local str
     local freeTimes = AdventureManager.GetSandFastBattleCount()
-    if freeTimes > 0 then
-        str = string.format(GetLanguageStrById(12092).." <size=44>%s</size>", freeTimes)
-    else
-        if BagManager.GetItemCountById(105) > 0 then
-            str = string.format(GetLanguageStrById(50359).." <size=44>%s</size>", BagManager.GetItemCountById(105))
-        else
-            str = string.format(GetLanguageStrById(50360).." <size=44>%s</size>", fastBuyNum.."/"..fastMaxNum)
-        end
-    end
-    this.trainTime.text = str
-
     if not costItem then
         costItem = SubUIManager.Open(SubUIConfig.ItemView, this.costItem.transform)
     end
@@ -211,7 +201,7 @@ function this.RefreshItemNum()
     else
         costItem:OnOpen(false, {16, 50}, 0.6)
     end
-    costItem.gameObject:SetActive(freeTimes <= 0)
+    costItem.gameObject:SetActive(freeTimes <= 0 and leftTimes > 0)
 end
 
 -- 概率获得显示的道具
@@ -372,6 +362,11 @@ end
 
 -- 训练
 function this.Train()
+    --每日次数上限（含免费次数）：用完后直接拦住，不再发请求（服务端仍会二次校验）
+    if AdventureManager.GetTrainLeftTimes() <= 0 then
+        PopupTipPanel.ShowTipByLanguageId(10342)
+        return
+    end
     FightPointPassManager.oldLevel = PlayerManager.level
     local maxNeed = ConfigManager.GetConfigData(ConfigName.PlayerLevelConfig, PlayerManager.level).MazeTreasureMax--最大持有道具数量
     local curNeed = BagManager.GetItemCountById(FindTreasureManager.materialItemId)
@@ -388,12 +383,14 @@ function this.Train()
                 RedPointManager.PlayerPrefsSetStr(PlayerManager.uid .."mazeTreasureMax", currentTime)
             end
             AdventureManager.GetAventureRewardRequest(1, 0, state, true, function(msg)
+                AdventureManager.AddTrainUsedTimes()
                 this.ShowReward(msg)
                 this.RefreshItemNum()
             end)
         end,nil,nil,nil,true)
     else
         AdventureManager.GetAventureRewardRequest(1, 0, state, true, function(msg)
+            AdventureManager.AddTrainUsedTimes()
             this.ShowReward(msg)
             this.RefreshItemNum()
         end)

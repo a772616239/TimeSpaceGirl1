@@ -379,9 +379,16 @@ function AdventureMainPanel:RefreshBoxRedState()
 end
 
 function AdventureMainPanel:ClickFastBattle()
+    --快速训练每日次数上限（含免费次数）：用完后直接拦住，不再发请求（服务端仍会二次校验）
+    if (AdventureManager.GetTrainLeftTimes() <= 0) then
+        PopupTipPanel.ShowTipByLanguageId(10342)
+        return
+    end
     if (isChooseOne == false) then
         if (this.hourGlassNumber >= costHourGlass or AdventureManager.GetSandFastBattleCount() ~= 0) then
-            AdventureManager.GetAventureRewardRequest(1, 0, false, true)
+            AdventureManager.GetAventureRewardRequest(1, 0, false, true, function()
+                AdventureManager.AddTrainUsedTimes()
+            end)
         else
             PopupTipPanel.ShowTipByLanguageId(10060)
         end
@@ -395,7 +402,9 @@ function AdventureMainPanel:ClickFastBattle()
             cost = costDemonCrystal[costDemonCrystalNum]
         end
         if (BagManager.GetItemCountById(StoreConfig[10015].Cost[1][1]) >= cost) then
-            AdventureManager.GetAventureRewardRequest(1, 1, true, true)
+            AdventureManager.GetAventureRewardRequest(1, 1, true, true, function()
+                AdventureManager.AddTrainUsedTimes()
+            end)
         else
             PopupTipPanel.ShowTipByLanguageId(10060)
         end

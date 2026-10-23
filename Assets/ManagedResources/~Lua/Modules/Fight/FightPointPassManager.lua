@@ -539,7 +539,8 @@ function this:RefreshQuickTrain()
     end
 
     local freeTimes = AdventureManager.GetSandFastBattleCount()
-    return freeTimes > 0
+    --今日日限用完时不再亮快速训练红点
+    return freeTimes > 0 and AdventureManager.GetTrainLeftTimes() > 0
 end
 
 return this

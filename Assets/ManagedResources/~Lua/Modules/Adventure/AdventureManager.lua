@@ -236,6 +236,48 @@ function this.GetSandFastBattleCount()
     return PrivilegeManager.GetPrivilegeRemainValue(PRIVILEGE_TYPE.EXPLORE_REWARD)
 end
 
+--快速训练每日次数上限（含免费次数），与服务端 AdventureRewardGuard.TRAIN_MAX_PER_DAY 保持一致。
+--客户端这份用于界面显示与请求前拦截，真正的硬闸在服务端。
+this.TRAIN_DAILY_MAX = 3
+
+--今日日期键（用服务器时间，避免本机时间与服务器跨日不一致）
+local function GetTrainDayKey()
+    return os.date("%Y%m%d", PlayerManager.serverTime)
+end
+
+--今日快速训练已用次数（本地按日计数）
+function this.GetTrainUsedTimes()
+    local key = PlayerManager.uid .. "trainDayUsed"
+    local raw = RedPointManager.PlayerPrefsGetStr(key)
+    if not raw then
+        return 0
+    end
+    local day, used = string.match(tostring(raw), "^(%d+):(%d+)$")
+    if day ~= GetTrainDayKey() then
+        return 0
+    end
+    return tonumber(used) or 0
+end
+
+--今日快速训练剩余次数
+function this.GetTrainLeftTimes()
+    local left = this.TRAIN_DAILY_MAX - this.GetTrainUsedTimes()
+    if left < 0 then
+        left = 0
+    end
+    return left
+end
+
+--记录一次快速训练（仅在服务端返回成功后调用）
+function this.AddTrainUsedTimes()
+    local key = PlayerManager.uid .. "trainDayUsed"
+    local used = this.GetTrainUsedTimes() + 1
+    if used > this.TRAIN_DAILY_MAX then
+        used = this.TRAIN_DAILY_MAX
+    end
+    RedPointManager.PlayerPrefsSetStr(key, GetTrainDayKey() .. ":" .. used)
+end
+
 this.fightAreaMax = true
 --根据宝箱奖励时间判断是否已经达到最大时长
 function this.GetIsMaxTime()

@@ -660,10 +660,16 @@ def overlap(a: list[str], b: list[str]) -> float:
 
 
 def repeat_warning(ledger: list[dict], top_by_locale: dict[str, list[str]]) -> list[str]:
-    """本轮 top 词与上一轮高度重合且上轮无显著差异 ⇒ 提示别再测同一组。"""
-    if not ledger:
+    """本轮 top 词与上一轮高度重合且上轮无显著差异 ⇒ 提示别再测同一组。
+
+    🔴 只跟「真动过」的轮次比。被阻断的轮次（实验窗口没到期 / 规则未启用）
+    线上一个字都没变，拿它当基线会让下一轮永远报「重复测同一组词」。
+    """
+    usable = [r for r in ledger
+              if r.get("changes") or (r.get("publish") or "none") != "none"]
+    if not usable:
         return []
-    last = ledger[-1]
+    last = usable[-1]
     prev = last.get("top") or {}
     out = []
     for loc, terms in top_by_locale.items():

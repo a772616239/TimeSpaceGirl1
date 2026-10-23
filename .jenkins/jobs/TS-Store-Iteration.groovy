@@ -1,0 +1,281 @@
+/**@META
+{
+  "description": "店面迭代（ASO）：**四语文案闸门 → 竖版截图/置顶图派生 → 规格体检 → 可选调用 TS-Art-Restyle 重绘 → 人眼验收页 → 推送 Play（默认只打印 diff）→ A/B 登记**。默认全程只读；只有勾 ALLOW_WRITE 才会写线上，且写完仍需人工去 Console 点「送审」（本账号是托管式发布，API 无权送审）。",
+  "concurrent": false,
+  "keep": [30, 30],
+  "params": [
+    {"name":"MODE","type":"choice","choices":["dry-run（只读体检）","text（只推文案）","images（只换图）","both（文案+图）","art（只出美术需求单）"],"default":"dry-run（只读体检）","description":"干什么。前四种都会先过文案闸门与素材体检；art 只盘点缺哪些图并生成需求单，不碰 Play"},
+    {"name":"VARIANT","type":"string","default":"B","description":"要处理的变体目录 data_aso/variants/<VARIANT>"},
+    {"name":"BASELINE","type":"string","default":"A","description":"对照基线变体（A = 线上现状快照，别改它）"},
+    {"name":"LOCALES","type":"string","default":"","description":"语言子集，逗号分隔：en,ja,zh-CN,zh-TW。留空=四语全做"},
+    {"name":"FIT","type":"choice","choices":["cover","pad"],"default":"cover","description":"截图归一方式。cover=铺满裁切（默认，画面满、但会切边）；pad=整图装入+模糊补边（不裁内容、两侧留虚化底）"},
+    {"name":"ALLOW_WRITE","type":"bool","default":false,"description":"🔴 只有勾上才会真的写 Play（edits.listings / edits.images）。不勾=只打印 diff"},
+    {"name":"TRIGGER_ART","type":"bool","default":false,"description":"勾上则按缺图清单触发 TS-Art-Restyle 出图（不等待，产物下一轮用 ingest 收回）"},
+    {"name":"ART_THEME","type":"choice","choices":["cyber","christmas","newyear","halloween","valentine","summer_surf","provence","thanksgiving","explore"],"default":"cyber","description":"触发换皮时用的题材。cyber=保持赛博原风味；其余为节日/场景主题"},
+    {"name":"ART_PROVIDER","type":"choice","choices":["chatgpt_web","manual"],"default":"chatgpt_web","description":"出图通道，透传给 TS-Art-Restyle"},
+    {"name":"EXP_DAYS","type":"string","default":"14","description":"A/B 窗口天数（单窗口建议 ≥7 天，默认 14）"},
+    {"name":"EXP_HYPOTHESIS","type":"text","default":"","description":"本次实验假设（留空=用变体 meta.json 里的 hypothesis）"}
+  ]
+}
+META*/
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    timeout(time: 45, unit: 'MINUTES')
+    buildDiscarder(logRotator(daysToKeepStr: '60', numToKeepStr: '60'))
+  }
+
+  environment {
+    // 🔴 用开发目录而不是打包 clone：data_aso/ 是运营工作区，
+    //    derived/reports 这些都是跑一轮生成一轮的产物，不该被 ci_sync 的 reset 冲掉。
+    PROJ = '/Users/wangxufeng/Documents/TimeSpaceGirl1'
+    PY   = '/Users/wangxufeng/.workbuddy/binaries/python/envs/default/bin/python'
+    BASH = '/usr/local/bin/bash'
+  }
+
+  stages {
+
+    stage('① 准备与取证') {
+      steps {
+        script {
+          env.STAGE_PROJECT_ROOT = env.PROJ
+          env.TS_RUN_DIR  = "${env.PROJ}/.jenkins/run/${env.BUILD_TAG}"
+          env.ASO_VARIANT = params.VARIANT.trim() ?: 'B'
+          env.ASO_BASE    = params.BASELINE.trim() ?: 'A'
+          env.ASO_LOCALES = params.LOCALES.trim()
+          env.ASO_MODE    = params.MODE
+          env.ASO_FIT     = params.FIT
+          env.ASO_WRITE   = params.ALLOW_WRITE.toString()
+          env.ASO_DAYS    = (params.EXP_DAYS.trim() ?: '14')
+          env.ASO_HYPO    = params.EXP_HYPOTHESIS.trim()
+        }
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ" || exit 2
+mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
+{
+  echo "运行：$JOB_NAME #$BUILD_NUMBER"
+  echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
+  echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
+  echo "模式：${ASO_MODE}"
+  echo "变体：${ASO_VARIANT}（对照 ${ASO_BASE}）  语言：${ASO_LOCALES:-四语全做}"
+  echo "写线上：$( [[ "$ASO_WRITE" == "true" ]] && echo '🔴 会写 Play' || echo '否（只打印 diff）' )"
+  echo ""
+  echo "🔴 Play 的能力边界（2026-10-23 核对 API 文档）："
+  echo "   edits.listings 可改 title/short/full/video；edits.images 可传"
+  echo "   phoneScreenshots/featureGraphic/icon 等；但**商店页 A/B 实验没有公开 API**，"
+  echo "   建实验和看结论只能在 Console 网页；本 job 负责产出变体 + 登记窗口 + 算读数。"
+  echo "🔴 写线上之后仍要人去 Console 点「送审」——托管式发布，commit 带"
+  echo "   changesNotSentForReview=true，release 只会挂在待送审状态。"
+} | tee "$TS_RUN_DIR/context.txt"
+''')
+      }
+    }
+
+    stage('② 文案闸门（四语）') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+LOC_ARGS=()
+[[ -n "${ASO_LOCALES:-}" ]] && LOC_ARGS=(--locales "$ASO_LOCALES")
+"$BASH" .jenkins/lib/run_stage.sh --name "文案闸门（长度/串味/夸大）" \
+  --group "ASO" --slug aso-lint --timeout 300 \
+  -- "$PY" scripts/aso/aso_lint.py --variant "$ASO_VARIANT" \
+       --baseline "$ASO_BASE" --json "${LOC_ARGS[@]}"
+cp -f data_aso/reports/listing_lint.json "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
+''')
+      }
+    }
+
+    stage('③ 素材派生（竖版截图 + 置顶图）') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+"$BASH" .jenkins/lib/run_stage.sh --name "素材派生 ${FIT}" \
+  --group "ASO" --slug aso-assets --timeout 600 \
+  -- "$PY" scripts/aso/aso_assets.py build --variant "$ASO_VARIANT" \
+       --fit "$ASO_FIT" ${ASO_LOCALES:+--locales "$ASO_LOCALES"}
+"$BASH" .jenkins/lib/run_stage.sh --name "Play 规格体检" \
+  --group "ASO" --slug aso-check --timeout 300 \
+  -- "$PY" scripts/aso/aso_assets.py check --variant "$ASO_VARIANT"
+cp -f "data_aso/derived/$ASO_VARIANT/index.json" "$TS_RUN_DIR/artifacts/" 2>/dev/null || true
+''')
+      }
+    }
+
+    stage('④ 美术需求单 / 触发换皮') {
+      when {
+        expression { params.MODE.toString().startsWith('art') || params.TRIGGER_ART.toString() == 'true' }
+      }
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+"$BASH" .jenkins/lib/run_stage.sh --name "缺图盘点" \
+  --group "美术" --slug aso-art-plan --timeout 300 \
+  -- "$PY" scripts/aso/aso_art.py plan --variant "$ASO_VARIANT" \
+       --theme "$ART_THEME" --provider "$ART_PROVIDER" ${ASO_LOCALES:+--locales "$ASO_LOCALES"}
+
+if [[ "${TRIGGER_ART,,}" != "true" ]]; then
+  echo "（未勾 TRIGGER_ART：只出需求单，不发起换皮）"
+  exit 0
+fi
+# 缺图清单里每一行都触发一次；同一批用同一个租约 owner，方便并行时认自己人
+export TSG_LEASE_OWNER="$JOB_NAME-$BUILD_NUMBER"
+SEED="$("$PY" - <<'PYEOF'
+import glob, json, os
+fs = sorted(glob.glob("data_aso/reports/art_requests/%s-*.json" % os.environ["ASO_VARIANT"]))
+if not fs:
+    print("")
+else:
+    d = json.load(open(fs[-1], encoding="utf-8"))
+    reqs = [r for r in d["requests"] if r.get("seed")]
+    print("\n".join(f'{r["locale"]}|{r["seed"]}' for r in reqs))
+PYEOF
+)"
+if [[ -z "$SEED" ]]; then echo "没有带种子的缺图项，跳过触发"; exit 0; fi
+echo "$SEED" | while IFS='|' read -r LOC ASSET; do
+  [[ -z "$LOC" ]] && continue
+  echo "→ 触发 TS-Art-Restyle：$LOC  seed=$ASSET  主题=$ART_THEME"
+  "$PY" scripts/aso/aso_art.py trigger --variant "$ASO_VARIANT" --locale "$LOC" \
+      --asset "$ASSET" --theme "$ART_THEME" --provider "$ART_PROVIDER" || \
+      echo "   ⚠ 触发失败（不阻断本轮其它环节）"
+done
+"$PY" .jenkins/lib/stage_report.py add --run "$TS_RUN_DIR" \
+  --name "触发换皮" --group "美术" --status pass \
+  --detail "已按缺图清单发起 TS-Art-Restyle（不等待，产物用 aso_art.py ingest 收回）"
+''')
+      }
+    }
+
+    stage('⑤ 人眼验收页') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+PREV="data_aso/derived/$ASO_VARIANT/preview.html"
+if [[ -f "$PREV" ]]; then
+  cp "$PREV" "$TS_RUN_DIR/artifacts/preview.html"
+  echo "验收页：$PREV（归档到证据目录，构建页可直接点开）"
+  "$PY" .jenkins/lib/stage_report.py add --run "$TS_RUN_DIR" \
+    --name "验收页" --group "交付" --status pass --detail "preview.html 已归档"
+else
+  echo "🔴 没有 preview.html —— 素材派生没跑成？"
+  "$PY" .jenkins/lib/stage_report.py add --run "$TS_RUN_DIR" \
+    --name "验收页" --group "交付" --status fail --detail "缺 preview.html"
+  exit 1
+fi
+''')
+      }
+    }
+
+    stage('⑥ 推送 Play（持 Play 锁）') {
+      when {
+        expression { !params.MODE.toString().startsWith('art') }
+      }
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+PUSH_ARGS=(push --variant "$ASO_VARIANT")
+[[ -n "${ASO_LOCALES:-}" ]] && PUSH_ARGS+=(--locales "$ASO_LOCALES")
+[[ "$ASO_WRITE" == "true" ]] && PUSH_ARGS+=(--allow-write --yes)
+case "$ASO_MODE" in
+  text*)   PUSH_ARGS+=(--text-only) ;;
+  images*) PUSH_ARGS+=(--images-only) ;;
+  both*)   PUSH_ARGS+=(--with-images) ;;
+  *)       PUSH_ARGS+=(--text-only) ;;   # dry-run：只打印 diff
+esac
+echo "→ scripts/aso/aso_play.py push ${PUSH_ARGS[*]}"
+# 🔴 与上传/巡检共用一个 play 锁：并发开 edit 会把对方的 edit 判成 deleted
+"$BASH" .jenkins/lib/run_stage.sh --name "推送 Play（${ASO_MODE}）" \
+  --group "Play" --slug aso-push --timeout 1800 \
+  -- "$BASH" .jenkins/lib/lock.sh --name play run \
+       --who "$JOB_NAME #$BUILD_NUMBER" --timeout 900 -- \
+       "$PY" scripts/aso/aso_play.py "${PUSH_ARGS[@]}"
+''')
+      }
+    }
+
+    stage('⑦ A/B 登记与快照') {
+      steps {
+        sh(script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ"
+# 先存「此刻这一版」的证据（文案全文 + 每张图哈希），否则两周后没人知道当时测的是啥
+"$BASH" .jenkins/lib/run_stage.sh --name "证据快照" \
+  --group "ASO" --slug aso-snapshot --timeout 300 \
+  -- "$PY" scripts/aso/aso_experiment.py snapshot --variant "$ASO_VARIANT"
+
+# 🔴 变量一律用 ${X:-} 取值：Jenkins 里 env.X = "" 可能压根不建这个变量，
+#    配合 set -u 就会直接 unbound variable 把整段打断（#2 就死在这）
+HYPO="${ASO_HYPO:-}"
+if [[ -z "$HYPO" ]]; then
+  HYPO="$("$PY" - <<PYEOF
+import json, pathlib
+p = pathlib.Path("data_aso/variants/${ASO_VARIANT}/meta.json")
+print(json.loads(p.read_text(encoding="utf-8")).get("hypothesis", "") if p.is_file() else "")
+PYEOF
+)"
+fi
+
+"$BASH" .jenkins/lib/run_stage.sh --name "A/B 实验登记" \
+  --group "ASO" --slug aso-exp --timeout 300 \
+  -- "$PY" scripts/aso/aso_experiment.py start --variant "$ASO_VARIANT" \
+       --baseline "$ASO_BASE" --element copy --days "$ASO_DAYS" \
+       --id "aso-$(date +%Y%m%d)-copy-${ASO_VARIANT}" --force \
+       --hypothesis "$HYPO" ${ASO_LOCALES:+--locales "$ASO_LOCALES"}
+
+"$PY" scripts/aso/aso_experiment.py status | tee "$TS_RUN_DIR/logs/experiments.txt" || true
+''')
+      }
+    }
+  }
+
+  post {
+    always {
+      script {
+        sh(returnStatus: true, script: '''#!/usr/local/bin/bash
+set -uo pipefail
+cd "$PROJ" 2>/dev/null || true
+mkdir -p "$TS_RUN_DIR/logs"
+"$PY" .jenkins/lib/stage_report.py junit --run "$TS_RUN_DIR" \
+  --out "$TS_RUN_DIR/junit.xml" --suite "$JOB_NAME" || true
+"$PY" .jenkins/lib/stage_report.py summary --run "$TS_RUN_DIR" \
+  --out "$TS_RUN_DIR/summary.md" --title "$JOB_NAME #$BUILD_NUMBER" || true
+# evidence/ 每次重建：workspace 不 cleanWs，而 cp -R 只增不删，
+# 上几次构建的 stages/*.json 会被一起归档，看起来像同一环节跑了两遍（TS-Play-Watch 踩过）
+if [[ -n "${WORKSPACE:-}" && -d "$WORKSPACE/evidence" ]]; then
+  rm -rf "$WORKSPACE/evidence"
+fi
+mkdir -p "$WORKSPACE/evidence"
+cp -R "$TS_RUN_DIR/." "$WORKSPACE/evidence/" 2>/dev/null || true
+''')
+
+        if (fileExists("${WORKSPACE}/evidence/junit.xml")) {
+          junit allowEmptyResults: true, skipPublishingChecks: true, testResults: 'evidence/junit.xml'
+        }
+
+        def desc = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
+cd "$PROJ" 2>/dev/null || true
+"$PY" .jenkins/lib/stage_report.py desc --run "$TS_RUN_DIR" 2>/dev/null || true
+''').trim()
+        if (desc) { currentBuild.description = desc }
+
+        def st = sh(returnStdout: true, script: '''#!/usr/local/bin/bash
+cd "$PROJ" 2>/dev/null || true
+"$PY" .jenkins/lib/stage_report.py status --run "$TS_RUN_DIR" 2>/dev/null || echo pass
+''').trim()
+        if (st == 'warn' && currentBuild.currentResult == 'SUCCESS') {
+          currentBuild.result = 'UNSTABLE'
+        }
+
+        archiveArtifacts allowEmptyArchive: true, artifacts: 'evidence/**', fingerprint: false
+      }
+    }
+  }
+}

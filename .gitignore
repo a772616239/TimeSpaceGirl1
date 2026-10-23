@@ -93,3 +93,11 @@ data_execl/base_data/_backup_*/*.xlsx
 # AB 缓存指纹（scripts/ab_cache.py 写，记录「上一轮重建的 AB 是哪次、含哪版字节码」）。
 # 与 build/table_sync/ 同性质的本机账本：每个打包目录各一份，不进版本库
 /build/ab_cache/
+
+# 店面迭代（ASO）的产物：每次构建都重生成，不该进版本库。
+# 进版本库的是「输入」：data_aso/variants/**（四语文案）、
+# data_aso/assets/shots.json（素材清单）、data_aso/experiments/**（实验台账）。
+/data_aso/derived/
+/data_aso/online/
+/data_aso/snapshots/
+/data_aso/reports/

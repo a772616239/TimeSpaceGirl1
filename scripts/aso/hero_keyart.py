@@ -366,6 +366,46 @@ def cmd_duo(args) -> int:
     return 0
 
 
+def cmd_batch(args) -> int:
+    """按 fusion_pairs.json 串行出多组双人底图。
+
+    为什么要「串行 + 断点续跑」：
+    - 串行：inbox 与浏览器登录态不隔离，两路同时出图会串图（实测 02/03 拿到同一张）。
+    - 断点续跑：一组约 90 秒，10 组跑十几分钟，中途额度耗尽/网络抖动很常见。
+      已存在的 bg_<tag>.png 默认跳过，重跑不会白烧额度；要重画就加 --force。
+    """
+    spec = C.load_json(C.ASSETS_DIR / "fusion_pairs.json")
+    pairs = spec.get("pairs") or []
+    if args.only:
+        want = {t.strip() for t in args.only.split(",") if t.strip()}
+        pairs = [p for p in pairs if p["tag"] in want]
+    if not pairs:
+        print("🔴 没有要出的组合")
+        return 2
+
+    ok, skip, fail = [], [], []
+    for i, p in enumerate(pairs, 1):
+        tag, a, b = p["tag"], p["left"], p["right"]
+        dst = FUSION_DIR / f"bg_{tag}.png"
+        head = f"[{i}/{len(pairs)}] {tag} ({a}+{b})"
+        if dst.is_file() and not args.force:
+            print(f"{head} 已有 {dst.name}（{dst.stat().st_size // 1024} KB），跳过")
+            skip.append(tag)
+            continue
+        print(f"\n{'=' * 64}\n{head}  {p.get('note', '')}\n{'=' * 64}")
+        ns = argparse.Namespace(pair=f"{a},{b}", size=args.size, theme=args.theme,
+                                dry_run=False, wait=True)
+        rc = cmd_duo(ns)
+        (ok if rc == 0 else fail).append(tag)
+        if rc != 0:
+            print(f"⚠️  {tag} 失败（rc={rc}），继续下一组")
+
+    print(f"\n{'=' * 64}\n汇总：成功 {len(ok)} {ok}；跳过 {len(skip)} {skip}；失败 {len(fail)} {fail}")
+    if skip:
+        print("跳过的组已有底图；要重画加 --force")
+    return 0 if not fail else 5
+
+
 def cmd_collect(args) -> int:
     """把管线成品收进 data_aso/assets/gen/（横版进 gen/land/），供 aso_assets.py heroes 压文案。"""
     specs = load_specs()
@@ -423,6 +463,13 @@ def main() -> int:
     p.add_argument("--wait", action="store_true", help="等这一张真的出完再返回")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_duo)
+
+    p = sub.add_parser("batch", help="按 fusion_pairs.json 串行出全部双人底图（断点续跑）")
+    p.add_argument("--only", default="", help="只跑这几组 tag，逗号分隔，如 0715,1217")
+    p.add_argument("--size", default="1920x1080")
+    p.add_argument("--theme", default="cyber")
+    p.add_argument("--force", action="store_true", help="已有底图也重画（默认跳过，避免白烧额度）")
+    p.set_defaults(func=cmd_batch)
 
     args = ap.parse_args()
     return args.func(args)

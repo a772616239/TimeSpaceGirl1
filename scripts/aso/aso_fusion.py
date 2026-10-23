@@ -570,6 +570,9 @@ def main() -> int:
     ap.add_argument("--variant", default="B")
     ap.add_argument("--out", default="")
     ap.add_argument("--tag", default="")
+    ap.add_argument("--bg", default="",
+                    help="覆盖 fusion.json 里的底图路径。批量出多组角色组合时用："
+                         "每组一张 bg_<tag>.png，不必反复改配置。")
     ap.add_argument("--promote", action="store_true",
                     help="写进 derived/<变体>/<语言>/feature_01.png（= aso_assets build 用的同一个文件名）。"
                          "这样 preview.html / index.json / aso_play.py push 都不用改，也不会出现两张置顶图。"
@@ -593,7 +596,8 @@ def main() -> int:
     sfx = f"_{a.tag}" if a.tag else ""
     promoted: dict[str, Path] = {}
     for loc in C.parse_locales(a.locales):
-        im = build(a.layout, loc, (tw, th), require_bg=a.promote)
+        im = build(a.layout, loc, (tw, th), overrides={"bg": a.bg} if a.bg else None,
+                   require_bg=a.promote or bool(a.bg))
         p = root / f"feature_{a.layout}_{loc}{sfx}.png"
         im.save(p, optimize=True)
         try:

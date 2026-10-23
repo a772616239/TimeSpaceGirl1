@@ -624,6 +624,11 @@ def main() -> int:
     ap.add_argument("--pair", default="",
                     help="从 fusion_pairs.json 取该组（tag）的底图、框内取景与文案分类，"
                          "一次出齐四语。10 组的差异就靠这里的 shot/band/zoom 拉开。")
+    ap.add_argument("--pairs", default="",
+                    help="批量出图：逗号分隔的 tag（0102,2019,...）、all、或 shots。"
+                         "all = 所有未标 _retired 的组；shots = fusion_shots.py 的 DEFAULT_ORDER"
+                         "（= 手机截图真要用的那几张，单一真源，不会和商店页顺序脱节）。"
+                         "循环收在脚本里，Jenkins 不用再写 shell for，日志也能一次看全。")
     ap.add_argument("--by-locale", action="store_true",
                     help="按语言分子目录：<out>/<locale>/feature_duo_<tag>.png。"
                          "交图/上传时不会拿错语言；不加则平铺成 feature_duo_<locale>_<tag>.png。")
@@ -646,59 +651,119 @@ def main() -> int:
         print(f"🔴 --promote 只接受 1024x500（Play 对 featureGraphic 是死规定），当前 {tw}x{th}")
         return 2
 
-    ov: dict = {}
-    cat_copy: dict = {}
-    if a.bg:
-        ov["bg"] = a.bg
-    if a.pair:
-        spec_p = C.ASSETS_DIR / "fusion_pairs.json"
-        pairs = (C.load_json(spec_p).get("pairs") or []) if spec_p.is_file() else []
-        grp = next((p for p in pairs if str(p.get("tag")) == a.pair), None)
-        if grp is None:
-            print(f"🔴 fusion_pairs.json 里没有 tag={a.pair}")
+    # ── 要出几组 ────────────────────────────────────────────────────────────
+    # --pairs 批量 / --pair 单组 / 都不给就按 fusion.json 的默认角色组合出一张。
+    # 循环放在脚本里而不是 Jenkins 的 shell for：出图一组 90~126s，shell 循环里
+    # 任何一组失败都难定位，而且日志被拆成 N 段、看不出「这批到底出了几张」。
+    spec_p = C.ASSETS_DIR / "fusion_pairs.json"
+    pairs_all: list[dict] = []
+    if spec_p.is_file():
+        pairs_all = C.load_json(spec_p).get("pairs") or []
+
+    tags: list[str] = []
+    if a.pairs:
+        want = a.pairs.strip()
+        if want.lower() in ("shots", "shot"):
+            # 与手机截图共用一个真源：fusion_shots.py 的 DEFAULT_ORDER 就是上线顺序。
+            # 两边各写一份清单迟早会脱节（出了 8 组、商店页只用 6 组，剩下 2 组白烧额度）。
+            try:
+                import fusion_shots as FS
+                tags = list(FS.DEFAULT_ORDER)
+            except Exception as e:  # noqa: BLE001
+                print(f"🔴 --pairs shots 需要 fusion_shots.py 可导入：{e}")
+                return 2
+        elif want.lower() in ("all", "*"):
+            tags = [str(p["tag"]) for p in pairs_all if not p.get("_retired")]
+        else:
+            tags = [t.strip() for t in want.split(",") if t.strip()]
+    elif a.pair:
+        tags = [a.pair]
+
+    if a.promote and len(tags) > 1:
+        print(f"🔴 --promote 一次只能写一组（featureGraphic 每语言只允许一张），"
+              f"当前要出 {len(tags)} 组：{','.join(tags)}")
+        print("   批量出图请去掉 --promote，产物落在 "
+              "<out>/<locale>/feature_<layout>_<tag>.png，再挑一张单独 --promote。")
+        return 2
+    if a.tag and len(tags) > 1:
+        print(f"🔴 --tag 是单组的文件名后缀，和 --pairs 批量出图冲突（{len(tags)} 组会互相覆盖）")
+        return 2
+
+    grp_by_tag = {str(p["tag"]): p for p in pairs_all}
+    if tags:
+        missing = [t for t in tags if t not in grp_by_tag]
+        if missing:
+            print(f"🔴 fusion_pairs.json 里没有 tag={','.join(missing)}；"
+                  f"现有：{','.join(sorted(grp_by_tag))}")
             return 2
-        ov["bg"] = f"data_aso/assets/gen/fusion/bg_{a.pair}.png"
-        if grp.get("screen"):
-            ov["screen"] = grp["screen"]
-        # 文案：pair 自己写 copy > category 指向 fusion_copy.json > fusion.json 的默认四语
-        cat_copy = _category_copy(grp)
-        if grp.get("copy"):
-            cat_copy = {**cat_copy, **grp["copy"]}
-        a.tag = a.tag or a.pair
+        retired = [t for t in tags if grp_by_tag[t].get("_retired")]
+        if retired:
+            print(f"⚠️  {','.join(retired)} 标了 _retired（画面素材不合格，不上手机截图）。"
+                  f"仍按请求出图；置顶图可用，手机截图请确认 fusion_shots.py 的 order 里没有它。")
 
     root = Path(a.out) if a.out else (C.DERIVED_DIR / a.variant / "fusion")
     root.mkdir(parents=True, exist_ok=True)
-    sfx = f"_{a.tag}" if a.tag else ""
+
     promoted: dict[str, Path] = {}
-    for loc in C.parse_locales(a.locales):
-        cov = cat_copy.get(loc) if cat_copy else None
-        im = build(a.layout, loc, (tw, th), overrides=ov or None,
-                   require_bg=a.promote or bool(ov.get("bg")), copy_override=cov)
-        if a.by_locale:
-            # 目录即语言：<out>/<locale>/feature_duo_<tag>.png。
-            # 和 aso_assets build 的 derived/<变体>/<locale>/feature_01.png 同构，
-            # 交图/上传时不会拿错语言。
-            p = root / loc / f"feature_{a.layout}{sfx}.png"
-            p.parent.mkdir(parents=True, exist_ok=True)
-        else:
-            p = root / f"feature_{a.layout}_{loc}{sfx}.png"
-        im.save(p, optimize=True)
-        try:
-            shown = p.relative_to(C.ROOT)
-        except ValueError:
-            shown = p
-        print(f"{shown}  {im.size[0]}x{im.size[1]}  {p.stat().st_size / 1024:.0f} KB")
-        if a.promote:
-            dest = C.DERIVED_DIR / a.variant / loc / "feature_01.png"
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            # 同名覆盖，先把别的 feature_* 清掉：Play 的 featureGraphic 只收一张，
-            # 目录里留两张会在 push 时上传两次，第二次必定 400。
-            for old in dest.parent.glob("feature_*.png"):
-                if old.name != dest.name:
-                    old.unlink()
-            im.convert("RGB").save(dest, "PNG", optimize=True)
-            promoted[loc] = dest
-            print(f"  → 已写入 {dest.relative_to(C.ROOT)}（{dest.stat().st_size / 1024:.0f} KB）")
+    for gi, tag in enumerate(tags or [""], 1):
+        ov: dict = {}
+        cat_copy: dict = {}
+        if a.bg:
+            ov["bg"] = a.bg
+        if tag:
+            grp = grp_by_tag[tag]
+            ov["bg"] = f"data_aso/assets/gen/fusion/bg_{tag}.png"
+            if grp.get("screen"):
+                ov["screen"] = grp["screen"]
+            # 文案：pair 自己写 copy > category 指向 fusion_copy.json > fusion.json 的默认四语
+            cat_copy = _category_copy(grp)
+            if grp.get("copy"):
+                cat_copy = {**cat_copy, **grp["copy"]}
+        use_tag = a.tag or tag
+        if len(tags) > 1:
+            g = grp_by_tag[tag]
+            shot_no = (g.get("screen") or {}).get("shot")
+            head = f"\n[{gi}/{len(tags)}] tag={tag}"
+            if shot_no is not None:
+                head += f"  shot#{shot_no}"
+            note = (g.get("note") or "").strip()
+            if note:
+                head += f"  {note[:44]}"
+            print(head)
+        sfx = f"_{use_tag}" if use_tag else ""
+        for loc in C.parse_locales(a.locales):
+            cov = cat_copy.get(loc) if cat_copy else None
+            im = build(a.layout, loc, (tw, th), overrides=ov or None,
+                       require_bg=a.promote or bool(ov.get("bg")), copy_override=cov)
+            if a.by_locale:
+                # 目录即语言：<out>/<locale>/feature_duo_<tag>.png。
+                # 和 aso_assets build 的 derived/<变体>/<locale>/feature_01.png 同构，
+                # 交图/上传时不会拿错语言。
+                p = root / loc / f"feature_{a.layout}{sfx}.png"
+                p.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                p = root / f"feature_{a.layout}_{loc}{sfx}.png"
+            im.save(p, optimize=True)
+            try:
+                shown = p.relative_to(C.ROOT)
+            except ValueError:
+                shown = p
+            print(f"{shown}  {im.size[0]}x{im.size[1]}  {p.stat().st_size / 1024:.0f} KB")
+            if a.promote:
+                dest = C.DERIVED_DIR / a.variant / loc / "feature_01.png"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                # 同名覆盖，先把别的 feature_* 清掉：Play 的 featureGraphic 只收一张，
+                # 目录里留两张会在 push 时上传两次，第二次必定 400。
+                for old in dest.parent.glob("feature_*.png"):
+                    if old.name != dest.name:
+                        old.unlink()
+                im.convert("RGB").save(dest, "PNG", optimize=True)
+                promoted[loc] = dest
+                print(f"  → 已写入 {dest.relative_to(C.ROOT)}（{dest.stat().st_size / 1024:.0f} KB）")
+
+    if len(tags) > 1:
+        print(f"\n共出 {len(tags)} 组 × {len(C.parse_locales(a.locales))} 语言"
+              f" → {root.relative_to(C.ROOT) if root.is_relative_to(C.ROOT) else root}")
     if promoted:
         _patch_index(a.variant, promoted)
         print("\n下一步：aso_assets.py check --variant %s 复检规格" % a.variant)

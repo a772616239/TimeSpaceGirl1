@@ -15,7 +15,7 @@ description: TimeSpaceGirl1 的 Play 商店页运营（ASO）——四语文案�
 | 用户说 | 走哪条 |
 |---|---|
 | 「改标题/短描述/长描述」「推文案」 | §3 `aso_play.py push --text-only`，先 `aso_lint.py` |
-| 「换截图」「截图不好看」 | §2 `aso_assets.py build` → `check` |
+| 「换截图」「截图不好看」 | §2：横版走 `fusion_shots.py`（8 张、用置顶图那批组合）；竖版走 `aso_assets.py build` |
 | 「换置顶图」「做店面图/宣传图」「featureGraphic」 | §1 拼装式（**不要贴立绘**） |
 | 「换掉左右两个角色」「换成 XX 和 YY」 | §1 `--pair` 改 id + `fusion.json` 的 `bg` |
 | 「商店页 A/B 怎么读数」 | §4 `aso_experiment.py report/close` |
@@ -75,11 +75,13 @@ $PY scripts/aso/aso_assets.py preview --variant B        # 只重画验收页
 - 源图分辨率要盯：现有竖版源图仅 597~720px 宽，放大 >1.6× 会标黄；正解是真机出 1080×1920。
 - 文字一律本地压（`STHeiti Medium.ttc`：简中=1 号面、繁中=0 号面；全角标点步进 0.68em）。
 - 🔴 **Play 张数上限**：`phoneScreenshots` 8 张/语、`featureGraphic` 1 张。`shots.json` 8 条会派生
-  9 张 `shot_*.png`，全推必 400 ⇒ 上传用 `--shots 0,1,2,5` 挑。
-- 锐度分层（实测）：`shot_01`(1.5×)、`shot_05`(1.1×) 最锐 → `shot_00`/`02`(1.8×) 可用 →
-  `shot_03`/`04`(2.6×) 偏糊 → `shot_06`/`07`/`08`(3.2×) 别上。
-- 🔴 **置顶图不能兼作手机截图**：1024×500 比例 2.048 > Play 上限 2.0，强行转竖前景只占 27.5%；
-  且 fusion 10 组 > 8 张上限。置顶图讲「长什么样」，截图讲「能玩几种玩法」，两者内容不该重复。
+  9 张 `shot_*.png`，全推必 400 ⇒ 上传用 `--shots 0,1,...,7` 挑。
+- 🔴 **横版路线（用户偏好这个）**：置顶图 1024×500 比例 2.048 只超上限 0.048，
+  **补边到 1024×520（1.969）就能当 phoneScreenshots**，画面一个像素不动。
+  `fusion_shots.py --variant B` 一步出 8 张 × 四语，顺序即展示顺序（默认把
+  combat/world/guild/map 四类文案轮换开，别 8 张全是同一句）。
+  ⚠️ 用过它之后**别再跑 `aso_assets.py build`**，会把 shot_* 覆盖回竖版；
+  `preview` 可以随便跑。
 
 ## 3. 文案与推送
 
@@ -90,7 +92,7 @@ $PY scripts/aso/aso_play.py push --variant B --with-images --allow-write --yes
 
 # 只换手机截图（四语、指定 4 张）
 $PY scripts/aso/aso_play.py push --variant B --images-only \
-    --image-types phoneScreenshots --shots 0,1,2,5 --allow-write --yes --auto-review
+    --image-types phoneScreenshots --shots 0,1,2,3,4,5,6,7 --allow-write --yes --auto-review
 # 只换置顶图
 $PY scripts/aso/aso_play.py push --variant B --images-only \
     --image-types featureGraphic --allow-write --yes --auto-review

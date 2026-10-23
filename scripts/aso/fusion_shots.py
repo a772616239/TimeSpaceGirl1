@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -77,6 +78,59 @@ def _pad(im: Image.Image, size: tuple[int, int]) -> Image.Image:
     else:
         canvas.paste(n, ((tw - n.width) // 2, 0))
     return canvas
+
+
+def _caption(tag: str, locale: str) -> str:
+    """该组该语言的底部文案（写进 index.json，供验收页显示）。取不到就留空。"""
+    pf = C.ASSETS_DIR / "fusion_pairs.json"
+    if not pf.is_file():
+        return ""
+    for p in (C.load_json(pf).get("pairs") or []):
+        if str(p.get("tag")) == tag:
+            return ((p.get("copy") or {}).get(locale) or {}).get("title", "")
+    return ""
+
+
+def _patch_index(variant: str, manifest: dict, size: tuple[int, int]) -> None:
+    """把横版截图的真实 size/bytes/sha1 写回 index.json。
+
+    不做这步，`aso_assets.py check` 会拿旧的 1080×1920 记录去体检（判定不一致），
+    `preview.html` 也会显示竖版的尺寸与哈希 —— 看着像「换了图没生效」。
+    feature_01 条目原样保留（置顶图没动）。
+    """
+    idx_path = C.DERIVED_DIR / variant / "index.json"
+    if not idx_path.is_file():
+        print(f"（没有 {idx_path.relative_to(C.ROOT)}，跳过 index 同步）")
+        return
+    idx = json.loads(idx_path.read_text(encoding="utf-8"))
+    idx["canvas"] = [size[0], size[1]]
+    idx.setdefault("_shot_source", "fusion_shots.py（横版 1024×520，源自 fusion_all）")
+    for loc, items in manifest.items():
+        old = idx["locales"].get(loc, [])
+        # 非 shot 的条目（feature_01 等）原样保留；按文件名去重 ——
+        # 旧版本曾把 feature_01 写进两个位置，这里顺手修掉历史脏数据。
+        extra, seen = [], set()
+        for e in old:
+            if e["file"].startswith("shot_") or e["file"] in seen:
+                continue
+            seen.add(e["file"])
+            extra.append(e)
+        entries = []
+        for it in items:
+            p = C.DERIVED_DIR / variant / loc / it["shot"]
+            entries.append({
+                "file": it["shot"],
+                "src": it["src"],
+                "size": list(size),
+                "upscale": 1.0,
+                "caption": it.get("caption", ""),
+                "bytes": p.stat().st_size,
+                "sha1": hashlib.sha1(p.read_bytes()).hexdigest(),
+            })
+        # 截图在前、置顶图在后，与 aso_assets 的写法一致
+        idx["locales"][loc] = entries + extra
+    idx_path.write_text(json.dumps(idx, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"index 已同步 → {idx_path.relative_to(C.ROOT)}（canvas {size[0]}×{size[1]}）")
 
 
 def main() -> int:
@@ -142,7 +196,8 @@ def main() -> int:
                 im.save(dest, "PNG", optimize=True)
             manifest.setdefault(loc, []).append(
                 {"shot": f"shot_{i:02d}.png", "tag": tag,
-                 "src": str(src.relative_to(C.ROOT)), "size": [tw, th]})
+                 "src": str(src.relative_to(C.ROOT)), "size": [tw, th],
+                 "caption": _caption(tag, loc)})
             total += 1
         print(f"{loc}: {len(tags)} 张  {[f'shot_{i:02d}' for i in range(len(tags))]}")
 
@@ -159,6 +214,7 @@ def main() -> int:
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n共 {total} 张 → {C.DERIVED_DIR / a.variant}/<locale>/shot_*.png")
     print(f"清单 → {mf.relative_to(C.ROOT)}")
+    _patch_index(a.variant, manifest, (tw, th))
     print(f"\n下一步：aso_play.py push --variant {a.variant} --images-only "
           f"--image-types phoneScreenshots --shots "
           f"{','.join(str(i) for i in range(len(tags)))} --allow-write --yes --auto-review")

@@ -803,10 +803,17 @@ def _write_preview(out_root: Path, locales: list[str], notes: list[str] | None =
                       if n.startswith(loc) and not _SHOT_NOTE_RE.search(n)],
         }
 
+    # 截图比例跟着实际画布走：竖版 1080×1920 = 0.5625，横版 1024×520 = 1.969。
+    # 写死 9/16 的话，横版方案下真机模拟和缩略图都会把画面裁掉（2026-10-24 踩到）。
+    _cw, _ch = (data["canvas"] or [1080, 1920])[:2]
+    _ar = f"{_cw}/{_ch}"
+    _phone_w = 236 if _cw < _ch else 380
+    _canvas_css = f":root{{--ar:{_ar};--phone-w:{_phone_w}px}}"
+
     html = (
         "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        f"<title>店面验收台 · {variant}</title><style>{_PREVIEW_CSS}</style></head><body>"
+        f"<title>店面验收台 · {variant}</title><style>{_PREVIEW_CSS}{_canvas_css}</style></head><body>"
         "<aside class=\"side\">"
         "<div class=\"brand\"><span class=\"mark\"></span>"
         "<span><b>店面验收台</b><i>Store Iteration</i></span></div>"
@@ -841,6 +848,8 @@ _PREVIEW_CSS = r"""
   --violet:#8b7bff;--cyan:#35d6d0;--amber:#f5b545;--red:#ff6b6b;--green:#4ade80;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
   --side:252px;
+  --ar:9/16;          /* 截图宽高比，由 canvas 注入；横版方案是 1024/520 */
+  --phone-w:236px;    /* 真机模拟框宽度，横版时放宽 */
 }
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
@@ -908,10 +917,10 @@ h1{margin:0;font-size:21px;font-weight:650;letter-spacing:-.01em}
 .card>h3 .count{font-family:var(--mono);font-size:11px;color:var(--dim);text-transform:none;letter-spacing:0}
 /* 真机模拟 */
 .store-body{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
-.phone{width:236px;flex:0 0 auto;border-radius:26px;padding:8px;position:relative;
+.phone{width:var(--phone-w);flex:0 0 auto;border-radius:26px;padding:8px;position:relative;
   background:linear-gradient(160deg,#2a2e3d,#12141c);
   box-shadow:0 22px 48px -18px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.09)}
-.phone img{width:100%;display:block;border-radius:19px;aspect-ratio:9/16;object-fit:cover;cursor:zoom-in}
+.phone img{width:100%;display:block;border-radius:19px;aspect-ratio:var(--ar);object-fit:cover;cursor:zoom-in}
 .store-text{flex:1;min-width:210px}
 .store-title{font-size:17px;font-weight:600;line-height:1.35}
 .store-dev{font-size:12px;color:var(--cyan);margin-top:3px}
@@ -935,7 +944,7 @@ h1{margin:0;font-size:21px;font-weight:650;letter-spacing:-.01em}
   background:#000;transition:.18s;cursor:zoom-in}
 .shot:hover{transform:translateY(-3px);border-color:rgba(139,123,255,.45);
   box-shadow:0 16px 34px -16px rgba(139,123,255,.5)}
-.shot img{width:100%;display:block;aspect-ratio:9/16;object-fit:cover}
+.shot img{width:100%;display:block;aspect-ratio:var(--ar);object-fit:cover}
 .shot .ord{position:absolute;top:8px;left:8px;z-index:2;font-family:var(--mono);font-size:10px;
   background:rgba(0,0,0,.62);color:#fff;padding:2px 7px;border-radius:6px;
   backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.14)}
@@ -1008,9 +1017,11 @@ function checks(L){
   const n=L.shots.length;
   out.push(n>=2?{k:'ok',t:`截图数量 <b>${n}</b> 张，满足 Play 最少 2 张`}
                :{k:'bad',t:`截图只有 <b>${n}</b> 张，Play 要求至少 2 张`});
-  const badRatio=L.shots.filter(s=>Math.abs(s.size[0]/s.size[1]-9/16)>0.005);
-  out.push(badRatio.length?{k:'bad',t:`比例不是 9:16：${badRatio.map(s=>s.file).join('、')}`}
-                          :{k:'ok',t:`全部 <b>9:16</b>，手机商店页无黑边`});
+  // 比例基准跟着画布走：竖版 1080×1920、横版 1024×520 都合法（Play 只卡 ≤2:1）
+  const AR=D.canvas[0]/D.canvas[1];
+  const badRatio=L.shots.filter(s=>Math.abs(s.size[0]/s.size[1]-AR)>0.02);
+  out.push(badRatio.length?{k:'bad',t:`比例与画布 ${D.canvas[0]}×${D.canvas[1]} 不一致：${badRatio.map(s=>s.file).join('、')}`}
+                          :{k:'ok',t:`全部与画布同比例 <b>${D.canvas[0]}×${D.canvas[1]}</b>`});
   const over=L.shots.filter(s=>s.bytes>8*1024*1024);
   out.push(over.length?{k:'bad',t:`超过 Play 单张 8MB：${over.map(s=>s.file).join('、')}`}
                       :{k:'ok',t:`单张最大 <b>${kb(Math.max(...L.shots.map(s=>s.bytes),0))}</b>，上限 8MB`});
@@ -1162,6 +1173,7 @@ def cmd_check(args) -> int:
         print(f"没有派生结果：{root}（先跑 build）")
         return 2
     red, yellow = [], []
+    odd_ratios: set[float] = set()   # 合法但非常规的比例（横版 1.969 等），最后汇总一条
     total = 0
     for d in sorted(p for p in root.iterdir() if p.is_dir()):
         if d.name not in C.LOCALES:      # heroes/ 是英雄卡，规格单独查
@@ -1172,10 +1184,12 @@ def cmd_check(args) -> int:
             continue
         shots = [f for f in files if f.name.startswith("shot_")]
         feats = [f for f in files if f.name.startswith("feature_")]
-        if len(shots) < 4:
-            red.append(f"{d.name}: 手机截图 {len(shots)} 张，Play 至少 4 张才建议上首屏（2 张是硬下限）")
+        if len(shots) < 2:
+            red.append(f"{d.name}: 手机截图 {len(shots)} 张，Play 硬下限是 2 张")
+        elif len(shots) < 4:
+            yellow.append(f"{d.name}: 手机截图 {len(shots)} 张，够上架但不占满首屏（建议 ≥4）")
         if len(shots) > 8:
-            yellow.append(f"{d.name}: 截图 {len(shots)} 张，Play 上限 8 张")
+            red.append(f"{d.name}: 截图 {len(shots)} 张，Play 上限 8 张，传不上去")
         if not feats:
             yellow.append(f"{d.name}: 没有置顶大图（Play 要求 1024×500）")
         for f in files:
@@ -1191,11 +1205,19 @@ def cmd_check(args) -> int:
                     ratio = max(w, h) / min(w, h)
                     if ratio > 2.0:
                         red.append(f"{f.parent.name}/{f.name}: 长宽比 {ratio:.2f} > 2.0，Play 会拒")
-                    if abs(ratio - 16 / 9) > 0.02 and abs(ratio - 9 / 16) > 0.02:
+                    elif (abs(ratio - 16 / 9) > 0.02 and abs(ratio - 9 / 16) > 0.02
+                          and not (1.5 <= ratio <= 2.0)):
                         yellow.append(f"{f.parent.name}/{f.name}: 比例 {ratio:.2f} 非 16:9/9:16")
+                    elif abs(ratio - 16 / 9) > 0.02 and abs(ratio - 9 / 16) > 0.02:
+                        # 1.5~2.0 的横版是合法的（Play 只卡 ≤2:1），但比例非常规。
+                        # 逐张刷屏没意义，最后汇总一条就够 —— 横版置顶图派生的截图都落这里。
+                        odd_ratios.add(round(ratio, 3))
             if f.stat().st_size > PLAY_MAX_BYTES:
                 red.append(f"{f.parent.name}/{f.name}: {f.stat().st_size // 1024 // 1024} MB > 8 MB")
     total += _check_heroes(root, red, yellow)
+    if odd_ratios:
+        yellow.append(f"有图用了非常规比例 {sorted(odd_ratios)}（Play 只卡 ≤2:1，合法；"
+                      f"来源多为 fusion_shots.py 的 1024×520）")
     print(f"[check] {total} 张图")
     for r in red:
         print(f"  🔴 {r}")

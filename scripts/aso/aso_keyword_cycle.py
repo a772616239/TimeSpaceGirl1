@@ -44,6 +44,9 @@ STATE_FILE = KEY_DIR / ".state.json"
 LEDGER_FILE = KEY_DIR / "ledger.jsonl"
 SEED_FILE = KEY_DIR / "seed_terms.json"
 RULES_FILE = KEY_DIR / "rewrite_rules.json"
+# 长描述成品（人工撰写、可审）。替换对只能改一个词，撑不起 7 倍的字数缺口，
+# 所以长描述走「整体成品」这条路：人写、机器只负责体检与搬进变体。
+FULLTEXT_DIR = KEY_DIR / "fulltext"
 
 # 一轮实验最短可读窗口。Play 官方建议覆盖完整周周期；3 天只够推进节奏，不够下结论。
 MIN_READ_DAYS = 7
@@ -479,6 +482,86 @@ def advise(locale: str, cur: dict, top: list[dict], rules: dict) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# 长描述体检
+#
+# 为什么单独一层：title/short 可以靠「替换对」微调，长描述不行 ——
+# 线上四语长描述只用了 14%~53% 的字数空间，缺的不是一个词，是整段内容。
+# 而且 zh-TW 那篇是简体字写的，繁体搜索词（放置/陣容/聲優）一个都匹配不到，
+# 这已经不是「优化」，是搜索可见性故障。
+# --------------------------------------------------------------------------- #
+def load_probes(locale: str) -> list[str]:
+    """该语种「这个品类必须命中的词」。放 seed_terms.json 的 probe 字段，机器不猜。"""
+    return [str(x) for x in (load_seed().get(locale, {}).get("probe") or [])]
+
+
+def audit_full(locale: str, text: str) -> dict:
+    """长描述体检：字数利用率 / 首屏 80 字符 / 品类词覆盖 / 字符集违规。"""
+    lim = C.LIMITS["fullDescription"]
+    low = text.lower()
+    probes = load_probes(locale)
+    have = [w for w in probes if w.lower() in low]
+    miss = [w for w in probes if w.lower() not in low]
+
+    out = {
+        "chars": len(text),
+        "limit": lim,
+        "pct": round(100.0 * len(text) / lim, 1),
+        # 商店页展开前只露这两行，是转化最关键的位置
+        "head": text.strip().split("\n")[0][:80],
+        "have": have,
+        "miss": miss,
+        "cover": f"{len(have)}/{len(probes)}" if probes else "-",
+        "charset": [],
+    }
+
+    # 字符集：繁中里出现简体专用字 ⇒ 玩家搜繁体词匹配不到，等于白写
+    if locale == "zh-TW":
+        bad = sorted({ch for ch in text if ch in LINT.SIMPLIFIED_MAP})
+        out["charset"] = [f"{ch}→{LINT.SIMPLIFIED_MAP[ch]}" for ch in bad]
+    elif locale == "zh-CN":
+        out["charset"] = [f"混入繁体字 {ch}" for ch in
+                          sorted({ch for ch in text if ch in LINT.TRADITIONAL_ONLY})]
+    return out
+
+
+def cmd_audit(args) -> int:
+    """体检线上（或指定变体）的长描述。只读，不改任何文件。"""
+    locales = C.parse_locales(args.locales)
+    src = args.from_variant.strip()
+    online = {} if src else latest_online()[1]
+    rows = {}
+    for loc in locales:
+        cur = C.load_listing(src, loc) if src else (online.get(loc) or {})
+        text = cur.get("fullDescription", "")
+        if not text:
+            rows[loc] = {"chars": 0, "pct": 0.0, "head": "(空)", "have": [],
+                         "miss": load_probes(loc), "cover": "0/n", "charset": []}
+            continue
+        rows[loc] = audit_full(loc, text)
+
+    print(f"{'语言':6s} {'字数':>6s} {'利用率':>7s} {'覆盖':>6s}  首屏")
+    print("-" * 100)
+    for loc, r in rows.items():
+        print(f"{loc:6s} {r['chars']:6d} {r['pct']:6.1f}% {r['cover']:>6s}  {r['head']}")
+        if r["miss"]:
+            print(f"       缺词（{len(r['miss'])}）：{'、'.join(r['miss'])}")
+        if r["charset"]:
+            print(f"       🔴 字符集：{'、'.join(r['charset'][:14])}"
+                  f"{' …' if len(r['charset']) > 14 else ''}")
+
+    if args.json:
+        print()
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+    bad = [loc for loc, r in rows.items() if r["charset"]]
+    return 1 if bad else 0
+
+
+def load_fulltext(locale: str) -> str:
+    p = FULLTEXT_DIR / f"{locale}.txt"
+    return p.read_text(encoding="utf-8").strip() if p.is_file() else ""
+
+
+# --------------------------------------------------------------------------- #
 # 发布阻断
 # --------------------------------------------------------------------------- #
 def open_experiment(exps: list[dict], today: date | None = None) -> dict | None:
@@ -581,7 +664,7 @@ def cmd_lint_gate(args) -> int:
 
 
 def emit_variant(parent: str, target: str, locales: list[str], rules: dict,
-                 strategy: dict) -> tuple[bool, list[str]]:
+                 strategy: dict, with_fulltext: bool = False) -> tuple[bool, list[str]]:
     """从父本派生一个变体目录。返回 (是否落盘, 变更清单)。无实质改动不落盘。"""
     src = C.VARIANTS_DIR / parent
     if not src.is_dir():
@@ -598,8 +681,31 @@ def emit_variant(parent: str, target: str, locales: list[str], rules: dict,
             for h in hits:
                 changes.append(f"{loc}/{f}: 「{h['from']}」→「{h['to']}」"
                                f"（{h['chars'][0]}→{h['chars'][1]} 字）")
+
+        # 长描述：不做替换对，整篇换成人审过的成品。
+        # 替换对只能改一个词，撑不起「14% → 60% 字数利用率」这种缺口。
+        if with_fulltext:
+            body = load_fulltext(loc)
+            if body and body != (cur.get("fullDescription") or "").strip():
+                audit = audit_full(loc, body)
+                if audit["chars"] > C.LIMITS["fullDescription"]:
+                    raise SystemExit(
+                        f"🔴 {loc} 长描述成品 {audit['chars']} 超过 "
+                        f"{C.LIMITS['fullDescription']}，拒绝落盘")
+                if audit["charset"]:
+                    raise SystemExit(
+                        f"🔴 {loc} 长描述成品仍有字符集错误："
+                        f"{'、'.join(audit['charset'][:8])}，拒绝落盘")
+                old = len(cur.get("fullDescription") or "")
+                new["fullDescription"] = body
+                changes.append(
+                    f"{loc}/fullDescription: 整体换成品 {old}→{audit['chars']} 字"
+                    f"（利用率 {old / C.LIMITS['fullDescription'] * 100:.0f}%"
+                    f"→{audit['pct']:.0f}%，品类词 {audit['cover']}）")
+
         for f, lim in (("title", C.LIMITS["title"]),
-                       ("shortDescription", C.LIMITS["shortDescription"])):
+                       ("shortDescription", C.LIMITS["shortDescription"]),
+                       ("fullDescription", C.LIMITS["fullDescription"])):
             if len(new.get(f, "")) > lim:
                 raise SystemExit(f"🔴 {loc}/{f} 派生后 {len(new[f])}>{lim} 字，拒绝落盘")
         payload[loc] = new
@@ -620,8 +726,10 @@ def emit_variant(parent: str, target: str, locales: list[str], rules: dict,
         "hypothesis": (f"在 {parent} 基础上按关键词策略做受控替换（{'；'.join(changes[:3])}），"
                        f"验证关键词口径对齐搜索意图后商店页转化率是否提升。"),
         "variables": changes,
-        "keep": ["icon / featureGraphic / phoneScreenshots 一律不动（图片另开窗口）",
-                 "video 链接不动", "fullDescription 不动（长描述重写风险高，单独一轮）"],
+        "keep": (["icon / featureGraphic / phoneScreenshots 一律不动（图片另开窗口）",
+                  "video 链接不动"]
+                 + ([] if with_fulltext else
+                    ["fullDescription 不动（本变体未启用长描述成品）"])),
         "readout_window_days": MIN_READ_DAYS,
     }
     _write_json(out / "meta.json", meta)
@@ -727,9 +835,11 @@ def cmd_plan(args) -> int:
     warn = repeat_warning(ledger, top_terms)
 
     advice = {}
+    faudit = {}
     for loc in locales:
         cur = C.load_listing(parent, loc)
         advice[loc] = advise(loc, cur, top[loc], rules)
+        faudit[loc] = audit_full(loc, cur.get("fullDescription", ""))
 
     open_exp = open_experiment(ev["experiments"])
     blockers = []
@@ -743,6 +853,13 @@ def cmd_plan(args) -> int:
         blockers.append("关键词池与上一轮重合过高（见 repeat_warning）")
     if not rules.get("enabled"):
         blockers.append("rewrite_rules.json 未启用：本轮只出策略，不产生可发布变更")
+    # 字符集错乱不是「实验结果」，是搜索可见性故障：繁中页面用简体写，
+    # 繁体搜索词一个都匹配不到。这条永远不参与 A/B，只能修。
+    for loc in locales:
+        if faudit[loc]["charset"]:
+            blockers.append(
+                f"{loc} 长描述字符集错乱（{len(faudit[loc]['charset'])} 个简体字）"
+                f"⇒ 该语种搜索词匹配不到，属故障不属实验，应直接换 fulltext 成品")
 
     strategy = {
         "cycle": cycle,
@@ -760,6 +877,7 @@ def cmd_plan(args) -> int:
         },
         "top": {loc: top[loc][:12] for loc in locales},
         "advice": advice,
+        "full_audit": faudit,
         "open_experiment": open_exp,
         "repeat_warnings": warn,
         "publish_blockers": blockers,
@@ -771,7 +889,8 @@ def cmd_plan(args) -> int:
         target = args.emit_variant if args.emit_variant != "auto" else next_variant_name()
         if target in (base, parent):
             raise SystemExit(f"目标变体不能等于基线 {base} 或父本 {parent}")
-        emitted, changes = emit_variant(parent, target, locales, rules, strategy)
+        emitted, changes = emit_variant(parent, target, locales, rules, strategy,
+                                        with_fulltext=args.with_fulltext)
         if emitted:
             strategy["emit_variant"] = target
             strategy["changes"] = changes
@@ -798,6 +917,28 @@ def cmd_plan(args) -> int:
                "- 原因：没有命中任何已启用的改写规则（或规则文件未启用）",
                "- 下面每语的「可插入词」是建议，不是自动改动；填进 "
                "`data_aso/keywords/rewrite_rules.json` 才会被执行", ""]
+
+    md += ["## 长描述体检", "",
+           "长描述是唯一能自然承载长尾词的字段（Play 索引权重：标题 > 短描述 > 长描述）。"
+           "这里看三件事：字数利用率、品类词覆盖、字符集。", "",
+           "| 语言 | 字数 | 利用率 | 品类词覆盖 | 字符集 |",
+           "|---|---|---|---|---|"]
+    for loc in locales:
+        r = faudit[loc]
+        charset = (f"🔴 {len(r['charset'])} 个简体字" if r["charset"] else "✅")
+        md.append(f"| {loc} | {r['chars']}/{r['limit']} | {r['pct']}% | "
+                  f"{r['cover']} | {charset} |")
+    md.append("")
+    for loc in locales:
+        r = faudit[loc]
+        if r["miss"] or r["charset"]:
+            md.append(f"- **{loc}** 首屏：{r['head']}")
+            if r["miss"]:
+                md.append(f"  - 缺品类词：{'、'.join(r['miss'])}")
+            if r["charset"]:
+                md.append(f"  - 🔴 字符集：{'、'.join(r['charset'][:10])}"
+                          f"{' …' if len(r['charset']) > 10 else ''}")
+    md.append("")
 
     for loc in locales:
         a = advice[loc]
@@ -926,6 +1067,8 @@ def main() -> int:
     p.add_argument("--days", type=int, default=3, help="周期天数（仅记录）")
     p.add_argument("--emit-variant", default="", help="派生到这个变体名；auto=自动取下一个字母")
     p.add_argument("--no-emit", action="store_true")
+    p.add_argument("--with-fulltext", action="store_true",
+                   help="把 data_aso/keywords/fulltext/<locale>.txt 整体写进变体的长描述")
     p.add_argument("--apply-rules", action="store_true",
                    help="（保留）规则是否启用由 rewrite_rules.json 的 enabled 决定")
     p.add_argument("--block-on-open-exp", dest="block_on_open_exp",
@@ -933,6 +1076,12 @@ def main() -> int:
     p.add_argument("--no-block-on-open-exp", dest="block_on_open_exp",
                    action="store_false")
     p.set_defaults(func=cmd_plan)
+
+    p = sub.add_parser("audit", help="长描述体检：字数利用率 / 首屏 / 品类词覆盖 / 字符集")
+    p.add_argument("--locales", default="")
+    p.add_argument("--from-variant", default="", help="体检指定变体；留空=体检线上导出")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_audit)
 
     p = sub.add_parser("lint-gate", help="增量文案闸门：只拦本轮新引入的红")
     p.add_argument("--variant", required=True)

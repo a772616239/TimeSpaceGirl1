@@ -1,6 +1,6 @@
 # 虚拟玩家（机器人）：在线数 / 世界喊话 / 英雄公告 / AI 回话
 
-> 更新时间：2026-10-23（新增 §4.4 晒卡换人 / §4.5 醒来重试与 per-bot 抖动 / §4.6 冷清补话）
+> 更新时间：2026-10-23（新增 §4.4 晒卡换人 / §4.5 醒来重试与 per-bot 抖动 / §4.6 冷清补话 / §4.7 窗口硬闸与提问语料分池）
 > 关联：`server_ops_runbook.md`（线上热补丁口径）、`scripts/bot/dsh_bridge.py`（DSH 桥接）、
 > `scripts/bot/start_bridge.sh`（桥接启停）、`scripts/bot/bot_console.py` + `console.html`（可视化后台）、
 > `scripts/bot/testserver.sh`（测试服隧道+控制台）、
@@ -161,6 +161,8 @@ TS_REDIS_PORT=16379 TS_SERVER_ID=10001 python3 scripts/bot/clean_fake_chat.py
 | `replyCooldownSec` | 25 | 同一频道两次回复最小间隔 |
 | `replyMinGapSec` | 1200 | **两次 AI 回复之间的硬间隔**（20 分钟），防两个机器人前后脚各回一条 |
 | `minSpeakGapSec` | 45 | **任意两条机器人发言**的最小间隔（喊话/回复/手动/晒卡互相避让），防刷屏 |
+| `worldSayWindowSec` / `worldSayMaxPerWindow` | 1800 / 2 | 🔴 **窗口硬闸**：30 分钟内所有机器人加起来最多 2 句（只挡主动开口，AI 回复真人不受限，见 §4.7） |
+| `askLineMinHumanGapSec` | 7200 | 🔴 真人 2 小时没说话就**禁用提问式语料**（空服问 `any1 on?` 没人答 = 假人，见 §4.7） |
 | `replyFreshSec` | 14400 | 只回 4 小时内的消息（= 醒来间隔上限，否则醒来时全过期，永远回不了） |
 | `activeMinSec` / `activeMaxSec` | 1200 / 14400 | 🔴 **节奏总闸**：每个机器人独立随机「醒来」间隔 = 20~240 分钟 |
 | `announceChancePct` | 40（线上 15） | 醒来时抽到「发英雄公告」的概率（%） |
@@ -174,7 +176,8 @@ TS_REDIS_PORT=16379 TS_SERVER_ID=10001 python3 scripts/bot/clean_fake_chat.py
 | `wakeRetryMin/MaxSec` / `wakeRetryMaxTimes` | 180 / 480 / 3 | 🔴 醒来撞离线时 3~8 分钟重试，连试 3 次才认命（见 §4.5） |
 | `idleTalkEnabled` / `idleTalkAfterSec` | true / 345600 | 🔴 真人 4 天没说话就算冷清：改由**另一个**机器人接话（见 §4.6） |
 | `announceReactDelayMin/MaxSec` / `announceReactChancePct` | 60 / 180 / 40 | 公告后由**另一个在线机器人**接一句的延迟与概率（见 §4.4） |
-| `chatterLines` / `idleReactLines` / `announceReactLines` | 15 / 10 / 6 句 | 三个语料池**共用同一条去重记忆**（最近说过的不再抽） |
+| `chatterLines` / `chatterAskLines` | 10 / 7 句 | 喊话分两池：**陈述句**（一个人也成立）/ **提问句**（必须有人在场，见 §4.7） |
+| `idleReactLines` / `announceReactLines` | 10 / 6 句 | 接话用的短句；和上面两池**共用同一条去重记忆**（最近说过的不再抽） |
 | `realActionEnabled` / `realActionChancePct` | true / 50（线上 30） | 醒来时「真的升一级英雄 / 抽一个没有的英雄」的概率（改库，面板看得见） |
 | `arenaEnabled` | true | 醒来时会不会顺路去打一场竞技场（**只打系统机器人**，见 §4.3） |
 | `arenaChancePct` | 70 | 竞技场到期后真的开打的概率（%） |
@@ -428,20 +431,25 @@ if (!online.contains(p.uid)) { nextActiveAt.put(p.uid, now + sec(gapSec)); conti
   日志：`[bot] 世界频道账本还原：真人 32 小时前 | 机器人 Nova（3 小时前）`。
 - `BOT_STATUS` 新增 `world` 块：`lastSpeakerName / humanIdleSec / idleTalk / pendingSays`，排查「怎么一直是同一个号」直接看这里。
 
-### 防刷屏的五道闸
+### 防刷屏的六道闸
 
 各来源（喊话 / AI 回复 / GM 手动 / 公告后换人接话 / 冷清补话）各自有间隔，但**不互相避让**时会挤在几秒内连发，
-玩家看到的就是「机器人自说自话」。现在五道闸：
+玩家看到的就是「机器人自说自话」。现在六道闸：
 
 1. **醒来总闸**（`activeMin/MaxSec`）：一个机器人 20~240 分钟才醒一次，一次只做一件事。
    这是最粗也是最有效的一道 —— 频率根本高不起来。
 2. `minSpeakGapSec`（45s）：`sendBotChat` 统一更新 `lastSpeakAt`，喊话和晒卡在动手前先看这个值，
    不够就顺延；`replyCooldownSec`（25s）管同一频道两次回复，`replyMinGapSec`（20 分钟）管全局。
-3. `isBotUid()` / `isBotName()`：机器人自己的消息进 `onWorldChat` 只 bump `lastBotMsgId`，
+3. **窗口硬闸**（10-23 加，`worldSayWindowSec=1800` / `worldSayMaxPerWindow=2`）：
+   `sendBotChat` 每发成功一条就往 `recentWorldSays` 记时间戳，闲聊 / 冷清补话 / 公告接话动手前先查
+   「最近 30 分钟说满 2 句没有」。第 2 条只管「两条之间隔多久」，管不住「一会儿说三条」——
+   线上实测 11:31 / 11:34 / 11:39 三条都是各自守规矩发出来的，叠在一起就是 8 分钟三条。
+   **AI 回复真人不受这道闸约束**（`recordWorldSay` 记但不挡），否则真人说话回来不理更像机器人。
+4. `isBotUid()` / `isBotName()`：机器人自己的消息进 `onWorldChat` 只 bump `lastBotMsgId`，
    不更新 `lastHumanMsgId`，不触发回复。号段兜底是为了**别的服**的机器人（uid 同样是 9xxxxxxx）。
-4. **认领账本 + 回调二次校验**：接单立刻写 `repliedHumanMsgId`，DSH 回来时若这个值已经不是自己认领的那个
+5. **认领账本 + 回调二次校验**：接单立刻写 `repliedHumanMsgId`，DSH 回来时若这个值已经不是自己认领的那个
    （期间被别的机器人重新认领过），这次回复直接丢弃 —— 不会对着自己的话再说一遍，也不会为同一条消息二次付费。
-5. **换人 + 不自接**（10-23 加）：公告后的接话**必须换人**（`excludeUid`），冷清补话时醒来的是最后发言者
+6. **换人 + 不自接**（10-23 加）：公告后的接话**必须换人**（`excludeUid`），冷清补话时醒来的是最后发言者
    就改让另一个在线号说、只剩自己在线就闭嘴。这条不是节流，是「不许自己跟自己聊」。
 
 实测（临时把醒来间隔压到 60~120 秒验证链路）：
@@ -455,6 +463,57 @@ if (!online.contains(p.uid)) { nextActiveAt.put(p.uid, now + sec(gapSec)); conti
 
 `bot status` 会显示每个机器人的醒来倒计时，例如 `90000001:Nova(on),wake=43s | 90000002:Kai(off),wake=57s`；
 控制台快照里也有 `nextWakeAt` / `nextWakeInSec`。
+
+### 4.7 窗口硬闸 + 空服不吃提问语料（2026-10-23，复盘世界频道「看相」）
+
+10-23 12:48 复盘线上世界频道，客户端可见的最后 5 条是：
+
+```
+07:56 Nova  gg rng                        ← 旧的公告晒卡
+11:31 Kai   grats                         ← 公告后 94s 换人接话（对）
+11:34 Nova  ikr lol                       ← 冷清补话（把 4 天临时改成 1 小时验 P2-8 的测试残留）
+11:39 Nova  wtf nice                      ← 公告后 65s 接话（对）
+12:48 Nova  server feels alive today ngl  ← 闲聊
+```
+
+功能都对，但**看相仍然像假的**：1.3 小时 4 条、3 条同一个号、零真人，而且其中一句是对在线人数的断言。
+两条根因，各自补一道闸：
+
+**① 没有「窗口总量」闸，只有「两两间隔」闸**
+
+`minSpeakGapSec=45` 只保证任意两条之间隔 45 秒。11:31/11:34/11:39 三条**各自都合规**，
+叠起来就是 8 分钟三条 —— 因为公告接话、冷清补话、闲聊三条路各自判自己的间隔，没人看总量。
+
+```java
+// BotManager
+private final ConcurrentLinkedDeque<Long> recentWorldSays = ...;      // sendBotChat 成功后记一笔
+private boolean worldSayBudgetOk(long now) {                          // 闲聊/冷清补话/公告接话 动手前先查
+    pruneWorldSayWindow(now);
+    return recentWorldSays.size() < config.worldSayMaxPerWindow;       // 默认 30 分钟 2 句
+}
+```
+
+**AI 回复真人只记不挡**（`recordWorldSay` 在 `sendBotChat` 里，判定不覆盖 reply 路径）：
+真人说话回来不理，比多一条主动消息更像机器人。
+
+**② 提问式语料在空服里没有意义**
+
+`chatterLines` 原来 15 条混着 7 条提问（`any1 on?` / `anyone know how to get more stamina` /
+`need a guild, anyone recruiting?`）。0 真人时这些句子**必然无人回答** ——
+「一句提问挂在那儿没人接」比说错话更能暴露是假人；`server feels alive today ngl` 更是对在线人数的断言，空服直接打脸。
+
+现在拆两池：
+
+| 池 | 内容 | 使用条件 |
+|---|---|---|
+| `chatterLines`（10 句） | 陈述句，一个人也成立：`brb food` / `my luck is so bad today` / `that boss one shot my whole team` | 永远可用 |
+| `chatterAskLines`（7 句） | 提问句：`any1 on?` / `whats the best team for boss rn` / `back after a week, what did i miss` | 仅当真人 `askLineMinHumanGapSec`（2 小时）内说过话 |
+
+`pickChatterLine()` 按 `recentHumanTalk()` 选池，两池共用同一条 `recentChatter` 去重记忆。
+判定依据是 `lastHumanWorldAt`（真人发言时间，从 `CHAT_QUEUE:world` 还原），**不是**机器人自己的发言时间。
+
+`BOT_STATUS.world` 新增 `saysInWindow / sayWindowSec / sayWindowMax / askLinesAllowed`，
+排查「怎么又连发三条」先看 `saysInWindow`，排查「怎么空服还在问 who got the new hero」先看 `askLinesAllowed`。
 
 ### 机器人账号数据（个人面板不空的关键）
 

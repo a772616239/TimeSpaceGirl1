@@ -126,27 +126,46 @@ Play 硬上限：**标题 30、短描述 80、长描述 4000**（按 Unicode 字
 
 ---
 
-## 5. 重画：调用 `TS-Art-Restyle`
+## 5. 重画：调用 `TS-Art-Restyle`（2026-10-23 实跑校准）
+
+先说结论：**AI 只画画面，字一律不交给它。** 中/日/繁的字形模型十有八九画错（缺笔画、错字、
+字距乱），而且四个语言要同一套排版才像一家人。所以流程是「出无字底图 → 本地用真字体压标题」，
+换文案不用重新出图，改一个字也不烧额度。
 
 ```bash
-# 1) 盘点缺什么图（本地化置顶图 / 换风格的底图），出需求单
-$P scripts/aso/aso_art.py plan --variant B --theme cyber
+# 1) 造构图种子（管线的输出尺寸 = 种子尺寸，所以竖版首图的种子就得是 1080×1920）
+$P scripts/aso/aso_art.py seed --kind hero    --locales en-US
+$P scripts/aso/aso_art.py seed --kind feature --locales zh-TW
 
-# 2) 触发（表单字段，不能用 json=；租约 owner 自动带）
+# 2) 触发（表单字段；LAYOUT 是构图锁，OUTFIT 锁服装，WRITE_BACK 写死 false）
 $P scripts/aso/aso_art.py trigger \
-   --asset "时空美少女物料/new1024_500/2横版5图（720X1280）5_zh-0.png" \
-   --theme cyber --provider chatgpt_web --dry-run     # 先看要传什么
+   --asset "data_aso/assets/seeds/hero_en-US_1080x1920.png" \
+   --theme cyber --provider chatgpt_web --composition design --watermark off \
+   --layout "$(cat /tmp/asoart/layout_hero2.txt)" --outfit "<逐件点名保留原服装>"
+# 实测：90 秒出图，比文档里写的 30～75 分钟快得多（额度够时）
 
-# 3) 出图后收回来，归一到 1024×500 并体检
-$P scripts/aso/aso_art.py ingest --variant B --locale ja-JP --gen <成品.png>
+# 3) 管线给 design 构图自动套「游戏卡框」，商店图不要框 ⇒ 复用同一张生成图重跑后处理
+$P scripts/image/restyle_pipeline.py postprocess \
+   --work _output/art_restyle/<资源名>/cyber_design \
+   --gen  _output/art_restyle/<资源名>/cyber_design/inbox/gen_web.png \
+   --frame none --alpha-mode keep --watermark off
+
+# 4) 压本地化标题（改文案只跑这一步）
+$P scripts/aso/aso_assets.py headline --art <无字底图> --locale ja-JP --kind hero \
+   --out data_aso/assets/gen/hero_ja-JP.png
 ```
 
-要点：
-- `TS-Art-Restyle` 的 `ASSET` 是**相对工程根**的路径，`时空美少女物料/**` 可以直接喂，不必塞进 `Assets/`
-- 目标尺寸 = 该图自身尺寸 ⇒ 想要 1024×500 就用 1024×500 的种子图
-- **`WRITE_BACK=false` 是写死的**：商店图绝不能写回工程资源
-- 并行出图靠浏览器租约，`TSG_LEASE_OWNER` 由 job 传（`$JOB_NAME-$BUILD_NUMBER`）
-- 本 job **不等待**换皮完成（那条链要 30～75 分钟）；下一轮用 `ingest` 收回
+要点与坑：
+- `ASSET` 是**相对工程根**的路径，`时空美少女物料/**`、`data_aso/assets/seeds/**` 都能直接喂
+- 🔴 **LAYOUT 里必须写死「NO text anywhere + 底部 N% 留空」**，否则模型会自己编标题，
+  或者把游戏面板放到最底部、把要压标题的位置占掉（第一版就是这么废的）
+- 🔴 主题预设的 `outfit` 句会把她身上的蓝白铠甲换成黑色机能服 ⇒ 必须用 `OUTFIT` 逐件点名保留
+- `COMPOSITION=design` 时 `ALPHA_MODE=source` 会被自动改成 `keep`（源掩膜按老构图抠的，会裁掉新人物）
+- 首图落在 `data_aso/assets/gen/hero.png`（或 `hero_<locale>.png` 做语言专属）后，
+  `aso_assets.py build` 会自动生成 `shot_00.png` 并排在**第一张**
+- 置顶图三语直接用 `时空美少女物料/新版本宣传图/*_1024/`（专业排版，比早期 `1024*500` 拼贴强得多），
+  只有繁中是重画 + 压字（`data_aso/assets/gen/feature_zh-TW.png`）
+- 本 job **不等待**换皮完成；下一轮 `build` 会把新底图自动带上
 
 ---
 

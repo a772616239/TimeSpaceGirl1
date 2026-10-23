@@ -243,7 +243,9 @@ def _cover(im: Image.Image, size: tuple[int, int], focus_y: float = 0.5,
 def draw_screen(canvas: Image.Image, box: tuple[int, int, int, int], shot_idx: int,
                 radius: int, glow: tuple, focus_y: float = 0.42,
                 band: tuple[float, float] | None = None,
-                focus_x: float = 0.5, zoom: float = 1.0) -> Image.Image:
+                focus_x: float = 0.5, zoom: float = 1.0,
+                screen_warm: tuple[float, float, float] | None = None,
+                screen_contrast: float = 1.08) -> Image.Image:
     """框内实机画面：cover 裁切 + 屏内暗角 + 顶部一条高光（玻璃感）+ 双层描边。
 
     顺序很关键：**先贴画面再画描边**，否则描边会被画面盖掉一半；
@@ -269,8 +271,12 @@ def draw_screen(canvas: Image.Image, box: tuple[int, int, int, int], shot_idx: i
     arr = np.asarray(shot.convert("RGB"), np.float32) * vig[..., None]
     # 框内外色温必须一致：截图是蓝冷调，直接放进暖色背景里会像「另一张图贴上去」。
     # 乘一个暖增益 + 提对比，画面立刻落进同一个色系。
-    arr = arr * np.array([1.04, 0.99, 0.94], np.float32)
-    arr = (arr - 118.0) * 1.08 + 118.0
+    # ⚠️ 暖增益只对「本身偏蓝」的截图成立（老 3 张都是青蓝工厂/红 BOSS）。雪地/城市这种
+    # 中性偏冷的画面再乘暖增益会整片发红（2026-10-23 用户给的冬季城市关踩到）⇒ 用
+    # screen.warm 逐张给，缺省才用它。
+    warm = np.array(screen_warm or (1.04, 0.99, 0.94), np.float32)
+    arr = arr * warm
+    arr = (arr - 118.0) * float(screen_contrast) + 118.0
     shot = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB").convert("RGBA")
 
     # 顶部玻璃高光：一条极淡的横向亮带，模拟屏幕反光
@@ -538,7 +544,9 @@ def build(layout_key: str, locale: str, size: tuple[int, int],
                          float(screen.get("focus", 0.42)),
                          tuple(screen["band"]) if screen.get("band") else None,
                          float(screen.get("focus_x", 0.5)),
-                         float(screen.get("zoom", 1.0)))
+                         float(screen.get("zoom", 1.0)),
+                         tuple(screen["warm"]) if screen.get("warm") else None,
+                         float(screen.get("contrast", 1.08)))
 
     # 立绘：远的（dim 大）先画，近的后画 ⇒ 有前后景的叠压关系
     for h in sorted(heroes, key=lambda o: -o.get("dim", 0)):

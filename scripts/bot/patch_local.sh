@@ -42,10 +42,15 @@ do_compile() {
   for f in "${FILES[@]}"; do args+=("$SRC/$f"); done
   "${JAVA_HOME_8}/bin/javac" -nowarn -encoding UTF-8 -source 8 -target 8 \
     -cp "$LIB/*:$BASE" -implicit:none -d "$OUT" "${args[@]}"
-  local n
+  local n bad
   n=$(find "$OUT" -name '*.class' | wc -l | tr -d ' ')
-  echo "编译完成：$n 个 class（正常 23 个；多出来说明 -implicit:none 没生效）"
-  [ "$n" -le 25 ] || { echo "FATAL: 产物过多，检查 classpath"; exit 1; }
+  # 12 个源文件 = 12 个主类 + 内部类/匿名类（BotManager$1..$6、$ChannelState、$PendingSay 等）。
+  # 阈值只能拦「把第三方包一起编出来」这种情况（那会多出几十上百个 com/ljsd 以外的路径），
+  # 所以真正判据是**有没有 com/ljsd 之外的 class**，数量上限只是兜底。
+  bad=$(find "$OUT" -name '*.class' | grep -cv '/com/ljsd/' || true)
+  echo "编译完成：$n 个 class（含内部类），com/ljsd 之外的产物：${bad:-0} 个"
+  [ "${bad:-0}" -eq 0 ] || { echo "FATAL: 混进外部包产物，-implicit:none 没生效，检查 classpath"; exit 1; }
+  [ "$n" -le 40 ] || { echo "FATAL: 产物过多（$n），检查 classpath"; exit 1; }
 }
 
 do_deploy() {
@@ -55,6 +60,26 @@ do_deploy() {
   cp "$BASE" "$BASE.bak-$(date +%Y%m%d-%H%M%S)"
   cp "$JAR" "$BASE"
   echo "已替换 ${BASE}（备份 ${BASE}.bak-*）"
+
+  # 🔴 配置必须跟 class 一起同步。
+  # 只换 class 不换 conf 会让本机长期跑「新代码 + 旧语料」：线上早删掉的句子照样在本机说出来
+  # （10-23 本机 14:49 还在说 "server feels alive today ngl"，就是 conf 停在 10-21 那版）。
+  # 语料和闸门参数都在 conf 里，不同步等于补丁只上了一半。
+  local SRC_CONF DST_CONF
+  SRC_CONF="$PROJ/TimeSpaceServer/Server_x1tag1.2.2/server_game/conf/bot_config.json"
+  DST_CONF="$GS/conf/bot_config.json"
+  if [ -f "$SRC_CONF" ]; then
+    if cmp -s "$SRC_CONF" "$DST_CONF"; then
+      echo "配置已一致，跳过"
+    else
+      [ -f "$DST_CONF" ] && cp "$DST_CONF" "$DST_CONF.bak-$(date +%Y%m%d-%H%M%S)"
+      cp "$SRC_CONF" "$DST_CONF"
+      echo "已同步配置 ${DST_CONF}（旧版备份 .bak-*）"
+    fi
+  else
+    echo "WARN: 仓库里没有 $SRC_CONF，配置未同步"
+  fi
+
   bash "$HOME/home/java/start-local.sh" restart gs
   echo "等 60s 起服…"
   for i in $(seq 1 30); do

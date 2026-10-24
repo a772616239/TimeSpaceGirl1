@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "data_aso" / "variants" / "N"
 VIDEO = "https://youtu.be/CS-5XZsJxbI"
 
-ZH_CN_SHORT = "关羽和凯撒同队？90位跨时代角色等你召唤。九格五席，站错一格就团灭。离线也在变强。"
+ZH_CN_SHORT = "90 位跨时代角色，历史神话小说混编。九格五席，站错一格就团灭。"
 
 ZH_CN_FULL = """「关公战秦琼」在这里不是段子。
 
@@ -51,7 +51,7 @@ ZH_CN_FULL = """「关公战秦琼」在这里不是段子。
 
 现在就下载，看看你能把多少人塞进这九个格子。"""
 
-ZH_TW_SHORT = "關羽和凱撒同隊？90位跨時代角色等你召喚。九格五席，站錯一格就團滅。離線也在變強。"
+ZH_TW_SHORT = "90 位跨時代角色，歷史神話小說混編。九格五席，站錯一格就團滅。"
 
 ZH_TW_FULL = """「關公戰秦瓊」在這裡不是段子。
 
@@ -84,7 +84,7 @@ ZH_TW_FULL = """「關公戰秦瓊」在這裡不是段子。
 
 現在就下載，看看你能把多少人塞進這九個格子。"""
 
-JA_SHORT = "関羽とカエサルが同じ隊に。90人の歴史的人物を召喚し、9マス5枠の配置で生死が決まる放置カードRPG。"
+JA_SHORT = "歴史・神話・小説の英雄90人が同じ名簿に。9マス5枠、配置で生死が決まる放置カードRPG。"
 
 JA_FULL = """「関羽 vs. カエサル」は、ここでは居酒屋の与太話じゃない。
 
@@ -117,7 +117,7 @@ JA_FULL = """「関羽 vs. カエサル」は、ここでは居酒屋の与太�
 
 さあ、9マスに何人詰め込めるか、試してみてください。"""
 
-EN_SHORT = "Caesar and Cleopatra on one team. 90 historical heroes. 9 slots, pick 5."
+EN_SHORT = "90 legends from history. Nine squares, five fighters. Misplace one, run ends."
 
 EN_FULL = """\"Caesar vs. Cleopatra\" isn't a barstool argument here. It's Tuesday.
 

@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import aso_common as C  # noqa: E402
+import check_hero_names as H  # noqa: E402
 
 # 简 → 繁 对照（只收「形不同且不会误伤日文」的字）。
 # 🔴 上一版把这些字拼成大字符串，把「体/数/点/用/特/值」也塞进去了 ⇒
@@ -202,6 +203,20 @@ def main() -> int:
             print(f"  -- 与基线 {args.baseline} 的差异 --")
             for line in diff_against_baseline(v, args.baseline, [d["locale"] for d in detail]):
                 print(f"     {line}")
+        # 人名核对：商店页写的人名，必须在游戏内语言表里查得到
+        # （基线是线上快照，禁改，跳过；否则 --all 永远红）
+        if v != args.baseline:
+            hero_bad = 0
+            for loc, info in H.audit_variant(C.VARIANTS_DIR / v).items():
+                for p in info["problems"]:
+                    if info["blocking"]:
+                        print(f"  🔴 {loc}: 人名不在游戏内 {p['residue']!r} ← {p['line'][:40]}")
+                        hero_bad += 1
+                    else:
+                        print(f"  🟡 {loc}: 人名异译待判 {p['residue']!r} ← {p['line'][:40]}")
+            if hero_bad:
+                print(f"     （人名问题不并入上表「红」计数，但计入合计）")
+            vred += hero_bad
         all_red += vred
         report["variants"].append({"variant": v, "blocking": vred, "locales": detail})
     report["blocking"] = all_red

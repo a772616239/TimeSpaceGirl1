@@ -7,7 +7,7 @@ King Arthur / Li Bai / Napoleon / Qin Shi Huang，而游戏内实际是
 Arthur / Li Taipo / Napoleone / Ying Zheng。
 
 做法（不用切分，避免日文名自带的「・」造成误判）：
-对每一行，把官方名按长度降序做子串消解，剩下的非分隔符字符即为
+对名单行把官方名按长度降序做子串消解，剩下的非分隔符字符即为
 「无法归属的片段」——它要么是人名写法不一致，要么是写错了。
 
 真源：
@@ -16,13 +16,14 @@ Arthur / Li Taipo / Napoleone / Ying Zheng。
 
 用法：
     python scripts/aso/check_hero_names.py --variant N
+    python scripts/aso/check_hero_names.py --variant N --json
 退出码：0 全部可归属；1 存在无法归属的片段（上线前必修）
 """
 from __future__ import annotations
 
 import argparse
+import functools
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -45,6 +46,7 @@ ZH_TW_ALIAS = {"亞森羅蘋", "唐吉訶德", "莫札特", "蕭邦", "邱吉爾
 SEP_CHARS = "·・、/,|｜:：;；　 \t　–—-"
 
 
+@functools.lru_cache(maxsize=1)
 def load_heroes():
     """返回 [(hero_id, quality, {locale: 游戏内官方名})]，已剔除克隆体。"""
     wb = openpyxl.load_workbook(LANG_XLSX, read_only=True, data_only=True)
@@ -74,7 +76,7 @@ def load_heroes():
         names = by_zh.get(name.strip())
         if names is not None:
             out.append((r[i_id], r[i_q], names))
-    return out
+    return tuple(out)
 
 
 def roster_lines(full_text: str) -> list[str]:
@@ -107,48 +109,70 @@ def residue(line: str, official: set[str]) -> tuple[list[str], str]:
     return hits, rest
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", required=True)
-    args = ap.parse_args()
-
+def official_names(src: str, locale: str) -> set[str]:
     heroes = load_heroes()
-    print(f"游戏内可玩角色（非克隆）: {len(heroes)}")
+    names = {h[2][src] for h in heroes if h[2].get(src)}
+    if locale == "zh-TW":
+        if _s2t is None:
+            return set()
+        return {_s2t(n) for n in names} | ZH_TW_ALIAS
+    return names
+
+
+def audit_variant(vdir: Path) -> dict[str, dict]:
+    """逐语种核对文案里的人名。返回 {locale: {"hits": n, "problems": [...], "blocking": bool}}。"""
+    result: dict[str, dict] = {}
+    for locale, src in LANG_SRC.items():
+        f = vdir / f"{locale}.json"
+        if not f.exists():
+            continue
+        full = json.loads(f.read_text(encoding="utf-8")).get("fullDescription", "")
+        official = official_names(src, locale)
+        if not official:  # 缺 opencc ⇒ 繁体无法核，跳过
+            continue
+        hits: set[str] = set()
+        problems = []
+        for line in roster_lines(full):
+            got, rest = residue(line, official)
+            hits.update(got)
+            if rest.strip():
+                problems.append({"line": line, "residue": rest.strip()})
+        result[locale] = {
+            "hits": len(hits),
+            "problems": problems,
+            "blocking": locale != "zh-TW",
+        }
+    return result
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="商店文案人名校验")
+    ap.add_argument("--variant", required=True)
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
 
     vdir = ROOT / "data_aso/variants" / args.variant
     if not vdir.is_dir():
         print(f"❌ 变体不存在: {vdir}")
         return 1
 
+    print(f"游戏内可玩角色（非克隆）: {len(load_heroes())}")
+    audit = audit_variant(vdir)
     bad = 0
-    for locale, src in LANG_SRC.items():
-        f = vdir / f"{locale}.json"
-        if not f.exists():
-            print(f"⚠️  {locale}: 无文案，跳过")
-            continue
-        full = json.loads(f.read_text(encoding="utf-8"))["fullDescription"]
-        official = {h[2][src] for h in heroes if h[2].get(src)}
-        blocking = True
-        if locale == "zh-TW":
-            # 游戏内没有繁体列，客户端走简→繁；繁体人名按台湾通行译法比对
-            if _s2t is None:
-                print("⚠️  zh-TW: 缺 opencc，跳过繁体核对")
-                continue
-            official = {_s2t(n) for n in official} | ZH_TW_ALIAS
-            blocking = False
-        hit_all, problems = set(), []
-        for line in roster_lines(full):
-            hits, rest = residue(line, official)
-            hit_all.update(hits)
-            if rest.strip():
-                problems.append((line[:60], rest.strip()[:40]))
-        status = "✅" if not problems else ("🔴" if blocking else "⚠️ ")
-        print(f"{status} {locale}: 命中官方名 {len(hit_all)} 个，问题行 {len(problems)}")
-        for line, rest in problems:
+    for locale, info in audit.items():
+        blocking = info["blocking"]
+        status = "✅" if not info["problems"] else ("🔴" if blocking else "⚠️ ")
+        print(f"{status} {locale}: 命中官方名 {info['hits']} 个，问题行 {len(info['problems'])}")
+        for p in info["problems"]:
             tag = "✗" if blocking else "△ 异译/待判"
-            print(f"      {tag} 残余 {rest!r}  ←  {line}")
-            if blocking:
-                bad += 1
+            print(f"      {tag} 残余 {p['residue']!r}  ←  {p['line'][:60]}")
+            bad += 1 if blocking else 0
+
+    if args.json:
+        out = ROOT / "data_aso/reports" / f"hero_names_{args.variant}.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(audit, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"[json] {out}")
 
     if bad:
         print(f"\n🔴 合计 {bad} 行含游戏内查不到的人名 —— 上线前必修")

@@ -1,7 +1,7 @@
 {
   "id": "aso-20261024-copy-L",
   "created": "2026-10-24T01:56:11",
-  "status": "planned",
+  "status": "superseded",
   "baseline": "A",
   "variant": "L",
   "element": "copy",
@@ -15,20 +15,22 @@
     {
       "variant": "A",
       "start": "2026-10-24",
-      "end": null
+      "end": "2026-10-24"
     },
     {
       "variant": "L",
       "start": "2026-10-24",
-      "end": null
+      "end": "2026-10-24"
     }
   ],
   "readout": null,
-  "note": "一次推了三件套（title/short/fullDescription），归因不纯：无法区分是标题关键词、短描述重排还是长描述扩容起作用。baseline A 是推送前线上快照（含 zh-TW 简体混排故障）。 ｜ 2026-10-24 02:12 追加：zh-CN/zh-TW 于同日被标题改写（变体 M）截断，中文窗口仅在线约 16 分钟（01:56→02:12），不可读数；本窗口自此只覆盖 en-US / ja-JP，中文标题另立 aso-20261024-title-zh-M。",
+  "note": "一次推了三件套（title/short/fullDescription），归因不纯：无法区分是标题关键词、短描述重排还是长描述扩容起作用。baseline A 是推送前线上快照（含 zh-TW 简体混排故障）。 ｜ 2026-10-24 02:12 追加：zh-CN/zh-TW 于同日被标题改写（变体 M）截断，中文窗口仅在线约 16 分钟（01:56→02:12），不可读数；本窗口自此只覆盖 en-US / ja-JP，中文标题另立 aso-20261024-title-zh-M。\n被 aso-20261024-rename-N 取代：四语 title/short/full 全量重写（含改名），L 的三元素差异已并入 N，不再单独读数。",
   "rules": [
     "单窗口 ≥ 7 天且 ≥ 1000 次商店页访问才读数",
     "🔴 一次只动一个元素（文案/截图/图标分开测），否则分不清是谁的效果",
     "切变体时先在 Console 确认「上一版已生效」，再记窗口起点",
     "Play 原生实验没有 API ⇒ 若要严格随机分流，去 Console 手动建实验，本脚本只做记录"
-  ]
+  ],
+  "superseded_at": "2026-10-24T09:41:56",
+  "superseded_by": "aso-20261024-rename-N"
 }

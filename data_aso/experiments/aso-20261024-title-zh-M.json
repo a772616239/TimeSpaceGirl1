@@ -1,7 +1,7 @@
 {
   "id": "aso-20261024-title-zh-M",
   "created": "2026-10-24T02:12:40",
-  "status": "planned",
+  "status": "superseded",
   "baseline": "L",
   "variant": "M",
   "element": "copy",
@@ -15,20 +15,22 @@
     {
       "variant": "L",
       "start": "2026-10-24",
-      "end": null
+      "end": "2026-10-24"
     },
     {
       "variant": "M",
       "start": "2026-10-24",
-      "end": null
+      "end": "2026-10-24"
     }
   ],
   "readout": null,
-  "note": "单一变量：short/fullDescription 保持 L 原文未动，图片与视频未动。基线 L 是 2026-10-24 01:56 上线的四语版。",
+  "note": "单一变量：short/fullDescription 保持 L 原文未动，图片与视频未动。基线 L 是 2026-10-24 01:56 上线的四语版。\n被 aso-20261024-rename-N 取代：本窗口只在线上活了 16 分钟（02:12 上线、02:28 被后续改名批次覆盖），样本量远低于读数门槛，不产生结论。",
   "rules": [
     "单窗口 ≥ 7 天且 ≥ 1000 次商店页访问才读数",
     "🔴 一次只动一个元素（文案/截图/图标分开测），否则分不清是谁的效果",
     "切变体时先在 Console 确认「上一版已生效」，再记窗口起点",
     "Play 原生实验没有 API ⇒ 若要严格随机分流，去 Console 手动建实验，本脚本只做记录"
-  ]
+  ],
+  "superseded_at": "2026-10-24T09:41:56",
+  "superseded_by": "aso-20261024-rename-N"
 }

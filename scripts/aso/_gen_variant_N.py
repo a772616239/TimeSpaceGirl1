@@ -101,9 +101,9 @@ JA_FULL = """「関羽 vs. カエサル」は、ここでは居酒屋の与太�
 90人・4職
 武将、科学者、作曲家、神話の英雄、小説の悪役——同じ名簿に並ぶ。
 関羽・白起・韓信・始皇帝・織田信長・真田幸村
-カエサル・ナポレオン・アレクサンダー・チンギス・ハン・ジャンヌ・ダルク
-テスラ・アインシュタイン・キュリー夫人・モーツァルト・ショパン・李白
-アテナ・アーサー王・ジークフリート・ジャック・ザ・リッパー・アルセーヌ・ルパン・ドン・キホーテ
+カエサル・ナポレオン・アレクサンダー・チンギス・カン・ジャンヌ
+テスラ・アインシュタイン・マリ・キュリー・モーツァルト・ショパン・李白
+アテーナー・アーサー王・ジークフリート・ジャック・ザ・リッパー・アルセーヌ・ルパン・ドン・キホーテ
 4つの職能が役割を分ける。誰を引いたかより、どこに置くか。
 
 留守中も勝ち続ける
@@ -117,11 +117,11 @@ JA_FULL = """「関羽 vs. カエサル」は、ここでは居酒屋の与太�
 
 さあ、9マスに何人詰め込めるか、試してみてください。"""
 
-EN_SHORT = "Guan Yu and Caesar on one team. 90 historical heroes, 9 slots, pick 5."
+EN_SHORT = "Caesar and Cleopatra on one team. 90 historical heroes. 9 slots, pick 5."
 
-EN_FULL = """\"Guan Yu vs. Caesar\" isn't a barstool argument here. It's Tuesday.
+EN_FULL = """\"Caesar vs. Cleopatra\" isn't a barstool argument here. It's Tuesday.
 
-Guan Yu and Caesar hold the same front line. Marie Curie covers for Tesla. Jack the Ripper waits in the corner for the cleanup. Ninety people from different centuries and different civilizations got pulled into the same tear in time — every one of them Live2D-animated, every one of them with an attitude.
+Caesar and Cleopatra hold the same front line. Marie Curie covers for Tesla. Jack the Ripper waits in the corner for the cleanup. Ninety people from different centuries and different civilizations got pulled into the same tear in time — every one of them Live2D-animated, every one of them with an attitude.
 
 NINE SLOTS. FIVE FIGHTERS. WRONG SQUARE, DEAD UNIT.
 The battlefield is exactly nine squares and you can only field five. If your front line folds, your back line is target practice. Drop a support one square too far and half your damage evaporates. Six preset formations unlock as you level — from a double-tank wall to all-out aggression — and you swap them with one tap.
@@ -132,11 +132,12 @@ Because fewer rules make every choice heavier. You don't memorize a dozen counte
 Easy enough to start, deep enough to think about every day. That's the whole design.
 
 NINETY CHARACTERS, FOUR ROLES
-Warlords, scientists, composers, mythological heroes and literary villains, all on one roster:
-Guan Yu · Bai Qi · Han Xin · Qin Shi Huang · Oda Nobunaga · Sanada Yukimura
-Caesar · Napoleon · Alexander · Genghis Khan · Joan of Arc
-Tesla · Einstein · Marie Curie · Mozart · Chopin · Li Bai
-Athena · King Arthur · Siegfried · Jack the Ripper · Arsene Lupin · Don Quixote
+Warlords, scientists, artists, gods, outlaws and literary legends, all on one roster:
+Caesar · Alexander · Cleopatra · Hercules · Joan of Arc · Robin Hood
+Tesla · Einstein · Marie Curie · Mozart · Freud · Nightingale
+Athena · Achilles · Arthur · Beowulf · Homer · Dante
+Jack the Ripper · Frankenstein · Arsene Lupin · Don Quixote · Grimm · Sissi
+Mulan · Guan Yu · Ying Zheng · Oda Nobunaga · Sanada Yukimura · Genghis Khan
 Four roles, clearly divided. It's not who you pulled — it's how you fill those nine squares.
 
 IT KEEPS WINNING WHILE YOU'RE GONE

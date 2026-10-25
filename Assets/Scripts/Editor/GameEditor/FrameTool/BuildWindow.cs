@@ -87,13 +87,23 @@ namespace GameEditor.FrameTool
             packageVersion = version.GetInfo("packageVersion");
             defaultVersion = version.GetInfo("version");
 
-            serverPathValue = (ServerPathType)System.Enum.Parse(typeof(ServerPathType), serverPathType);
+            // serverPathType 是人工写进 version.txt 的标签，历史上出现过「柯测试服」这类
+            // 后来被删掉的枚举名（ServerPathType 现在只剩 测试服/正式服）。
+            // 直接 Enum.Parse 会抛 ArgumentException，把整个打包面板顶掉 ⇒ 改成容错回落。
+            if (!Enum.TryParse(serverPathType, out serverPathValue))
+            {
+                Debug.LogWarning(string.Format(
+                    "version.txt 的 serverPathType「{0}」不是合法枚举，打包面板回落到「正式服」。"
+                    + "请把 version.txt 的 serverPathType 改成 ServerPathType 里的合法值。", serverPathType));
+                serverPathValue = ServerPathType.正式服;
+                serverPathType = serverPathValue.ToString();
+            }
 
             if (string.IsNullOrEmpty(SDKChannelConfigManager.Instance.ChannelType))
             {
                 SDKChannelConfigManager.Instance.ChannelType = ChannelType.None.ToString();
             }
-            channelType = (ChannelType)System.Enum.Parse(typeof(ChannelType), SDKChannelConfigManager.Instance.ChannelType);
+            channelType = (ChannelType)Enum.Parse(typeof(ChannelType), SDKChannelConfigManager.Instance.ChannelType);
 
         }
 

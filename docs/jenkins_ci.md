@@ -259,8 +259,8 @@ scripts/build_envs.json ──┴─→ scripts/apply_build_env.py apply <env>  
 
 | 选项 | serverUrl | 用途 |
 |---|---|---|
-| `正式服` | `http://103.151.173.99:8080/` | 面向玩家的正式包（Release job 默认） |
-| `测试服` | `http://127.0.0.1:8081/` | 本机自测服（Tomcat 8081 + 游戏服 16081，TestPackage 默认） |
+| `正式服` | `http://129.226.213.65:8080/` | 面向玩家的正式包（Release job 默认）。🔴 2026-10-25 前指向 `103.151.173.99:8080`，该机全端口不通（HTTP 000），选它出包必然 `Cannot connect to destination host`，已改到现网 |
+| `测试服` | `http://192.168.3.82:8081/` | 局域网自测服（Tomcat 8081 + 游戏服 16081，TestPackage 默认） |
 | `现网-129.226.213.65` | `http://129.226.213.65:8080/` | 历史所有包（含上架 Play 的 vc73/vc74）用的那条，留作对照/回滚 |
 
 ⚠️ **改地址只改 `scripts/build_envs.json`，不要改脚本**。加新环境时 Job 的 `choices` 要同步（两边都改）。

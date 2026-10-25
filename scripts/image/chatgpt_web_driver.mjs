@@ -114,7 +114,21 @@ const snapshot = ({ alts, quota, refusal }) => {
     // 兜底：结构上就在「生成图」容器里（alt 文案没覆盖到的语言走这条）
     (!!im.closest('[data-testid*="generated-image"]') &&
       !uploads.some((a) => (im.alt || '').includes(a)));
-  const body = document.body.innerText || '';
+  // 🔴 侧栏历史会话标题会复述「画像生成上限通知」这类字眼（上一轮真额度提示被站点自动命名），
+  //    全文扫描会把**标题**当成**当前回复** ⇒ 之后每次进来都秒判「额度用尽」，号明明能画也画不了。
+  //    2026-10-25 实测：构建 #13 一进来就命中「画像生成上限通知 / 画像生成依頼」，44 秒即停、连换号链都没走。
+  //    按行剔除 nav 里的文本（不能整段删：innerText 顺序不同，整段匹配删不掉）。
+  const navLine = new Set();
+  document.querySelectorAll('nav').forEach((n) => {
+    (n.innerText || '').split('\n').forEach((s) => {
+      const t = s.trim();
+      if (t) navLine.add(t);
+    });
+  });
+  const body = (document.body.innerText || '')
+    .split('\n')
+    .filter((l) => !navLine.has(l.trim()))
+    .join('\n');
   const QUOTA = quota.map((s) => new RegExp(s, 'i'));
   const REFUSAL = refusal.map((s) => new RegExp(s, 'i'));
   const lines = body.split('\n').map((s) => s.trim()).filter(Boolean);
@@ -127,11 +141,21 @@ const snapshot = ({ alts, quota, refusal }) => {
       msg.match(/(\d{1,2}:\d{2})/) ||
       body.match(/在\s*(\d{1,2}:\d{2})\s*获得/) ||
       body.match(/(\d{1,2}:\d{2})\s*に(無料枠|フリー)/);
+    // 短周期重置（「12 分後」「12 分钟后」「in 12 minutes」）必须单独认：
+    // 站点在「刚用完不久」时只给分钟数，认不出来就落到 +6h 兜底，白等半天。
+    const minsM =
+      body.match(/(\d+)\s*分\s*(?:後|后)/) ||
+      body.match(/in\s*(\d+)\s*min/i) ||
+      body.match(/(\d+)\s*minutes?\b/i);
     const hoursM = body.match(/(\d+)\s*小时\s*(后)?\s*重置/) || body.match(/(\d+)\s*時間後/);
     hit = {
       hit: true,
       message: msg.slice(0, 300),
-      reset: [resetM && `约 ${resetM[1]}`, hoursM && `${hoursM[1]} 小时后`]
+      reset: [
+        resetM && `约 ${resetM[1]}`,
+        minsM && `${minsM[1]} 分钟后`,
+        hoursM && `${hoursM[1]} 小时后`,
+      ]
         .filter(Boolean)
         .join(' / '),
     };

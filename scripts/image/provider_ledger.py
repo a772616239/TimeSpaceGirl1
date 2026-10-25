@@ -132,6 +132,9 @@ def _parse_iso(s: str | None) -> dt.datetime | None:
 
 
 _RE_HOURS = re.compile(r"(\d{1,2})\s*(?:時間|小时|個小時|时间|h\b|hours?\b)")
+# 短周期重置：站点「刚用完不久」时只给分钟数（「12 分後にリセット」「12 分钟后重置」
+# 「in 12 minutes」）。不认这一类就会落到 +6h 兜底，把 12 分钟记成 6 小时、白等半天。
+_RE_MINUTES = re.compile(r"(\d{1,3})\s*(?:分|分钟|minutes?|mins?\b)")
 _RE_TOMORROW = re.compile(
     r"(?:明日|明天|tomorrow)[^\d]{0,12}(\d{1,2})\s*[:：]\s*(\d{2})", re.I)
 _RE_ABOUT = re.compile(r"(?:約|约|about|around)[^\d]{0,6}(\d{1,2})\s*[:：]\s*(\d{2})", re.I)
@@ -147,6 +150,11 @@ def parse_reset(text: str, base: dt.datetime | None = None) -> tuple[dt.datetime
     t = (text or "").strip()
     if not t:
         return None, "none"
+
+    # 分钟级要排在小时前面：站点原文若同时出现「12 分」，它就是最近的那个恢复点。
+    m = _RE_MINUTES.search(t)
+    if m:
+        return base + dt.timedelta(minutes=int(m.group(1))), "minutes"
 
     m = _RE_HOURS.search(t)
     if m:
@@ -671,6 +679,10 @@ def selfcheck(data: dict | None = None) -> tuple[bool, list[str]]:
         ("明日の 16:54 に無料枠が回復します", "tomorrow", 22 * 60 + 54),
         ("明天 08:30 恢复", "tomorrow", 14 * 60 + 30),
         ("reset at 3 hours", "hours", 3 * 60),
+        # 短周期：站点刚用完不久只给分钟数（实测「上限は 12 分後にリセットされ」）
+        ("上限は 12 分後にリセットされます", "minutes", 12),
+        ("上限将在 12 分钟后重置", "minutes", 12),
+        ("your limit will reset in 45 minutes", "minutes", 45),
     ]
     for text, want_basis, want_min in cases:
         when, basis = parse_reset(text, base)

@@ -187,13 +187,17 @@ const snapshot = ({ alts, quota, refusal }) => {
     //   连续两轮 stable，最后白等 7 分钟超时、白烧一次额度（design 档首跑就是这么废的）。
     //   所以：① 完成标记优先，② 百分比只认进度组件，绝不扫全文。
     busy: (() => {
+      // 🔴 2026-10-27 实测：SunBrowser 以 `-AppleLanguages (zh-TW)` 启动，界面是**繁体**，
+      //    完成标记写的是「回覆已完成」而不是简体「回答已完成」。以前只认简体 ⇒ busy 永远为 true
+      //    ⇒ 图明明画完了也要等到 timeout 才报「未拿到图」，白烧一次额度（dan_2_0 就这么废的）。
+      //    所以这里必须把简/繁/日/韩/英的完成文案**全部**列上。
       const DONE =
-        /回答已完成|回答が完了しました|已完成回答|生成已完成|Response (now )?complete|Answer (now )?complete|생성 완료/i;
+        /回答已完成|已完成回答|回覆已完成|已完成回覆|已回覆|生成已完成|已完成生成|圖像已生成|图片已生成|回答が完了しました|生成が完了しました|画像を生成しました|생성 완료|응답 완료|Response (now )?complete|Answer (now )?complete|Image (now )?ready/i;
       if (DONE.test(body) && !document.querySelector('[data-testid="stop-button"]')) return false;
       return (
         !!document.querySelector('[data-testid="stop-button"]') ||
         !!document.querySelector('[role="progressbar"], [data-testid*="progress"], [aria-valuenow]') ||
-        /正在(勾勒|生成|绘制|创建)|Creating image|Generating image|画像を(生成|作成)|그림을 그리는/i.test(
+        /正在(勾勒|生成|绘制|繪製|创建|建立|生成圖片)|Creating image|Generating image|画像を(生成|作成)|그림을 그리는/i.test(
           body
         )
       );

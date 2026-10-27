@@ -409,9 +409,30 @@ def cmd_prepare(args) -> int:
         return RC_FAIL
 
     rgba = Image.open(source_ref).convert("RGBA")
+
+    # 🔴 目标尺寸与参考图尺寸**必须解耦**：蒙版画布（canvas_guide）为了给模型足够像素，
+    #    短边 ≥768，比真实帧大一个量级（90x173 的丹药 → 768x1476 的白底画布）。
+    #    画布只是「构图约束」，成品仍要归位到真帧尺寸。以前 target 直接取 source 尺寸，
+    #    画布一进来就变成「90x173 的图要产出 768x1476」，且 alpha 参照（真图）尺寸对不上
+    #    直接被判 prepare 失败。不传 --target-size 时沿用 source 尺寸（旧行为不变）。
+    tgt = rgba.size
+    tgt_arg = (getattr(args, "target_size", None) or "").strip()
+    if tgt_arg:
+        try:
+            tw, th = (int(v) for v in tgt_arg.lower().replace(" ", "").split("x"))
+        except Exception:  # noqa: BLE001
+            log("prepare", f"🔴 --target-size 格式不对：{tgt_arg}（要 WxH，例如 90x173）")
+            return RC_FAIL
+        if tw <= 0 or th <= 0:
+            log("prepare", f"🔴 --target-size 必须为正：{tgt_arg}")
+            return RC_FAIL
+        tgt = (tw, th)
+
     alpha = rgba.getchannel("A")
+    if tgt != rgba.size:
+        alpha = alpha.resize(tgt, Image.LANCZOS)
     hist = alpha.histogram()
-    total = rgba.width * rgba.height
+    total = tgt[0] * tgt[1]
     coverage = sum(hist[1:]) / total
 
     # 🔴 alpha 参照可以另给：资源被压成 RGB（丢了浮层透明度）时，
@@ -422,8 +443,8 @@ def cmd_prepare(args) -> int:
             log("prepare", f"🔴 --alpha-from 不存在：{alpha_ref}")
             return RC_FAIL
         ref = Image.open(alpha_ref).convert("RGBA")
-        if ref.size != rgba.size:
-            log("prepare", f"🔴 alpha 参照尺寸 {ref.size} 与资源 {rgba.size} 不一致")
+        if ref.size != tgt:
+            log("prepare", f"🔴 alpha 参照尺寸 {ref.size} 与目标尺寸 {tgt} 不一致")
             return RC_FAIL
         alpha = ref.getchannel("A")
         hist = alpha.histogram()
@@ -453,7 +474,9 @@ def cmd_prepare(args) -> int:
         "asset_meta": str(asset.with_suffix(asset.suffix + ".meta")),
         "theme": args.theme,
         "theme_zh": theme["zh"],
-        "target": [rgba.width, rgba.height],
+        "target": [tgt[0], tgt[1]],
+        # 参考图（可能是放大后的蒙版画布）尺寸：postprocess 归位时用它判断「源快照能不能当卡体」
+        "source_size": [rgba.width, rgba.height],
         "source_mode": Image.open(source_ref).mode,
         "source_ref": str(source_ref),
         "alpha_source": str(alpha_ref) if alpha_ref else str(source_ref),
@@ -472,7 +495,8 @@ def cmd_prepare(args) -> int:
     write_state(work, state)
 
     print(f"  资源      : {state['asset_rel']}")
-    print(f"  尺寸      : {rgba.width}x{rgba.height}  模式 {im.mode}")
+    print(f"  尺寸      : {tgt[0]}x{tgt[1]}  模式 {im.mode}"
+          + (f"（参考图 {rgba.width}x{rgba.height}）" if tgt != rgba.size else ""))
     print(f"  alpha     : 透明 {100 * (1 - coverage):.2f}%  半透明 {state['pixels_partial_alpha']} px"
           f"（参照 {state['alpha_source']}）")
     print(f"  主题      : {args.theme}（{theme['zh']}）")
@@ -1279,7 +1303,12 @@ def cmd_postprocess(args) -> int:
     with_alpha.save(alpha_path)
 
     compare_path = out_dir / "compare_before_after.jpg"
-    src_flat = Image.open(work / "src" / "source.png").convert("RGBA")
+    # 「改前」那一半要用**真图**：传蒙版画布时 src/source.png 是白底画布，
+    # 拿它做对比图等于「白纸 vs 成品」，人眼验不出换皮有没有跑偏。
+    before_src = Path(state.get("alpha_source") or "") if state.get("alpha_source") else None
+    if before_src is None or not before_src.is_file():
+        before_src = work / "src" / "source.png"
+    src_flat = Image.open(before_src).convert("RGBA")
     canvas = Image.new("RGBA", src_flat.size, (24, 26, 38, 255))
     canvas.alpha_composite(src_flat)
     before = canvas.convert("RGB").resize(target, Image.LANCZOS)
@@ -1815,6 +1844,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--work", default=None, help="自定义工作目录（默认 _output/art_restyle/<asset>/<theme>）")
     p.add_argument("--alpha-from", default=None,
                    help="alpha 参照图。资源被压成 RGB 丢浮层时用；支持 git:HEAD:<path> 直接从 git 取")
+    p.add_argument("--target-size", default=None,
+                   help="成品目标尺寸 WxH（默认=--source-from 的尺寸）。传蒙版画布当参考图时"
+                        "必须给：画布（短边≥768）只约束构图，成品要归位到真帧尺寸")
     p.add_argument("--source-from", default=None,
                    help="改前参照图（默认=资源本身）；支持 git:HEAD:<path>")
     p.add_argument("--layout", default=None, help="构图锁：文件路径或多行文本（决定文案怎么保）")

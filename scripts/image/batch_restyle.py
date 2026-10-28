@@ -243,6 +243,36 @@ def pick_variant(cfg: dict, work: Path) -> str:
     return "alpha"
 
 
+def already_done(full: Path, work: Path, theme: str, args) -> str | None:
+    """这一组是不是「已经按当前口径交付过」？返回说明 = 该跳过，None = 照常跑。
+
+    判据**只有**两条：① `state.json` 有 published 记录且写回后的哈希 == 资源现在的哈希
+    （写完没人再动过）；② 命令行没给 `--force`。
+
+    🔴 口径版本（`edge_ver`）**只记进说明、不作为「该重做」的理由**：老记录里根本没有这一列，
+    拿「版本不同」当重做条件等于第一次跑就把所有历史资源全重画一遍 —— 那正是用户抱怨的
+    「以前已经改过了为啥还改」。要按新口径重做就 `--force` 或 `--only` 点名，别默认烧额度。
+    """
+    if getattr(args, "force", False):
+        return None
+    st_path = work / "state.json"
+    if not st_path.is_file():
+        return None
+    try:
+        st = json.loads(st_path.read_text(encoding="utf-8"))
+    except Exception:                                        # noqa: BLE001
+        return None
+    pub = st.get("published") or {}
+    if not pub.get("after_sha256") or not full.is_file():
+        return None
+    if pub["after_sha256"] != rp.sha256(full):
+        return None                                          # 写回后又被人改过 ⇒ 该重做
+    cur = getattr(rp.edge_polish, "EDGE_VER", None)
+    ver = st.get("edge_ver") or "（记账时还没有这一列）"
+    extra = "" if ver == cur else f"，按 {ver} 交付而当前口径是 {cur}（要按新口径重做加 --force）"
+    return (f"已交付过且资源未再改动（{pub.get('at', '?')} 写回）→ 跳过{extra}")
+
+
 def step_publish(cfg: dict, work: Path, note: str) -> list[str]:
     return [PY, str(PIPE), "publish", "--work", str(work),
             "--variant", pick_variant(cfg, work), "--yes", "--note", note]
@@ -297,6 +327,16 @@ def execute(run: Run, cfg: dict, theme: str, presets: dict) -> dict:
            "steps": {}, "status": "ok", "variant": None, "note": ""}
     run.log(f"  ▸ {asset.name} × {theme}")
     run.log(f"    工作目录 {rel(work)}")
+
+    # 0) 已经按当前口径交付过的组合默认跳过 —— 见 already_done() 的说明。
+    #    🔴 放在 prepare 之前：prepare 会重写 state/src 快照，跑完就分不清「原来什么样」了。
+    _skip = already_done(full, work, theme, run.args)
+    if _skip:
+        row["steps"]["prepare"] = "skipped"
+        row["status"] = "skipped"
+        row["note"] = _skip
+        run.log(f"    ⏭ {_skip}")
+        return row
 
     def fail(step: str, why: str, status: str = "failed") -> dict:
         row["steps"][step] = status
@@ -446,6 +486,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-preview", action="store_true", help="不生成 567px 真机预览")
     ap.add_argument("--publish", action="store_true", help="强制写回（仍需 verify 未硬失败）")
     ap.add_argument("--no-publish", action="store_true", help="强制不写回（覆盖清单里的 publish=true）")
+    ap.add_argument("--force", action="store_true",
+                    help="已交付过（资源哈希未变 + 口径未变）的组合也重做。默认跳过它们："
+                         "不做这一步的话，重跑清单会把所有已交付资源再出一次图再覆盖一次")
     ap.add_argument("--keep-going", action="store_true", default=True, help="单组失败继续跑下一组（默认）")
     ap.add_argument("--fail-fast", dest="keep_going", action="store_false", help="任一组失败立即停")
     args = ap.parse_args(argv)

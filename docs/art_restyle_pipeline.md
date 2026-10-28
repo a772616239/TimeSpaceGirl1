@@ -248,12 +248,34 @@ gen_chatgpt_web.py
 `--timeout`（实测 394 秒），再从页面尾部里嗅一句「⚠ 可能是额度用尽」，还归到 `rc=3` ——
 Jenkins 上跟网络抖动长得一模一样，人得自己翻控制台才知道该换号。
 
-现在分两层：
+现在分三层（2026-10-26 起中间多了一层「同号换通道」）：
 
 | 层 | 行为 |
 |---|---|
 | driver | 每轮轮询都扫页面文案（中/英/日/韩）。命中「额度已用完 / 已达到 Free 套餐上限 / 无法调用图像生成工具 / reached your limit / limit will reset」等判据 → **立刻退出 `rc=4`**，并把站点原文 + 重置时间写进 `<out>.fail.json` |
-| `gen_chatgpt_web.py` | 收到 `rc=4` → 走**换号链**（下节），一个号的图出完了就接下一个接着画 |
+| `gen_chatgpt_web.py` | 收到 `rc=4` → 先**同一个号换通道**（gemini，见下节），两条都空才走**换号链** |
+
+### 额度用尽 ①：同一个号换通道 gemini（2026-10-26 起，**先于**换号）
+
+用户定的顺序：**「gpt 额度用完了，就用 gemini 画；两个都画完了，再进下一个账号」**。
+gemini 的额度按 **Google 账号**算，通常比 ChatGPT 那份大得多 —— 直接换号等于白扔这一份。
+
+| 环节 | 实现 |
+|---|---|
+| 通道 | `gen_gemini.py`（+ `gemini_web_driver.mjs`），接口/退出码与 `gen_chatgpt_web.py` 完全一致 |
+| 在哪台浏览器 | **同一个 CDP 端口**，绝不换浏览器（换浏览器 = 换号） |
+| 参考图 | 默认沿用本次喂给 GPT 的那张（`--second-image`，超长条时是裁出的英雄带）⇒ i2i 锁构图 |
+| 提示词 | 默认沿用 `--prompt-file`（`--second-prompt-file` 可单独给，xiuxian 那边会加构图锁前缀） |
+| 本机 Chrome | 临时实例的端口在 `finally` 之前还活着 ⇒ 也在**同一台**上换通道；且「今天 GPT 空过」的 profile 下一张直接走 gemini，不再空跑一次 GPT |
+| 记账 | 只有**两条通道都空**才 `mark_exhausted` 封号；GPT 单独空记在 `provider_state.json: gpt_spent["<kind>:<ident>"]` |
+| 默认 | `--second-provider gemini`（**默认开**）。关：`--second-provider none` 或 `SECOND_PROVIDER=none` |
+
+🔴 **默认开在库里**，不是「哪个 job 记得传参数才有」——否则新加的管线会悄悄漏掉 gemini 那份额度。
+已接上的入口：`XZ-Art-Restyle`（`GEN_PROVIDER=auto`）、`TS-Art-Restyle`（`SECOND_PROVIDER`）、
+`TS-Art-Translate`（`banner_translate.py --second-provider`）、`batch_restyle.py`（跟默认走）。
+`TS-Art-Frame` / `TS-Art-BottomFade` 是纯确定性像素工序（不调 AI），不涉及。
+
+退出码翻译（两套不一样，必须换）：`gen_gemini` 0/4/5/3 → 本模块 `RC_OK/RC_QUOTA/RC_REFUSED/RC_WARN`。
 
 ### 换号链：已开着的 → 让 AdsPower 现开一个（2026-10-21 起）
 
@@ -546,3 +568,20 @@ _output/art_restyle/<资源名>/<主题>/
 | **新图里出现上一张图的角色/道具**（如商店配图凭空多出巡逻图的球鞋） | 浏览器标签停在上一个对话，ChatGPT 把上一张参考图一起带进上下文。driver 现在出图前强制确认空对话（`/c/` 或已有消息就切新对话，切不动直接 rc=3 拒发）；**别用 `--grab-existing` 绕过**。防御性写法：`LAYOUT` 里明写「图里没有 X，不许画 X」 |
 | **写回的 PNG 模式变了**（RGB 资源变成 RGBA） | `opaque` 变体内部一直是 RGBA，`postprocess` 和 `compress` 都曾直接存出去。现在两处都按 `state.source_mode` 还原：源 RGB 就存 RGB。查 `published.json` 的 `mode` 字段，RGB 资源出现 `RGBA` 就是踩了这个 |
 | **重跑一次压缩后图更糊了** | 压缩目标取了「资源当前体积」（已经是压过的），形成棘轮。现在取 `source_bytes`（原图体积）；老 work 目录手动补这个字段 |
+
+## 边缘去污（所有绘制 job 共用一份）
+
+模型出的图在主体轮廓外必然留一圈脏边：白色抗锯齿 + 纯红/纯黄的细弧。二值掩码正好压在这圈上
+⇒ 贴回游戏就是「人物边缘一圈杂色」。实现在 `scripts/image/edge_polish.py`，
+**不要在任何 job 里另抄一份**（抄一份 = 同一个 bug 要修两次，2026-10-28 就是这么踩的）。
+
+- 接线点：`restyle_pipeline.py postprocess --fit subject` 之后、套框/底边虚化之前。
+  `TS-Art-Restyle`、`XZ-Art-Restyle`（仙境图集帧）、`batch_restyle` 全部走这里。
+- 口径版本：`edge_polish.EDGE_VER` → 写进 `state.json` 的 `edge_ver/edge_note`，
+  以及写回台账 `_manifest.jsonl` 的 `edge_ver/fit_mode`。改判据必须 +1。
+- 验收：`verify` 多一条软项「边缘无纯色杂弧」（`edge_polish.fringe_count`，>40 标黄）。
+- 「已经交付过的就别再动」：`batch_restyle` 现在会跳过「有 published 记录且资源哈希没变」的组合，
+  要重做必须 `--force`（`edge_ver` 只写进说明，**不作为**自动重做的理由 —— 老记录没有这一列，
+  拿它当条件等于第一次跑就把所有历史资源重画一遍）。账本缺这一环时，重跑一份清单会把
+  所有已交付资源再出一次图再覆盖一次。
+- 体检单张：`python3 scripts/image/edge_polish.py out/xxx_alpha.png --alpha out/xxx_subject.png`

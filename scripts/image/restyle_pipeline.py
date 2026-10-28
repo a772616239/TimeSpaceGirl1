@@ -50,6 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numpy as np                                         # noqa: E402
 from PIL import Image, ImageDraw, ImageFilter               # noqa: E402
 
+import edge_polish                                         # noqa: E402
 import watermark_clean                                     # noqa: E402
 
 PRESETS = Path(__file__).resolve().parent / "theme_presets.json"
@@ -1365,6 +1366,10 @@ def cmd_postprocess(args) -> int:
 
     gen = Image.open(gen_path).convert("RGB")
     arr = np.array(gen)
+    if state.get("edge_ver") == edge_polish.EDGE_VER:
+        # 只提示，不拦：postprocess 是「按当前参数重算」的确定性步骤，重跑是合法的。
+        # 但很多时候人想要的是「重贴旧图」而不是「重算一遍」——那属于 refit/repackage 的活。
+        log("postprocess", f"提示：这张上一轮已按 {state['edge_ver']} 处理过，本次会覆盖 out/ 产出")
     residue_before = watermark_clean.residue_level(arr)
     wm_mode = "off" if args.no_clean else args.watermark
     if wm_mode == "off":
@@ -1438,6 +1443,26 @@ def cmd_postprocess(args) -> int:
         flat = compose_band(band, body, args.blend)
         log("postprocess", f"带状模式：英雄带 {target[0]}x{hb}（cover 到带高，只横向裁）"
                            f" + 下半截 {target[1] - hb}px（{body_mode}，接缝渐隐 {args.blend}px）")
+
+    # ── 边缘去污：只对「主体对齐」这条路做，且必须在套框 / 底部虚化之前 ──────────
+    # 模型出的图在主体轮廓外必然留一圈脏边：白色抗锯齿 + 纯红/纯黄的细弧
+    # （实测 role_5015 的 gen 里 2095 个纯红 + 2284 个纯黄像素，全贴在衣摆/袖口外侧）。
+    # 主体掩码是**二值**的，边界正好压在这圈上 ⇒ 贴回游戏就是「新画的人物边缘一圈杂色」。
+    # 这一层只改颜色、不动轮廓（切片坐标/九宫格/尺寸全不变），羽化只是补回抗锯齿。
+    #
+    # 🔴 为什么只做 subject 这条：cover 归位的图是整幅铺满的，可见边界在画面**内部**，
+    #    模型画布的白边早被裁掉了，没有脏边可修；hero-band 的下沿是本地合成的卡体，
+    #    去做边反而会把接缝抹糊。满幅底板（coverage≥99.5%）在 clean() 里直接跳过。
+    # 🔴 为什么放在这里：卡框和底部渐变是我们自己画的干净像素，扩散带盖上去会发糊。
+    edge_note = ""
+    if subject_alpha is not None:
+        flat, subject_alpha, edge_note = edge_polish.clean(flat, subject_alpha)
+        if edge_note:
+            log("postprocess", f"边缘去污（{edge_polish.EDGE_VER}）：{edge_note}")
+        _cov = edge_polish.coverage(subject_alpha)
+        if _cov >= edge_polish.FULL_COV or _cov <= 0.002:
+            log("postprocess", f"⚠ 去污后主体覆盖率 {_cov * 100:.1f}% 异常，"
+                               "这张大概率要人看一眼（对比图）")
 
     suffix = state["theme"]
     base = Path(state["asset"]).stem
@@ -1551,6 +1576,11 @@ def cmd_postprocess(args) -> int:
         "bottom_fade_rim": bf_rim if bf_used else None,
         "frame": frame_mode,
         "frame_rim": frame_rim if frame_mode in ("card", "auto") else None,
+        # 边缘去污口径 + 这一张实际做了什么。贴回图集 / 重跑 refit 都靠它判断
+        # 「这帧已经按当前口径处理过了」，避免改一次逻辑就整包重刷（用户反馈过
+        # 「以前已经改好的又被改了」——根因就是没有这一层记录）。
+        "edge_ver": edge_polish.EDGE_VER,
+        "edge_note": edge_note,
         "watermark_mask_px": int(mask.sum()),
         "watermark_max_before": round(residue_before["max"], 2),
         "watermark_max_after": round(watermark_clean.residue_level(cleaned)["max"], 2),
@@ -1623,6 +1653,23 @@ def cmd_verify(args) -> int:
         else:
             check("alpha 覆盖率与源一致", abs(coverage - state["alpha_coverage"]) < 0.002,
                   f"{coverage:.4f} vs 源 {state['alpha_coverage']:.4f}")
+
+    # 边缘去污的量化回归（**软项**，只标黄不拦）：模型自带的纯红/纯黄细弧必须清干净。
+    # 只在「有真实轮廓」的 alpha 上量 —— 满幅底板没有边界，量出来恒 0 没意义；
+    # 阈值 40 是实测留的余量（去污后样本 507 → 2），远高于它就说明这一版口径没生效。
+    _edge_alpha = Path(outputs.get("subject_mask") or "")
+    if not _edge_alpha.is_file():
+        _av = Path(outputs.get("alpha", ""))
+        if _av.is_file() and edge_polish.has_boundary(Image.open(_av).convert("RGBA").getchannel("A")):
+            _edge_alpha = _av
+    _op = Path(outputs.get("opaque", ""))
+    if _edge_alpha.is_file() and _op.is_file():
+        _im = Image.open(_op).convert("RGBA")
+        _al = Image.open(_edge_alpha).convert("L").resize(_im.size, Image.LANCZOS)
+        _n = edge_polish.fringe_count(_im, _al)
+        check("边缘无纯色杂弧", _n <= 40,
+              f"贴边高饱和像素 {_n}（{state.get('edge_ver') or edge_polish.EDGE_VER} 去污口径）",
+              hard=False)
 
     # 水印残留要在「生成图的角落」上量，不能在成品上量：
     # 成品如果是超长条底板，右下角落进卡体/透明渐变区，那里的明暗跟水印毫无关系，
@@ -1877,7 +1924,9 @@ def cmd_publish(args) -> int:
     record = backup_and_replace(asset, src, theme=state.get("theme") or "unknown",
                                 note=args.note or "", backup_root=args.backup_root,
                                 variant=variant, work=str(work),
-                                frame=state.get("frame"), frame_rim=state.get("frame_rim"))
+                                frame=state.get("frame"), frame_rim=state.get("frame_rim"),
+                                edge_ver=state.get("edge_ver"),
+                                fit_mode=state.get("fit_mode"))
     if record is None:
         return RC_OK
     state["published"] = record
@@ -1897,7 +1946,8 @@ def cmd_publish(args) -> int:
 def backup_and_replace(asset: Path, src: Path, *, theme: str, note: str = "",
                        backup_root: str | None = None, variant: str = "auto",
                        work: str = "", register_table: bool = True,
-                       frame: str | None = None, frame_rim: str | None = None) -> dict | None:
+                       frame: str | None = None, frame_rim: str | None = None,
+                       edge_ver: str | None = None, fit_mode: str | None = None) -> dict | None:
     """把 src 覆盖到 asset，**原图先搬进背包**，写台账；返回 record（幂等跳过返回 None）。
 
     publish 与 bottom_fade 共用一份实现：备份命名规则（「背包里是更早的原图，绝不能被这次
@@ -1951,6 +2001,10 @@ def backup_and_replace(asset: Path, src: Path, *, theme: str, note: str = "",
         # 靠的就是这两个字段（table1 收进 last_frame，export 时自动带到批量清单）。
         "frame": frame,
         "frame_rim": frame_rim,
+        # 「这一版是按哪版口径切的/去边的」—— 台账缺这两列时，改口径后无法区分
+        # 「已经合格的」和「需要重跑的」，只能整包重刷（用户看到的就是「改好的又被改了」）。
+        "edge_ver": edge_ver,
+        "fit_mode": fit_mode,
     }
     mf = append_manifest(root, record)
     # 🔴 表1 登记：每次写回成功自动进台账（Jenkins 与 batch_restyle 都走本子命令 ⇒ 两链路都覆盖）。

@@ -41,7 +41,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-[ -d "$SRC" ] || die "找不到 AB 目录：$SRC（先跑 TS-Resource-Build 重建 AB）"
+[ -d "$SRC" ] || die "找不到 AB 目录：${SRC}（先跑 TS-Resource-Build 重建 AB）"
 [ -f "$SRC/Resources/version.txt" ] || die "找不到包内 version.txt：$SRC/Resources/version.txt"
 
 if [ -z "$PKG" ]; then
@@ -86,7 +86,7 @@ code="$(curl -s --noproxy '*' -m 8 -o /dev/null -w '%{http_code}' "http://129.22
 if [ "$code" = "200" ]; then
   echo "✅ 外网可达：http://129.226.213.65:81/$PKG/Android/version.txt"
 else
-  echo "⚠️ 外网返回 $code —— 服务器本机通、外网不通，基本就是腾讯云安全组没放行 TCP:81。"
+  echo "⚠️ 外网返回 ${code} —— 服务器本机通、外网不通，基本就是腾讯云安全组没放行 TCP:81。"
   echo "   判定：ssh $HOST 'curl -m 6 -o /dev/null -w \"%{http_code}\" http://129.226.213.65:8080/' 若是 200，"
   echo "   说明 hairpin 正常、就是按端口拦的。去控制台「安全组 → 入站规则」加 TCP:81 0.0.0.0/0。"
   echo "   详见 docs/resource_site_ops.md 第 4.1 节。"

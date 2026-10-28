@@ -735,6 +735,203 @@ def fit_cover(im: Image.Image, size: tuple[int, int]) -> Image.Image:
     return im.crop((left, top, left + tw, top + th))
 
 
+def _cc(m: np.ndarray) -> tuple[np.ndarray, list[dict]]:
+    """8 连通域标号（纯 numpy + 栈，1536px 内够快）。返回 (labels, [{'area','box'}])。"""
+    h, w = m.shape
+    lab = np.zeros((h, w), np.int32)
+    ys, xs = np.nonzero(m)
+    info: list[dict] = []
+    n = 0
+    for y0, x0 in zip(ys.tolist(), xs.tolist()):
+        if lab[y0, x0]:
+            continue
+        n += 1
+        stack = [(y0, x0)]
+        lab[y0, x0] = n
+        x1 = x2 = x0
+        y1 = y2 = y0
+        area = 0
+        while stack:
+            y, x = stack.pop()
+            area += 1
+            if x < x1:
+                x1 = x
+            elif x > x2:
+                x2 = x
+            if y < y1:
+                y1 = y
+            elif y > y2:
+                y2 = y
+            for dy in (-1, 0, 1):
+                ny = y + dy
+                if ny < 0 or ny >= h:
+                    continue
+                for dx in (-1, 0, 1):
+                    nx = x + dx
+                    if 0 <= nx < w and m[ny, nx] and not lab[ny, nx]:
+                        lab[ny, nx] = n
+                        stack.append((ny, nx))
+        info.append({"area": area, "box": (x1, y1, x2 + 1, y2 + 1)})
+    return lab, info
+
+
+def _fill_holes(m: np.ndarray) -> np.ndarray:
+    """把被主体包住的白洞填上（白瓷瓶/白玉环内部全是近白，靠「不与外界连通」保住）。"""
+    h, w = m.shape
+    lab, info = _cc(~m)
+    inv = [i for i, d in enumerate(info)
+           if not (d["box"][0] <= 0 or d["box"][1] <= 0
+                   or d["box"][2] >= w or d["box"][3] >= h)]
+    holes = np.isin(lab, [i + 1 for i in inv])
+    return m | holes
+
+
+def subject_mask(im: Image.Image, white_min: int = 246,
+                 open_px: int | None = None) -> np.ndarray | None:
+    """生成图里「主体」的像素掩码（bool 数组，原图尺度）。
+
+    🔴 为什么不能只按颜色判主体：模型会把**蒙版画布本身**画进成品 —— 四角 L 角标
+       (#C8C8C8) + 虚线安全区(#D2D2D2) 都被它当成装饰边框描了出来（实测 dan_2 的
+       左下角还有 622px 的灰边）。这些灰线一旦算主体，bbox 就撑满整张图 ⇒ 主体对齐
+       等于没对齐 ⇒ 主体缩在框里。
+
+    🔴 更不能只认「白 = 背景」：模型经常**不按白画布出图**，而是一整块黑底
+       （实测 sc_ui_random 的骰子：opaque 里 55% 是纯黑，按颜色判主体 ⇒ 黑底全是
+       "主体" ⇒ 贴回就是黑方框）或者一整块灰底板（close1 的叉号）。
+
+    所以判据是**边框主导色**：取外框 2% 环的中位色当"画布色"，从四边灌水，
+    只有「与边框连通 且 颜色接近画布色」的像素才算背景。白画布、黑底、灰底板
+    三种情况自动覆盖；主体内部的高光/白瓷/白玉不与边框连通，一定保住。
+    最后再形态学开运算吃掉细线、只留最大连通域、填内部空洞。
+    """
+    arr = np.array(im.convert("RGB")).astype(np.int16)
+    mx, mn = arr.max(axis=2), arr.min(axis=2)
+    h, w = mn.shape
+    # ① 画布色 = 外框 2% 环的中位色
+    k = max(1, min(h, w) // 50)
+    ring = np.concatenate([arr[:k].reshape(-1, 3), arr[-k:].reshape(-1, 3),
+                           arr[:, :k].reshape(-1, 3), arr[:, -k:].reshape(-1, 3)])
+    bg_rgb = np.median(ring, axis=0)
+    near_bg = np.abs(arr - bg_rgb).max(axis=2) <= 30
+    # ② 画布上画着的辅助线（虚线/角标）也是背景：中性亮灰 + 近白
+    neutral_line = ((mx - mn) <= 8) & (mx >= 190) & (mx <= 238)
+    passable = near_bg | (mn >= white_min) | neutral_line
+    body = ~passable
+    if not body.any():
+        return None
+    # ③ 从四边灌水：只有与边框连通的"画布色"才算背景
+    bg = np.zeros((h, w), bool)
+    stack: list[tuple[int, int]] = []
+    for x in range(w):
+        for y in (0, h - 1):
+            if passable[y, x] and not bg[y, x]:
+                bg[y, x] = True
+                stack.append((y, x))
+    for y in range(h):
+        for x in (0, w - 1):
+            if passable[y, x] and not bg[y, x]:
+                bg[y, x] = True
+                stack.append((y, x))
+    while stack:
+        y, x = stack.pop()
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w and passable[ny, nx] and not bg[ny, nx]:
+                bg[ny, nx] = True
+                stack.append((ny, nx))
+    fg = ~bg
+    if not fg.any():
+        return None
+    if open_px is None:
+        # 核大小按短边自适应：1024 的生成图用 9px（虚线宽 4~6px），100px 的成品用 3px，
+        # 固定 9 会把小图的主体整块啃掉（refit 的 --report 就是拿成品量宽的）
+        k2 = max(3, min(9, round(min(im.size) * 0.01)))
+        open_px = k2 if k2 % 2 else k2 - 1
+    # 开运算 = 先腐蚀后膨胀：细线（≤open_px 宽）整条消失，主体轮廓不动
+    er = np.array(Image.fromarray((fg * 255).astype(np.uint8))
+                  .filter(ImageFilter.MinFilter(open_px))
+                  .filter(ImageFilter.MaxFilter(open_px))) > 127
+    # 开运算会把细主体（剑/针/藤蔓）也啃掉，那就不开，改用连通域筛
+    if er.sum() < fg.sum() * 0.12:
+        er = fg
+    _lab, info = _cc(er)
+    if not info:
+        return None
+    big = max(d["area"] for d in info)
+    keep_ids = [i + 1 for i, d in enumerate(info) if d["area"] >= max(big * 0.12, er.size * 0.0004)]
+    keep = np.isin(_lab, keep_ids)
+    keep = _fill_holes(keep)
+    return keep if keep.sum() >= fg.size * 0.005 else None
+
+
+def subject_box(im: Image.Image, white_thr: int = 235) -> tuple[int, int, int, int] | None:
+    """主体包围盒（= subject_mask 的外接框）。"""
+    m = subject_mask(im)
+    if m is None:
+        return None
+    ys, xs = np.where(m)
+    if len(xs) == 0:
+        return None
+    return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+
+
+def alpha_box(alpha: Image.Image, thr: int = 25) -> tuple[int, int, int, int] | None:
+    a = np.array(alpha.convert("L"))
+    ys, xs = np.where(a > thr)
+    if len(xs) == 0:
+        return None
+    return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+
+
+def fit_subject(gen: Image.Image, target: tuple[int, int], alpha_ref: Image.Image,
+                white_thr: int = 235, min_ratio: float = 0.03,
+                max_ratio: float = 8.0) -> tuple[Image.Image, Image.Image | None, str]:
+    """把生成图的主体**等比缩放并对齐到原帧 alpha 的包围框**，同时返回主体掩码。
+
+    为什么需要：图集帧是打包时**紧裁**出来的，原帧 alpha 几乎填满整帧
+    （实测多数帧 alpha bbox 占 98~100%）。而模型在白底画布上作画，
+    主体周围必然留一圈白（安全区 7% + 自己的构图习惯），新图主体往往只占 40~60%。
+
+    🔴 这里必须**同时**产出掩码：RGB 被搬动过之后，原来的 alpha 参照（原帧轮廓）
+       与自己的任意一种「按颜色抠」都对不上 —— 前者会留一整块白底，后者在大图上
+       判得准、在 100px 的成品尺寸上判不准（浅金/米白主体一缩就糊）。掩码在生成图
+       原尺度算好，跟 RGB 走**同一套变换**，天然严丝合缝。
+
+    ⚠ 别用「像素缩放比」当合理性判据：1024 的生成图缩到 48 的帧，scale 天然是 0.05。
+      要看的是**占位比** ratio = 主体 bbox 占生成图面积 / 原帧 alpha 占目标面积，正常在 0.4~2.5。
+    """
+    tw, th = target
+    mask = subject_mask(gen)
+    gb = alpha_box(Image.fromarray((mask * 255).astype(np.uint8))) if mask is not None else None
+    ab = alpha_box(alpha_ref)
+    if gb is None or ab is None:
+        return fit_cover(gen, target), None, "判据失效（主体或 alpha 为空）→ 退回 cover"
+    gw, gh = gb[2] - gb[0], gb[3] - gb[1]
+    aw, ah = ab[2] - ab[0], ab[3] - ab[1]
+    if gw < 4 or gh < 4 or aw < 4 or ah < 4:
+        return fit_cover(gen, target), None, "判据失效（盒子太小）→ 退回 cover"
+    g_cov = gw * gh / max(1, gen.width * gen.height)
+    a_cov = aw * ah / max(1, tw * th)
+    ratio = g_cov / a_cov if a_cov > 0 else 0
+    if not (min_ratio <= ratio <= max_ratio):
+        return (fit_cover(gen, target), None,
+                f"占位比 {ratio:.2f} 不在 [{min_ratio},{max_ratio}] → 退回 cover")
+    scale = min(aw / gw, ah / gh)
+    nw, nh = max(1, round(gw * scale)), max(1, round(gh * scale))
+    body = gen.crop(gb).resize((nw, nh), Image.LANCZOS)
+    bmask = Image.fromarray((mask[gb[1]:gb[3], gb[0]:gb[2]] * 255).astype(np.uint8))
+    bmask = bmask.resize((nw, nh), Image.LANCZOS)
+    cx, cy = (ab[0] + ab[2]) // 2, (ab[1] + ab[3]) // 2
+    left = round(cx - body.width / 2)
+    top = round(cy - body.height / 2)
+    out = Image.new("RGB", target, (255, 255, 255))
+    out.paste(body, (left, top))
+    mout = Image.new("L", target, 0)
+    mout.paste(bmask, (left, top))
+    return out, mout, (f"主体 {gw}x{gh}@{gb[0]},{gb[1]} → alpha 框 {aw}x{ah}@{ab[0]},{ab[1]}"
+                       f"（占位比 {ratio:.2f}，缩放 {scale:.3f}，贴 {left},{top}）")
+
+
 def hex_rgb(h: str) -> tuple[float, float, float]:
     h = h.lstrip("#")
     return tuple(float(int(h[i:i + 2], 16)) for i in (0, 2, 4))
@@ -1183,16 +1380,30 @@ def cmd_postprocess(args) -> int:
     theme = theme_of(state["theme"])
     colors = theme.get("body_colors", ["#101018", "#05050a"])
     hero_raw = str(args.hero_band or "0").strip().lower()
+    subject_alpha: Image.Image | None = None
 
     # 清理后的生成图单独留一份：verify 要拿它量水印残留（在成品上量会被卡体颜色干扰）
     Image.fromarray(cleaned).save(work / "gen_clean.png")
 
     if hero_raw in ("", "0", "none"):
-        flat = fit_cover(Image.fromarray(cleaned), target)
+        fit_mode = (getattr(args, "fit", None) or "cover").lower()
+        if fit_mode == "subject":
+            # 主体对齐：把主体按原帧 alpha 的包围盒放回去（图集帧是紧裁的，
+            # 不这么做主体就跟着画布上的白边一起缩，游戏里图标显小一圈）
+            ref_a = Image.open(work / "src" / "source_alpha.png").convert("L")
+            if ref_a.size != target:
+                ref_a = ref_a.resize(target, Image.LANCZOS)
+            flat, subject_alpha, how = fit_subject(Image.fromarray(cleaned), target, ref_a)
+            fit_used, fit_note = "subject", how
+            log("postprocess", f"整幅模式（主体对齐）：{gen.size[0]}x{gen.size[1]} → "
+                               f"{target[0]}x{target[1]}  {how}")
+        else:
+            flat = fit_cover(Image.fromarray(cleaned), target)
+            fit_used, fit_note = "cover", "等比 cover + 居中裁切"
+            log("postprocess", f"整幅模式：{gen.size[0]}x{gen.size[1]} → 等比 cover 到 "
+                               f"{target[0]}x{target[1]}（居中裁切）")
         hb = 0
         body_mode = "-"
-        log("postprocess", f"整幅模式：{gen.size[0]}x{gen.size[1]} → 等比 cover 到 "
-                           f"{target[0]}x{target[1]}（居中裁切）")
     else:
         # 带状模式：生成图只是「英雄带」（角色 + 文案那一块），下半截空卡体另外补。
         # 超长条底板（856x2048，比例 0.42）整幅 cover 会横向砍掉 37%，角色和文案全废。
@@ -1207,6 +1418,7 @@ def cmd_postprocess(args) -> int:
             # 按 (宽, 带高) 做 cover：只横向裁一点，纵向一格不裁
             band = fit_cover(img, (target[0], hb_req))
         hb = band.height
+        fit_used, fit_note = "hero-band", f"英雄带 {hb}px"
 
         snap = work / "src" / "source.png"
         use_source = (args.body_mode in ("auto", "source") and snap.is_file()
@@ -1232,6 +1444,14 @@ def cmd_postprocess(args) -> int:
     out_dir = work / "out"
     opaque_path = out_dir / f"{base}_{suffix}_{target[0]}x{target[1]}.png"
     alpha_path = out_dir / f"{base}_{suffix}_{target[0]}x{target[1]}_alpha.png"
+    # 主体掩码单独存一份：repack 贴回图集时必须用它当 alpha（与 RGB 同一套变换，
+    # 既不会留白底，也不会把浅金/米白主体啃掉）。套框/虚化之后再存就对不上了，所以在这里落盘。
+    mask_path: Path | None = None
+    if subject_alpha is not None:
+        _fm = getattr(args, "frame", "none") or "none"
+        if _fm == "none" and not int(getattr(args, "bottom_fade", 0) or 0):
+            mask_path = out_dir / f"{base}_{suffix}_{target[0]}x{target[1]}_subject.png"
+            subject_alpha.save(mask_path)
 
     # 画框：free 构图的人像是整幅矩形，四边是硬切、上下半截的接缝也像没画完，
     # 不套一圈框就是「贴图没处理干净」。lock 构图既有透明轮廓，框可有可无（默认 none）。
@@ -1322,7 +1542,8 @@ def cmd_postprocess(args) -> int:
     state.update({
         "gen_image": str(gen_path),
         "gen_size": list(gen.size),
-        "fit_mode": "hero-band" if hb else "cover",
+        "fit_mode": fit_used,
+        "fit_note": fit_note,
         "hero_band": hb,
         "body_mode": body_mode,
         "alpha_mode": alpha_mode,
@@ -1336,6 +1557,7 @@ def cmd_postprocess(args) -> int:
         "outputs": {
             "opaque": str(opaque_path),
             "alpha": str(alpha_path),
+            "subject_mask": str(mask_path) if mask_path else None,
             "compare": str(compare_path),
         },
     })
@@ -1879,6 +2101,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--hero-band", default="0",
                    help="超长条底板用：生成图只当「英雄带」贴顶，下方补空卡体。"
                         "auto=生成图整体当带；数字=带高像素（cover 到该尺寸，只横向裁）；0=整幅 cover")
+    p.add_argument("--fit", choices=["cover", "subject"], default="cover",
+                   help="整幅归位方式。cover=等比覆盖后居中裁切（默认，老口径）；"
+                        "subject=把生成图主体等比放大到原帧 alpha 包围盒再贴（图集帧用："
+                        "帧是紧裁的，模型画的白边会让主体缩一圈，游戏里看就是图标变小）")
     p.add_argument("--body-mode", choices=["auto", "source", "synthetic"], default="auto",
                    help="空卡体来源：source=用原资源下半截明暗结构重上色（几何与原图对齐，首选）；"
                         "synthetic=按主题色合成渐变（没有源快照时的兜底）；auto=能 source 就 source")

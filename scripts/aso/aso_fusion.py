@@ -260,8 +260,17 @@ def draw_screen(canvas: Image.Image, box: tuple[int, int, int, int], shot_idx: i
     layer = Image.new("RGBA", (W, H), tuple(glow) + (110,))
     canvas.paste(layer, (0, 0), halo.point(lambda v: int(v * 0.46)))
 
-    shot = _cover(_shot_image(shot_idx, band), (x1 - x0, y1 - y0), focus_y,
+    src = _shot_image(shot_idx, band)
+    shot = _cover(src, (x1 - x0, y1 - y0), focus_y,
                   focus_x, zoom).convert("RGBA")
+
+    # 放大兜底锐化：16:9 路线（1920×1080）下画面框比真机截图还大，Lanczos 放大后
+    # UI 边缘会「糊一层」，商店页放大看就是廉价感。只在**真的放大过**时补一次
+    # UnsharpMask；1024×520 那条老路线是缩小，ratio < 1 不触发，产物一个字节不变。
+    up = (x1 - x0) / max(1, src.width)
+    if up > 1.05:
+        shot = shot.convert("RGB").filter(
+            ImageFilter.UnsharpMask(radius=1.4, percent=68, threshold=2)).convert("RGBA")
 
     # 屏内暗角：四角压深，中间提亮，让画面「陷」进框里
     sw, sh = shot.size

@@ -245,11 +245,15 @@ def draw_screen(canvas: Image.Image, box: tuple[int, int, int, int], shot_idx: i
                 band: tuple[float, float] | None = None,
                 focus_x: float = 0.5, zoom: float = 1.0,
                 screen_warm: tuple[float, float, float] | None = None,
-                screen_contrast: float = 1.08) -> Image.Image:
+                screen_contrast: float = 1.08,
+                shot_img: Image.Image | None = None) -> Image.Image:
     """框内实机画面：cover 裁切 + 屏内暗角 + 顶部一条高光（玻璃感）+ 双层描边。
 
     顺序很关键：**先贴画面再画描边**，否则描边会被画面盖掉一半；
     外发光要在画面之下，否则会糊住画面内容。
+
+    `shot_img` 给定时直接用这张图当框内画面（跳过 `shots.json` 的取景），
+    16:9 商店截图路线要靠它自己控制「只留战斗区」的裁切。
     """
     W, H = canvas.size
     x0, y0, x1, y1 = box
@@ -260,7 +264,7 @@ def draw_screen(canvas: Image.Image, box: tuple[int, int, int, int], shot_idx: i
     layer = Image.new("RGBA", (W, H), tuple(glow) + (110,))
     canvas.paste(layer, (0, 0), halo.point(lambda v: int(v * 0.46)))
 
-    src = _shot_image(shot_idx, band)
+    src = shot_img if shot_img is not None else _shot_image(shot_idx, band)
     shot = _cover(src, (x1 - x0, y1 - y0), focus_y,
                   focus_x, zoom).convert("RGBA")
 
@@ -403,19 +407,26 @@ def _tracked_w(d, text: str, font, tracking: float) -> float:
 
 
 def draw_caption(canvas: Image.Image, kicker: str, title: str, locale: str,
-                 bar: float, kicker_y: float, title_y: float, accent: tuple) -> None:
+                 bar: float, kicker_y: float, title_y: float, accent: tuple,
+                 title_ratio: float = 0.118, max_w_ratio: float = 0.88) -> None:
     """底部标题带：黑渐变 scrim → 字距小标 → 带描边/发光/纵向渐变的大标题。
 
     参考图那种「小标在上、大字在下」的双层结构最好用：
     小标负责说清是什么（品类/规模），大字负责给一个记得住的动作。
+
+    `bar` 传 >1 表示**不要 scrim**（只压字）——16:9 商店截图路线把标题放到画面顶部，
+    底下是角色与背景的实拍细节，再铺一层黑渐变就又变成 Play 明令禁止的
+    「solid colors and gradients」了。
+    `title_ratio` 是标题字号占画布高的比例，顶部标题要留出角色头部，比底部标题小一号。
     """
     W, H = canvas.size
     d = ImageDraw.Draw(canvas)
 
     # scrim：从 bar 位置渐入全黑，gamma 让过渡集中在下半段，上缘不显脏
-    scrim = Image.new("RGBA", (W, H), (4, 3, 8, 255))
-    canvas.alpha_composite(Image.composite(
-        scrim, Image.new("RGBA", (W, H), (0, 0, 0, 0)), _vgrad((W, H), bar * 0.94, 1.0, gamma=1.55)))
+    if bar <= 1.0:
+        scrim = Image.new("RGBA", (W, H), (4, 3, 8, 255))
+        canvas.alpha_composite(Image.composite(
+            scrim, Image.new("RGBA", (W, H), (0, 0, 0, 0)), _vgrad((W, H), bar * 0.94, 1.0, gamma=1.55)))
 
     # ---- kicker：字距拉开的细标
     if kicker:
@@ -434,9 +445,9 @@ def draw_caption(canvas: Image.Image, kicker: str, title: str, locale: str,
     if not title:
         return
     ty = int(H * title_y)
-    size = int(H * 0.118)
-    floor = int(H * 0.062)
-    max_w = W * 0.88
+    size = int(H * title_ratio)
+    floor = int(H * title_ratio * 0.52)
+    max_w = W * max_w_ratio
     while size > floor:
         f = font_for(locale, size)
         if d.textlength(title, font=f) <= max_w:

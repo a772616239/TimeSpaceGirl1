@@ -16,6 +16,7 @@
 |---|---|---|
 | `feature_01.png` | 1024×500 | Play 置顶大图（featureGraphic，每语只准 1 张） |
 | `shot_00.png` … `shot_NN.png` | 1024×520（横）/ 1080×1920（竖） | Play 手机截图（phoneScreenshots，每语 2~8 张） |
+| `shots169/NN_<tag>.png` | 1280×720（16:9） | 同上，但走「不许放大 / 不许黑边」那条路线（见 §3.7，2026-10-29 未过审后新增） |
 | `index.json` | — | 尺寸/体积/sha1/文案 台账，验收页与推送都读它 |
 | `preview.html` | — | 人眼验收台（真机模拟 + 合规检查 + 灯箱） |
 
@@ -161,33 +162,48 @@ PY   = '/你的/python（要装 PIL + numpy）'
 - [ ] Jenkins job 的 `PROJ` / `PY`
 - [ ] `chmod +x` 别忘（拷过来的脚本可能丢执行位，反正用 `python` 调就不需要）
 
-### 3.7 16:9 手机截图路线（1920×1080）
+### 3.7 16:9 手机截图路线（1280×720）—— 2026-10-29 未过审后重做
 
 Play 详情页对**横版**截图的建议规格是 **16:9 / ≥1280×720**。老的横版路线
-（`fusion_shots.py` 的 1024×520 = 1.969）两条都不满足，所以另开了一条 16:9 路线，
-用 `fusion.json` 里的 **`duo169`** 版面，画布 1920×1080。
+（`fusion_shots.py` 的 1024×520 = 1.969）两条都不满足，所以单独一条 16:9 路线，
+脚本是 **`scripts/aso/fusion_shots169.py`**，产物在 `data_aso/derived/B/shots169/`。
 
-为什么是「加版面」而不是「改尺寸」：
+第一版做成 1920×1080（`fusion.json` 的 `duo169` 版面），**被驳回**，原文：
 
-| 事实 | 结论 |
-|---|---|
-| `bg_*.png` 底图原生就是 **1920×1080** | 16:9 是唯一零损失画布：不放大、不裁切 |
-| `duo` 在 1024×500 下画面框是 440×243 = **1.81** | `duo169` 的 frame 宽高比必须也做成 1.81，`fusion_pairs.json` 的 `band/focus/zoom` 才能一个字不改直接复用 |
-| 16:9 画布下 `frame_h_frac ≈ frame_w_frac × 0.982` | 换算捷径（1920/1080 ÷ 1.81），调框高度时不用手算 |
+> All visual materials such as images and videos must be clear with no obvious blurring,
+> stretching, compression, black edges, white edges, etc. Visual materials cannot be made up
+> of overly simple patterns such as solid colors and gradients.
+
+三条都踩了，且都能量化：
+
+| 驳回点 | 我们踩在哪 | 量化证据 | 修法 |
+|---|---|---|---|
+| 模糊 blurring | 1920 画布下画面框要 845px，真机源只有 598~720px ⇒ **1.41× 放大** | 框宽 ÷ 源宽 = 1.41 | 画布降到 **1280×720**，同一个框只要 563px ⇒ **0.94×（缩小）** |
+| 黑边 / 纯色渐变 black edges / gradients | 标题压在 `bg_*.png` 底部那块黑上，还叠了一层黑渐变 scrim | 底图底部 22% 局部细节 **0.1~3.0**（其它区域 16~26），均值亮度 10~14 | 画面框从 y=0.40 **压出画布底边**，把中间那块黑整块盖掉；标题挪到顶部，`bar>1` 关掉 scrim |
+| 拉伸 stretching | 早期原型用 `crop(0,0,W,0.76H)` 再 `resize` 到满画布 = 纵向拉伸 1.32× | 角色比例肉眼可见变形 | 一律 `_cover` 等比裁切；band 跨度按「框宽 ÷ 框比例」反算 |
 
 ```bash
-# 六张手机截图（顺序 = fusion_shots.py 的 DEFAULT_ORDER）
-$PY scripts/aso/aso_fusion.py build --layout duo169 --locales en-US --size 1920x1080 \
-    --pairs shots --out data_aso/derived/B/fusion169
+$PY scripts/aso/fusion_shots169.py                    # 出全部（英文，1280×720）
+$PY scripts/aso/fusion_shots169.py --tags 0102,2019   # 只出指定组
 ```
 
-🔴 **放大锐化只对「放大过」生效**：真机截图源最大只有 720×1280，框宽 890px 时是 1.4× 放大，
-Lanczos 放大后 UI 边缘会糊一层。`draw_screen` 里按 `up = 框宽 / 源宽` 判定，`up > 1.05`
-才补一次 `UnsharpMask(radius=1.4, percent=68)`；1024×520 那条老路线是缩小（`up < 1`），
-产物一个字节不变。
+脚本自带三条验收（不达标直接 rc=3，别上传）：
 
-🔴 **源头分辨率就是天花板**：想要真正锐利的 1920 宽截图，只能重打 1080×1920 真机截图
-（现在素材是 598×1296 / 720×1280 的模拟器截图）。管线只能缓解，不能创造细节。
+- `scale = 框宽 ÷ 源宽` 必须 **≤1.02**（>1 就是放大 ⇒ 必然被判模糊）
+- 底部 20% 的**局部细节**必须 **≥6**（低于这个值肉眼就是一条黑边）
+- 画布必须是 16:9
+
+🔴 **只出 3 张是素材上限，不是偷懒**：`shots.json` 里 8 张只有 3 张是真机竖版高清图
+（598×1296 / 720×1280 / 597×1299），另外 5 张是 334~412px 的场景小图，铺到 563px 就是
+1.4~1.7× 放大 —— 正是这次被驳回的毛病。Play 要「3 张及以上」，**宁可 3 张全清晰，
+也不要 6 张一半模糊**。要补第 4~6 张，唯一办法是真机重打 1080×1920 截图。
+
+🔴 **画面框里的取景要按「战斗区」切**，不能直接用 `shots.json` 的 `crop_bottom`：
+那套值是按 1024×520 的横条调的，底部还会带进技能条和聊天面板（纯色大色块 + 中文 UGC）。
+`fusion_shots169.BATTLE_CROP` 里逐张卡死上下界，下界一律停在技能条之上。
+
+🔴 **标题必须折两行**：一行写死「7X7. POSITION WINS.」在 1280 宽下是 648px，
+横穿右边角色的脸。折两行后每行 ≤0.44 画布宽（563px），正好塞进两个角色之间的天空缝隙。
 
 ---
 

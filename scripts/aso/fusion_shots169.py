@@ -91,6 +91,29 @@ def battle_img(shot_idx: int) -> Image.Image:
     return im.crop((0, int(im.height * top), im.width, int(im.height * bot)))
 
 
+def extend_floor(im: Image.Image) -> Image.Image:
+    """把底图底部那块纯黑换成「湿地面反射」。
+
+    `bg_*.png` 底部 22% 是生成时留空的标题区（局部细节 0.1~3.0，其它区域 16~26），
+    画面框只能盖住中间，**左右两个下角会留下纯黑三角** —— 这就是 Play 判的 black edges。
+    补法：取黑区上方等高的一条，垂直翻转 + 压暗 + 轻微模糊，当霓虹夜街的湿地面反射。
+    等高翻转 ⇒ 不拉伸；内容是真实画面 ⇒ 不是纯色/渐变；只糊 2px ⇒ 不是「明显模糊」。
+    """
+    W, H = im.size
+    y1 = int(H * 0.78)                 # 黑区上沿
+    band_h = H - y1
+    band = im.crop((0, y1 - band_h, W, y1)).transpose(Image.FLIP_TOP_BOTTOM)
+    # 亮度沿深度衰减：接缝处 0.95（几乎不断层）→ 底部 0.42（远处更暗）。
+    # 不加这层渐变，接缝就是一条横贯全图的硬线，比黑边还难看。
+    ramp = np.linspace(0.95, 0.42, band_h, dtype=np.float32)[:, None, None]
+    arr = np.asarray(band, np.float32) * ramp
+    band = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
+    band = band.filter(ImageFilter.GaussianBlur(2.5))
+    out = im.copy()
+    out.paste(band, (0, y1))
+    return out
+
+
 def _copy(tag: str, locale: str) -> tuple[str, str]:
     for p in (C.load_json(C.ASSETS_DIR / "fusion_pairs.json").get("pairs") or []):
         if str(p.get("tag")) == tag:
@@ -106,7 +129,8 @@ def render(tag: str, locale: str, size: tuple[int, int]) -> Image.Image:
     lay = spec["layouts"]["duo169"]
 
     bg = Image.open(C.ROOT / f"data_aso/assets/gen/fusion/bg_{tag}.png").convert("RGB")
-    # 底图 1920×1080 → 1280×720 是**缩小**，细节不丢；不要反过来。
+    # 先在 1920×1080 原尺寸补底（反射带要按原始比例取），再缩到画布。
+    bg = extend_floor(bg)
     canvas = bg.resize((W, H), Image.LANCZOS).convert("RGBA")
 
     shot = battle_img(_shot_of(tag))
@@ -149,19 +173,33 @@ def _shot_of(tag: str) -> int:
 
 
 def _audit(im: Image.Image, shot: Image.Image, box_w: int) -> dict:
-    """验收三个驳回点：放大倍数、底部黑边、整体模糊度。"""
+    """验收三个驳回点：放大倍数、黑边、整体细节。
+
+    🔴 黑边要按**四个角和整条底边**分别测，不能只测「底部 20% 的平均值」：
+    画面框只盖住中间，底部左右两个三角仍然是底图的纯黑（实测均值 2.0、细节 0.06），
+    但被框内画面一平均就掩盖过去了 —— 2026-10-29 就是这么漏掉、被用户当场看出来的。
+    """
     a = np.asarray(im.convert("L"), np.float32)
-    H = a.shape[0]
-    band = a[int(H * 0.80):]
-    blur = np.asarray(Image.fromarray(band.astype(np.uint8))
-                      .filter(ImageFilter.GaussianBlur(8)), np.float32)
-    return {
-        "window_px": box_w,
-        "source_px": shot.width,
-        "scale": round(box_w / shot.width, 3),          # >1 就是放大 ⇒ 判红
-        "bottom_detail": round(float(np.abs(band - blur).mean()), 2),  # <6 像黑边
-        "bottom_mean": round(float(band.mean()), 1),
+    H, W = a.shape
+
+    def detail(b: np.ndarray) -> float:
+        bl = np.asarray(Image.fromarray(b.astype(np.uint8))
+                        .filter(ImageFilter.GaussianBlur(6)), np.float32)
+        return float(np.abs(b - bl).mean())
+
+    zones = {
+        "bottom": a[int(H * 0.92):],
+        "bot_left": a[int(H * 0.90):, :int(W * 0.22)],
+        "bot_right": a[int(H * 0.90):, int(W * 0.78):],
     }
+    rec = {"window_px": box_w, "source_px": shot.width,
+           "scale": round(box_w / shot.width, 3)}
+    for k, b in zones.items():
+        rec[f"detail_{k}"] = round(detail(b), 2)
+        rec[f"mean_{k}"] = round(float(b.mean()), 1)
+    rec["bottom_min_detail"] = min(rec["detail_bottom"], rec["detail_bot_left"],
+                                   rec["detail_bot_right"])
+    return rec
 
 
 def main() -> int:
@@ -197,12 +235,13 @@ def main() -> int:
         if rec["scale"] > 1.02:
             flag += " 🔴放大"
             bad += 1
-        if rec["bottom_detail"] < 6:
-            flag += " 🔴底部像黑边"
+        if rec["bottom_min_detail"] < 4:
+            flag += " 🔴底部/角上像黑边"
             bad += 1
         print(f"{rec['file']}  {W}x{H}  {rec['bytes']/1024:.0f} KB  "
               f"框 {rec['window_px']}px / 源 {rec['source_px']}px = {rec['scale']:.2f}×  "
-              f"底部细节 {rec['bottom_detail']:.1f}{flag}")
+              f"底边细节 {rec['detail_bottom']:.1f} / 左下 {rec['detail_bot_left']:.1f} / "
+              f"右下 {rec['detail_bot_right']:.1f}{flag}")
 
     (root / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

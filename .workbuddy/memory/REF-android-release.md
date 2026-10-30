@@ -429,3 +429,20 @@ base/lib/arm64-v8a/libtolua.so
   **清数据/重装/换设备/新装 ⇒ 走注册分支 ⇒ 100% 变新号**。
 - 两区老号别搞混：**10002 的 lv24 老号账号名是 `r2gtB27C2057`（Editor 游客号）**，
   与真机 Google 号是两套体系；10001 库里没有它。
+
+## 🔴 出包口径（profile）：CLI 名 ≠ 枚举名，`minimal` 会静默变 `release`
+- CLI 侧（`build_apk.sh --profile` / `aab_release.sh --profile` / Jenkins `EXPECT_PROFILE`）用
+  `release | minimal | dev | full`；而 `ReleaseBuildSettings.ReleaseProfile` 枚举成员叫
+  `Release | MinimalGmOff | Dev | FullTemplate`。`Enum.TryParse("minimal")` 必然失败。
+- 失败路径是**静默回落 Release**（`CLIBuilder.ResolveProfile` 的保守默认）⇒ 测试包被打成
+  「关 GM + 关日志」，`verify_aab_release_config.py` 判「期望 minimal，实际命中 release」整轮 FAILURE。
+  TS-Android-TestPackage #20 / #21 连续两轮栽在这里。
+- **症状极具误导性**：Jenkins 日志印「口径：minimal」、Unity 日志也印「口径 minimal」、参数字段也对，
+  只有产物是 release ⇒ 光读脚本看不出问题，必须查 `run/<tag>/logs/unity-apk.log` 里的
+  `[CLIBuilder] TS_RELEASE_PROFILE="..." 不是合法口径` 那一行。
+- 修法（commit `7817c3e58`）：`TryParseCliProfile` 先做 CLI 名 → 枚举映射，未命中再退回 `Enum.TryParse`。
+- 修复必须 commit + **push** 才生效：打包目录 `TimeSpaceGirl1-build` 每轮 `ci_sync` 都 reset 到 `origin/release`。
+- 口径判据（`verify_aab_release_config.py`，11 位 int32，不含 originLan）：
+  `minimal = [logLevel=0, 0,1,1,0,0,1,0,0,0,0]`、`release = pattern(... , log_level=4)`。
+  `minimal` 只关 GM，**不改 logLevel** ⇒ 若场景原值 logLevel 已是 4，minimal 与 release 产物位完全相同，
+  核验会误判；当前 `Logo.unity` 原值 `logLevel=0`、`isOpenGM=1`，所以 minimal 产物 logLevel=0。

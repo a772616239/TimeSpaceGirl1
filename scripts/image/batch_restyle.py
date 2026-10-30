@@ -371,8 +371,12 @@ def execute(run: Run, cfg: dict, theme: str, presets: dict) -> dict:
         row["steps"]["gen"] = "ok" if rc == RC_OK else "failed"
         if rc in GEN_FATAL:
             row["exhausted"] = True
-            return fail("gen", "出图通道额度/登录态失效 —— 换 AdsPower 里另一个已登录 profile 再反查端口",
-                        status="blocked")
+            # rc=3 有三个来源：额度用尽 / 登录态失效 / **节奏闸门说「现在不该画」**。
+            # 前两个要换号，第三个只是要等（或今天就到这）—— 别让人一律去换号。
+            note = ("出图通道不可用 —— 看 gen 日志：额度/登录态问题就换号；"
+                    "若是「节奏闸门」则是按账号限速到顶了，等窗口或明天再来"
+                    "（scripts/image/gen_pace.py status 看下次可画时间）")
+            return fail("gen", note, status="blocked")
         if rc != RC_OK:
             return fail("gen", "出图失败（看 gen 日志；若图其实已生成用 --no-gen 或 gen.grab_existing）")
 
@@ -583,8 +587,9 @@ def main(argv: list[str] | None = None) -> int:
         if row["status"] not in ("ok",):
             rc_final = RC_FAIL
         if row.get("exhausted"):
-            run.log("🔴 出图额度/登录态已失效 —— 整批停止。换 AdsPower 里另一个 profile，"
-                    "反查端口后重跑剩下的（--only 或清单里删掉已完成的）")
+            run.log("🔴 出图通道停了 —— 整批停止。若是额度/登录态：换 AdsPower 里另一个 profile，"
+                    "反查端口后重跑剩下的（--only 或清单里删掉已完成的）；"
+                    "若是节奏闸门（按账号限速到顶）：等窗口，或 gen_pace.py status 看下次可画时间")
             break
         if row["status"] != "ok" and not args.keep_going:
             run.log("⛔ --fail-fast：停在第一组失败处")

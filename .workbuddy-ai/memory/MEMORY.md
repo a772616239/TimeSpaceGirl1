@@ -20,7 +20,13 @@
 - **线上服 = 柯测试服 = `129.226.213.65:8080`**（资源站 `:81`），即历史 Play 上架包用的现网。
   Jenkins 里选 `SERVER_ENV=现网-129.226.213.65`。
   用户 2026-10-23 明确：**这就是「正式服」**，以后说正式服指这条。
-- `build_envs.json` 里标「正式服」的 `103.151.173.99:8080` 实测已死（`Empty reply from server`），**不要用**。
+- ~~`build_envs.json` 里标「正式服」的 `103.151.173.99:8080` 实测已死，不要用。~~
+  **2026-10-25 已修**（commit de318302d）：该档 serverUrl 改成 `http://129.226.213.65:8080/`，
+  现在「正式服」≡「现网-129.226.213.65」。103.151.173.99 全端口 HTTP 000，已彻底弃用。
+- 🔴 **`:81` 资源站 2026-10-25 实测已不存在**：生产服上 nginx 没在跑、无 :81 监听、
+  宝塔无站点、磁盘无本工程 AB 资源树（`/www/wwwroot/rg` 是 2024 模板残留空壳）。
+  当前包 `isUpdate=0` 不读 resUrl，不影响启动；**开热更前必须先真把 :81 建起来**。
+  443 是 xray（证书 `CN=www.cloudflare.com`），任何 `https://129.226.213.65` 必然 cert verify failed。
 - 🔴 `resource_build.sh` 的 `--sync-tables` **默认 `apply`**，TS-Resource-Build job 又不传这个参数
   ⇒ 每次重建 AB 都会顺手把服务端表推到线上服；release job 的 `SYNC_TABLES=check` 只管 ③-1，管不到它。
 - 🔴 打包 job 的 versionCode bump 只发生在打包目录、被 `ci_sync` 的 reset 抹掉 ⇒ 仓库值必须跟上
@@ -58,6 +64,13 @@
   缺失算不算问题」（clone 的 BuildABs/Android 是空的）。
 
 ## 关键坑位
+
+- **服务端全量接口测试 = Jenkins `TS-Api-Test`**（2026-10-23 加）：`scripts/verify/api_full_sweep.py`
+  解析 proto 拿 372 个 `*_REQUEST`，逐个发空 payload；地址表 `api_targets.json`，已知缺口基线
+  `api_known_gaps.json`；`TS-Server-Release` 的 `⑬-2` 打包后异步触发。文档 `docs/api_test_skill.md`。
+  🔴 **判定 oracle 只能用服务端日志**：错误回包 msgId 是 `session.getLastMsgId()+1` 而不是请求号+1，
+  未注册 handler 时 lastMsgId 停在上一个请求上（实测发 10016 收到回包 10009），按回包号认领必然错判。
+  服务端 stdout 日志在 **`/data/srvlog/gameserver.log`**（不是 `assets/log/jl_logs/`）。
 
 - **导表产物 int 列必须按类型归一化，否则整张表不加载**：服务端 `STableManager.dealParams`
   对 int 列直接 `Integer.parseInt`、catch 后 `throw e`，一个单元格坏 = 整表跳过。
@@ -113,6 +126,27 @@
   全部语言取并集、小字擦除框按最长译名推。加新语言后要**九张全部重 publish**。
 - `geom.json` 的 `ink_clip_px` = 墨迹被画板削掉的像素，`verify` 卡它必须为 0。
 - 改完贴片 ≠ 进包：还要重打 LoginPanelAtlas 所在 AssetBundle。
+
+## 店面图与商店截图（data_aso）
+
+- 规格口径（用户 2026-10-29 贴的 Play 详情页要求）：≥3 张、JPG/PNG、
+  **横版 16:9 ≥1280×720**、竖版 9:16 ≥720×1280。老的横版路线 1024×520（1.969）
+  两条都不满足 ⇒ 16:9 路线改用 `fusion.json` 的 **`duo169`** 版面 + `--size 1920x1080`。
+- `duo169` 的 frame 宽高比刻意保持 **1.81**（= duo 在 1024×500 下的 440×243），
+  这样 `fusion_pairs.json` 的 band/focus/zoom 不用重算就能复用。16:9 下
+  `frame_h_frac ≈ frame_w_frac × 0.982`。
+- 🔴 真机截图源最大只有 **720×1280**（模拟器截图），框宽 890px 时是 1.4× 放大。
+  `draw_screen` 有「只在 up>1.05 时补 UnsharpMask」的兜底；想真锐利只能重打
+  1080×1920 真机图。别拿放大当解决。
+- 🔴 **2026-10-29 第一版 1920×1080 被 Play 驳回**（blurring / black edges /
+  solid colors and gradients）。根因：框 845px ÷ 源 598px = 1.41× 放大；底图底部 22%
+  局部细节只有 0.1~3.0（其它区域 16~26），标题压在上面就是一条黑边。
+  现口径：**画布 1280×720**（同框 563px = 0.94× 缩小）+ **画面框从 y=0.40 压出画布底边**
+  盖掉那块黑 + 标题挪顶部且不画 scrim（`draw_caption(bar>1)`）。脚本
+  `scripts/aso/fusion_shots169.py`，产物 `data_aso/derived/B/shots169/`。
+  它自带验收：`scale≤1.02`、底部 20% 局部细节 `≥6`、画布必须 16:9，不达标 rc=3。
+- 真机高清源只有 3 张（598×1296 / 720×1280 / 597×1299），另 5 张是 334~412px 小图，
+  放大到 563px 就是 1.4~1.7× ⇒ **宁可 3 张全清晰，不要 6 张一半模糊**。
 
 ## 服务端虚拟玩家（机器人）
 

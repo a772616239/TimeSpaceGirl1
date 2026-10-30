@@ -6,6 +6,14 @@
     {"name":"ASSET","type":"string","default":"Assets/ManagedResources/ArtFont_en/EightDayGiftPanelAtlas/cn2-X1_baridenglu_diban_en.png","description":"要换风格的资源（相对工程根）。目标尺寸取该图自身尺寸"},
     {"name":"THEME","type":"choice","choices":["christmas","newyear","halloween","valentine","summer_surf","provence","thanksgiving","cyber","explore"],"default":"christmas","description":"题材/风格主题（含节日与场景题材：explore=探索寻宝）。风格内容全在 scripts/image/theme_presets.json；新增主题时改完预设要把 key 补进本 job 的 choices 再跑 apply-jobs.sh，否则下拉里选不到"},
     {"name":"PROVIDER","type":"choice","choices":["chatgpt_web","manual"],"default":"chatgpt_web","description":"manual=把出好的图给本 job（GEN_IMAGE 或 inbox）；chatgpt_web=用本机 Chrome 登录态驱动 chatgpt.com 出图"},
+    {"name":"SECOND_PROVIDER","type":"choice","choices":["gemini","none"],"default":"gemini","description":"仅 chatgpt_web：GPT 额度用尽后**不换号**，在同一台浏览器上换哪条通道接着画（默认 gemini）。两条通道都画不了才进换号链；none=老行为（GPT 空即换号，白扔这个号的 Gemini 额度）"},
+    {"name":"GEM_TIMEOUT","type":"string","default":"300","description":"gemini 那条单张等图上限（秒）。超时即判这条通道不可用、继续换号"},
+    {"name":"GEN_PACE","type":"boolean","default":true,"description":"出图节奏闸门（scripts/image/gen_pace.py）。开着=按账号限速（最小间隔/小时上限/日上限），2026-10-30 Google 账号因「46 秒一张、峰值 32 张/小时」被封之后加的。只在人工验证时关"},
+    {"name":"GEN_MIN_GAP","type":"string","default":"180","description":"同一个 Gemini/Google 账号两张图之间至少隔多少秒（带 ±30% 抖动）。默认 180，比被封前的 46 秒慢 4 倍。改小之前先想想账号"},
+    {"name":"GEN_MAX_PER_HOUR","type":"string","default":"10","description":"单个账号每小时最多出几张（默认 10；被封前实测 32）。撞上了就等窗口，不是失败"},
+    {"name":"GEN_MAX_PER_DAY","type":"string","default":"50","description":"单个账号每天最多出几张（默认 50）。撞上了把这个号在台账里标成「明天再来」，让换号链接手"},
+    {"name":"GEN_MAX_WAIT","type":"string","default":"1800","description":"一次出图最多愿意等多久的节奏窗口（秒，默认 1800=30 分钟）。超了就把这一步标黄收工 —— 比硬等两小时撞 job 超时好"},
+    {"name":"HEARTBEAT_MIN","type":"string","default":"40","description":"会话保活心跳间隔（分钟，默认 40，带 ±15% 抖动）：出图期间用同一个浏览器发一条**纯文本**请求，防长时间只建图被判成自动化，也顺带早发现登录态掉了。0=关"},
     {"name":"CDP_PORT","type":"string","default":"","description":"复用已登录的外部浏览器（AdsPower 的 SunBrowser 等）的调试端口：填了就 --reuse-cdp，不复制本机 Chrome profile（免费额度按账号算，换号就换这里）。端口用 scripts/image/find_browser_cdp.py 反查；留空=用本机 Chrome"},
     {"name":"ADSPOWER_FALLBACK","type":"boolean","default":true,"description":"额度用尽自动换号（默认开）：先接入已经开着的 SunBrowser，再让 AdsPower 现开一个别的 profile 继续出图；换号失败才会把这一步标黄。关掉它=只用一个号，额度没了就停"},
     {"name":"ADSPOWER_PROFILES","type":"string","default":"","description":"换号顺序（逗号分隔的 AdsPower user_id，如 k1hiv2p8,k12w7kmd）：排在最前，不受自动排序影响。留空=自动排（上次成功的 → 今天没空的 → chatgpt cookie 多的）。用 scripts/image/find_browser_cdp.py --profiles 看有哪些号"},
@@ -50,8 +58,10 @@ pipeline {
     //      hero_keyart.py render --wait 就是按这个写的。
     //    这里保留本行只为挡住「后来的构建插进正在跑的这一轮」。
     disableConcurrentBuilds(abortPrevious: false)
-    // 出图阶段的换号链预算 960s，加上本机号那一轮，光出图就可能 30 分钟 ⇒ 全局给到 75 分钟
-    timeout(time: 75, unit: 'MINUTES')
+    // 出图阶段的换号链预算 960s，加上本机号那一轮，光出图就可能 30 分钟
+    // ⇒ 全局 75 分钟。2026-10-30 起了「出图节奏闸门」：同一账号两张图之间至少 180s、
+    // 每小时 ≤10 张，所以最坏情况还要多等一个 30 分钟窗口 ⇒ 抬到 120 分钟。
+    timeout(time: 120, unit: 'MINUTES')
     buildDiscarder(logRotator(daysToKeepStr: '30', numToKeepStr: '40'))
   }
 
@@ -89,6 +99,8 @@ mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
   echo "资源：$ART_ASSET"
   echo "主题：$ART_THEME   provider：$PROVIDER   构图：$ART_COMP   pose：${POSE:-随机}   去水印：${WATERMARK:-auto}"
+  echo "出图顺序：GPT（chatgpt.com）→ 额度用尽 → 同一台浏览器换 ${SECOND_PROVIDER:-gemini} → 两条都空才换号"
+  echo "           （第二通道参考图 = 本张喂给 GPT 的那张，超长条时同样是裁出的英雄带；关掉用 SECOND_PROVIDER=none）"
   echo "工作目录：$ART_WDIR"
   echo "写回资源：$WRITE_BACK   备份根：${BACKUP_ROOT:-$PROJ/ResBackpack/备份}"
   echo ""
@@ -152,6 +164,29 @@ EXTRA=""
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
+
+# ── 出图节奏闸门 + 会话保活心跳（2026-10-30 账号被封之后加的）──────────────
+# 被封时的实测节奏：相邻两张 46 秒、峰值一小时 32 张 ⇒ 这是自动化签名，不是人在画。
+# 闸门按**账号**记账（并行构建共用一份账本），要提吞吐只能加号，不能加并发。
+export TSG_GEN_MAX_WAIT="${GEN_MAX_WAIT:-1800}"
+if [[ "${GEN_PACE:-true}" == "false" ]]; then
+  export TSG_GEN_PACE=off
+  echo "⚠⚠ 出图节奏：已关闸（GEN_PACE=false）—— 会回到小时级 30+ 张的节奏，只用于人工验证"
+else
+  export TSG_GEMINI_MIN_GAP="${GEN_MIN_GAP:-180}"
+  export TSG_GEMINI_MAX_PER_HOUR="${GEN_MAX_PER_HOUR:-10}"
+  export TSG_GEMINI_MAX_PER_DAY="${GEN_MAX_PER_DAY:-50}"
+  if [[ "${HEARTBEAT_MIN:-40}" == "0" ]]; then
+    export TSG_HB_OFF=1
+    echo "会话保活：关闭（HEARTBEAT_MIN=0）"
+  else
+    export TSG_HB_MINUTES="${HEARTBEAT_MIN:-40}"
+    echo "会话保活：每 ${TSG_HB_MINUTES} 分钟（±15%）发一条纯文本请求 —— 防止长时间只建图被判成自动化"
+  fi
+  echo "出图节奏：同号两张图至少隔 ${TSG_GEMINI_MIN_GAP}s（±30% 抖动）｜≤${TSG_GEMINI_MAX_PER_HOUR} 张/小时｜≤${TSG_GEMINI_MAX_PER_DAY} 张/天｜最多等 ${TSG_GEN_MAX_WAIT}s 窗口"
+fi
+"$PY" scripts/image/gen_pace.py status 2>/dev/null | sed 's/^/  /' || true
+
 # 先把「有没有图」这件事判定掉：没有图不是失败，是流程还没走到下一步（黄）
 "$BASH" .jenkins/lib/run_stage.sh --name "生成图定位" \
   --group "美术资源链" --slug art-resolve-gen --timeout 300 --warn-rc 3 \
@@ -189,13 +224,28 @@ if [[ "$PROVIDER" == "chatgpt_web" ]]; then
   else
     echo "额度台账：启用（跳过还没到恢复时间的号；台账看 TS-Art-Provider 的 ACTION=status）"
   fi
-  "$BASH" .jenkins/lib/run_stage.sh --name "chatgpt.com 出图" \
+  # 🔴 2026-10-26（用户要求）：GPT 额度用尽时**先别换号** —— 在**同一台浏览器**（同一个 CDP
+  #    端口）上换 gemini 接着画，两条通道都画不了才算这个号用完、才进换号链。
+  #    Gemini 的额度按 Google 账号算，通常比 ChatGPT 那份大得多；不接这一步等于白扔。
+  #    参考图沿用本张喂给 GPT 的那张（超长条时同样是裁出的英雄带），i2i 锁构图。
+  SECOND_ARGS=""
+  if [[ "$PROVIDER" == "chatgpt_web" && "${SECOND_PROVIDER:-gemini}" != "none" ]]; then
+    if [[ -f scripts/image/gen_gemini.py && -f scripts/image/gemini_web_driver.mjs ]]; then
+      SECOND_ARGS="--second-provider ${SECOND_PROVIDER:-gemini} --second-timeout ${GEM_TIMEOUT:-300}"
+      echo "第二通道：${SECOND_PROVIDER:-gemini}（GPT 空了 → 同一台浏览器接着画，参考图沿用本张）"
+    else
+      echo "⚠ SECOND_PROVIDER=${SECOND_PROVIDER:-gemini}，但 scripts/image/gen_gemini.py 或 gemini_web_driver.mjs 不在 ⇒ 本轮只有 GPT（空了直接换号）"
+    fi
+  elif [[ "$PROVIDER" == "chatgpt_web" ]]; then
+    echo "第二通道：关闭（SECOND_PROVIDER=none ⇒ GPT 额度空了直接换号）"
+  fi
+  "$BASH" .jenkins/lib/run_stage.sh --name "chatgpt.com 出图（GPT → 同浏览器 ${SECOND_PROVIDER:-gemini}）" \
     --group "美术资源链" --slug art-gen-web --timeout 2400 --warn-ok \
     -- "$PY" scripts/image/gen_chatgpt_web.py \
          --image "$ART_WDIR/src/source.png" \
          --prompt-file "$TS_RUN_DIR/artifacts/prompt.txt" \
          --out "$ART_WDIR/inbox/gen_web.png" \
-         --crop-height "$ART_CROP" $CDP_ARGS $FB_ARGS $LEDGER_ARGS
+         --crop-height "$ART_CROP" $CDP_ARGS $FB_ARGS $LEDGER_ARGS $SECOND_ARGS
   if [[ -f "$ART_WDIR/inbox/gen_web.png" ]]; then
     cp -f "$ART_WDIR/inbox/gen_web.png" "$TS_RUN_DIR/artifacts/gen.png"
     printf '%s\\n' "$ART_WDIR/inbox/gen_web.png" > "$TS_RUN_DIR/generated.path"

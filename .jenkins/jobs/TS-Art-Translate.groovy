@@ -10,6 +10,14 @@
     {"name":"CDP_PORT","type":"string","default":"","description":"复用已在运行的已登录浏览器（AdsPower/SunBrowser）的调试端口，find_browser_cdp.py 反查。留空=用本机 Chrome 的登录态副本"},
     {"name":"ADSPOWER_PROFILES","type":"string","default":"","description":"换号顺序（逗号分隔的 AdsPower user_id，排最前）。留空=按额度台账自动排。🔴 号池有 6 个但换号链默认只试 3 个，要覆盖就得显式写这里"},
     {"name":"PROVIDER_TIMEOUT","type":"string","default":"240","description":"单次等图上限（秒）。默认 240 而不是 driver 自带的 360：实测第一次常撞 5 分钟超时、重试 60s 就成，把第一轮压短能让最坏耗时从 10 分钟降到 7 分钟"},
+    {"name":"SECOND_PROVIDER","type":"choice","choices":["gemini","none"],"default":"gemini","description":"仅 chatgpt_web：GPT 额度用尽后**不换号**，在同一台浏览器上换哪条通道接着画（默认 gemini）。两条通道都画不了才进换号链；none=老行为（GPT 空即换号，白扔这个号的 Gemini 额度）"},
+    {"name":"GEM_TIMEOUT","type":"string","default":"300","description":"gemini 那条单张等图上限（秒）。超时即判这条通道不可用、继续换号"},
+    {"name":"GEN_PACE","type":"boolean","default":true,"description":"出图节奏闸门（scripts/image/gen_pace.py）。开着=按账号限速（最小间隔/小时上限/日上限）。本 job 并发，闸门按账号记，所以并行构建会自己排队，不会叠加成高速率"},
+    {"name":"GEN_MIN_GAP","type":"string","default":"180","description":"同一个 Gemini/Google 账号两张图之间至少隔多少秒（带 ±30% 抖动）。默认 180；被封前实测是 46 秒"},
+    {"name":"GEN_MAX_PER_HOUR","type":"string","default":"10","description":"单个账号每小时最多出几张（默认 10；被封前实测 32）"},
+    {"name":"GEN_MAX_PER_DAY","type":"string","default":"50","description":"单个账号每天最多出几张（默认 50）。撞上了把这个号标成「明天再来」，换号链接手"},
+    {"name":"GEN_MAX_WAIT","type":"string","default":"1800","description":"一次出图最多等多久的节奏窗口（秒，默认 1800）。超了把这一步标黄收工，别硬等到撞 job 超时"},
+    {"name":"HEARTBEAT_MIN","type":"string","default":"40","description":"会话保活心跳间隔（分钟，默认 40，±15%）：出图期间用同一台浏览器发一条纯文本请求，防长时间只建图被判成自动化，也早发现登录态掉了。0=关"},
     {"name":"BUDGET","type":"string","default":"","description":"本轮最多真出几张图（留空=不限）。batch 补图时给个上限，别一口气把包月额度烧完——额度用尽要等次日恢复"},
     {"name":"FORCE","type":"boolean","default":false,"description":"已有英文版的也重做（会先把旧图备份到 ResBackpack/备份 再覆盖）。改了口径/译名时才勾"},
     {"name":"WRITE","type":"boolean","default":true,"description":"验收通过后写回 Assets/ManagedResources/ArtFont_en/... 并补 .meta。传 false 则只出图、不动工程里的资源（构建页的 compare.png 照样能看）"}
@@ -30,7 +38,9 @@ pipeline {
     //      · 额度用尽立刻关掉那台浏览器 + 记台账（什么时候恢复）+ 放租约，接着画下一张。
     //    ⚠ 仍然不要「同一张图点两次」：第二次会被 asset 租约挡成 skip（这是预期行为）。
     //    ⚠ 并行路数上限 = 台账里没封锁的号数（当前 4~5 路），别再手工开更多。
-    timeout(time: 75, unit: 'MINUTES')
+    //    2026-10-30 起还叠了「出图节奏闸门」：同号两张图至少 180s、每小时 ≤10 张、
+    //    每天 ≤50 张 ⇒ batch 补图会比以前慢 3~4 倍，超时从 75 抬到 150 分钟。
+    timeout(time: 150, unit: 'MINUTES')
     buildDiscarder(logRotator(daysToKeepStr: '60', numToKeepStr: '40'))
   }
 
@@ -148,6 +158,29 @@ fi
         sh(script: '''#!/usr/local/bin/bash
 set -uo pipefail
 cd "$PROJ"
+
+# ── 出图节奏闸门 + 会话保活心跳（2026-10-30 账号被封之后加的；口径与 TS-Art-Restyle 一致）──
+# 🔴 本 job 允许并发，闸门是按**账号**记的，所以并行的几条构建会自己排队，
+#    「多开两条构建就能多画」这条捷径自动失效 —— 要提速只能加号。
+export TSG_GEN_MAX_WAIT="${GEN_MAX_WAIT:-1800}"
+if [[ "${GEN_PACE:-true}" == "false" ]]; then
+  export TSG_GEN_PACE=off
+  echo "⚠⚠ 出图节奏：已关闸（GEN_PACE=false）—— 会回到小时级 30+ 张的节奏，只用于人工验证"
+else
+  export TSG_GEMINI_MIN_GAP="${GEN_MIN_GAP:-180}"
+  export TSG_GEMINI_MAX_PER_HOUR="${GEN_MAX_PER_HOUR:-10}"
+  export TSG_GEMINI_MAX_PER_DAY="${GEN_MAX_PER_DAY:-50}"
+  if [[ "${HEARTBEAT_MIN:-40}" == "0" ]]; then
+    export TSG_HB_OFF=1
+    echo "会话保活：关闭（HEARTBEAT_MIN=0）"
+  else
+    export TSG_HB_MINUTES="${HEARTBEAT_MIN:-40}"
+    echo "会话保活：每 ${TSG_HB_MINUTES} 分钟（±15%）发一条纯文本请求 —— 防止长时间只建图被判成自动化"
+  fi
+  echo "出图节奏：同号两张图至少隔 ${TSG_GEMINI_MIN_GAP}s（±30% 抖动）｜≤${TSG_GEMINI_MAX_PER_HOUR} 张/小时｜≤${TSG_GEMINI_MAX_PER_DAY} 张/天"
+fi
+"$PY" scripts/image/gen_pace.py status 2>/dev/null | sed 's/^/  /' || true
+
 # MODE=one 必须 --asset 直指源图：候选池按特征分派（glyph 单色 / poster ≥800x700 /
 # artfont=OperatingPanelAtlas glob / atlas=译名表），译名表里有条目但落不进任何池的图
 # （如 ArtFont_zh/font 下的 512x256 特写横幅，既不是单色 glyph 也不够 poster 尺寸）
@@ -164,6 +197,18 @@ PROV_ARGS="--provider ${PROVIDER:-chatgpt_web}"
 [[ -n "${CDP_PORT:-}" ]] && PROV_ARGS="${PROV_ARGS} --cdp-port ${CDP_PORT}"
 [[ -n "${ADSPOWER_PROFILES:-}" ]] && PROV_ARGS="${PROV_ARGS} --adspower-profiles ${ADSPOWER_PROFILES}"
 [[ -n "${PROVIDER_TIMEOUT:-}" ]] && PROV_ARGS="${PROV_ARGS} --provider-timeout ${PROVIDER_TIMEOUT}"
+# 🔴 2026-10-26（用户要求）：GPT 额度用尽**不换号**，先在同一台浏览器上换 gemini 接着画，
+#    两条都空了才换号。参考图/提示词沿用本张的（ref_flat 白底黑字 + 本张版面要求）。
+if [[ "${PROVIDER:-chatgpt_web}" == "chatgpt_web" && "${SECOND_PROVIDER:-gemini}" != "none" ]]; then
+  if [[ -f scripts/image/gen_gemini.py && -f scripts/image/gemini_web_driver.mjs ]]; then
+    PROV_ARGS="${PROV_ARGS} --second-provider ${SECOND_PROVIDER:-gemini} --second-timeout ${GEM_TIMEOUT:-300}"
+    echo "第二通道：${SECOND_PROVIDER:-gemini}（GPT 空了 → 同一台浏览器接着画，都空了才换号）"
+  else
+    echo "⚠ SECOND_PROVIDER=${SECOND_PROVIDER:-gemini}，但 gen_gemini.py / gemini_web_driver.mjs 不在 ⇒ 本轮只有 GPT"
+  fi
+elif [[ "${PROVIDER:-chatgpt_web}" == "chatgpt_web" ]]; then
+  echo "第二通道：关闭（SECOND_PROVIDER=none ⇒ GPT 额度空了直接换号）"
+fi
 BUDGET_ARG=""
 [[ -n "${BUDGET:-}" ]] && BUDGET_ARG="--budget ${BUDGET}"
 # shellcheck disable=SC2086

@@ -277,6 +277,58 @@ gemini 的额度按 **Google 账号**算，通常比 ChatGPT 那份大得多 —
 
 退出码翻译（两套不一样，必须换）：`gen_gemini` 0/4/5/3 → 本模块 `RC_OK/RC_QUOTA/RC_REFUSED/RC_WARN`。
 
+### 出图节奏闸门 + 会话保活心跳（2026-10-30 起，Google 账号被封之后加的）
+
+2026-10-29 有一个 Google 号被停用。复盘 `_output/**/inbox/*.meta.json` 的 269 次出图时间戳：
+
+| 指标 | 实测 | 现在（默认） |
+|---|---|---|
+| 相邻两张间隔中位数 | **46 秒** | ≥180 秒（±30% 抖动） |
+| 间隔 < 60 秒占比 | **79%** | 0 |
+| 单小时峰值 | **32 张**（10-27 13:00） | ≤10 张 |
+
+所以加了两道东西，都在 `scripts/image/gen_pace.py`：
+
+1. **节奏闸门 `gate()`** —— 按**账号**记账（不是按 job），flock 跨进程共享
+   `_output/art_restyle/gen_pace.json`。判定与记账在同一把锁里完成 ⇒ 并行的几条构建会自己排队，
+   「多开两条构建就能多画」这条捷径**自动失效**。要提吞吐只能加号（每个号各自限额）。
+   - 最小间隔 / 每小时上限 / 每天上限 / 连画 N 张强制长休，四个维度都带环境变量与 Jenkins 参数。
+   - 撞**日上限** ⇒ 把这个号在额度台账里标「明天再来」（`pace-day-cap`），换号链自然换下一个号。
+     撞**小时上限**只等，不换号 —— 为几分钟的间隔去换号，等于把好号的额度摊薄。
+2. **保活心跳 `maybe_heartbeat()`** —— 出图期间每 40 分钟（±15% 抖动）在**同一个浏览器**里
+   发一条**纯文本**请求（`gen_gemini.py --text-ping`）。两个作用：
+   - 会话保活：长时间「只建图、不说话」的会话更容易被判成自动化；
+   - 早发现：登录态掉了 / 号被停了，在心跳这步就报出来，而不是等下一次出图白等 5 分钟。
+   - 🔴 失败**不写台账封号**：很多 profile 只登录了 ChatGPT 没登录 Google，一次「没 Google」
+     就把号封掉会把好号全封完。心跳只在本地记 `no_google`，24 小时内不再戳。
+   - 🔴 例外是 `account-restricted`（落在 `myaccount.google.com/restrictions` 页，正文出现
+     「账号已被停用」）：这是号没了，直接台账封 7 天 + 换号，别再试。
+
+接入点是**唯一收口**，所以 `restyle_pipeline` / `batch_restyle` / `banner_translate` / `aso_art`
+四条路都不需要单独改：
+
+| 位置 | 做什么 |
+|---|---|
+| `gen_chatgpt_web.run_once()` | 浏览器连上之后、发提示词之前：先心跳（用这个端口），再过闸（`chatgpt` 账，默认 30s） |
+| `gen_gemini.main()` | 同上，`gemini` 账（默认 180s）；`--account` 由 `gen_chatgpt_web` 透传，保证按**账号**而不是按端口记 |
+| Jenkins | `GEN_PACE` / `GEN_MIN_GAP` / `GEN_MAX_PER_HOUR` / `GEN_MAX_PER_DAY` / `GEN_MAX_WAIT` / `HEARTBEAT_MIN` 六个参数，出图阶段 export 成 `TSG_*` |
+
+```bash
+# 现在各账号的节奏、下次什么时候能画
+$PY scripts/image/gen_pace.py status
+# 人工验证一次：跳过闸门（只这一次）
+$PY scripts/image/gen_chatgpt_web.py ... --no-pace
+# 全程关闸（不建议；等于回到被封那个节奏）
+TSG_GEN_PACE=off $PY scripts/image/gen_gemini.py ...
+# 清限速账（不动额度台账）
+$PY scripts/image/gen_pace.py reset --all
+```
+
+⚠ 代价要认：`TS-Art-Restyle` 的单张从 ~5 分钟变成 >6 分钟（多等一个 3 分钟间隔），
+`TS-Art-Translate` 的 batch 补图慢 3~4 倍，两个 job 的超时已从 75 → 120 / 150 分钟。
+等超过 `GEN_MAX_WAIT`（默认 30 分钟）就把这一步标黄收工 —— 比硬等两小时撞 job 超时好，
+下一轮自然接上（`--only` 或清单里删掉已完成的）。
+
 ### 换号链：已开着的 → 让 AdsPower 现开一个（2026-10-21 起）
 
 用户的要求很直接：**「一个 SunBrowser 额度用尽的时候，调用 AdsPower 开另一个，继续绘制」**。

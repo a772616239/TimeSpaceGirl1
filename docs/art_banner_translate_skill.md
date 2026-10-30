@@ -142,13 +142,24 @@ Jenkins 里点 **`TS-Art-Translate`**（`MODE=batch` 即可，缺哪张补哪张
 banner_translate.py --provider chatgpt_web
   ├─ build_prompt()      → work/prompt.txt（只描述「怎么翻」，不写死像素坐标）
   ├─ _flat_ref()         → work/inbox/ref_flat.png（白底黑字，放大 4 倍）
-  ├─ gen_chatgpt_web.py  → Chrome 登录态 / AdsPower 换号链 / 额度台账（全在这支脚本里）
+  ├─ gen_chatgpt_web.py  → Chrome 登录态 / 同号换 gemini / AdsPower 换号链 / 额度台账（全在这支脚本里）
   └─ postprocess_glyph() → 抠墨迹 → 纯白 RGB + alpha → 归位到源图字块 bbox
 ```
 
 🔴 **不要在 banner_translate.py 里再写一套换号/额度逻辑**：同一件事写两遍，两边必然漂移。
 额度、登录态、台账、`--reuse-cdp` 全部交给 `gen_chatgpt_web.py`，这里只认 rc：
 `0` 拿到图 / `3` 环境不可用（黄）/ `1` 硬失败。
+
+🔴 **第二通道（2026-10-26 起默认开）**：GPT 额度用尽时**先不换号**，在同一个浏览器上换
+gemini 再画一次（参考图/提示词沿用本张的 `ref_flat.png` + `prompt.txt`），两条都空才换号。
+本脚本只负责转达开关：`--second-provider gemini|none`（默认取环境变量 `SECOND_PROVIDER`，
+库里默认就是 `gemini`）。job 侧是 `TS-Art-Translate` 的 `SECOND_PROVIDER` / `GEM_TIMEOUT`。
+
+🔴 **出图节奏（2026-10-30 起）**：Google 号因「46 秒一张、峰值 32 张/小时」被封之后，
+`gen_chatgpt_web.py` / `gen_gemini.py` 每次生成前都过 `scripts/image/gen_pace.py` 的闸门
+（同号 ≥180s ±抖动、≤10 张/小时、≤50 张/天），并每 40 分钟发一条纯文本请求保活会话。
+本脚本不用管（限速在收口层），但要知道**batch 补图会慢 3~4 倍**、超时已从 75 抬到 150 分钟；
+口径与调参见 `docs/art_restyle_pipeline.md` 的「出图节奏闸门」一节。
 
 | provider | 相关参数 | 什么时候用 |
 |---|---|---|

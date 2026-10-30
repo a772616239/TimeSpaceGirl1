@@ -284,6 +284,23 @@ def main(argv: list[str] | None = None) -> int:
                     help="不读/不写「本轮钉住的浏览器」（排查换号逻辑时用）")
     ap.add_argument("--keep-browser-on-exhaust", action="store_true",
                     help="额度用尽后**不关**那台浏览器（默认关：省内存，也顺手把号放回池子）")
+    # 🔴 2026-10-26（用户要求）：**同一个号两条通道**。GPT 额度用尽时先别换号 ——
+    #    在**同一台浏览器**上改用第二通道（默认 gemini）接着画，两条都画不了才换号。
+    #    这样一个号的可用额度 = chatgpt 的 6~9 张 + gemini 那一份（按 Google 账号算）。
+    # 🔴 2026-10-26（用户要求）：**默认就开这条链**，不是「谁记得传参数谁才有」。
+    #    所有绘图管线（XZ-Art-Restyle / TS-Art-Restyle / TS-Art-Translate / batch_restyle）
+    #    都是直接/间接调这个脚本，默认开在库里 ⇒ 任何一个口子都不会漏掉 gemini 那份额度。
+    #    要关：--second-provider none 或 export SECOND_PROVIDER=none。
+    ap.add_argument("--second-provider", default=os.environ.get("SECOND_PROVIDER", "gemini"),
+                    help="第二出图通道（目前支持 gemini，默认开）。GPT 额度用尽后在同一台浏览器上"
+                         "接着画，都画不了才换号。none=关闭（老行为：GPT 空即换号）")
+    ap.add_argument("--second-image", default=os.environ.get("SECOND_IMAGE", ""),
+                    help="第二通道的参考图。**`none` = 纯文生图，一张图都不传**（推荐，不拿原图当种子）；"
+                         "留空=沿用 --image；给路径=i2i 拿它当参考图（会继承原构图/配色）")
+    ap.add_argument("--second-prompt-file", default=os.environ.get("SECOND_PROMPT_FILE", ""),
+                    help="第二通道的提示词文件（默认沿用 --prompt-file）")
+    ap.add_argument("--second-timeout", type=int, default=int(os.environ.get("GEM_TIMEOUT", "300")),
+                    help="第二通道单张等图上限（秒）")
     ap.add_argument("--check-only", action="store_true", help="只做连通性与登录态预检")
     args = ap.parse_args(argv)
 
@@ -387,10 +404,17 @@ def main(argv: list[str] | None = None) -> int:
                     return RC_WARN
             return RC_WARN
 
+    # 🔴 同一个号**今天 GPT 已经空了**（上一张图时撞过）⇒ 第一张也别再空跑一次 GPT。
+    #    空跑一次就是 3~9 分钟，而这个结论上一张已经得出来了。
+    _skip_gpt = bool(_second_provider(args) and args.reuse_cdp and args.port
+                     and _gpt_spent("cdp", str(args.port)))
+    if _skip_gpt:
+        log(f"↪ CDP {args.port} 今天 GPT 额度已空 → 直接用 {_second_provider(args)}（不空跑 GPT）")
+
     for i in range(1, attempts + 1):
         if i > 1:
             log(f"↻ 第 {i}/{attempts} 次重试（上一次页面/浏览器被关，判定为环境抖动）")
-        last = run_once(args, image, prompt_file, out, node, pw)
+        last = RC_QUOTA if (_skip_gpt and i == 1) else run_once(args, image, prompt_file, out, node, pw)
         if last == RC_OK:
             # 本机 Chrome profile 也记进钥匙缓存：下次同一台机器直接从它开始
             record_key("chrome", args.profile, port=args.port)
@@ -423,6 +447,26 @@ def main(argv: list[str] | None = None) -> int:
                 pl.note_event("chrome", args.profile, "quota_released", owner=owner,
                               detail=str(detail.get("message") or "")[:120])
                 clear_pin(owner)
+            # 🔴 换号之前先试「同一个号换通道」：GPT 空了不等于这个号空了。
+            #    显式 --reuse-cdp 时端口还在手上，就地换 gemini 再画一次（42s 左右），
+            #    成了就把这个号连同 gemini 一起钉住，后面几张图也不再空跑 GPT。
+            sp = _second_provider(args)
+            if sp and args.reuse_cdp and args.port:
+                _mark_gpt_spent("cdp", str(args.port))
+                rc2 = gen_second(args, args.port, out, ref=image, account=f"cdp:{args.port}")
+                if rc2 == RC_OK:
+                    save_pin(owner, "cdp", str(args.port), args.port, sp)
+                    log(f"✅ {sp} 在同一台浏览器（CDP {args.port}）出图成功"
+                        f"→ 本轮后续图钉住这个号、直接用 {sp}")
+                    return RC_OK
+                if rc2 == RC_QUOTA:
+                    log(f"🔴 {sp} 也额度用尽 → 进换号链")
+                elif rc2 == RC_REFUSED:
+                    return RC_WARN
+                else:
+                    log(f"⚠ {sp} 在这台浏览器上用不了（rc={rc2}，多半没登录 Google）→ 进换号链")
+            elif sp:
+                log("⚠ 本机 Chrome 通道用完即关（没有常驻端口），没法在同一台浏览器上换通道 → 进换号链")
             if args.auto_fallback:
                 rc = try_fallback(args, image, prompt_file, out, node, pw, pl=pl, owner=owner)
                 if rc == RC_OK:
@@ -465,11 +509,13 @@ def load_pin(owner: str) -> dict:
         return {}
 
 
-def save_pin(owner: str, kind: str, ident: str, port: int | None) -> None:
+def save_pin(owner: str, kind: str, ident: str, port: int | None,
+             provider: str = "chatgpt") -> None:
     try:
         PIN_DIR.mkdir(parents=True, exist_ok=True)
         _pin_path(owner).write_text(json.dumps(
             {"kind": kind, "id": str(ident), "port": int(port) if port else 0,
+             "provider": provider or "chatgpt",
              "owner": owner, "at": time.strftime("%Y-%m-%d %H:%M:%S")},
             ensure_ascii=False, indent=2), encoding="utf-8")
         # 顺手清掉 2 天前的旧钉子（每条构建一个文件，不清会越攒越多）
@@ -577,16 +623,22 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
                 f"（心跳 {info.get('heartbeat')}，TTL {info.get('ttl')}s）→ 跳过，不抢别人的浏览器")
         return ok
 
-    def finish(kind: str, ident: str, port, rc: int) -> int:
-        """统一的收尾：成功就钉住；额度用尽/不可用就关浏览器 + 记账 + 放租约。"""
+    def finish(kind: str, ident: str, port, rc: int, provider: str = "chatgpt") -> int:
+        """统一的收尾：成功就钉住；额度用尽/不可用就关浏览器 + 记账 + 放租约。
+
+        🔴 走到这里时 rc=RC_QUOTA 已经是「两条通道都画不了」（run_on_browser 判过的），
+           所以 mark_exhausted 封掉整个号是对的 —— gemini 那份额度也确实没了。
+        """
         record_key(kind if kind != "cdp" else "sunbrowser", ident, port=port, ok=(rc == RC_OK),
                    note="" if rc == RC_OK else f"rc={rc}")
         if rc == RC_OK:
             if pl:
                 pl.mark_ok(kind, ident)
-                pl.note_event(kind, ident, "drawn", owner=owner, detail=f"port={port or '-'}")
-            save_pin(owner, kind, ident, port)
-            log(f"✅ 出图成功：{kind}:{ident}（CDP {port or '-'}）→ 本轮后续图都钉住它")
+                pl.note_event(kind, ident, "drawn", owner=owner,
+                              detail=f"port={port or '-'} provider={provider}")
+            save_pin(owner, kind, ident, port, provider)
+            log(f"✅ 出图成功：{kind}:{ident}（CDP {port or '-'}，通道 {provider}）"
+                f"→ 本轮后续图都钉住它")
             return RC_OK
         if rc == RC_QUOTA:
             detail = read_fail(out)
@@ -637,12 +689,12 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
                         clear_pin(owner)
                         port = 0
             if port and wait_cdp(port, time.time() + 30):
-                rc = run_on_port(args, port, image, prompt_file, out, node, pw)
+                rc, prov = run_on_browser(args, kind, ident, port, image, prompt_file, out, node, pw)
                 if rc == RC_OK:
-                    return finish(kind, ident, port, rc)
+                    return finish(kind, ident, port, rc, prov)
                 if rc == RC_REFUSED:
                     return RC_WARN
-                finish(kind, ident, port, rc)
+                finish(kind, ident, port, rc, prov)
             elif port:
                 log(f"   CDP {port} 没起来 → 换号")
                 if pl:
@@ -663,12 +715,12 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
             continue
         tried_ports.add(p)
         log(f"↪ 换号 ①／②：接入已开着的 SunBrowser CDP {p}（只连不断）")
-        rc = run_on_port(args, p, image, prompt_file, out, node, pw)
+        rc, prov = run_on_browser(args, "cdp", str(p), p, image, prompt_file, out, node, pw)
         if rc == RC_OK:
-            return finish("cdp", str(p), p, rc)
+            return finish("cdp", str(p), p, rc, prov)
         if rc == RC_REFUSED:
             return RC_WARN
-        finish("cdp", str(p), p, rc)
+        finish("cdp", str(p), p, rc, prov)
         log(f"   SunBrowser {p} 没成（rc={rc}），继续找下一个号")
 
     # ── ② 让 AdsPower 现开一个 profile ─────────────────────────────────────
@@ -766,8 +818,8 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
         state["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
         save_state(state)
 
-        rc = run_on_port(args, port, image, prompt_file, out, node, pw)
-        out_rc = finish("adspower", uid, port, rc)
+        rc, prov = run_on_browser(args, "adspower", uid, port, image, prompt_file, out, node, pw)
+        out_rc = finish("adspower", uid, port, rc, prov)
         if out_rc == RC_OK:
             if args.adspower_stop_when_done:
                 log(f"   --adspower-stop-when-done：关闭 {uid}")
@@ -780,14 +832,180 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
 
 
 def run_on_port(args, port: int, image: Path, prompt_file: Path, out: Path,
-                node: str, pw: str) -> int:
+                node: str, pw: str, account: str = "") -> int:
     """把出图跑在指定 CDP 端口上（外部浏览器：只连不断），跑完把 args 还原。"""
     saved = (args.port, args.reuse_cdp)
     args.port, args.reuse_cdp = port, True
     try:
-        return run_once(args, image, prompt_file, out, node, pw)
+        return run_once(args, image, prompt_file, out, node, pw, account=account)
     finally:
         args.port, args.reuse_cdp = saved
+
+
+# ---------------------------------------------------------------- 第二出图通道（同一个号不换浏览器）
+# 🔴 用户 2026-10-26 定的顺序：**GPT 先画 → 画不了就同一个浏览器换 gemini 画 → 两条都没额度才换号**。
+#    以前是「GPT 空了立刻换号」，等于白白扔掉这个号上的 Gemini 额度（Gemini 的额度按 Google
+#    账号算，通常比 ChatGPT 那份大得多）。
+_SECOND_SCRIPTS = {"gemini": "gen_gemini.py"}
+# 🔴 两套退出码不一样，必须翻译：gen_gemini 用 4=额度、5=拒画、3=未登录；
+#    本模块 RC_QUOTA=5、RC_REFUSED=6、RC_WARN=3。混用会把「额度」误判成「成功」。
+_GEM_RC = {0: RC_OK, 4: RC_QUOTA, 5: RC_REFUSED}
+
+
+# ---------------------------------------------------------------- 出图节奏（2026-10-30 账号被封之后）
+# 🔴 为什么闸门在这层：gen_chatgpt_web 是所有出图路径的**唯一收口**
+#    （restyle_pipeline / batch_restyle / banner_translate / aso_art 最终都调它）。
+#    闸门放在收口处，才不会有「哪个入口忘了加限速」这种事。
+def _pace(account: str, port: int | None) -> bool:
+    """过节奏闸门 + 到点做一次纯文本心跳。返回 False = 现在不该画（不是失败）。
+
+    心跳和闸门都是「尽力而为」：模块缺了、锁超时了都只打一行警告继续跑，
+    绝不能让限速把一条正常的出图链卡死。
+    """
+    try:
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import gen_pace as gp
+    except Exception as e:                                    # noqa: BLE001
+        log(f"⚠ 节奏闸门不可用（{e}）—— 本轮不限速（风险：又快又密，就是封号那个节奏）")
+        return True
+    if port:
+        try:
+            gp.maybe_heartbeat(int(port), account=account, logf=log)
+        except Exception as e:                                # noqa: BLE001
+            log(f"⚠ 保活心跳失败（{e}）—— 不影响出图")
+    try:
+        rc = gp.gate("chatgpt", account, logf=log)
+    except Exception as e:                                    # noqa: BLE001
+        log(f"⚠ 节奏闸门异常（{e}）—— 本轮不限速")
+        return True
+    return rc != gp.RC_WAIT
+
+
+def _second_provider(args) -> str:
+    v = str(getattr(args, "second_provider", "") or "").strip().lower()
+    return "" if v in ("", "none", "off", "0", "false", "no") else v
+
+
+def _second_script(args) -> Path | None:
+    name = _SECOND_SCRIPTS.get(_second_provider(args))
+    if not name:
+        return None
+    p = Path(__file__).resolve().parent / name
+    return p if p.is_file() else None
+
+
+def gen_second(args, port: int, out: Path, ref: Path | None = None,
+               account: str = "") -> int:
+    """在**同一台浏览器**（同一个 CDP 端口）上换第二通道再画一次。
+
+    🔴 端口必须原样复用：换一台浏览器就等于换号了，而换号是「两条通道都空了」之后的事。
+    ref = 本次真正喂给 GPT 的那张参考图（超长条底板时是裁出来的英雄带），
+          没给 --second-image 就沿用它 —— 同一张参考图两边对齐，构图才不会漂。
+    """
+    sp, script = _second_provider(args), _second_script(args)
+    if not sp or script is None or not port:
+        return RC_FAIL
+    # 🔴 `--second-image none` = 纯文生图：**一张图都不许上传**。
+    #    以前默认把原图当 i2i 参考图传给 gemini，等于拿旧画当种子（换皮幅度小、旧构图/配色
+    #    全被继承），用户明确否决。没给这个参数时仍然沿用 ref/--image 的老行为。
+    raw = str(getattr(args, "second_image", "") or "")
+    no_ref = raw.strip().lower() in ("none", "-", "no", "off", "0")
+    img = None if no_ref else Path(raw or (ref or args.image)).expanduser()
+    pf = Path(str(getattr(args, "second_prompt_file", "") or args.prompt_file)).expanduser()
+    if img is not None and not img.is_file():
+        log(f"   ⚠ 第二通道的参考图不存在（{img}）→ 沿用 {args.image}")
+        img = Path(args.image)
+    if not pf.is_file():
+        log(f"   ⚠ 第二通道的提示词不存在（{pf}）→ 沿用 {args.prompt_file}")
+        pf = Path(args.prompt_file)
+    # 超长条底板：GPT 那一路只喂顶部英雄带（--crop-height），第二通道按**同一个口径**再裁一份。
+    # 不裁就是「两边看的图不一样」，i2i 的构图锁会失效（856x2048 塞进去模型会压成很窄一条）。
+    cut = int(getattr(args, "crop_height", 0) or 0)
+    if img is not None and cut > 0 and not raw:
+        try:
+            from PIL import Image
+            im = Image.open(img).convert("RGB")
+            h = min(cut, im.height)
+            if h < im.height:
+                band = Path(tempfile.mkdtemp(prefix="gem_ref_")) / "ref_band.png"
+                im.crop((0, 0, im.width, h)).save(band)
+                img = band
+                log(f"     参考图取顶部 {im.width}x{h} 英雄带（与 GPT 那一路同口径）")
+        except Exception as e:                                # noqa: BLE001
+            log(f"   ⚠ 英雄带裁切失败（{e}）→ 直接用整幅参考图")
+    tmo = int(getattr(args, "second_timeout", 300) or 300)
+    cmd = [sys.executable, str(script)]
+    if img is not None:
+        cmd += ["--image", str(img)]
+    cmd += ["--prompt-file", str(pf), "--out", str(out),
+            "--reuse-cdp", "--port", str(port), "--timeout", str(tmo)]
+    # 🔴 账号标识必须透传下去：Gemini 的限速账是**按 Google 账号**记的，
+    #    传不过去就变成按端口记 —— 换个端口就等于「新号」，限速形同虚设。
+    if account:
+        cmd += ["--account", account]
+    log(f"   ↪ 同一台浏览器换 {sp} 再画一次（端口 {port} 不动，号也不换）")
+    log(f"     参考图 {'(无，纯文生图)' if img is None else img.name}   提示词 {pf.name}")
+    env = dict(os.environ)
+    env["NO_PROXY"] = "127.0.0.1,localhost"
+    env["no_proxy"] = "127.0.0.1,localhost"
+    try:
+        p = subprocess.run(cmd, timeout=tmo + 180, env=env)
+    except subprocess.TimeoutExpired:
+        log(f"   🔴 {sp} 超时（{tmo}s）")
+        return RC_WARN
+    rc = _GEM_RC.get(p.returncode, RC_WARN)
+    if rc == RC_OK and not Path(out).is_file():
+        rc = RC_WARN
+    return rc
+
+
+def _gpt_spent(kind: str, ident: str) -> bool:
+    """这个号**今天的 GPT 额度**是不是已经空了。
+
+    🔴 两条通道各记各的：GPT 空了不等于这个号废了（gemini 可能还有），所以绝不能
+       写进 provider_ledger 的 mark_exhausted —— 那会把整个号封掉，gemini 那份额度也就废了。
+    """
+    return (load_state().get("gpt_spent") or {}).get(f"{kind}:{ident}") == time.strftime("%Y-%m-%d")
+
+
+def _mark_gpt_spent(kind: str, ident: str) -> None:
+    def fn(st: dict) -> None:
+        st.setdefault("gpt_spent", {})[f"{kind}:{ident}"] = time.strftime("%Y-%m-%d")
+    update_state(fn)
+
+
+def run_on_browser(args, kind: str, ident: str, port: int, image: Path, prompt_file: Path,
+                   out: Path, node: str, pw: str) -> tuple[int, str]:
+    """同一个号（同一台浏览器）上的通道顺序：GPT → 第二通道 → 都不行才算这个号用完。
+
+    返回 (rc, provider)。rc == RC_QUOTA 表示**两条通道都画不了**（=号用完了，该换下一个）。
+    """
+    sp = _second_provider(args)
+    acct = f"{kind}:{ident}"
+    if sp and port and _gpt_spent(kind, ident):
+        log(f"   {kind}:{ident} 今天 GPT 额度已空 → 直接用 {sp}（不再空跑一次 GPT）")
+        return gen_second(args, port, out, ref=image, account=acct), sp
+    rc = run_on_port(args, port, image, prompt_file, out, node, pw, account=acct)
+    if rc != RC_QUOTA or not sp:
+        return rc, "chatgpt"
+    _mark_gpt_spent(kind, ident)
+    if not port:
+        log("   ⚠ 这台没有常驻 CDP 端口（用完即关的本机 Chrome），没法在同一台浏览器上换通道")
+        return rc, "chatgpt"
+    rc2 = gen_second(args, port, out, ref=image, account=acct)
+    if rc2 == RC_OK:
+        log(f"   ✅ {sp} 出图成功：同一个号、同一台浏览器（端口 {port}）")
+        return RC_OK, sp
+    if rc2 == RC_QUOTA:
+        log(f"   🔴 {sp} 也额度用尽 → 这个号两条通道都画不了，换下一个号")
+    elif rc2 == RC_REFUSED:
+        log(f"   ⚠ {sp} 拒绝画这张（提示词层面的事，换号没用）")
+        return RC_REFUSED, sp
+    else:
+        log(f"   ⚠ {sp} 在这台浏览器上用不了（rc={rc2}，多半这个号没登录 Google）"
+            f" → 这个号只剩 GPT，而 GPT 已经空了")
+    return RC_QUOTA, sp
 
 
 def pick_profiles(args, fb, state: dict) -> list[dict]:
@@ -983,7 +1201,8 @@ def cached_order(kind: str) -> list[str]:
     return [str(r.get("id")) for r in rows]
 
 
-def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str) -> int:
+def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str,
+             account: str = "") -> int:
     """一次完整的「复制 profile → 起 Chrome → driver 出图」；失败由 main 决定是否重试。"""
     tmp = Path(tempfile.mkdtemp(prefix="chatgpt_web_"))
     chrome = None
@@ -1038,6 +1257,28 @@ def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str
         out.parent.mkdir(parents=True, exist_ok=True)
         if out.exists():
             out.unlink()
+        # ── 出图节奏闸门 + 到点文本心跳（2026-10-30 封号之后加的）─────────────
+        # 🔴 位置有讲究：必须在**浏览器已经连上之后**（心跳要连端口），但要在
+        #    「切第二通道 / 真正发提示词」之前 —— 等待期间页面上什么都没有，最干净。
+        acct = account or (f"cdp:{args.port}" if args.reuse_cdp else f"chrome:{args.profile}")
+        if not _pace(acct, args.port):
+            log("⏸ 节奏闸门：这个号本小时/今日的节奏已用满 → 本张不画了"
+                "（是「现在不该画」，不是失败；等窗口或换号）")
+            return RC_WARN
+        # 🔴 本机 Chrome 也吃同一条通道链：这个 profile 今天 GPT 已经空过（上一张图的结论），
+        #    临时 Chrome 已经起来、端口在手 ⇒ 别再空跑一次 GPT（3~9 分钟），直接走第二通道。
+        #    以前只有 --reuse-cdp（AdsPower/SunBrowser）才有这条捷径，本机号每张图都白烧一遍 GPT。
+        if (not args.reuse_cdp and chrome is not None
+                and _second_provider(args) and _gpt_spent("chrome", args.profile)
+                and wait_cdp(args.port, time.time() + 5)):
+            log(f"↪ 本机 Chrome「{args.profile}」今天 GPT 额度已空 → "
+                f"直接用 {_second_provider(args)}（不空跑 GPT）")
+            rc2 = gen_second(args, args.port, out, ref=ref, account=acct)
+            if rc2 in (RC_OK, RC_QUOTA, RC_REFUSED):
+                return rc2
+            log(f"⚠ {_second_provider(args)} 在这台临时 Chrome 上用不了（rc={rc2}，"
+                f"多半这个 profile 没登录 Google）→ 交回换号链")
+            return RC_QUOTA
         env = dict(os.environ)
         # 🔴 driver 要连 127.0.0.1，绝不能走 HTTP_PROXY（会 502）
         env["NO_PROXY"] = "127.0.0.1,localhost"
@@ -1062,6 +1303,25 @@ def run_once(args, image: Path, prompt_file: Path, out: Path, node: str, pw: str
             log(f"   站点原文：{detail.get('message') or '(未取到)'}")
             if detail.get("reset"):
                 log(f"   重置提示：{detail['reset']}")
+            # 🔴 2026-10-26（用户要求）：**本机 Chrome 也走同一条通道链**。
+            #    这台临时 Chrome 的 CDP 端口在 finally 之前还活着 ⇒ gemini 直接连同一个端口
+            #    再画一次（同一个号、同一台浏览器，只换了网站）。以前这里直接 return RC_QUOTA，
+            #    本机号那份 Gemini 额度就白扔了。
+            if _second_provider(args) and not args.reuse_cdp and chrome and chrome.poll() is None:
+                _mark_gpt_spent("chrome", args.profile)
+                if wait_cdp(args.port, time.time() + 5):
+                    rc2 = gen_second(args, args.port, out, ref=ref, account=acct)
+                    if rc2 == RC_OK:
+                        log(f"✅ {_second_provider(args)} 在同一台浏览器（本机 Chrome，"
+                            f"CDP {args.port}）出图成功")
+                        return RC_OK
+                    if rc2 == RC_QUOTA:
+                        log(f"🔴 {_second_provider(args)} 也额度用尽 → 这个号两条通道都画不了")
+                        return RC_QUOTA
+                    if rc2 == RC_REFUSED:
+                        return RC_REFUSED
+                    log(f"⚠ {_second_provider(args)} 在这台浏览器上用不了（rc={rc2}，"
+                        f"多半这个 profile 没登录 Google）→ 交回换号链")
             return RC_QUOTA
         if drv.returncode == 5:
             # 🔴 模型安全策略拒绝：同一句提示词再发基本还是拒，换号也没用（同一个模型同一套策略）。

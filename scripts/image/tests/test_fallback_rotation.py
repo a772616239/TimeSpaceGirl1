@@ -96,7 +96,9 @@ def run_case(name: str, quota_uids: set[str], pre_leased: list[str] | None = Non
     out = TMP / "gen.png"
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    def fake_run_on_port(args, port, image, prompt_file, out_path, node, pw):
+    # 2026-10-30：run_on_port 多了一个 account 形参（Gemini 限速要按账号记账），
+    # 桩必须一起收 —— 否则测试会在 run_on_browser 里炸 TypeError，看着像生产代码坏了。
+    def fake_run_on_port(args, port, image, prompt_file, out_path, node, pw, account=""):
         uid = {v: k for k, v in fb.ports.items()}.get(port, "?")
         if uid in quota_uids:
             Path(str(out_path) + ".fail.json").write_text(json.dumps(

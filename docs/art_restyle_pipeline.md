@@ -355,13 +355,20 @@ Gemini 整项服务停用。复盘它的行为：87 个新对话只出 48 张图
   `provider_ledger.py pick --allow-gamble`。
 
 ```bash
-# 谁被封锁、封到几点
+# 谁被封锁、封到几点（默认折叠历史垃圾行）
 $PY scripts/image/provider_ledger.py list
+# 连 8 月底那种 cdp:<端口> 老记录一起看
+$PY scripts/image/provider_ledger.py list --all
 # 确认台账记错了，硬试一次（只这一次，不写台账）
 $PY scripts/image/gen_chatgpt_web.py ... --ignore-ledger
 # 解封（人工核实恢复之后）
 $PY scripts/image/provider_ledger.py reset --id kvrvx5h
 ```
+
+⚠ **`list` 默认折叠两类垃圾行**（`--all` 展开）：`cdp:<端口>` 是归一前的旧口径；
+`adspower:<纯数字>` 是端口被当成 uid 写进去的空壳（AdsPower uid 一定是字母数字混排）。
+它们不参与选号，但会把「可并行绘制 N 路」顶高 —— 看着号很多，实际一个都开不起来。
+仍被封 / 正被占用的旧条目**照旧显示**，免得「明明在封锁却看不见」。
 
 ⚠ 直接命令行 `--port 11451` 跑 `gen_gemini` 时没有账号标识，现在会**按端口反查**
 是哪个 AdsPower 号再过封锁检查 —— 不然手动跑就成了绕过封锁的旁路。

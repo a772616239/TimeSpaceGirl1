@@ -1,9 +1,10 @@
 /**@META
 {
-  "description": "出图账号「换浏览器 / 换号」与额度台账（只读状态 + 一键切到下一个可用号）。台账记的是**额度什么时候恢复**，不是「今天空过」：还没到恢复时间的号下一轮直接不排队，用完一个就切下一个，不再每次都从第一个号开始重试（实测一轮白烧 9 分钟）。status=看台账与实时浏览器；pick=只算顺序不启动；switch=真的开/接下一个号并打印 CDP_PORT；reset=解封；check=台账自检（解析器 + 排序判据）。",
+  "description": "出图账号「换浏览器 / 换号」与额度台账（只读状态 + 一键切到下一个可用号）。台账记的是**额度什么时候恢复**，不是「今天空过」：还没到恢复时间的号下一轮直接不排队，用完一个就切下一个，不再每次都从第一个号开始重试（实测一轮白烧 9 分钟）。status=看台账与实时浏览器；pick=只算顺序不启动；switch=真的开/接下一个号并打印 CDP_PORT；reset=解封；check=台账自检（解析器 + 排序判据）。🔴 冷却未到期的号一律不排队：pick/switch 在全封锁时会直接说「本轮没有可用号」并列出各自解封时间（旧行为「赌一把」正是 Google 判 992694856@qq.com「circumvent 用量限制」的动作）。",
   "concurrent": false,
   "params": [
     {"name":"ACTION","type":"choice","choices":["status","pick","switch","chrome","reset","check"],"default":"status","description":"status=台账+实时浏览器（只读）；pick=按台账算候选顺序但不启动任何浏览器；switch=真的切到下一个可用的 AdsPower 号（会启动 profile）并打印 CDP_PORT；chrome=切到本机 Google Chrome 通道（不填 CDP_PORT 的那条）；reset=清掉封锁（RESET_ID）；check=台账自检"},
+    {"name":"QUOTA_FALLBACK_H","type":"string","default":"6","description":"站点原文解析不出恢复时刻时按几小时兜底（默认 6）。⚠️ 别改回 2：那是 rc=3 登录态冷却的旧值，撞额度用它会让号提前「解封」再撞一次"},
     {"name":"PROFILES","type":"string","default":"","description":"显式换号顺序（逗号分隔的 AdsPower user_id，如 ktmrjhu,kvrvx5h）：排最前，不受自动排序影响。留空=按台账+上次成功+cookie 数自动排。🔴 号池有 6 个但换号链默认只看 3 个——要全试就把 6 个都写进来"},
     {"name":"MAX_OPEN","type":"string","default":"1","description":"最多同时给出几个候选（默认 1）。switch 时只切第一个成功的，后面的等下一次"},
     {"name":"FORCE","type":"boolean","default":false,"description":"无视台账封锁（只在「就是要验某个号的额度」时开）。默认跳过还没到恢复时间的号"},
@@ -45,7 +46,7 @@ mkdir -p "$TS_RUN_DIR/logs" "$TS_RUN_DIR/artifacts"
   echo "运行：$JOB_NAME #$BUILD_NUMBER"
   echo "时间：$(date '+%Y-%m-%d %H:%M:%S %z')"
   echo "工程：$PROJ @ $(git rev-parse --short HEAD 2>/dev/null)"
-  echo "动作：$LEDGER_ACTION   显式号序：${PROFILES:-（自动）}   最多候选：${MAX_OPEN:-1}   忽略封锁：${FORCE:-false}"
+  echo "动作：$LEDGER_ACTION   显式号序：${PROFILES:-（自动）}   最多候选：${MAX_OPEN:-1}   忽略封锁：${FORCE:-false}   额度兜底：${QUOTA_FALLBACK_H:-6}h"
   echo ""
   echo "为什么有这个 job：ChatGPT 出图额度按账号算，一个号画完就得换下一个。"
   echo "旧口径只记「哪天空过」、而且只降权不排除 ⇒ 每个任务都要拿同一个空号从头撞一遍，"
@@ -67,6 +68,10 @@ LOG="$TS_RUN_DIR/logs/provider.log"
 EXTRA=""
 [[ "${PROFILES:-}" != "" ]] && EXTRA="$EXTRA --profiles ${PROFILES}"
 [[ "${FORCE:-false}" == "true" ]] && EXTRA="$EXTRA --force"
+
+# 撞额度时的兜底小时数（站点原文能解析出精确时刻就不用它）。默认 6，与出图 job 同口径
+export TSG_QUOTA_FALLBACK_HOURS="${QUOTA_FALLBACK_H:-6}"
+echo "封锁兜底：${TSG_QUOTA_FALLBACK_HOURS}h（站点原文解析得到就用原文） · 忽略封锁=${FORCE:-false}"
 
 case "$LEDGER_ACTION" in
   status)

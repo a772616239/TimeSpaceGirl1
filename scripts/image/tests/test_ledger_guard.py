@@ -153,6 +153,30 @@ def case_entry_guard() -> None:
     check(not (TMP / "out.png").exists(), "没有落任何图（连对话都没开）")
 
 
+def case_render_folds_junk() -> None:
+    print("\n[台账渲染：端口冒充账号的垃圾行必须折叠]")
+    data = {"accounts": {
+        # 旧口径：端口当账号
+        "cdp:49951": {"kind": "cdp", "id": "49951", "state": "unknown"},
+        # 端口被当成 adspower uid 写进去（AdsPower uid 一定是字母数字混排）
+        "adspower:54808": {"kind": "adspower", "id": "54808", "state": "unknown"},
+        # 真账号
+        "adspower:ktmrjhu": {"kind": "adspower", "id": "ktmrjhu", "state": "ok",
+                             "ok_count": 14},
+        # 仍被封的旧口径条目要照旧显示（不能「明明在封锁却看不见」）
+        "cdp:60001": {"kind": "cdp", "id": "60001", "state": "exhausted",
+                      "blocked_until": "2099-01-01T00:00:00"},
+    }}
+    txt = pl.render(data=data)
+    check("49951" not in txt, "cdp:<端口> 被折叠")
+    check("54808" not in txt, "adspower:<纯数字端口> 被折叠")
+    check("ktmrjhu" in txt, "真账号还在")
+    check("60001" in txt, "仍被封的旧条目不被藏起来")
+    check("条历史垃圾记录已折叠" in txt, "折叠数量有一行说明")
+    full = pl.render(data=data, all_rows=True)
+    check("49951" in full and "54808" in full, "--all 能展开全部")
+
+
 def main() -> int:
     print(f"临时目录：{TMP}")
     case_parse_reset()
@@ -160,13 +184,14 @@ def main() -> int:
     case_port_identity()
     case_gen_gemini_blocked()
     case_entry_guard()
+    case_render_folds_junk()
     print()
     if FAILS:
         print(f"🔴 {len(FAILS)} 项失败：")
         for m in FAILS:
             print("   -", m)
         return 1
-    print("✅ 额度封锁口径正确（恢复时刻 / 6h 兜底 / 默认不赌 / 前端归一 / 入口拦截）")
+    print("✅ 额度封锁口径正确（恢复时刻 / 6h 兜底 / 默认不赌 / 前端归一 / 入口拦截 / 垃圾行折叠）")
     return 0
 
 

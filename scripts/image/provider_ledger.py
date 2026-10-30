@@ -645,7 +645,8 @@ def pick(rows: list[dict], kind: str, explicit: list[str] | None = None, max_n: 
 
 # ── 渲染 ─────────────────────────────────────────────────────────────────────
 
-def render(data: dict | None = None, base: dt.datetime | None = None, live: bool = False) -> str:
+def render(data: dict | None = None, base: dt.datetime | None = None, live: bool = False,
+           all_rows: bool = False) -> str:
     data = data if data is not None else load()
     base = base or now()
     rows = []
@@ -664,6 +665,32 @@ def render(data: dict | None = None, base: dt.datetime | None = None, live: bool
     # 不在通道台账里显示，免得把「哪个号还有额度」这张表撑乱。
     accounts = {k: e for k, e in accounts.items()
                 if not (e.get("kind") == "asset" and not e.get("lease"))}
+    holders = lease_holders(data, base)
+
+    def _live_blocked(e) -> bool:
+        t = _parse_iso(e.get("blocked_until"))
+        return bool(t and t > base)
+
+    # 🔴 旧口径 cdp:<端口>：端口不是账号，同一个号换个端口就成了「新号」，封锁标记跟着失效
+    #    （10-26 那次封号就是被这条绕过去的）。归一成 adspower:<uid> 之后这些条目不再参与
+    #    选号，只剩历史噪音——默认折叠成一行，`--all` 才展开。仍被封/被占用的照旧显示，
+    #    免得「明明在封锁却看不见」。
+    # 🔴 还有一类：`adspower:<纯数字>` —— AdsPower 的 uid 一定是字母数字混排（k1hiv2p8），
+    #    纯数字只可能是端口被当成 uid 写进去了。这类「从没试过」的空壳一律折叠，否则
+    #    「可并行绘制 N 路」会被它们顶高，看起来号很多、其实一个都开不起来。
+    stale = set()
+    for k, e in accounts.items():
+        if holders.get(k) or _live_blocked(e):
+            continue
+        if k.startswith("cdp:"):
+            stale.add(k)
+        elif k.startswith("adspower:"):
+            ident = str(e.get("id") or k.split(":", 1)[-1])
+            if ident.isdigit() and not e.get("last_try_at") and not e.get("ok_count"):
+                stale.add(k)
+    hidden = 0 if all_rows else len(stale)
+    if hidden:
+        accounts = {k: e for k, e in accounts.items() if k not in stale}
     if not accounts:
         rows.append("台账是空的：还没有任何账号被记录过（第一次出图后自动建档）。")
         return "\n".join(rows)
@@ -675,7 +702,6 @@ def render(data: dict | None = None, base: dt.datetime | None = None, live: bool
 
     head = f"{'账号':<22}{'类型':<10}{'状态':<10}{'解封':<22}{'剩余':<9}{'成功':<5}{'连败':<5}{'占用':<22}备注"
     rows += [head, "-" * min(120, len(head) + 20)]
-    holders = lease_holders(data, base)
     for k, e in sorted(accounts.items(), key=sort_k):
         t = _parse_iso(e.get("blocked_until"))
         t = t if t and t > base else None
@@ -705,6 +731,9 @@ def render(data: dict | None = None, base: dt.datetime | None = None, live: bool
                    e.get("kind") or k.split(":", 1)[0],
                    e.get("id") or k.split(":", 1)[-1], data, base))
     rows += ["", f"可并行绘制：{free} 路（{held} 个通道正被占用；一个通道同一时刻只允许一路）"]
+    if hidden:
+        rows += [f"（另有 {hidden} 条历史垃圾记录已折叠：cdp:<端口> 与 adspower:<纯数字端口> "
+                 f"都不是账号，2026-10-30 起按 adspower:<uid> 记账；要看用 --all）"]
     last = data.get("last_switch")
     if last:
         rows += [f"上次切换：{last.get('at')} → {last.get('kind')}:{last.get('id')}"
@@ -958,8 +987,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("list", help="打印台账（--live 附带 AdsPower 实时状态）")
     p.add_argument("--json", action="store_true")
     p.add_argument("--live", action="store_true")
+    p.add_argument("--all", action="store_true",
+                   help="展开旧口径 cdp:<端口> 记录（默认折叠：端口不是账号，已不参与选号）")
     p.set_defaults(func=lambda a: (print(json.dumps(load(), ensure_ascii=False, indent=2))
-                                   if a.json else print(render(live=a.live))) or 0)
+                                   if a.json else print(render(live=a.live, all_rows=a.all))) or 0)
 
     p = sub.add_parser("pick", help="台账感知的候选顺序（不启动浏览器）")
     p.add_argument("--profiles", default="", help="显式排序（逗号分隔 user_id）")

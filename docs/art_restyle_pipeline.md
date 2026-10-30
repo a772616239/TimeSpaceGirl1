@@ -311,7 +311,7 @@ gemini 的额度按 **Google 账号**算，通常比 ChatGPT 那份大得多 —
 |---|---|
 | `gen_chatgpt_web.run_once()` | 浏览器连上之后、发提示词之前：先心跳（用这个端口），再过闸（`chatgpt` 账，默认 30s） |
 | `gen_gemini.main()` | 同上，`gemini` 账（默认 180s）；`--account` 由 `gen_chatgpt_web` 透传，保证按**账号**而不是按端口记 |
-| Jenkins | `GEN_PACE` / `GEN_MIN_GAP` / `GEN_MAX_PER_HOUR` / `GEN_MAX_PER_DAY` / `GEN_MAX_WAIT` / `HEARTBEAT_MIN` 六个参数，出图阶段 export 成 `TSG_*` |
+| Jenkins | `GEN_PACE` / `GEN_MIN_GAP` / `GEN_MAX_PER_HOUR` / `GEN_MAX_PER_DAY` / `GEN_MAX_WAIT` / `HEARTBEAT_MIN` 六个节奏参数 + `QUOTA_FALLBACK_H` / `ALLOW_GAMBLE` 两个封锁参数，出图阶段 export 成 `TSG_*` |
 
 ```bash
 # 现在各账号的节奏、下次什么时候能画
@@ -328,6 +328,43 @@ $PY scripts/image/gen_pace.py reset --all
 `TS-Art-Translate` 的 batch 补图慢 3~4 倍，两个 job 的超时已从 75 → 120 / 150 分钟。
 等超过 `GEN_MAX_WAIT`（默认 30 分钟）就把这一步标黄收工 —— 比硬等两小时撞 job 超时好，
 下一轮自然接上（`--only` 或清单里删掉已完成的）。
+
+### 额度封锁的判定口径（2026-10-30 二次收紧：判罚是「绕过用量限制」，不是「画得太快」）
+
+被封的那个号（992694856@qq.com，AdsPower `kvrvx5h`）的判罚原文是
+**「tried to override or circumvent abuse protections or safety filters」**，
+Gemini 整项服务停用。复盘它的行为：87 个新对话只出 48 张图，撞上限后不停手、
+换个对话再要一次 —— 在 Google 眼里就是「被拒绝后绕开入口」。所以封锁口径改成两层：
+
+| 层 | 规则 | 落在哪 |
+|---|---|---|
+| 恢复时刻 | 站点给的时刻**优先**（`22:54まで` / `until 22:54` / `明日の 16:54` / `2 時間後` / `12 分後` 全认）；解析不到才按 `QUOTA_FALLBACK_H`（默认 **6 小时**）兜底 | `provider_ledger.parse_reset()` |
+| 冷却期禁画 | 台账里 `blocked_until` 未到期的号**一律不新建对话**：不排队、不接已有端口、不硬试。全部号都被封 ⇒ 这一轮不出图 | `pick()` / 换号链 ① ② / `gen_gemini` 入口 |
+
+三条别搞混（都踩过）：
+
+- 🔴 **6 小时 ≠ 120 分钟**。`DEFAULT_BLOCK_HOURS=6` 是「额度用尽」的兜底；
+  `DEFAULT_UNUSABLE_MINUTES=120` 是 rc=1/3（页面没出图 / 登录态可疑）的短冷却，
+  2026-10-30 起 rc=3 也改成 6 小时 —— 「撞墙两小时后又是一条好汉」正是加压的来源。
+- 🔴 **端口不是账号**。换号链 ① 手里只有 CDP 端口，旧实现把台账记成 `cdp:<端口>`，
+  于是同一个号换个端口就成了「新号」，它自己的封锁标记全失效（封号那天就这样多画了 12 张）。
+  现在用 `find_browser_cdp.adspower_uid_for_port()`（lsof 认 pid / `DevToolsActivePort`）
+  归一成 `adspower:<user_id>`，限制速和封锁都按账号记。
+- 🔴 **「全被封就赌一把」默认关掉了**。旧逻辑觉得「台账可能是错的」，代价是这个后门
+  成了唯一的加压通道。要赌得人工开口：`--allow-gamble` / `ALLOW_GAMBLE=true` /
+  `provider_ledger.py pick --allow-gamble`。
+
+```bash
+# 谁被封锁、封到几点
+$PY scripts/image/provider_ledger.py list
+# 确认台账记错了，硬试一次（只这一次，不写台账）
+$PY scripts/image/gen_chatgpt_web.py ... --ignore-ledger
+# 解封（人工核实恢复之后）
+$PY scripts/image/provider_ledger.py reset --id kvrvx5h
+```
+
+⚠ 直接命令行 `--port 11451` 跑 `gen_gemini` 时没有账号标识，现在会**按端口反查**
+是哪个 AdsPower 号再过封锁检查 —— 不然手动跑就成了绕过封锁的旁路。
 
 ### 换号链：已开着的 → 让 AdsPower 现开一个（2026-10-21 起）
 

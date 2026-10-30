@@ -96,7 +96,9 @@ EVENTS = Path(os.environ.get("TSG_LEDGER_EVENTS")
 
 # 站点没给恢复时间时的兜底：free 额度是「每日」口径，6 小时是个不堵一整天、又不会
 # 每次都白试的折中。宁可早点再试一次，也别把一个其实已经恢复的号锁 24 小时。
-DEFAULT_BLOCK_HOURS = 6
+# 🔴 注意这个 6 小时 ≠ 120 分钟：120 分钟是 `mark_unusable`（rc=1/3 环境抖动）的口径。
+#    「额度用尽」永远走这里，除非站点原文解析出了明确的恢复时刻。
+DEFAULT_BLOCK_HOURS = int(os.environ.get("TSG_QUOTA_FALLBACK_HOURS", "6"))
 # rc=1/rc=3（未登录 / 人机验证 / 页面没出图）不是额度问题，短冷却就行
 DEFAULT_UNUSABLE_MINUTES = 120
 
@@ -138,6 +140,28 @@ _RE_MINUTES = re.compile(r"(\d{1,3})\s*(?:分|分钟|minutes?|mins?\b)")
 _RE_TOMORROW = re.compile(
     r"(?:明日|明天|tomorrow)[^\d]{0,12}(\d{1,2})\s*[:：]\s*(\d{2})", re.I)
 _RE_ABOUT = re.compile(r"(?:約|约|about|around)[^\d]{0,6}(\d{1,2})\s*[:：]\s*(\d{2})", re.I)
+# 🔴 2026-10-30 实测漏网：Gemini 日文界面给的是「…無料のPlusトライアルを開始するか、
+#    22:54までお待ちください。」——**时刻前面没有「約」**，四类正则全不认，于是落到 6 小时
+#    兜底：22:40 撞上限被记成 04:40 恢复，白等一夜；更糟的是「记了个错的时间之后又去试」。
+#    ⟹ 「HH:MM + まで/until/之后」单独认一遍，这是站点最常给的形态。
+_RE_UNTIL = re.compile(
+    r"(\d{1,2})\s*[:：]\s*(\d{2})\s*(?:まで|以降|までは|以后|之后|后|起)")
+_RE_UNTIL_EN = re.compile(
+    r"(?:until|till|after)\s*(\d{1,2})\s*[:：]\s*(\d{2})", re.I)
+# 最后兜底：整段里只有一个「裸时刻」。只在文本确实在说额度/恢复时才认，
+# 免得把「3:4 竖构图」这种比例当时间（那会把 6 小时兜底换成更离谱的 +一天）。
+_RE_CLOCK = re.compile(r"(?<![\d:])(\d{1,2})\s*[:：]\s*(\d{2})(?![\d:])")
+_RE_QUOTA_HINT = re.compile(
+    r"上限|制限|limit|quota|リセット|恢复|重置|待|wait|まで", re.I)
+
+
+def _clock_next(base: dt.datetime, hh: str | int, mm: str | int) -> dt.datetime | None:
+    """把「几点几分」落到 base 之后最近的那个时刻（跨天自动 +1 天）。"""
+    h, m = int(hh), int(mm)
+    if not (0 <= h < 24 and 0 <= m < 60):
+        return None
+    cand = base.replace(hour=h, minute=m, second=0, microsecond=0)
+    return cand if cand > base else cand + dt.timedelta(days=1)
 
 
 def parse_reset(text: str, base: dt.datetime | None = None) -> tuple[dt.datetime | None, str]:
@@ -170,12 +194,25 @@ def parse_reset(text: str, base: dt.datetime | None = None) -> tuple[dt.datetime
     # 「約 16:54」这种只有时刻没有日期的：取下一次出现的那个时刻
     m = _RE_ABOUT.search(t)
     if m:
-        hh, mm = int(m.group(1)), int(m.group(2))
-        if 0 <= hh < 24 and 0 <= mm < 60:
-            cand = base.replace(hour=hh, minute=mm, second=0, microsecond=0)
-            if cand <= base:
-                cand += dt.timedelta(days=1)
-            return cand, "clock"
+        c = _clock_next(base, m.group(1), m.group(2))
+        if c:
+            return c, "clock"
+
+    # 「22:54までお待ちください」/「until 22:54」：站点给的确定性时刻
+    for pat, how in ((_RE_UNTIL, "until"), (_RE_UNTIL_EN, "until")):
+        m = pat.search(t)
+        if m:
+            c = _clock_next(base, m.group(1), m.group(2))
+            if c:
+                return c, how
+
+    # 兜底：整段只说到「几点几分」且确实在聊额度/恢复
+    if _RE_QUOTA_HINT.search(t):
+        m = _RE_CLOCK.search(t)
+        if m:
+            c = _clock_next(base, m.group(1), m.group(2))
+            if c:
+                return c, "clock"
 
     return None, "none"
 
@@ -568,17 +605,23 @@ def order(rows: list[dict], kind: str, explicit: list[str] | None = None,
 
 def pick(rows: list[dict], kind: str, explicit: list[str] | None = None, max_n: int = 3,
          force: bool = False, data: dict | None = None, base: dt.datetime | None = None,
-         owner: str | None = None, respect_leases: bool = True) -> list[dict]:
+         owner: str | None = None, respect_leases: bool = True,
+         allow_gamble: bool | None = None) -> list[dict]:
     """返回最多 max_n 个候选（附 `blocked_until` / `leased_by` 字段）。
 
-    🔴 全部被封时**不返回空**：挑最快恢复的那个赌一把（`gamble=True`）。
-       台账可能是别的任务写错的（实测 ktmrjhu 标了当天空过却一次过），一票否决会白丢额度。
-    🔴 被别人占用的号**不参与赌博**：那台浏览器里有另一个任务正在出图，抢过来只会串图。
-       只有「没人占用但可能没额度」才值得赌。
+    🔴 **默认不再「赌一把」**（2026-10-30 起）。以前全部被封时会挑最快恢复的那个硬试，
+       理由是「台账可能是别的任务写错的」。但这条兜底正是换号链绕开封锁的后门：
+       10-26 那天 992694856@qq.com 撞了 5 次额度上限、账号已被标记，换号链还是靠这条
+       继续拿它开新对话 —— Google 判的就是「被拒绝后换着入口绕」。宁可这一轮不出图，
+       也不能再在封锁期里新建对话。要恢复旧行为：`--allow-gamble` 或 TSG_ALLOW_GAMBLE=1。
+    🔴 被别人占用的号**不参与**任何回退：那台浏览器里有另一个任务正在出图，抢过来只会串图。
     """
     data = data if data is not None else load()
     base = base or now()
     owner = owner or owner_default()
+    if allow_gamble is None:
+        allow_gamble = (os.environ.get("TSG_ALLOW_GAMBLE", "") or "").strip().lower() in (
+            "1", "true", "yes", "on")
     holders = lease_holders(data, base)
     rows = order(rows, kind, explicit, data, base, owner=owner)
     marked = []
@@ -593,6 +636,8 @@ def pick(rows: list[dict], kind: str, explicit: list[str] | None = None, max_n: 
               if r["blocked_until"] is None and (not respect_leases or not r["leased_by"])]
     if usable:
         return usable[:max_n]
+    if not allow_gamble:
+        return []
     gamble = [r for r in marked
               if (not respect_leases or not r["leased_by"]) and r["blocked_until"]][:1]
     return [{**r, "gamble": True} for r in gamble]
@@ -683,6 +728,13 @@ def selfcheck(data: dict | None = None) -> tuple[bool, list[str]]:
         ("上限は 12 分後にリセットされます", "minutes", 12),
         ("上限将在 12 分钟后重置", "minutes", 12),
         ("your limit will reset in 45 minutes", "minutes", 45),
+        # 🔴 2026-10-30：站点给的时刻前面没有「約」，以前一律落到 6 小时兜底
+        ("画像生成の上限に達しました。さらに利用するには、無料のPlusトライアルを開始するか、"
+         "22:54までお待ちください。", "until", 4 * 60 + 54),
+        ("上限已用完，22:54 之后恢复", "until", 4 * 60 + 54),
+        ("limit reached, resets at 22:54", "clock", 4 * 60 + 54),
+        # 比例不能当时间（「3:4 竖构图」）
+        ("3:4 竖构图，注意上限", "none", -1),
     ]
     for text, want_basis, want_min in cases:
         when, basis = parse_reset(text, base)
@@ -731,13 +783,20 @@ def selfcheck(data: dict | None = None) -> tuple[bool, list[str]]:
     allblocked = {"accounts": {
         key_of("adspower", "x"): {"state": EXHAUSTED, "blocked_until": _iso(b + dt.timedelta(hours=9))},
         key_of("adspower", "y"): {"state": EXHAUSTED, "blocked_until": _iso(b + dt.timedelta(hours=2))}}}
+    g0 = pick([{"id": "x", "cookies": 50}, {"id": "y", "cookies": 40}], "adspower",
+              max_n=2, data=allblocked, base=b)
+    if g0:
+        ok = False
+        msgs.append(f"✗ 全封锁时默认必须返回空（不许绕过封锁），实际 {[r['id'] for r in g0]}")
+    else:
+        msgs.append("✓ 全封锁时默认返回空：冷却未到期的号不许再开新对话")
     g = pick([{"id": "x", "cookies": 50}, {"id": "y", "cookies": 40}], "adspower",
-             max_n=2, data=allblocked, base=b)
+             max_n=2, data=allblocked, base=b, allow_gamble=True)
     if not (len(g) == 1 and g[0]["id"] == "y" and g[0].get("gamble")):
         ok = False
-        msgs.append(f"✗ 全封锁时该按最快恢复的赌一把，实际 {[r['id'] for r in g]}")
+        msgs.append(f"✗ 显式 allow_gamble 时应按最快恢复的赌一把，实际 {[r['id'] for r in g]}")
     else:
-        msgs.append("✓ 全封锁时只挑最快恢复的一个赌一把（台账可能是错的）")
+        msgs.append("✓ allow_gamble（人工逃生口）仍可按最快恢复的赌一把")
 
     f = pick(rows, "adspower", max_n=2, force=True, data=fake, base=b)
     if len(f) != 2 or any(r["blocked_until"] for r in f):
@@ -811,9 +870,16 @@ def cmd_switch(args) -> int:
     data = load()
     rows = _rows_from(live=True, profiles=args.profiles)
     cands = pick(rows, "adspower", explicit=[x.strip() for x in (args.profiles or "").split(",") if x.strip()],
-                 max_n=args.max, force=args.force, data=data)
+                 max_n=args.max, force=args.force, data=data,
+                 allow_gamble=True if args.force else None)
     if not cands:
-        print("🔴 没有可换的账号（AdsPower 缓存目录里没有启动过的 profile）")
+        print("🔴 没有「未封锁」的号可换 —— 这是刻意的，不是没配好。")
+        blocked = [(r["id"], blocked_until("adspower", r["id"], data)) for r in rows]
+        blocked = [(i, t) for i, t in blocked if t]
+        for i, t in sorted(blocked, key=lambda x: x[1])[:8]:
+            print(f"   {i}：封锁到 {t:%m-%d %H:%M}（还有 {human_left(t)}）")
+        print("   ⇒ 等冷却到期，或在 AdsPower 里加一个新号；"
+              "确要硬试（台账可能记错了）：--force")
         return 3
     if not fb.adspower_alive():
         print("🔴 AdsPower 本地 API 不可达（客户端没开 / 端口不是 50325）")
@@ -899,6 +965,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--profiles", default="", help="显式排序（逗号分隔 user_id）")
     p.add_argument("--max", type=int, default=3)
     p.add_argument("--force", action="store_true", help="忽略封锁时间")
+    p.add_argument("--allow-gamble", action="store_true",
+                   help="全都被封锁时按最快恢复的硬试（默认不赌：冷却期里新建对话会被判「绕过限制」）")
     p.set_defaults(func=lambda a: _cmd_pick(a))
 
     p = sub.add_parser("switch", help="真的切到下一个可用账号（会启动 AdsPower profile）")
@@ -1004,9 +1072,13 @@ def _cmd_pick(a) -> int:
     explicit = [x.strip() for x in (a.profiles or "").split(",") if x.strip()]
     data = load()
     base = now()
-    cands = pick(rows, "adspower", explicit, a.max, a.force, data=data, base=base)
+    cands = pick(rows, "adspower", explicit, a.max, a.force, data=data, base=base,
+                 allow_gamble=True if getattr(a, "allow_gamble", False) else None)
     if not cands:
-        print("（没有候选）")
+        print("（没有可用候选：全都还在额度封锁期 —— 这是刻意的）")
+        quick = [(r["id"], blocked_until("adspower", r["id"], data, base)) for r in rows]
+        for i, t in sorted([x for x in quick if x[1]], key=lambda x: x[1])[:8]:
+            print(f"   {i}：封锁到 {t:%m-%d %H:%M}（还有 {human_left(t, base)}）")
         return 3
     for i, c in enumerate(cands, 1):
         t = _parse_iso(c.get("blocked_until"))

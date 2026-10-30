@@ -261,6 +261,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--adspower-max-profiles", type=int,
                     default=int(os.environ.get("ADSPOWER_MAX_PROFILES", "3")),
                     help="最多现开几个号（默认 3）。每开一个都要等一次完整出图，别贪多")
+    ap.add_argument("--allow-gamble", action="store_true",
+                    default=(os.environ.get("TSG_ALLOW_GAMBLE", "").strip().lower()
+                             in ("1", "true", "yes", "on")),
+                    help="所有号都在额度封锁期内时，仍然挑最快恢复的那个硬试。"
+                         "🔴 默认关：被拒之后继续开新对话，正是 Google 判「绕过用量限制」的行为")
     ap.add_argument("--fallback-budget", type=int,
                     default=int(os.environ.get("FALLBACK_BUDGET", "960")),
                     help="整条换号链的总时间预算（秒，默认 960=16 分钟）。用完就停，别把 job 拖爆")
@@ -362,6 +367,20 @@ def main(argv: list[str] | None = None) -> int:
                 return RC_WARN
         log("🔴 钉住的那台也没拿到图（换号链已走完）")
         return RC_WARN
+
+    # 🔴 显式 --cdp-port 进来的是「某台已开着的浏览器」，它到底是哪个号由端口反查：
+    #    这一步不做，下面画的每一张都绕过这个号自己的额度封锁（2026-10-30 封号的直接原因）。
+    if args.reuse_cdp and args.port and pl and not args.ignore_ledger:
+        uid = _profile_for_port(_fb(), int(args.port))
+        t = pl.blocked_until("adspower", uid) if uid else None
+        if t:
+            log(f"⛔ CDP {args.port} = adspower:{uid}，台账封锁到 {t:%m-%d %H:%M}"
+                f"（还有 {pl.human_left(t)}）")
+            log("   冷却期内不新建对话（继续画＝把「被拒后换入口」演给 Google 看）"
+                "⇒ 本轮不出图。确要硬试加 --ignore-ledger")
+            return RC_WARN
+        if uid:
+            log(f"   CDP {args.port} → adspower:{uid}（台账按这个号记账）")
 
     # 显式 --cdp-port 也要占：两个任务指同一个端口 = 同一个标签页两路在画。
     if args.reuse_cdp and args.port and pl:
@@ -538,9 +557,21 @@ def clear_pin(owner: str) -> None:
 
 
 def _profile_for_port(fb, port: int) -> str:
-    """反查某个 CDP 端口属于哪个 AdsPower profile（关浏览器用）。取不到就返回空。"""
+    """反查某个 CDP 端口属于哪个 AdsPower profile。取不到就返回空。
+
+    🔴 先走 `fb.adspower_uid_for_port()`（lsof 认 pid / DevToolsActivePort，**离线且准**），
+       再退回挨个问 AdsPower API。以前只有 API 这一条路，而它依赖客户端在线 + 每个号问一次，
+       实测经常返回空 —— 于是同一台机器上的同一个号在台账里变成 `cdp:<端口>`，
+       它的封锁标记整个失效。2026-10-30 被封的 992694856@qq.com 就是这么继续被用的。
+    """
     if not port:
         return ""
+    try:
+        uid = getattr(fb, "adspower_uid_for_port", lambda _p: None)(int(port))
+        if uid:
+            return str(uid)
+    except Exception:                                         # noqa: BLE001
+        pass
     try:
         for r in fb.adspower_profiles()[:8]:
             st, p = fb.adspower_state(r["user_id"])
@@ -657,16 +688,37 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
             return RC_REFUSED
         log(f"   {kind}:{ident} 不可用（rc={rc}，见上面 driver 日志）→ 换下一个号")
         if pl:
-            pl.mark_unusable(kind, ident, note=f"rc={rc} @ {today}")
+            # 🔴 rc=3（页面没出图 / 登录态可疑 / 人机验证）以前只冷却 120 分钟就放回池子。
+            #    2026-10-30 复盘：992694856@qq.com 在 10-26、10-28 各出过一次 rc=3，
+            #    当时的处理是「两小时后又是一条好汉」，于是继续往一个已经被标记的号上加压。
+            #    登录态/风控这类问题不会在两小时内自己好，改成 6 小时（与额度兜底同一口径）。
+            mins = 6 * 60 if rc == RC_WARN else 120
+            pl.mark_unusable(kind, ident, note=f"rc={rc} @ {today}", cooldown_min=mins)
+            log(f"   台账：{kind}:{ident} 冷却 {mins} 分钟（rc={rc}）")
         state.setdefault("profiles", {}).setdefault(ident, {})["note"] = f"rc={rc} @ {today}"
         save_state(state)
         _release_and_maybe_close(fb, pl, owner, kind, ident, port, "unusable")
         return rc
 
+    def ident_of(kind: str, ident: str, port) -> tuple[str, str]:
+        """把「cdp:<端口>」归一成「adspower:<user_id>」（认不出来就原样返回）。
+
+        🔴 这是这次封号暴露出来的最大漏洞：换号链 ① 手里只有端口，台账就把它记成
+           `cdp:50665` —— 同一个号换个端口就成了「另一个号」，它自己的额度封锁、
+           7 天停用标记**一条都读不到**。不归一，「冷却期内不许新建对话」根本无从谈起。
+        """
+        if kind in ("cdp", "sunbrowser"):
+            p = int(port or 0) or (int(ident) if str(ident).isdigit() else 0)
+            uid = _profile_for_port(fb, p) if (fb and p) else ""
+            if uid:
+                return "adspower", uid
+        return kind, ident
+
     # ── ⓪ 本轮钉住的那台 ───────────────────────────────────────────────────
     if pin and pin.get("kind"):
         kind, ident = str(pin["kind"]), str(pin.get("id") or "")
         port = int(pin.get("port") or 0)
+        kind, ident = ident_of(kind, ident, port)
         blocked = pl.blocked_until(kind, ident) if pl else None
         if blocked:
             log(f"↩ 钉住的 {kind}:{ident} 台账封锁到 {blocked:%m-%d %H:%M}（"
@@ -711,16 +763,23 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
         if time.time() > deadline:
             log("⚠ 换号预算用完，停止继续尝试")
             return RC_QUOTA
-        if not claim("cdp", str(p), "reuse browser"):
+        kind, ident = ident_of("cdp", str(p), p)
+        t = pl.blocked_until(kind, ident) if pl else None
+        if t:
+            log(f"   ⏳ CDP {p} = {kind}:{ident} 台账封锁到 {t:%m-%d %H:%M}"
+                f"（还有 {pl.human_left(t)}）→ 不接（冷却期内不许新建对话）")
+            continue
+        if not claim(kind, ident, "reuse browser"):
             continue
         tried_ports.add(p)
-        log(f"↪ 换号 ①／②：接入已开着的 SunBrowser CDP {p}（只连不断）")
-        rc, prov = run_on_browser(args, "cdp", str(p), p, image, prompt_file, out, node, pw)
+        log(f"↪ 换号 ①／②：接入已开着的 SunBrowser CDP {p}"
+            f"（{kind}:{ident}，只连不断）")
+        rc, prov = run_on_browser(args, kind, ident, p, image, prompt_file, out, node, pw)
         if rc == RC_OK:
-            return finish("cdp", str(p), p, rc, prov)
+            return finish(kind, ident, p, rc, prov)
         if rc == RC_REFUSED:
             return RC_WARN
-        finish("cdp", str(p), p, rc, prov)
+        finish(kind, ident, p, rc, prov)
         log(f"   SunBrowser {p} 没成（rc={rc}），继续找下一个号")
 
     # ── ② 让 AdsPower 现开一个 profile ─────────────────────────────────────
@@ -733,8 +792,11 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
         return RC_QUOTA
 
     # 🔴 台账过滤：还没到恢复时间的号**直接不排队**。
-    #    以前是「只降权不排除」，于是每轮都拿同一个空号从头试，等一轮失败就得几分钟。
-    #    但台账也可能是错的（实测 ktmrjhu 标着当天空过却一次过）⇒ 全被封时按最快恢复的赌一把。
+    #    以前这里还有一条「全都被封就按最快恢复的赌一把」的后门，理由是「台账可能是错的」。
+    #    2026-10-30 的封号证明这条后门比台账出错贵得多：992694856@qq.com 撞了 5 次额度、
+    #    已经被标记，换号链仍然靠它继续开新对话 —— Google 判的正是「被拒绝后换入口绕」。
+    #    ⟹ 默认**不赌**：宁可这一轮不出图，也不在冷却期里新建对话。
+    #       确要赌，人工显式开：--allow-gamble 或 TSG_ALLOW_GAMBLE=1。
     queue = cands
     if pl and not args.ignore_ledger:
         explicit = [x.strip() for x in (args.adspower_profiles or "").split(",") if x.strip()]
@@ -752,9 +814,22 @@ def try_fallback(args, image: Path, prompt_file: Path, out: Path, node: str, pw:
         if free:
             queue = [c for c, _ in free]
         elif blocked:
-            queue = [blocked[0][0]]
-            log(f"⚠ 台账里所有号都在封锁期，按最快恢复的 {queue[0]['user_id']} 赌一把（记录可能已过期）")
-            log("   如果它其实还有额度，这次就能出图；出来了会自动解封并提到最前")
+            fastest = min(blocked, key=lambda ct: ct[1].timestamp() if ct[1] else float("inf"))
+            if getattr(args, "allow_gamble", False):
+                queue = [fastest[0]]
+                log(f"🔴 --allow-gamble：硬试 {fastest[0]['user_id']}"
+                    f"（台账说还有 {pl.human_left(fastest[1])}）—— 只在这种人工确认时才允许")
+            else:
+                queue = []
+                log(f"⏳ AdsPower 里所有号都在封锁期，最快的一个是 "
+                    f"{fastest[0]['user_id']}（还有 {pl.human_left(fastest[1])}）")
+                log("   本轮不画：冷却期里新建对话，就是把「绕过用量限制」这件事做给 Google 看。"
+                    "确认台账记错了要硬试，加 --allow-gamble")
+
+    if not queue:
+        log("⛔ 没有「未封锁」的号可用 ⇒ 本轮不出图（不是失败，是现在不该画）。")
+        log("   等冷却到期；或在 AdsPower 里加一个新号；确要硬试加 --allow-gamble。")
+        return RC_QUOTA
 
     log(f"↪ 换号 ②／②：AdsPower 里现开一个（候选 {', '.join(c['user_id'] for c in queue[:args.adspower_max_profiles])}）")
 
@@ -849,7 +924,7 @@ def run_on_port(args, port: int, image: Path, prompt_file: Path, out: Path,
 _SECOND_SCRIPTS = {"gemini": "gen_gemini.py"}
 # 🔴 两套退出码不一样，必须翻译：gen_gemini 用 4=额度、5=拒画、3=未登录；
 #    本模块 RC_QUOTA=5、RC_REFUSED=6、RC_WARN=3。混用会把「额度」误判成「成功」。
-_GEM_RC = {0: RC_OK, 4: RC_QUOTA, 5: RC_REFUSED}
+_GEM_RC = {0: RC_OK, 4: RC_QUOTA, 5: RC_REFUSED, 7: RC_WARN}   # 7 = 冷却期内不许新建对话
 
 
 # ---------------------------------------------------------------- 出图节奏（2026-10-30 账号被封之后）
@@ -940,8 +1015,16 @@ def gen_second(args, port: int, out: Path, ref: Path | None = None,
         cmd += ["--image", str(img)]
     cmd += ["--prompt-file", str(pf), "--out", str(out),
             "--reuse-cdp", "--port", str(port), "--timeout", str(tmo)]
-    # 🔴 账号标识必须透传下去：Gemini 的限速账是**按 Google 账号**记的，
-    #    传不过去就变成按端口记 —— 换个端口就等于「新号」，限速形同虚设。
+    # 🔴 账号标识必须透传下去：Gemini 的限速账 / 额度封锁是**按 Google 账号**记的，
+    #    传不过去就变成按端口记 —— 换个端口就等于「新号」，限速和封锁一起失效。
+    #    `cdp:<端口>` 先反查成 `adspower:<user_id>`，否则第二通道永远只认端口。
+    if account.startswith("cdp:"):
+        try:
+            uid = _profile_for_port(_fb(), int(account.split(":", 1)[1]))
+        except Exception:                                     # noqa: BLE001
+            uid = ""
+        if uid:
+            account = f"adspower:{uid}"
     if account:
         cmd += ["--account", account]
     log(f"   ↪ 同一台浏览器换 {sp} 再画一次（端口 {port} 不动，号也不换）")

@@ -161,6 +161,11 @@ gemini 再画一次（参考图/提示词沿用本张的 `ref_flat.png` + `promp
 本脚本不用管（限速在收口层），但要知道**batch 补图会慢 3~4 倍**、超时已从 75 抬到 150 分钟；
 口径与调参见 `docs/art_restyle_pipeline.md` 的「出图节奏闸门」一节。
 
+🔴 **额度封锁（2026-10-30 二次收紧）**：换号链不再「全部被封就赌一把」，台账里冷却未到期的号
+**一律不新建对话**；站点给的恢复时刻优先（`22:54まで` 这类），解析不到按 6 小时兜底。
+本脚本只转达 rc=3 并给黄 —— 看到「该号在冷却期」就是这条，别去换 profile，
+先看 `provider_ledger.py list`。细节见 `docs/art_restyle_pipeline.md` 的「额度封锁的判定口径」。
+
 | provider | 相关参数 | 什么时候用 |
 |---|---|---|
 | `chatgpt_web`（job 默认） | `CDP_PORT` / `ADSPOWER_PROFILES` / `GEN_IMAGE` | 字块 / 海报（必需）；想把横幅/图集也交给模型重绘 |

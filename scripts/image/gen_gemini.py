@@ -46,6 +46,8 @@ PW_DIRS = [
 ]
 
 RC_OK, RC_LOGIN, RC_QUOTA, RC_REFUSED, RC_FAIL = 0, 3, 4, 5, 1
+# 7 = 台账说这个号还在冷却期内 ⇒ 不开新对话（与 gen_chatgpt_web 的 _GEM_RC 对齐）
+RC_BLOCKED = 7
 
 
 def log(*a: object) -> None:
@@ -255,6 +257,22 @@ def map_rc(rc: int, out: Path) -> int:
     return RC_FAIL
 
 
+def _ledger_block(account: str) -> tuple[object, str]:
+    """(解封时间 or None, 说明)。台账读不出来一律当作「没封锁」，绝不因台账故障停画。"""
+    kind = account.split(":", 1)[0]
+    ident = account.split(":", 1)[1] if ":" in account else ""
+    if kind not in ("adspower", "chrome", "sunbrowser") or not ident:
+        return None, "不是账号标识，无封锁可查"
+    try:
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import provider_ledger as pl
+        t = pl.blocked_until(kind, ident)
+        return (t, "") if t else (None, "台账未封锁")
+    except Exception as e:                                    # noqa: BLE001
+        return None, f"台账不可读（{e}）"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", default="", help="参考图（i2i 换皮必给；不给就是纯文生图）")
@@ -269,8 +287,24 @@ def main() -> int:
     ap.add_argument("--account", default=os.environ.get("TSG_ACCOUNT", ""),
                     help="限速记账用的账号标识（如 adspower:ktmrjhu）。留空按端口记")
     ap.add_argument("--no-pace", action="store_true", help="本次跳过节奏闸门（只在人工验证时用）")
+    ap.add_argument("--ignore-ledger", action="store_true",
+                    help="无视额度台账的封锁（人工确认台账记错了才用；"
+                         "冷却期里新建对话正是被 Google 判「绕过用量限制」的动作）")
     ap.add_argument("--max-ports", type=int, default=3, help="一次最多试几个端口")
     args = ap.parse_args()
+
+    # 🔴 冷却期内的号**不许新建对话** —— 连端口都不用找，直接退出。
+    #    2026-10-30 复盘 992694856@qq.com：Google 的判罚原文是「试图绕过滥用保护」，
+    #    触发它的正是「撞了上限 → 再开一个新对话要一次」。这条闸门就是拦这个动作。
+    acct0 = (args.account or "").strip()
+    if acct0 and not args.ignore_ledger:
+        t, why = _ledger_block(acct0)
+        if t:
+            log(f"   ⛔ {acct0} 台账封锁到 {t:%m-%d %H:%M} ⇒ 不开新对话")
+            log("      冷却期里再要一次，Google 记的就是「绕过用量限制」（判罚原文）")
+            return RC_BLOCKED
+        if why and why != "台账未封锁":
+            log(f"   ⚠ {why}")
 
     node = find_node()
     if not node:
@@ -324,6 +358,30 @@ def main() -> int:
     # 顺序有讲究：**先心跳后过闸**。心跳是 5~30 秒的轻请求，过闸可能要等几分钟；
     # 反过来会先把出图的时间窗口占掉，再花几十秒去聊天，白白拉长等待。
     account = (args.account or "").strip() or f"port:{ports[0]}"
+
+    # 没带账号标识（直接命令行 --port 11451 这种）：按端口反查是哪个 AdsPower 号，
+    # 再拿它去过封锁检查。不反查就等于「同一台机器上的号换个端口就变成新号」，
+    # 封锁和限速一起失效 —— 2026-10-30 封号就是这么发生的。
+    if account.startswith("port:") and not args.ignore_ledger:
+        try:
+            if str(HERE) not in sys.path:
+                sys.path.insert(0, str(HERE))
+            import find_browser_cdp as fbc
+            uid = fbc.adspower_uid_for_port(ports[0])
+            if uid:
+                account = f"adspower:{uid}"
+                log(f"   端口 {ports[0]} → adspower:{uid}（限速与封锁按这个号记）")
+        except Exception as e:                                # noqa: BLE001
+            log(f"   ⚠ 端口反查账号失败（{e}）")
+
+    # 🔴 冷却期内的号**不许新建对话** —— 不是「不记账」，是连 Gemini 页面都不打开。
+    if not getattr(args, "ignore_ledger", False):
+        t, why = _ledger_block(account)
+        if t:
+            log(f"   ⛔ {account} 台账封锁到 {t:%m-%d %H:%M} ⇒ 不开新对话")
+            log("      冷却期里再要一次，Google 记的就是「绕过用量限制」（判罚原文）")
+            return RC_BLOCKED
+
     try:
         if str(HERE) not in sys.path:
             sys.path.insert(0, str(HERE))

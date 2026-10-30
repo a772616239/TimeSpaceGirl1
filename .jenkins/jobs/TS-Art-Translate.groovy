@@ -18,6 +18,8 @@
     {"name":"GEN_MAX_PER_DAY","type":"string","default":"50","description":"单个账号每天最多出几张（默认 50）。撞上了把这个号标成「明天再来」，换号链接手"},
     {"name":"GEN_MAX_WAIT","type":"string","default":"1800","description":"一次出图最多等多久的节奏窗口（秒，默认 1800）。超了把这一步标黄收工，别硬等到撞 job 超时"},
     {"name":"HEARTBEAT_MIN","type":"string","default":"40","description":"会话保活心跳间隔（分钟，默认 40，±15%）：出图期间用同一台浏览器发一条纯文本请求，防长时间只建图被判成自动化，也早发现登录态掉了。0=关"},
+    {"name":"QUOTA_FALLBACK_H","type":"string","default":"6","description":"站点没说几时恢复时的兜底封锁小时数（默认 6）。🔴 以前 rc=3 走 120 分钟，等于「撞墙两小时后又是一条好汉」。站点给了时刻（如「22:54まで」）就按它"},
+    {"name":"ALLOW_GAMBLE","type":"boolean","default":false,"description":"换号链在所有号都被额度封锁时，是否挑最快恢复的硬试。🔴 默认关：被拒后继续开新对话正是 Google 判「绕过滥用限制」的动作。只在确认台账记错时临时开"},
     {"name":"BUDGET","type":"string","default":"","description":"本轮最多真出几张图（留空=不限）。batch 补图时给个上限，别一口气把包月额度烧完——额度用尽要等次日恢复"},
     {"name":"FORCE","type":"boolean","default":false,"description":"已有英文版的也重做（会先把旧图备份到 ResBackpack/备份 再覆盖）。改了口径/译名时才勾"},
     {"name":"WRITE","type":"boolean","default":true,"description":"验收通过后写回 Assets/ManagedResources/ArtFont_en/... 并补 .meta。传 false 则只出图、不动工程里的资源（构建页的 compare.png 照样能看）"}
@@ -179,6 +181,15 @@ else
   fi
   echo "出图节奏：同号两张图至少隔 ${TSG_GEMINI_MIN_GAP}s（±30% 抖动）｜≤${TSG_GEMINI_MAX_PER_HOUR} 张/小时｜≤${TSG_GEMINI_MAX_PER_DAY} 张/天"
 fi
+
+# ── 额度封锁口径（2026-10-30 二次收紧：封号判罚是「绕过用量限制」，不是「画得太快」）──
+export TSG_QUOTA_FALLBACK_HOURS="${QUOTA_FALLBACK_H:-6}"
+export TSG_ALLOW_GAMBLE="${ALLOW_GAMBLE:-false}"
+if [[ "${ALLOW_GAMBLE:-false}" == "true" ]]; then
+  echo "⚠⚠ 换号链：已开「全封锁时硬试」（ALLOW_GAMBLE=true）—— 只在确认台账记错时用"
+fi
+echo "额度封锁：站点给了恢复时刻就按它，否则 ${TSG_QUOTA_FALLBACK_HOURS}h 兜底；冷却期内的号不出图"
+"$PY" scripts/image/provider_ledger.py list 2>/dev/null | sed 's/^/  /' || true
 "$PY" scripts/image/gen_pace.py status 2>/dev/null | sed 's/^/  /' || true
 
 # MODE=one 必须 --asset 直指源图：候选池按特征分派（glyph 单色 / poster ≥800x700 /

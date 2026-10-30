@@ -14,6 +14,8 @@
     {"name":"GEN_MAX_PER_DAY","type":"string","default":"50","description":"单个账号每天最多出几张（默认 50）。撞上了把这个号在台账里标成「明天再来」，让换号链接手"},
     {"name":"GEN_MAX_WAIT","type":"string","default":"1800","description":"一次出图最多愿意等多久的节奏窗口（秒，默认 1800=30 分钟）。超了就把这一步标黄收工 —— 比硬等两小时撞 job 超时好"},
     {"name":"HEARTBEAT_MIN","type":"string","default":"40","description":"会话保活心跳间隔（分钟，默认 40，带 ±15% 抖动）：出图期间用同一个浏览器发一条**纯文本**请求，防长时间只建图被判成自动化，也顺带早发现登录态掉了。0=关"},
+    {"name":"QUOTA_FALLBACK_H","type":"string","default":"6","description":"站点没说几时恢复时的兜底封锁小时数（默认 6）。🔴 以前 rc=3 走 120 分钟，等于「撞墙两小时后又是一条好汉」—— 这个号就是这样被继续加压的。站点给了时刻（如「22:54まで」）就按它，不用这个值"},
+    {"name":"ALLOW_GAMBLE","type":"boolean","default":false,"description":"换号链在所有号都被额度封锁时，是否挑最快恢复的那个硬试。🔴 默认关：被拒之后继续开新对话，正是 Google 判「绕过滥用限制」的动作（992694856@qq.com 的判罚原文）。只在你确认台账记错时临时开"},
     {"name":"CDP_PORT","type":"string","default":"","description":"复用已登录的外部浏览器（AdsPower 的 SunBrowser 等）的调试端口：填了就 --reuse-cdp，不复制本机 Chrome profile（免费额度按账号算，换号就换这里）。端口用 scripts/image/find_browser_cdp.py 反查；留空=用本机 Chrome"},
     {"name":"ADSPOWER_FALLBACK","type":"boolean","default":true,"description":"额度用尽自动换号（默认开）：先接入已经开着的 SunBrowser，再让 AdsPower 现开一个别的 profile 继续出图；换号失败才会把这一步标黄。关掉它=只用一个号，额度没了就停"},
     {"name":"ADSPOWER_PROFILES","type":"string","default":"","description":"换号顺序（逗号分隔的 AdsPower user_id，如 k1hiv2p8,k12w7kmd）：排在最前，不受自动排序影响。留空=自动排（上次成功的 → 今天没空的 → chatgpt cookie 多的）。用 scripts/image/find_browser_cdp.py --profiles 看有哪些号"},
@@ -185,6 +187,17 @@ else
   fi
   echo "出图节奏：同号两张图至少隔 ${TSG_GEMINI_MIN_GAP}s（±30% 抖动）｜≤${TSG_GEMINI_MAX_PER_HOUR} 张/小时｜≤${TSG_GEMINI_MAX_PER_DAY} 张/天｜最多等 ${TSG_GEN_MAX_WAIT}s 窗口"
 fi
+
+# ── 额度封锁口径（2026-10-30 二次收紧：封号判罚是「绕过用量限制」，不是「画得太快」）──
+# ① 站点给了恢复时刻（「22:54まで」/「until 22:54」）就按它，解析不到才用兜底小时数；
+# ② 冷却期内的号**一律不新建对话** —— 换号链不再「全封锁就赌一把」，宁可这轮不出图。
+export TSG_QUOTA_FALLBACK_HOURS="${QUOTA_FALLBACK_H:-6}"
+export TSG_ALLOW_GAMBLE="${ALLOW_GAMBLE:-false}"
+if [[ "${ALLOW_GAMBLE:-false}" == "true" ]]; then
+  echo "⚠⚠ 换号链：已开「全封锁时硬试」（ALLOW_GAMBLE=true）—— 只在确认台账记错时用"
+fi
+echo "额度封锁：站点给了恢复时刻就按它，否则 ${TSG_QUOTA_FALLBACK_HOURS}h 兜底；冷却期内的号不出图"
+"$PY" scripts/image/provider_ledger.py list 2>/dev/null | sed 's/^/  /' || true
 "$PY" scripts/image/gen_pace.py status 2>/dev/null | sed 's/^/  /' || true
 
 # 先把「有没有图」这件事判定掉：没有图不是失败，是流程还没走到下一步（黄）

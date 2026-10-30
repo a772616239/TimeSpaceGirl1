@@ -998,6 +998,16 @@ def call_provider(args, work: Path, ref: Path, prompt_file: Path, out: Path) -> 
         cmd += ["--ignore-ledger"]
     if getattr(args, "no_auto_fallback", False):
         cmd += ["--no-auto-fallback"]
+    # 第二通道：GPT 额度用尽 → 同一个浏览器换 gemini 再画一次（两条都空才换号）。
+    # 参考图/提示词默认沿用本张的（--image 就是 ref_flat 白底黑字、prompt 就是本张的版面要求），
+    # 天然是「i2i 锁构图」—— 不额外造一份，免得两份提示词漂移。
+    sp = str(getattr(args, "second_provider", "") or "").strip().lower()
+    if sp and sp not in ("none", "off", "0", "false", "no"):
+        cmd += ["--second-provider", sp]
+        tmo2 = int(getattr(args, "second_timeout", 0) or 0)
+        if tmo2:
+            cmd += ["--second-timeout", str(tmo2)]
+        print(f"第二通道：{sp}（GPT 空了 → 同一台浏览器接着画，都画不了才换号）")
 
     print("provider=chatgpt_web → " + " ".join(cmd))
     # 外层超时留足余量：gen_chatgpt_web.py 内部有 --timeout 与 --fallback-budget，
@@ -1012,8 +1022,9 @@ def call_provider(args, work: Path, ref: Path, prompt_file: Path, out: Path) -> 
     if r.returncode == 0 and out.is_file() and out.stat().st_size > 0:
         print(f"✅ 出图：{out.relative_to(ROOT)}（{out.stat().st_size // 1024} KB）")
         return 0, out.name
-    # 3 = 不可达 / 未登录 / 人机验证 / 额度用尽 → 这是环境问题，给黄不给红
-    print(f"🔴 出图通道失败 rc={r.returncode}（3=环境/额度，见上面 provider 日志）", file=sys.stderr)
+    # 3 = 不可达 / 未登录 / 人机验证 / 额度用尽 / 台账封锁 → 这是环境问题，给黄不给红
+    print(f"🔴 出图通道失败 rc={r.returncode}"
+          f"（3=环境/额度/该号在冷却期，见上面 provider 日志）", file=sys.stderr)
     return (3 if r.returncode == 3 else 1), f"provider rc={r.returncode}"
 
 
@@ -2438,6 +2449,14 @@ def _add_provider_args(p: argparse.ArgumentParser) -> None:
                    help="等图上限（秒）；0=用 gen_chatgpt_web.py 的默认值")
     p.add_argument("--ignore-ledger", action="store_true", help="忽略额度台账（验证某个号时用）")
     p.add_argument("--no-auto-fallback", action="store_true", help="额度用尽不自动换号")
+    # 🔴 2026-10-26（用户要求）：GPT 额度用尽**先别换号** —— 在同一台浏览器上换 gemini 接着画，
+    #    两条都画不了才换号（换号链仍在 gen_chatgpt_web.py 里，这里只转达开关）。
+    #    默认开：库里 gen_chatgpt_web.py 的默认值也是 gemini，两处口径一致，不会「谁忘了传就没链」。
+    p.add_argument("--second-provider", default=os.environ.get("SECOND_PROVIDER", "gemini"),
+                   help="第二出图通道（gemini，默认开）。GPT 额度用尽后在同一台浏览器上接着画，"
+                        "都画不了才换号；none=关闭（GPT 空即换号）")
+    p.add_argument("--second-timeout", type=int, default=int(os.environ.get("GEM_TIMEOUT", "300")),
+                   help="第二通道单张等图上限（秒）")
 
 
 def main() -> int:

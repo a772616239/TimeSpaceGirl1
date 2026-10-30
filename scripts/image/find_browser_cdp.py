@@ -216,6 +216,60 @@ def adspower_profile_dirs() -> dict[str, Path]:
     return out
 
 
+def pid_on_port(port: int) -> int | None:
+    """谁在监听这个 CDP 端口。lsof 在沙箱里可用（ps 不一定）。"""
+    out = sh(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"])
+    for line in out.splitlines():
+        s = line.strip()
+        if s.isdigit():
+            return int(s)
+    return None
+
+
+_PORT_UID_CACHE: dict[int, str | None] = {}
+
+
+def adspower_uid_for_port(port: int) -> str | None:
+    """CDP 端口 → AdsPower 的 user_id（认不出来返回 None）。
+
+    为什么需要这个：换号链 ①「接入已经开着的 SunBrowser」手里只有端口，台账就把它记成
+    `cdp:<port>` —— 同一个号换个端口号就成了「另一个号」，它的额度封锁 / 7 天停用标记
+    **全部不生效**。2026-10-30 被封的 992694856@qq.com 就是这么继续被用了 12 张
+    （事件流水里是 cdp:50609，历史记录里是同一个 profile 的 15 个新对话）。
+
+    判定顺序（都不猜，只认证据）：
+      ① lsof 找出监听端口的 pid，再看它打开的文件里有没有
+         `adspower_global/cwd_global/source/cache/<user_id>_<hash>/`
+      ② 退一步读各 profile 根目录的 `DevToolsActivePort`（浏览器启动时自己写的端口）
+    """
+    if port in _PORT_UID_CACHE:
+        return _PORT_UID_CACHE[port]
+    uid: str | None = None
+    pid = pid_on_port(port)
+    if pid:
+        out = sh(["lsof", "-p", str(pid), "-Fn"])
+        for line in out.splitlines():
+            if "cwd_global/source/cache/" not in line:
+                continue
+            tail = line.rsplit("cwd_global/source/cache/", 1)[-1]
+            m = _PROFILE_DIR.match(tail.split("/", 1)[0])
+            if m:
+                uid = m.group(1)
+                break
+    if not uid:
+        for u, d in adspower_profile_dirs().items():
+            try:
+                first = (d / "DevToolsActivePort").read_text(
+                    encoding="utf-8", errors="replace").splitlines()[:1]
+            except Exception:                                # noqa: BLE001
+                continue
+            if first and first[0].strip().isdigit() and int(first[0].strip()) == port:
+                uid = u
+                break
+    _PORT_UID_CACHE[port] = uid
+    return uid
+
+
 def chatgpt_cookie_count(profile_dir: Path) -> int:
     """数该 profile 里 chatgpt.com 的 cookie 条数（只读，不解密内容）。
 

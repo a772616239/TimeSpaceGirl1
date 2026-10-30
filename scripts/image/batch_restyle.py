@@ -374,8 +374,10 @@ def execute(run: Run, cfg: dict, theme: str, presets: dict) -> dict:
             # rc=3 有三个来源：额度用尽 / 登录态失效 / **节奏闸门说「现在不该画」**。
             # 前两个要换号，第三个只是要等（或今天就到这）—— 别让人一律去换号。
             note = ("出图通道不可用 —— 看 gen 日志：额度/登录态问题就换号；"
-                    "若是「节奏闸门」则是按账号限速到顶了，等窗口或明天再来"
-                    "（scripts/image/gen_pace.py status 看下次可画时间）")
+                    "若是「台账封锁」说明这个号还在冷却期（含 Google 停用 7 天），"
+                    "本轮刻意不画；若是「节奏闸门」则是按账号限速到顶了，等窗口或明天再来"
+                    "（scripts/image/gen_pace.py status 看下次可画时间，"
+                    "scripts/image/provider_ledger.py list 看封锁到几点）")
             return fail("gen", note, status="blocked")
         if rc != RC_OK:
             return fail("gen", "出图失败（看 gen 日志；若图其实已生成用 --no-gen 或 gen.grab_existing）")

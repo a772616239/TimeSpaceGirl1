@@ -1,7 +1,7 @@
 {
   "id": "aso-20261024-rename-N",
   "created": "2026-10-24T09:41:49",
-  "status": "planned",
+  "status": "superseded",
   "baseline": "A",
   "variant": "N",
   "element": "copy",
@@ -22,15 +22,17 @@
     {
       "variant": "N",
       "start": "2026-10-24",
-      "end": null
+      "end": "2026-10-31"
     }
   ],
   "readout": null,
-  "note": "⚠️ 这不是干净的单变量实验：改名无法随机分流，且与文案纠错同批上线 ⇒ 只能回答「N 整体是否优于 A」，不能归因到名字或文案单项。线上自 2026-10-24 09:41 提交送审。\n2026-10-24 09:55 二次修正（同日送审）：英文首屏人物锚点 Guan Yu → Caesar/Cleopatra（关羽在欧美认知度低，首屏浪费）；四语名单全部改用 Language.xlsx 官方名，修正 4 个不存在的英文名（King Arthur/Li Bai/Napoleon/Qin Shi Huang → Arthur/Li Taipo/Napoleone/Ying Zheng，后三者因拼法非常规改为不进名单）与 4 个日文名（チンギス・ハン→カン、ジャンヌ・ダルク→ジャンヌ、キュリー夫人→マリ・キュリー、アテナ→アテーナー）。新增 scripts/aso/check_hero_names.py 做机检。\n2026-10-24 09:58 三次修正（同日送审）：四语短描述去掉「名人A和名人B同队」统一模板——四语套同一句式是偷懒，换人名不算重写。改为「阵容+机制」：en 90 legends from history. Nine squares, five fighters. Misplace one, run ends. / zh 90 位跨时代角色，历史神话小说混编。九格五席，站错一格就团灭。 / ja 歴史・神話・小説の英雄90人が同じ名簿に。9マス5枠、配置で生死が決まる放置カードRPG。具体人名只留长描述名单段。",
+  "note": "⚠️ 这不是干净的单变量实验：改名无法随机分流，且与文案纠错同批上线 ⇒ 只能回答「N 整体是否优于 A」，不能归因到名字或文案单项。线上自 2026-10-24 09:41 提交送审。\n2026-10-24 09:55 二次修正（同日送审）：英文首屏人物锚点 Guan Yu → Caesar/Cleopatra（关羽在欧美认知度低，首屏浪费）；四语名单全部改用 Language.xlsx 官方名，修正 4 个不存在的英文名（King Arthur/Li Bai/Napoleon/Qin Shi Huang → Arthur/Li Taipo/Napoleone/Ying Zheng，后三者因拼法非常规改为不进名单）与 4 个日文名（チンギス・ハン→カン、ジャンヌ・ダルク→ジャンヌ、キュリー夫人→マリ・キュリー、アテナ→アテーナー）。新增 scripts/aso/check_hero_names.py 做机检。\n2026-10-24 09:58 三次修正（同日送审）：四语短描述去掉「名人A和名人B同队」统一模板——四语套同一句式是偷懒，换人名不算重写。改为「阵容+机制」：en 90 legends from history. Nine squares, five fighters. Misplace one, run ends. / zh 90 位跨时代角色，历史神话小说混编。九格五席，站错一格就团灭。 / ja 歴史・神話・小説の英雄90人が同じ名簿に。9マス5枠、配置で生死が決まる放置カードRPG。具体人名只留长描述名单段。\n2026-10-31 11:36 关闭：N 自 10-24 10:00 生效共 7 天，被 aso-20261031-fulltext-O 截断。截断理由——该包日均商店页访问仅 16 人（455/28 天），凑满 1000 访问门槛需 62 天，N 的 14 天窗口在设计上无法读数；而 N 的长描述已确认是相对 L 的倒退（品类词 14~16/16 → 2/16，首屏回到用户两次否决的「名人 A vs. 名人 B」句式），继续挂着只是让有缺陷的版本多跑。状态全程为 planned，从未 active、readout 始终为空——这也是本批改动暴露的流程缺陷。",
   "rules": [
     "单窗口 ≥ 7 天且 ≥ 1000 次商店页访问才读数",
     "🔴 一次只动一个元素（文案/截图/图标分开测），否则分不清是谁的效果",
     "切变体时先在 Console 确认「上一版已生效」，再记窗口起点",
     "Play 原生实验没有 API ⇒ 若要严格随机分流，去 Console 手动建实验，本脚本只做记录"
-  ]
+  ],
+  "superseded_at": "2026-10-31T11:36:00",
+  "superseded_by": "aso-20261031-fulltext-O"
 }

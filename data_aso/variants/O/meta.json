@@ -1,0 +1,22 @@
+{
+  "label": "长描述重构：首屏去人名化 + 品类词覆盖补齐（四语）",
+  "role": "treatment",
+  "parent": "N",
+  "baseline": "A",
+  "cycle": "20261031-fulltext-O",
+  "generated_by": "手工撰写（非规则替换、非机器翻译）",
+  "hypothesis": "N 的长描述把 L 已补到 14~16/16 的品类词覆盖打回 2/16，且首屏使用「名人 A vs. 名人 B」句式（zh 为「关公战秦琼」，该梗在中文含贬义），此路线用户已两次否决。本变体只动 fullDescription：① 首屏改为直接陈述九格五席机制，不依赖人物认知；② 把 probe 品类词全部自然植入；③ 保留 N 的事实口径（90 角色 / 9 格 5 席 / 6 套阵型 / 全 Live2D）与已通过 check_hero_names 的名单段。预期搜索曝光恢复，转化率不降。",
+  "variables": [
+    "fullDescription: 四语重写（title / shortDescription / video 均不动）"
+  ],
+  "keep": [
+    "title / shortDescription / video 一律不动（改名已生效，不重复计入）",
+    "icon / featureGraphic / phoneScreenshots 不动",
+    "包名、分类、定价、内购配置不动"
+  ],
+  "caveat": [
+    "aso-20261024-rename-N 仍在窗口内，本变体上线会把两个变量混在一起；建议等 N 窗口到期，或明确接受混合归因"
+  ],
+  "readout_window_days": 14,
+  "supersedes_note": "N 的短描述仍沿用（未改），本变体与 N 的唯一差异是 fullDescription"
+}

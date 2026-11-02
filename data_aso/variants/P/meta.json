@@ -1,0 +1,25 @@
+{
+  "label": "数字口径纠错（90→84）+ 标题补品类词（en/zh 三语，ja 不动）",
+  "role": "treatment",
+  "parent": "O",
+  "baseline": "A",
+  "cycle": "20261102-fix84-P",
+  "generated_by": "手工撰写 + 定点替换（scripts/aso/_gen_variant_P.py，每条替换命中次数强校验）",
+  "hypothesis": "① 事实层：N/O 的「90 位角色」无配置表依据（HeroConfig 112 行、图鉴可见 84、有配音 73），属于 Play 虚假宣传风险，必须改成 84/73；「全阵容由声优演绎」这类全量断言同步降级为具体数字。② SEO 层：2026-11-02 实测 ja 品牌词第 1、品类词第 3（不动），zh-CN 简体品牌词第 1，zh-TW 繁体原名搜不到，en 品牌词前 30 全无 ⇒ en/zh-CN/zh-TW 三语标题各补一个当地检索词（AFK / 挂机 / 掛機），把标题从「只有品牌」变成「品牌 + 品类」。",
+  "variables": [
+    "title: en-US / zh-CN / zh-TW 补品类词（ja-JP 不动）",
+    "shortDescription: 四语重写（数字纠错 + 品类词前置）",
+    "fullDescription: 四语定点纠错（90→84、全语音→73 位）"
+  ],
+  "keep": [
+    "ja-JP 标题不动（品牌词第 1、品类词第 3，已验证有效，不重新洗索引）",
+    "video / icon / featureGraphic / phoneScreenshots 不动",
+    "包名、分类、定价、内购配置不动"
+  ],
+  "caveat": [
+    "同一批次动了 title + short + full 三个元素，归因不纯；且该包日均商店页访问仅 16，任何转化率差异都读不出来 —— 本版目的是「纠正错误 + 覆盖词」，不是做 A/B",
+    "zh-TW 繁体品牌词搜不到的原因未定（索引延迟 vs 繁简归一化），补 掛機 只能缓解，不能证明修复"
+  ],
+  "readout_window_days": 14,
+  "supersedes_note": "O 的全文结构与关键词植入全部保留，只做数字与配音表述的定点修正；标题另加品类词"
+}

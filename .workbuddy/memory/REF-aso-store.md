@@ -179,3 +179,16 @@
 - 强词清单（zh 面实测）：`少女` 10/10、`挂机` 7/10(CN)、`放置` 7/10(TW)/3/10(CN)、
   `卡牌` 4~5/10、`掛機` 3/10(TW)、`二次元` 3/10、`美少女` 2/10、`カード` 未测。
   **简繁不是同一个词元**：`挂机`(CN 7/10) 与 `掛機`(TW 3/10) 必须分开测，混用会得出错误结论。
+
+## 十、Play API 走代理（2026-11-06 踩坑，别重复）
+
+- 🔴 **`httplib2` 缺 PySocks 时，代理参数被静默忽略**：`httplib2.socks is None` ⇒
+  `ProxyInfo.isgood()` 返回 `None` ⇒ `connect()` 里条件不成立 ⇒ 直连。症状极具误导性：
+  **curl 经同一代理 0.1s 通、python 全部 `TimeoutError: timed out`**。
+  ⇒ 报 `Errno 60 / timed out` 时，先跑 `python -c "import httplib2;print(httplib2.socks)"`，
+  是 `None` 就 `pip install PySocks`（本次装的是 1.7.1，装完立刻通）。`play_upload.py` 用同一套栈。
+- 代理变量要**大小写各一套**（`HTTPS_PROXY/HTTP_PROXY/https_proxy/http_proxy`）：
+  `httplib2.proxy_info_from_environment(method="http")` 读小写 `http_proxy`，
+  而 libcurl（git push）也优先小写；沙箱注入的 `127.0.0.1:59010` 对 Google/GitHub 都不可用，必须改成 `127.0.0.1:7890`。
+- `aso_play.py list` 会**写快照**到 `data_aso/online/<YYYYMMDD-HHMMSS>/`；网络失败时它仍会建**空目录**
+  （今天 00:14/15:03/15:06 三个空目录就是直连失败留下的）⇒ 看快照前先确认 `listings.json` 存在。

@@ -1,7 +1,7 @@
 {
   "id": "aso-20261102-1510-copy-p",
   "created": "2026-11-02T15:10:15",
-  "status": "planned",
+  "status": "superseded",
   "baseline": "O",
   "variant": "P",
   "element": "copy",
@@ -15,18 +15,13 @@
   "window_days": 14,
   "windows": [
     {
-      "variant": "O",
-      "start": "2026-11-02",
-      "end": null
-    },
-    {
       "variant": "P",
       "start": "2026-11-02",
-      "end": null
+      "end": "2026-11-06"
     }
   ],
   "readout": null,
-  "note": "同一批动 title/short/full，归因不纯；该包日均访问 16，转化率不可测。基线 O 为 2026-10-31 上线版。\n2026-11-02 15:12 已 push（--auto-review）并进审核队列；Play API 读回已是 P，公开商店页仍为 O（待审核）。审核通过、公开页变更后窗口起点才有效。",
+  "note": "同一批动 title/short/full，归因不纯；该包日均访问 16，转化率不可测。基线 O 为 2026-10-31 上线版。\n2026-11-02 15:12 已 push（--auto-review）并进审核队列；Play API 读回已是 P，公开商店页仍为 O（待审核）。审核通过、公开页变更后窗口起点才有效。\n2026-11-06 18:03 被 Q 取代（用户决定立即推送，不等 P 满 7 天）⇒ P 只存活 4 天，与 10-27 改名实验一起不可归因。P 的文案已在 data_aso/variants/P/ 保留。",
   "rules": [
     "单窗口 ≥ 7 天且 ≥ 1000 次商店页访问才读数",
     "🔴 一次只动一个元素（文案/截图/图标分开测），否则分不清是谁的效果",

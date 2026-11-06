@@ -100,6 +100,28 @@
 - 实验状态机的坑：N 从创建到被截断**全程 `planned`、`readout` 恒空**（5 个实验文件无一读过数）
   ⇒ 这套东西目前只记录不测量。改版前至少手工存一份 Console 三数快照。
 
+## 六·补 读数姿势（11-06 实测，详见 `docs/aso_diag_20261106.md`）
+- 🔴 **批量报告桶必须走代理 `http://127.0.0.1:7890`**：沙箱默认代理（56391）不通 Google，直连也死；
+  且 `google_auth_httplib2` 不吃 `http_proxy` ⇒ 用 `requests.Session(proxies=…)` +
+  `google.auth.transport.requests.Request(session=…)` 取 token，再打 storage JSON API。
+- 🔴 **维度全塌成 `Other`**：这个体量包 `store_performance` 的 country / traffic_source / search term
+  都被隐私阈值聚合 ⇒ 分不出搜索还是推荐，只能看 Console 商店分析页。**别指望 API 做来源归因。**
+- 🔴 **报表滞后 5~6 天且当月文件晚生成**：11-06 时 installs 只到 11-01、store_performance 只到 10-30、
+  `202611` 文件尚未生成 ⇒ 当月改版「有没有变差」在 API 上恒无解，别用「数据不足」当结论。
+- 🔴 **繁中检索面整个不可见（11-06 仍复现）**：同词 `hl=zh_CN` 第 1、`hl=zh_TW`/`hl=zh_HK` 进不了前 30，
+  连旧名 `時空群英` 也搜不到 ⇒ 不是索引延迟，是 zh-TW/zh-HK 这面不在索引里。
+- 🔴 **品类词 0 命中**（`放置`/`idle card rpg`/`afk idle`/`美少女`/`放置カードRPG` 全灭）⇒
+  无安装信号的包改标题词改不出排名，**文案只影响品牌词与点进来之后的转化**。
+- 🔴 **品类词命中与「标题里有没有那个词」几乎无关**：P 标题已有 `放置挂机卡牌RPG`，`放置`/`放置卡牌`/`美少女`
+  仍 0 命中 ⇒ **无安装信号时补品类词是无效投入**；只有品牌词有排名，且只在自己语言面（ja 标题只在 ja 面、
+  简中只在 zh_CN 面）。
+- 🔴 **改版效果以前没人量**：`TS-ASO-Cycle` 只记账本、`TS-Play-Watch` 只查轨道/16KB。11-06 新增
+  `scripts/aso/aso_scorecard.py`（7d 窗口 + 泊松 z + 四语搜索可见性矩阵，一条命令出记分卡）⇒ 以后改版前后各跑一次。
+- 变体 Q（11-06 建，未上线）：zh 标题 +`美少女`、四语短描述品类前置、zh 覆盖 13/14→14/14；
+  生成器 `_gen_variant_Q.py`（`--alt-title` 出「二次元」备选）。详见 `docs/aso_strategy_20261106.md`。
+- 搜索排名自测脚本要点：Play 搜索页的链接是 `details?id=…`（**没有** `/store/apps/` 前缀），
+  包名大小写是 `com.Warera.timespace`（大写 W），两个都写错会全军覆没假报「未出现」。
+
 ## 七、改名与变体时间线（截至 10-24）
 
 - 🟢 **10-24 09:41 变体 N 已送审：游戏改名为《群星列阵》/`Starhost`**（四语 title+short+full 全量重写，
@@ -119,3 +141,22 @@
   别串包（10-24 曾因此误判成阻塞项）。
 - ⚠️ Jenkins META 布尔参数**必须写 `type:"bool"`**，写 `"boolean"` 会变字符串参数
   ⇒ `when { expression { params.X } }` 恒真。
+
+## 八、关键词怎么量（2026-11-06 建，别再走弯路）
+
+- ❌ 老联想接口 `market.android.com/suggest/SuggRequest?c=3` **已 404**，别再试。
+- Play **没有公开搜索量 API**，也没有「关键词难度」可读。可用代理指标 = **搜索结果结构**：
+  抓该词前 10 条 `details?id=` 卡片的标题（`<span class="DdYX5">`，开发者 `<span class="wMUdtb">`），
+  数「标题里自己就有这个词」的条数。含得越多 ⇒ 该词是真 token、且按它匹配。
+  已并进 `scripts/aso/aso_scorecard.py`：`--tokens 少女 美少女 二次元 放置卡牌`（2026-11-06 入库，别再另写脚本）。
+- 🔴 **Play 认词元、不认短语**：`二次元放置`/`放置美少女` **0/10**、`放置卡牌` 1/10(TW)/0/10(CN)；
+  而 `少女` **10/10（TW 和 CN 都是）**、`放置` 7/10(TW)/3/10(CN)、`二次元` 3/10/2/10、`美少女` 2/10。
+  ⇒ 往标题塞长短语是无效投入；要挑**能搭上强 token** 的词（`美少女` 是 `少女` 的超串：搜 `美少女` 时
+  第 2、3 条是 `少女戰爭`/`少女前線`，这俩标题里没有「美少女」⇒ 分词器拆出 `少女` 在匹配）。
+- 外部基准（AppTweak 2025）：Play 全类目 CR 均值 **16.15%**，但 **Games–Strategy 是最低档 6.6%**
+  ⇒ 别再用「15~30%」这个休闲均值当尺子，会误判成「列表页写坏了」。
+- 🔴 判读时机：**重新索引 7 天、rankings 稳定 3~6 周、7 天内不要判读**（AppTweak/PlayAudit/Apptenium 三家一致）。
+  我们踩过：改名 10-24 提交、10-27 公开生效，只拿到 4 天数据就下结论「腰斩」；P 11-02 上线 4 天就想再推一版
+  ⇒ 会把两个实验一起做成不可归因。**改版前先确认上一次改版满 7 天。**
+- 时间线要从 `data_aso/online/*/listings.json` **逐版读 title** 核对（结构是 `{locale: {title, shortDescription, fullDescription}}`），
+  不要凭记忆——`20261024-021213-title-zh` 这类中途快照只有 zh 两个 locale。

@@ -17,6 +17,15 @@ local curMianTaskData = {}
 local timePressStarted
 local callBack
 local worldLevel = 0--世界等级
+-- Timer 回调里对「已销毁」节点直接 SetActive 会抛原生 NullReferenceException：
+-- tolua 拿到的 userdata 仍然非 nil，普通判 nil 无效，必须用 IsNull(tolua.isnull)。
+-- 挂机主界面被 Dispose/重连的 CloseAll(true) 立即销毁、而 guideTimer 还在 1 秒一跳，
+-- 就是这个异常的唯一来源。
+local function SafeSetActive(go, active)
+    if go and not IsNull(go) then
+        go:SetActive(active)
+    end
+end
 
 --初始化组件（用于子类重写）
 function FightPointPassMainPanel:InitComponent()
@@ -512,6 +521,12 @@ function FightPointPassMainPanel:OnClose()
     -- fightMap:Dispose()
     fightOnHook:Dispose()
     chatPanel:OnClose()
+    -- guideTimer 是 1 秒 -1 的死循环，只有「5 秒到点」或「进了引导」才自停，
+    -- OnClose 里原本没人关它 ⇒ 销毁后它仍会 tick，下一次 tick 就对已销毁节点 SetActive。
+    if this.guideTimer then
+        this.guideTimer:Stop()
+        this.guideTimer = nil
+    end
     if this.animTimer then
         this.animTimer:Stop()
     end
@@ -551,6 +566,12 @@ function FightPointPassMainPanel:OnDestroy()
         MyPCall(function() chatPanel:OnDestroy() end)
     end
 
+    -- guideTimer 是 1 秒 -1 的死循环，只有「5 秒到点」或「进了引导」才自停，
+    -- OnClose 里原本没人关它 ⇒ 销毁后它仍会 tick，下一次 tick 就对已销毁节点 SetActive。
+    if this.guideTimer then
+        this.guideTimer:Stop()
+        this.guideTimer = nil
+    end
     SubUIManager.Close(this.PlayerHeadFrameView)
     SubUIManager.Close(this.UpView)
     SubUIManager.Close(this.BtView)
@@ -681,9 +702,7 @@ this.timer = Timer.New()
 --刷新倒计时显示
 function this.RemainTimeDown(go, txt, timeDown)
     if timeDown > 0 then
-        if go then
-            go:SetActive(true)
-        end
+        SafeSetActive(go, true)
         if txt then
             txt.text = GetLeftTimeStrByDeltaTime2(timeDown)
         end
@@ -691,24 +710,24 @@ function this.RemainTimeDown(go, txt, timeDown)
             this.timer:Stop()
             this.timer = nil
         end
-        this.timer = Timer.New(function()
-            if txt then
+        local selfTimer
+        selfTimer = Timer.New(function()
+            if txt and not IsNull(txt) then
                 txt.text = GetLeftTimeStrByDeltaTime2(timeDown)
             end
             if timeDown < 0 then
-                if go then
-                    go:SetActive(false)
+                SafeSetActive(go, false)
+                selfTimer:Stop()
+                if this.timer == selfTimer then
+                    this.timer = nil
                 end
-                this.timer:Stop()
-                this.timer = nil
             end
             timeDown = timeDown - 1
         end, 1, -1, true)
+        this.timer = selfTimer
         this.timer:Start()
     else
-        if go then
-            go:SetActive(false)
-        end
+        SafeSetActive(go, false)
     end
 end
 
@@ -720,33 +739,38 @@ function this.ShowGuide()
             this.guideTimer = nil
         end
     end
-    this.taskGuideFinger:SetActive(false)
-    this.battleGuideFinger:SetActive(GuideManager.isShowGuide)
+    SafeSetActive(this.taskGuideFinger, false)
+    SafeSetActive(this.battleGuideFinger, GuideManager.isShowGuide)
     GuideManager.isShowGuide = false
     if this.guideTimer then
         this.guideTimer:Stop()
         this.guideTimer = nil
     end
     local time = 5
-    this.guideTimer = Timer.New(function()
+    -- 自持局部引用：回调里再读 this.guideTimer 可能已被下一次 ShowGuide 换掉
+    local selfTimer
+    selfTimer = Timer.New(function()
         if time < 0 then
-            this.guideTimer:Stop()
-            this.guideTimer = nil
+            selfTimer:Stop()
+            if this.guideTimer == selfTimer then
+                this.guideTimer = nil
+            end
 
             local task, battle = GuideManager.RefreshGuide()
-            this.taskGuideFinger:SetActive(task)
-            this.battleGuideFinger:SetActive(battle)
+            SafeSetActive(this.taskGuideFinger, task)
+            SafeSetActive(this.battleGuideFinger, battle)
             GuideManager.isShowGuide = task
         end
         time = time - 1
         if GuideManager.IsInMainGuide() or UIManager.IsOpen(UIName.GuidePanel) then
-            if this.guideTimer then
-                this.guideTimer:Stop()
+            selfTimer:Stop()
+            if this.guideTimer == selfTimer then
                 this.guideTimer = nil
             end
         end
     end, 1, -1, true)
-    this.guideTimer:Start()
+    this.guideTimer = selfTimer
+    selfTimer:Start()
 end
 
 return FightPointPassMainPanel

@@ -655,7 +655,31 @@ function RoleView:GetArtText(type, color, value, isForbear)
 
     return text
 end
+
+-- 这个角色视图现在还能不能往场景里贴表现。
+-- 线上 Fatal：LuaException event:0 attempt to index transform on a nil value，
+-- 栈是 ArtFloating ← OnceDamaged ← RoleView 匿名函数 ← System/Timer。
+-- 链条：多段伤害（skill.continueTime）走 self:DelayFunc 挂在全局 UpdateBeat 上，
+-- 只有 RoleView:Dispose 才 ClearDelayFunc；而掉线重连 / 强制关界面 / 战斗面板先销毁时，
+-- 角色不一定会走 Dispose，BattleView 又是模块级单例 ⇒ this.skillEffectRoot 顺手拿着
+-- 已随面板销毁的节点。下一次 tick 进 ArtFloating 就拿它去取 .transform。
+-- tolua 拿到的 userdata 在 Unity 对象销毁后仍然非 nil，判 nil 无效，必须走 IsNull(tolua.isnull)，
+-- 否则生成代码里那句 "attempt to index transform on a nil value" 就是原生 MissingReferenceException。
+local function IsViewAlive(view)
+    if not view or view.isDisposed then
+        return false
+    end
+    local panel = view.RootPanel
+    if not panel or IsNull(panel.gameObject) or IsNull(panel.skillEffectRoot) then
+        return false
+    end
+    return not IsNull(view.GameObject)
+end
+
 function RoleView:ArtFloating(type, color, value, isForbear)
+    if not IsViewAlive(self) then
+        return
+    end
     local go = loadAsset(floatingEffect)
     -- if self.camp == 0 then
     go.transform:SetParent(self.RootPanel.skillEffectRoot.transform)
@@ -2389,6 +2413,11 @@ function RoleView:OnceDamaged(atkRole, dmg, bCrit, finalDmg, damageType, dotType
     if self.isDead then
         return
     end
+    -- 同一条延时链路：多段伤害的回调可能在战斗界面销毁之后才到点，
+    -- 这里先兜住，别继续往下碰战斗粘滞 / 血条 / RoleLiveGO（见 IsViewAlive 注释）
+    if not IsViewAlive(self) then
+        return
+    end
 
     if reduceSheild == nil then reduceSheild = 0 end
     --战斗粘滞
@@ -2424,7 +2453,9 @@ function RoleView:OnceDamaged(atkRole, dmg, bCrit, finalDmg, damageType, dotType
         end
     end    
 
-    if skill then
+    -- RoleLiveGO 与血条不同生命周期（Dispose 时先 UnLoadSpine），
+    -- 光靠上面的 IsViewAlive 不够，这里单独再判一次
+    if skill and not IsNull(self.RoleLiveGO) then
         local combat = BattleManager.GetSkillCombat(SkillLogicConfig[skill.id].SkillDisplay)
 
         -- local strength = Vector3.New(0.8, 0, 0.4)
@@ -3056,6 +3087,9 @@ function RoleView:OrderStart()
 end
 
 function RoleView:Dispose()
+    -- 标记已销毁：延时回调里靠它短路（IsViewAlive），
+    -- 防止 Dispose 之后还有 Timer 回调摸本视图的节点
+    self.isDisposed = true
     -- 先把本单位的暂停锁全部强放：下面会 Kill 掉 tween、清掉 DelayFunc，
     -- 那些 OnComplete 里的 ResumeBattle 从此不会执行，不放锁就是永久暂停
     self:ReleasePauseOwners()
